@@ -1,0 +1,12 @@
+[global]
+domainNumber            24
+slaveOnly               1
+time_stamping           hardware
+tx_timestamp_timeout    1
+logging_level           6
+summary_interval        0
+#priority1               127
+
+[your_PTP_ENABLED_NIC]
+network_transport       L2
+hybrid_e2e              0

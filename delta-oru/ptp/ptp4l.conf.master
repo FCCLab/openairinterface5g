@@ -1,0 +1,14 @@
+[global]
+domainNumber            24
+priority1               1
+clockClass              6
+clockAccuracy           0x25
+timeSource              0x20
+time_stamping           hardware
+tx_timestamp_timeout    1
+logging_level           6
+summary_interval        0
+
+[enp1s0f0]
+network_transport       L2
+hybrid_e2e              0

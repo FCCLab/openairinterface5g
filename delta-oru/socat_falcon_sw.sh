@@ -1,0 +1,1 @@
+sudo socat TCP-LISTEN:80,fork,reuseaddr TCP:192.168.88.60:80
