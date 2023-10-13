@@ -5039,7 +5039,7 @@ void compute_csi_bitlen(NR_CSI_MeasConfig_t *csi_MeasConfig, nr_csi_report_t *cs
     int csi_resourceidx = 0;
     while (found_resource == 0 && csi_resourceidx < csi_MeasConfig->csi_ResourceConfigToAddModList->list.count) {
       csi_resourceconfig = csi_MeasConfig->csi_ResourceConfigToAddModList->list.array[csi_resourceidx];
-      if ( csi_resourceconfig->csi_ResourceConfigId == csi_ResourceConfigId)
+      if (csi_resourceconfig->csi_ResourceConfigId == csi_ResourceConfigId)
         found_resource = 1;
       csi_resourceidx++;
     }
