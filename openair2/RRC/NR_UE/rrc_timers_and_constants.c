@@ -150,10 +150,9 @@ void nr_rrc_handle_timers(NR_UE_RRC_INST_t *rrc)
   bool t310_expired = nr_timer_tick(&timers->T310);
   if(t310_expired) {
     LOG_W(NR_RRC, "Timer T310 expired\n");
-    // TODO
     // handle detection of radio link failure
     // as described in 5.3.10.3 of 38.331
-    AssertFatal(false, "Radio link failure! Not handled yet!\n");
+    handle_rlf_detection(rrc);
   }
 
   bool t311_expired = nr_timer_tick(&timers->T311);
