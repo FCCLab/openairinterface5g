@@ -187,6 +187,8 @@ int main(int argc, char *argv[])
   double effTP;
   float eff_tp_check = 100;
   int ldpc_offload_flag = 0;
+  int nr_ulsch_decoding_interface_flag = 0;
+  char nr_ulsch_decoding_interface_version[64] = "_demo";
   uint8_t max_rounds = 4;
   int chest_type[2] = {0};
   int enable_ptrs = 0;
@@ -223,7 +225,7 @@ int main(int argc, char *argv[])
   /* initialize the sin-cos table */
   InitSinLUT();
 
-  while ((c = getopt(argc, argv, "a:b:c:d:ef:g:h:i:k:m:n:op:q:r:s:t:u:v:w:y:z:C:F:G:H:I:M:N:PR:S:T:U:L:ZW:E:X:")) != -1) {
+  while ((c = getopt(argc, argv, "a:b:c:d:ef:g:h:i:j:k:m:n:op:q:r:s:t:u:v:w:y:z:C:F:G:H:I:M:N:PR:S:T:U:L:ZW:E:X:")) != -1) {
     printf("handling optarg %c\n",c);
     switch (c) {
 
@@ -312,6 +314,10 @@ int main(int argc, char *argv[])
         i+=2;
       } while (optarg[i-1] == ',');
       break;
+
+    case 'j':
+      nr_ulsch_decoding_interface_flag = 1;
+      strncpy(nr_ulsch_decoding_interface_version,optarg,63);
 	
     case 'k':
       printf("Setting threequarter_fs_flag\n");
@@ -633,6 +639,8 @@ int main(int argc, char *argv[])
 
 //  nr_phy_config_request_sim(gNB,N_RB_DL,N_RB_DL,mu,0,0x01);
   gNB->ldpc_offload_flag = ldpc_offload_flag;
+  gNB->nr_ulsch_decoding_interface_flag = nr_ulsch_decoding_interface_flag;
+  strncpy(gNB->nr_ulsch_decoding_interface_version,nr_ulsch_decoding_interface_version,64);
   gNB->chest_freq = chest_type[0];
   gNB->chest_time = chest_type[1];
 

@@ -24,6 +24,7 @@
 #include "PHY/NR_TRANSPORT/nr_transport_proto.h"
 #include "PHY/NR_TRANSPORT/nr_dlsch.h"
 #include "PHY/NR_TRANSPORT/nr_ulsch.h"
+#include "PHY/CODING/nr_ulsch_decoding_interface.h"
 #include "PHY/NR_TRANSPORT/nr_dci.h"
 #include "PHY/NR_ESTIMATION/nr_ul_estimation.h"
 #include "nfapi/open-nFAPI/nfapi/public_inc/nfapi_interface.h"
@@ -379,6 +380,62 @@ static void nr_postDecode(PHY_VARS_gNB *gNB, notifiedFIFO_elt_t *req)
     ulsch->last_iteration_cnt = rdata->decodeIterations;
     VCD_SIGNAL_DUMPER_DUMP_FUNCTION_BY_NAME(VCD_SIGNAL_DUMPER_FUNCTIONS_PHY_gNB_ULSCH_DECODING,0);
   }
+}
+
+static int nr_ulsch_procedures_slot(PHY_VARS_gNB *gNB, int frame_rx, int slot_rx)
+{
+  NR_DL_FRAME_PARMS *frame_parms = &gNB->frame_parms;
+  uint32_t *G = malloc(gNB->max_nb_pusch*sizeof(uint32_t));
+  for (int ULSCH_id = 0; ULSCH_id < gNB->max_nb_pusch; ULSCH_id++) {
+    nfapi_nr_pusch_pdu_t *pusch_pdu = &gNB->ulsch[ULSCH_id].harq_process->ulsch_pdu;
+
+    uint16_t nb_re_dmrs;
+    uint16_t start_symbol = pusch_pdu->start_symbol_index;
+    uint16_t number_symbols = pusch_pdu->nr_of_symbols;
+
+    uint8_t number_dmrs_symbols = 0;
+    for (int l = start_symbol; l < start_symbol + number_symbols; l++)
+      number_dmrs_symbols += ((pusch_pdu->ul_dmrs_symb_pos)>>l)&0x01;
+
+    if (pusch_pdu->dmrs_config_type==pusch_dmrs_type1)
+      nb_re_dmrs = 6*pusch_pdu->num_dmrs_cdm_grps_no_data;
+    else
+      nb_re_dmrs = 4*pusch_pdu->num_dmrs_cdm_grps_no_data;
+
+    G[ULSCH_id] = nr_get_G(pusch_pdu->rb_size,
+                          number_symbols,
+                          nb_re_dmrs,
+                          number_dmrs_symbols, // number of dmrs symbols irrespective of single or double symbol dmrs
+                          gNB->ulsch[ULSCH_id].unav_res,
+                          pusch_pdu->qam_mod_order,
+                          pusch_pdu->nrOfLayers);
+    AssertFatal(G[ULSCH_id]>0,"G is 0 : rb_size %u, number_symbols %d, nb_re_dmrs %d, number_dmrs_symbols %d, qam_mod_order %u, nrOfLayer %u\n",
+                pusch_pdu->rb_size,
+                number_symbols,
+                nb_re_dmrs,
+                number_dmrs_symbols, // number of dmrs symbols irrespective of single or double symbol dmrs
+                pusch_pdu->qam_mod_order,
+                pusch_pdu->nrOfLayers);
+    LOG_D(PHY,"rb_size %d, number_symbols %d, nb_re_dmrs %d, dmrs symbol positions %d, number_dmrs_symbols %d, qam_mod_order %d, nrOfLayer %d\n",
+          pusch_pdu->rb_size,
+          number_symbols,
+          nb_re_dmrs,
+          pusch_pdu->ul_dmrs_symb_pos,
+          number_dmrs_symbols, // number of dmrs symbols irrespective of single or double symbol dmrs
+          pusch_pdu->qam_mod_order,
+          pusch_pdu->nrOfLayers);
+  }
+  
+  //----------------------------------------------------------
+  //--------------------- ULSCH decoding ---------------------
+  //----------------------------------------------------------
+
+  start_meas(&gNB->ulsch_decoding_stats);
+  int nbDecode =
+      nr_ulsch_decoding_interface.nr_ulsch_decoding_decoder(gNB, frame_parms, frame_rx, slot_rx, G);
+
+  free(G);
+  return nbDecode;
 }
 
 static int nr_ulsch_procedures(PHY_VARS_gNB *gNB, int frame_rx, int slot_rx, int ULSCH_id, uint8_t harq_pid)
@@ -904,12 +961,28 @@ int phy_procedures_gNB_uespec_RX(PHY_VARS_gNB *gNB, int frame_rx, int slot_rx)
       VCD_SIGNAL_DUMPER_DUMP_FUNCTION_BY_NAME(VCD_SIGNAL_DUMPER_FUNCTIONS_NR_RX_PUSCH, 0);
       // LOG_M("rxdataF_comp.m","rxF_comp",gNB->pusch_vars[0]->rxdataF_comp[0],6900,1,1);
       // LOG_M("rxdataF_ext.m","rxF_ext",gNB->pusch_vars[0]->rxdataF_ext[0],6900,1,1);
-      VCD_SIGNAL_DUMPER_DUMP_FUNCTION_BY_NAME(VCD_SIGNAL_DUMPER_FUNCTIONS_NR_ULSCH_PROCEDURES_RX, 1);
-      int const tasks_added = nr_ulsch_procedures(gNB, frame_rx, slot_rx, ULSCH_id, ulsch->harq_pid);
-      if (tasks_added > 0)
-        totalDecode += tasks_added; 
+    }
+  }
 
-      VCD_SIGNAL_DUMPER_DUMP_FUNCTION_BY_NAME(VCD_SIGNAL_DUMPER_FUNCTIONS_NR_ULSCH_PROCEDURES_RX, 0);
+  if(gNB->nr_ulsch_decoding_interface_flag){
+    int const tasks_added = nr_ulsch_procedures_slot(gNB, frame_rx, slot_rx);
+    if (tasks_added > 0)
+      totalDecode += tasks_added; 
+
+  }
+  else
+  {
+    for (int ULSCH_id = 0; ULSCH_id < gNB->max_nb_pusch; ULSCH_id++) {
+      NR_gNB_ULSCH_t *ulsch = &gNB->ulsch[ULSCH_id];
+  
+      if ((ulsch->active == true) && (ulsch->frame == frame_rx) && (ulsch->slot == slot_rx) && (ulsch->handled == 0)) {
+        VCD_SIGNAL_DUMPER_DUMP_FUNCTION_BY_NAME(VCD_SIGNAL_DUMPER_FUNCTIONS_NR_ULSCH_PROCEDURES_RX, 1);
+        int const tasks_added = nr_ulsch_procedures(gNB, frame_rx, slot_rx, ULSCH_id, ulsch->harq_pid);
+        if (tasks_added > 0)
+          totalDecode += tasks_added; 
+
+        VCD_SIGNAL_DUMPER_DUMP_FUNCTION_BY_NAME(VCD_SIGNAL_DUMPER_FUNCTIONS_NR_ULSCH_PROCEDURES_RX, 0);
+      }
     }
   }
     while (totalDecode > 0) {

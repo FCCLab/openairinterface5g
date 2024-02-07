@@ -27,6 +27,7 @@
 #include "PHY/NR_REFSIG/nr_refsig.h"
 #include "PHY/INIT/nr_phy_init.h"
 #include "PHY/CODING/nrPolar_tools/nr_polar_pbch_defs.h"
+#include "PHY/CODING/nr_ulsch_decoding_interface.h"
 #include "PHY/NR_TRANSPORT/nr_transport_proto.h"
 #include "PHY/NR_TRANSPORT/nr_transport_common_proto.h"
 #include "PHY/NR_ESTIMATION/nr_ul_estimation.h"
@@ -103,6 +104,7 @@ void reset_active_stats(PHY_VARS_gNB *gNB, int frame)
 
 // A global var to reduce the changes size
 ldpc_interface_t ldpc_interface = {0}, ldpc_interface_offload = {0};
+nr_ulsch_decoding_interface_t nr_ulsch_decoding_interface = {0};
 
 int phy_init_nr_gNB(PHY_VARS_gNB *gNB)
 {
@@ -131,12 +133,16 @@ int phy_init_nr_gNB(PHY_VARS_gNB *gNB)
 
   nr_init_fde(); // Init array for frequency equalization of transform precoding of PUSCH
 
-  load_LDPClib(NULL, &ldpc_interface);
-
   pthread_mutex_init(&gNB->UL_INFO.crc_rx_mutex, NULL);
 
-  if (gNB->ldpc_offload_flag)
-    load_LDPClib("_t2", &ldpc_interface_offload);
+  if (gNB->nr_ulsch_decoding_interface_flag){
+    load_nr_ulsch_decoding_interface(gNB->nr_ulsch_decoding_interface_version, &nr_ulsch_decoding_interface);
+  }else{
+    load_LDPClib(NULL, &ldpc_interface);
+
+    if (gNB->ldpc_offload_flag)
+      load_LDPClib("_t2", &ldpc_interface_offload);
+  }
   gNB->max_nb_pdsch = MAX_MOBILES_PER_GNB;
   init_delay_table(fp->ofdm_symbol_size, MAX_DELAY_COMP, NR_MAX_OFDM_SYMBOL_SIZE, fp->delay_table);
 
