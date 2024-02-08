@@ -897,7 +897,7 @@ add_library(coding MODULE ${PHY_TURBOSRC} )
 
 add_library(dfts MODULE ${OPENAIR1_DIR}/PHY/TOOLS/oai_dfts.c ${OPENAIR1_DIR}/PHY/TOOLS/oai_dfts_neon.c)
 
-add_library(_nr_ulsch_decoding_interface_demo MODULE ${PHY_NR_ULSCH_DECODING_DEMO_SRC})
+add_library(nr_ulsch_decoding_interface_demo MODULE ${PHY_NR_ULSCH_DECODING_DEMO_SRC})
 
 set(PHY_SRC_COMMON
   ${OPENAIR1_DIR}/PHY/LTE_TRANSPORT/dci_tools_common.c
@@ -2339,7 +2339,7 @@ add_executable(nr_ulsim
 if (ENABLE_LDPC_T2)
   add_dependencies(nr_ulsim ldpc_t2)
 endif()
-add_dependencies(nr_ulsim _nr_ulsch_decoding_interface_demo)
+add_dependencies(nr_ulsim nr_ulsch_decoding_interface_demo)
 
 target_link_libraries(nr_ulsim PRIVATE
   -Wl,--start-group UTIL SIMU SIMU_ETH PHY_COMMON PHY_NR_COMMON PHY_NR PHY_NR_UE SCHED_NR_LIB SCHED_NR_UE_LIB MAC_UE_NR MAC_NR_COMMON nr_rrc CONFIG_LIB L2_NR HASHTABLE x2ap SECURITY ngap -lz -Wl,--end-group
@@ -2406,7 +2406,7 @@ if (${T_TRACER})
         PHY_COMMON PHY PHY_UE PHY_NR PHY_NR_COMMON PHY_NR_UE PHY_RU PHY_MEX
         L2 L2_LTE L2_NR L2_LTE_NR L2_UE NR_L2_UE L2_UE_LTE_NR MAC_NR_COMMON MAC_UE_NR ngap
         CN_UTILS GTPV1U SCTP_CLIENT MME_APP LIB_NAS_UE NB_IoT SIMU SIMU_ETH OPENAIR0_LIB
-        ldpc_orig ldpc_optim ldpc_optim8seg ldpc_t2 ldpc_cl ldpc_cuda ldpc _nr_ulsch_decoding_interface_demo dfts config_internals)
+        ldpc_orig ldpc_optim ldpc_optim8seg ldpc_t2 ldpc_cl ldpc_cuda ldpc nr_ulsch_decoding_interface_demo dfts config_internals)
     if (TARGET ${i})
       add_dependencies(${i} generate_T)
     endif()
