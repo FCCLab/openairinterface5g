@@ -137,12 +137,12 @@ int phy_init_nr_gNB(PHY_VARS_gNB *gNB)
 
   if (gNB->nr_ulsch_decoding_interface_flag){
     load_nr_ulsch_decoding_interface(gNB->nr_ulsch_decoding_interface_version, &nr_ulsch_decoding_interface);
-  }else{
-    load_LDPClib(NULL, &ldpc_interface);
+  } // loading the LDPC library is still necessary for encoding
 
-    if (gNB->ldpc_offload_flag)
-      load_LDPClib("_t2", &ldpc_interface_offload);
-  }
+  load_LDPClib(NULL, &ldpc_interface);
+
+  if (gNB->ldpc_offload_flag)
+    load_LDPClib("_t2", &ldpc_interface_offload);
   gNB->max_nb_pdsch = MAX_MOBILES_PER_GNB;
   init_delay_table(fp->ofdm_symbol_size, MAX_DELAY_COMP, NR_MAX_OFDM_SYMBOL_SIZE, fp->delay_table);
 
