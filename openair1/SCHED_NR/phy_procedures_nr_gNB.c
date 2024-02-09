@@ -387,43 +387,48 @@ static int nr_ulsch_procedures_slot(PHY_VARS_gNB *gNB, int frame_rx, int slot_rx
   NR_DL_FRAME_PARMS *frame_parms = &gNB->frame_parms;
   uint32_t *G = malloc(gNB->max_nb_pusch*sizeof(uint32_t));
   for (int ULSCH_id = 0; ULSCH_id < gNB->max_nb_pusch; ULSCH_id++) {
-    nfapi_nr_pusch_pdu_t *pusch_pdu = &gNB->ulsch[ULSCH_id].harq_process->ulsch_pdu;
 
-    uint16_t nb_re_dmrs;
-    uint16_t start_symbol = pusch_pdu->start_symbol_index;
-    uint16_t number_symbols = pusch_pdu->nr_of_symbols;
+    NR_gNB_ULSCH_t *ulsch = &gNB->ulsch[ULSCH_id];
+    if ((ulsch->active == true) && (ulsch->frame == frame_rx) && (ulsch->slot == slot_rx) && (ulsch->handled == 0)) {
 
-    uint8_t number_dmrs_symbols = 0;
-    for (int l = start_symbol; l < start_symbol + number_symbols; l++)
-      number_dmrs_symbols += ((pusch_pdu->ul_dmrs_symb_pos)>>l)&0x01;
+      nfapi_nr_pusch_pdu_t *pusch_pdu = &gNB->ulsch[ULSCH_id].harq_process->ulsch_pdu;
 
-    if (pusch_pdu->dmrs_config_type==pusch_dmrs_type1)
-      nb_re_dmrs = 6*pusch_pdu->num_dmrs_cdm_grps_no_data;
-    else
-      nb_re_dmrs = 4*pusch_pdu->num_dmrs_cdm_grps_no_data;
-
-    G[ULSCH_id] = nr_get_G(pusch_pdu->rb_size,
-                          number_symbols,
-                          nb_re_dmrs,
-                          number_dmrs_symbols, // number of dmrs symbols irrespective of single or double symbol dmrs
-                          gNB->ulsch[ULSCH_id].unav_res,
-                          pusch_pdu->qam_mod_order,
-                          pusch_pdu->nrOfLayers);
-    AssertFatal(G[ULSCH_id]>0,"G is 0 : rb_size %u, number_symbols %d, nb_re_dmrs %d, number_dmrs_symbols %d, qam_mod_order %u, nrOfLayer %u\n",
-                pusch_pdu->rb_size,
-                number_symbols,
-                nb_re_dmrs,
-                number_dmrs_symbols, // number of dmrs symbols irrespective of single or double symbol dmrs
-                pusch_pdu->qam_mod_order,
-                pusch_pdu->nrOfLayers);
-    LOG_D(PHY,"rb_size %d, number_symbols %d, nb_re_dmrs %d, dmrs symbol positions %d, number_dmrs_symbols %d, qam_mod_order %d, nrOfLayer %d\n",
-          pusch_pdu->rb_size,
-          number_symbols,
-          nb_re_dmrs,
-          pusch_pdu->ul_dmrs_symb_pos,
-          number_dmrs_symbols, // number of dmrs symbols irrespective of single or double symbol dmrs
-          pusch_pdu->qam_mod_order,
-          pusch_pdu->nrOfLayers);
+      uint16_t nb_re_dmrs;
+      uint16_t start_symbol = pusch_pdu->start_symbol_index;
+      uint16_t number_symbols = pusch_pdu->nr_of_symbols;
+  
+      uint8_t number_dmrs_symbols = 0;
+      for (int l = start_symbol; l < start_symbol + number_symbols; l++)
+        number_dmrs_symbols += ((pusch_pdu->ul_dmrs_symb_pos)>>l)&0x01;
+  
+      if (pusch_pdu->dmrs_config_type==pusch_dmrs_type1)
+        nb_re_dmrs = 6*pusch_pdu->num_dmrs_cdm_grps_no_data;
+      else
+        nb_re_dmrs = 4*pusch_pdu->num_dmrs_cdm_grps_no_data;
+  
+      G[ULSCH_id] = nr_get_G(pusch_pdu->rb_size,
+                            number_symbols,
+                            nb_re_dmrs,
+                            number_dmrs_symbols, // number of dmrs symbols irrespective of single or double symbol dmrs
+                            gNB->ulsch[ULSCH_id].unav_res,
+                            pusch_pdu->qam_mod_order,
+                            pusch_pdu->nrOfLayers);
+      AssertFatal(G[ULSCH_id]>0,"G is 0 : rb_size %u, number_symbols %d, nb_re_dmrs %d, number_dmrs_symbols %d, qam_mod_order %u, nrOfLayer %u\n",
+                  pusch_pdu->rb_size,
+                  number_symbols,
+                  nb_re_dmrs,
+                  number_dmrs_symbols, // number of dmrs symbols irrespective of single or double symbol dmrs
+                  pusch_pdu->qam_mod_order,
+                  pusch_pdu->nrOfLayers);
+      LOG_D(PHY,"rb_size %d, number_symbols %d, nb_re_dmrs %d, dmrs symbol positions %d, number_dmrs_symbols %d, qam_mod_order %d, nrOfLayer %d\n",
+            pusch_pdu->rb_size,
+            number_symbols,
+            nb_re_dmrs,
+            pusch_pdu->ul_dmrs_symb_pos,
+            number_dmrs_symbols, // number of dmrs symbols irrespective of single or double symbol dmrs
+            pusch_pdu->qam_mod_order,
+            pusch_pdu->nrOfLayers);
+    }
   }
   
   //----------------------------------------------------------

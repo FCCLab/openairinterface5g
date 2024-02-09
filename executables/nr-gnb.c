@@ -450,6 +450,7 @@ void init_eNB_afterRU(void) {
 
     gNB = RC.gNB[inst];
     gNB->ldpc_offload_flag = get_softmodem_params()->ldpc_offload_flag;
+    gNB->nr_ulsch_decoding_interface_flag = get_softmodem_params()->nr_ulsch_decoding_interface_flag;
 
     phy_init_nr_gNB(gNB);
 
