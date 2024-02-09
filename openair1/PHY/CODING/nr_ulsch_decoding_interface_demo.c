@@ -363,9 +363,11 @@ int32_t nr_ulsch_decoding_decoder(PHY_VARS_gNB *gNB, NR_DL_FRAME_PARMS *frame_pa
   int nbDecode = 0;
   for (int ULSCH_id = 0; ULSCH_id < gNB->max_nb_pusch; ULSCH_id++) {
     NR_gNB_ULSCH_t *ulsch = &gNB->ulsch[ULSCH_id];
-    uint8_t harq_pid = ulsch->harq_pid; 
-    nfapi_nr_pusch_pdu_t *pusch_pdu = &gNB->ulsch[ULSCH_id].harq_process->ulsch_pdu;
-    nbDecode += nr_ulsch_decoding_demo(gNB, ULSCH_id, gNB->pusch_vars[ULSCH_id].llr, frame_parms, pusch_pdu, frame_rx, slot_rx, harq_pid, G[ULSCH_id]);
+    if ((ulsch->active == true) && (ulsch->frame == frame_rx) && (ulsch->slot == slot_rx) && (ulsch->handled == 0)) {
+      uint8_t harq_pid = ulsch->harq_pid; 
+      nfapi_nr_pusch_pdu_t *pusch_pdu = &gNB->ulsch[ULSCH_id].harq_process->ulsch_pdu;
+      nbDecode += nr_ulsch_decoding_demo(gNB, ULSCH_id, gNB->pusch_vars[ULSCH_id].llr, frame_parms, pusch_pdu, frame_rx, slot_rx, harq_pid, G[ULSCH_id]);
+    }
   }
 
   return nbDecode;
