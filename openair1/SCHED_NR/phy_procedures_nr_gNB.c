@@ -435,7 +435,6 @@ static int nr_ulsch_procedures_slot(PHY_VARS_gNB *gNB, int frame_rx, int slot_rx
   //--------------------- ULSCH decoding ---------------------
   //----------------------------------------------------------
 
-  start_meas(&gNB->ulsch_decoding_stats);
   int nbDecode =
       nr_ulsch_decoding_interface.nr_ulsch_decoding_decoder(gNB, frame_parms, frame_rx, slot_rx, G);
 
