@@ -41,6 +41,7 @@
 #include "PHY/NR_REFSIG/nr_refsig.h"
 #include "SCHED_NR/fapi_nr_l1.h"
 #include "PHY/NR_REFSIG/ul_ref_seq_nr.h"
+#include <string.h>
 
 
 int l1_north_init_gNB() {
@@ -136,7 +137,11 @@ int phy_init_nr_gNB(PHY_VARS_gNB *gNB)
   pthread_mutex_init(&gNB->UL_INFO.crc_rx_mutex, NULL);
 
   if (gNB->nr_ulsch_decoding_interface_flag){
-    load_nr_ulsch_decoding_interface(gNB->nr_ulsch_decoding_interface_version, &nr_ulsch_decoding_interface);
+    if(strncmp(gNB->nr_ulsch_decoding_interface_version,"",1)!=0){
+      load_nr_ulsch_decoding_interface(gNB->nr_ulsch_decoding_interface_version, &nr_ulsch_decoding_interface);
+    } else {
+      load_nr_ulsch_decoding_interface(NULL, &nr_ulsch_decoding_interface);
+    }
   } // loading the LDPC library is still necessary for encoding
 
   load_LDPClib(NULL, &ldpc_interface);
