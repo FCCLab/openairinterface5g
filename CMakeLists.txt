@@ -2102,7 +2102,7 @@ if(E2_AGENT)
 endif()
 
 
-add_dependencies(nr-softmodem ldpc_orig ldpc_optim ldpc_optim8seg ldpc)
+add_dependencies(nr-softmodem ldpc_orig ldpc_optim ldpc_optim8seg ldpc nr_ulsch_decoding_interface_demo)
 
 if (ENABLE_LDPC_T2)
   add_dependencies(nr-softmodem ldpc_t2)
