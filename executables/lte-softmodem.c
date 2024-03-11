@@ -448,7 +448,7 @@ int main ( int argc, char **argv )
 
   mode = normal_txrx;
   logInit();
-  set_latency_target();
+  lock_memory_to_ram();
   printf("Reading in command-line options\n");
   get_options(uniqCfg);
 
