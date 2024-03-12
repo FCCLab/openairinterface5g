@@ -773,6 +773,13 @@ static int8_t nr_rrc_ue_decode_NR_BCCH_DL_SCH_Message(NR_UE_RRC_INST_t *rrc,
   return 0;
 }
 
+static void nr_rrc_signal_maxrtxindication(int ue_id)
+{
+  MessageDef *msg = itti_alloc_new_message(TASK_RLC_UE, ue_id, NR_RRC_RLC_MAXRTX);
+  NR_RRC_RLC_MAXRTX(msg).ue_id = ue_id;
+  itti_send_msg_to_task(TASK_RRC_NRUE, ue_id, msg);
+}
+
 static void nr_rrc_manage_rlc_bearers(NR_UE_RRC_INST_t *rrc,
                                       const NR_CellGroupConfig_t *cellGroupConfig)
 {
@@ -800,10 +807,10 @@ static void nr_rrc_manage_rlc_bearers(NR_UE_RRC_INST_t *rrc,
                     "Invalid RB for RLC configuration\n");
         if (rlc_bearer->servedRadioBearer->present == NR_RLC_BearerConfig__servedRadioBearer_PR_srb_Identity) {
           NR_SRB_Identity_t srb_id = rlc_bearer->servedRadioBearer->choice.srb_Identity;
-          nr_rlc_add_srb(rrc->ue_id, srb_id, rlc_bearer, NULL);
+          nr_rlc_add_srb(rrc->ue_id, srb_id, rlc_bearer, nr_rrc_signal_maxrtxindication);
         } else { // DRB
           NR_DRB_Identity_t drb_id = rlc_bearer->servedRadioBearer->choice.drb_Identity;
-          nr_rlc_add_drb(rrc->ue_id, drb_id, rlc_bearer, NULL);
+          nr_rlc_add_drb(rrc->ue_id, drb_id, rlc_bearer, nr_rrc_signal_maxrtxindication);
         }
       }
     }
@@ -1736,6 +1743,15 @@ void *rrc_nrue(void *notUsed)
     nr_rrc_handle_timers(rrc);
     NR_UE_RRC_SI_INFO *SInfo = &rrc->perNB[NRRRC_FRAME_PROCESS(msg_p).gnb_id].SInfo;
     nr_rrc_SI_timers(SInfo);
+    break;
+
+  case NR_RRC_RLC_MAXRTX:
+    // detection of RLF upon indication from RLC that the maximum number of retransmissions has been reached
+    LOG_W(NR_RRC,
+          "[UE %ld ID %d] Received indication that RLC reached max retransmissions\n",
+          instance,
+          NR_RRC_RLC_MAXRTX(msg_p).ue_id);
+    handle_rlf_detection(rrc);
     break;
 
   case NR_RRC_MAC_MSG3_IND:

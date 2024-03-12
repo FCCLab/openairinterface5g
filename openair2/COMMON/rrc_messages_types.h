@@ -97,6 +97,8 @@
 #define NAS_OAI_TUN_NSA(mSGpTR)         (mSGpTR)->ittiMsg.nas_oai_tun_nsa
 #define NAS_PDU_SESSION_REQ(mSGpTR) (mSGpTR)->ittiMsg.nas_pdu_session_req
 
+#define NR_RRC_RLC_MAXRTX(mSGpTR) (mSGpTR)->ittiMsg.nr_rlc_maxrtx_indication
+
 //-------------------------------------------------------------------------------------------//
 typedef struct RrcStateInd_s {
   Rrc_State_t     state;
@@ -473,5 +475,9 @@ typedef struct rlc_sdu_indication_s {
   int srb_id;
   int message_id;
 } RlcSduIndication;
+
+typedef struct rlc_max_rtx_indication_s {
+  int ue_id;
+} RlcMaxRtxIndication;
 
 #endif /* RRC_MESSAGES_TYPES_H_ */
