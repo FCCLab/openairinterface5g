@@ -591,10 +591,6 @@ static void max_retx_reached(void *_ue, nr_rlc_entity_t *entity)
   int i;
   int is_srb;
   int rb_id;
-#if 0
-  MessageDef *msg;
-#endif
-  int is_enb;
 
   /* is it SRB? */
   for (i = 0; i < 2; i++) {
@@ -622,23 +618,10 @@ rb_found:
         is_srb ? "SRB" : "DRB",
         rb_id);
 
-  /* TODO: do something for DRBs? */
-  if (is_srb == 0)
-    return;
-
-  is_enb = nr_rlc_manager_get_enb_flag(nr_rlc_ue_manager);
-  if (!is_enb)
-    return;
-
-#if 0
-  msg = itti_alloc_new_message(TASK_RLC_ENB, RLC_SDU_INDICATION);
-  RLC_SDU_INDICATION(msg).rnti          = ue->rnti;
-  RLC_SDU_INDICATION(msg).is_successful = 0;
-  RLC_SDU_INDICATION(msg).srb_id        = rb_id;
-  RLC_SDU_INDICATION(msg).message_id    = -1;
-  /* TODO: accept more than 1 instance? here we send to instance id 0 */
-  itti_send_msg_to_task(TASK_RRC_ENB, 0, msg);
-#endif
+  if (ue->rlf_handler)
+    ue->rlf_handler(ue->ue_id);
+  else
+    LOG_W(RLC, "UE %04x: RLF detected, but no callable RLF handler registered\n", ue->ue_id);
 }
 
 void nr_rlc_reestablish_entity(int ue_id, int lc_id)
@@ -735,7 +718,7 @@ void nr_rlc_reconfigure_entity(int ue_id, int lc_id, NR_RLC_Config_t *rlc_Config
   nr_rlc_manager_unlock(nr_rlc_ue_manager);
 }
 
-void nr_rlc_add_srb(int ue_id, int srb_id, const NR_RLC_BearerConfig_t *rlc_BearerConfig)
+void nr_rlc_add_srb(int ue_id, int srb_id, const NR_RLC_BearerConfig_t *rlc_BearerConfig, rlf_handler_t rlf_h)
 {
   struct NR_RLC_Config *r = rlc_BearerConfig->rlc_Config;
   int t_status_prohibit;
@@ -784,6 +767,8 @@ void nr_rlc_add_srb(int ue_id, int srb_id, const NR_RLC_BearerConfig_t *rlc_Bear
   int local_id = rlc_BearerConfig->logicalChannelIdentity - 1; // LCID 0 for SRB 0 not mapped
   ue->lcid2rb[local_id].type = NR_RLC_SRB;
   ue->lcid2rb[local_id].choice.srb_id = rlc_BearerConfig->servedRadioBearer->choice.srb_Identity;
+  if (rlf_h != NULL)
+    ue->rlf_handler = rlf_h;
   if (ue->srb[srb_id-1] != NULL) {
     LOG_E(RLC, "SRB %d already exists for UE %d, do nothing\n", srb_id, ue_id);
   } else {
@@ -803,7 +788,7 @@ void nr_rlc_add_srb(int ue_id, int srb_id, const NR_RLC_BearerConfig_t *rlc_Bear
   nr_rlc_manager_unlock(nr_rlc_ue_manager);
 }
 
-static void add_drb_am(int ue_id, int drb_id, const NR_RLC_BearerConfig_t *rlc_BearerConfig)
+static void add_drb_am(int ue_id, int drb_id, const NR_RLC_BearerConfig_t *rlc_BearerConfig, rlf_handler_t rlf_h)
 {
   struct NR_RLC_Config *r = rlc_BearerConfig->rlc_Config;
 
@@ -849,6 +834,8 @@ static void add_drb_am(int ue_id, int drb_id, const NR_RLC_BearerConfig_t *rlc_B
   int local_id = rlc_BearerConfig->logicalChannelIdentity - 1; // LCID 0 for SRB 0 not mapped
   ue->lcid2rb[local_id].type = NR_RLC_DRB;
   ue->lcid2rb[local_id].choice.drb_id = rlc_BearerConfig->servedRadioBearer->choice.drb_Identity;
+  if (rlf_h != NULL)
+    ue->rlf_handler = rlf_h;
   if (ue->drb[drb_id-1] != NULL) {
     LOG_E(RLC, "DRB %d already exists for UE %d, do nothing\n", drb_id, ue_id);
   } else {
@@ -868,7 +855,7 @@ static void add_drb_am(int ue_id, int drb_id, const NR_RLC_BearerConfig_t *rlc_B
   nr_rlc_manager_unlock(nr_rlc_ue_manager);
 }
 
-static void add_drb_um(int ue_id, int drb_id, const NR_RLC_BearerConfig_t *rlc_BearerConfig)
+static void add_drb_um(int ue_id, int drb_id, const NR_RLC_BearerConfig_t *rlc_BearerConfig, rlf_handler_t rlf_h)
 {
   struct NR_RLC_Config *r = rlc_BearerConfig->rlc_Config;
 
@@ -904,6 +891,8 @@ static void add_drb_um(int ue_id, int drb_id, const NR_RLC_BearerConfig_t *rlc_B
   int local_id = rlc_BearerConfig->logicalChannelIdentity - 1; // LCID 0 for SRB 0 not mapped
   ue->lcid2rb[local_id].type = NR_RLC_DRB;
   ue->lcid2rb[local_id].choice.drb_id = rlc_BearerConfig->servedRadioBearer->choice.drb_Identity;
+  if (rlf_h != NULL)
+    ue->rlf_handler = rlf_h;
   if (ue->drb[drb_id-1] != NULL) {
     LOG_E(RLC, "DEBUG add_drb_um: warning DRB %d already exist for ue %d, do nothing\n", drb_id, ue_id);
   } else {
@@ -919,18 +908,18 @@ static void add_drb_um(int ue_id, int drb_id, const NR_RLC_BearerConfig_t *rlc_B
   nr_rlc_manager_unlock(nr_rlc_ue_manager);
 }
 
-void nr_rlc_add_drb(int ue_id, int drb_id, const NR_RLC_BearerConfig_t *rlc_BearerConfig)
+void nr_rlc_add_drb(int ue_id, int drb_id, const NR_RLC_BearerConfig_t *rlc_BearerConfig, rlf_handler_t rlf_h)
 {
   switch (rlc_BearerConfig->rlc_Config->present) {
-  case NR_RLC_Config_PR_am:
-    add_drb_am(ue_id, drb_id, rlc_BearerConfig);
-    break;
-  case NR_RLC_Config_PR_um_Bi_Directional:
-    add_drb_um(ue_id, drb_id, rlc_BearerConfig);
-    break;
-  default:
-    LOG_E(RLC, "Fatal: unhandled DRB type\n");
-    exit(1);
+    case NR_RLC_Config_PR_am:
+      add_drb_am(ue_id, drb_id, rlc_BearerConfig, rlf_h);
+      break;
+    case NR_RLC_Config_PR_um_Bi_Directional:
+      add_drb_um(ue_id, drb_id, rlc_BearerConfig, rlf_h);
+      break;
+    default:
+      LOG_E(RLC, "Fatal: unhandled DRB type\n");
+      exit(1);
   }
   LOG_I(RLC, "Added DRB to UE %d\n", ue_id);
 }

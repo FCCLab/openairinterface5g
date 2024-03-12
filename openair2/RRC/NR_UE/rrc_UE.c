@@ -800,10 +800,10 @@ static void nr_rrc_manage_rlc_bearers(NR_UE_RRC_INST_t *rrc,
                     "Invalid RB for RLC configuration\n");
         if (rlc_bearer->servedRadioBearer->present == NR_RLC_BearerConfig__servedRadioBearer_PR_srb_Identity) {
           NR_SRB_Identity_t srb_id = rlc_bearer->servedRadioBearer->choice.srb_Identity;
-          nr_rlc_add_srb(rrc->ue_id, srb_id, rlc_bearer);
+          nr_rlc_add_srb(rrc->ue_id, srb_id, rlc_bearer, NULL);
         } else { // DRB
           NR_DRB_Identity_t drb_id = rlc_bearer->servedRadioBearer->choice.drb_Identity;
-          nr_rlc_add_drb(rrc->ue_id, drb_id, rlc_bearer);
+          nr_rlc_add_drb(rrc->ue_id, drb_id, rlc_bearer, NULL);
         }
       }
     }
