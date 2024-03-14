@@ -214,38 +214,87 @@ int rt_sleep_ns (uint64_t x)
   return clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &myTime, NULL);
 }
 
-void threadCreate(pthread_t* t, void * (*func)(void*), void * param, char* name, int affinity, int priority){
-  pthread_attr_t attr;
+#ifdef HAVE_LIB_CAP
+#include <sys/capability.h>
+/* \brief reports if the current thread has capability CAP_SYS_NICE, i.e. */
+bool has_cap_sys_nice(void)
+{
+  /* get capabilities of calling PID */
+  cap_t cap = cap_get_pid(0);
+  cap_flag_value_t val;
+  /* check to what CAP_SYS_NICE is currently ("effective capability") set */
+  int ret = cap_get_flag(cap, CAP_SYS_NICE, CAP_EFFECTIVE, &val);
+  AssertFatal(ret == 0, "Error in cap_get_flag(): ret %d errno %d\n", ret, errno);
+  cap_free(cap);
+  /* return true if CAP_SYS_NICE is currently set */
+  return val == CAP_SET;
+}
+#else
+/* libcap has not been detected on this system. We do not need to require it --
+ * we can try to modify the scheduling policy, and if we succeed, we can assume
+ * having CAP_SYS_NICE. Of course, clean up by resetting to original policy. */
+#include <sched.h>
+/* \brief reports if the current thread has capability CAP_SYS_NICE, i.e. */
+bool has_cap_sys_nice(void)
+{
+  static bool already_checked = false;
+  static bool has_cap = false;
+  if (already_checked)
+    return has_cap;
+  already_checked = true;
+
+  int pol = sched_getscheduler(0);
+  /* if is already set to high priority, we must have SYS_NICE */
+  if (pol == SCHED_RR || pol == SCHED_FIFO) {
+    has_cap = true;
+    return true;
+  }
+  int prio_max = sched_get_priority_max(SCHED_RR);
+  if (prio_max < 0) /* cannot get max priority, likely not have SYS_NICE */
+    return false;
+  struct sched_param p = {.sched_priority = prio_max};
+  int rc = sched_setscheduler(0, SCHED_RR, &p);
+  if (rc < 0) /* could not set real-time policy, likely do not have SYS_NICE */
+    return false;
+  /* reset the original policy to leave the system in the previous state */
+  struct sched_param p0 = {0};
+  sched_setscheduler(0, pol, &p0);
+  has_cap = true;
+  return true; /* we can assume having SYS_NICE */
+}
+#endif
+
+void threadCreate(pthread_t* t, void * (*func)(void*), void * param, char* name, int affinity, int priority)
+{
   int ret;
-  int settingPriority = 1;
+  bool set_prio = has_cap_sys_nice();
+
+  pthread_attr_t attr;
   ret=pthread_attr_init(&attr);
   AssertFatal(ret == 0, "Error in pthread_attr_init(): ret: %d, errno: %d\n", ret, errno);
 
-  LOG_I(UTIL,"Creating thread %s with affinity %d and priority %d\n",name,affinity,priority);
-
-  if (settingPriority) {
-    ret=pthread_attr_setinheritsched(&attr, PTHREAD_EXPLICIT_SCHED);
+  if (set_prio) {
+    ret = pthread_attr_setinheritsched(&attr, PTHREAD_EXPLICIT_SCHED);
     AssertFatal(ret == 0, "Error in pthread_attr_setinheritsched(): ret: %d, errno: %d\n", ret, errno);
-    ret=pthread_attr_setschedpolicy(&attr, SCHED_OAI);
+    ret = pthread_attr_setschedpolicy(&attr, SCHED_OAI);
     AssertFatal(ret == 0, "Error in pthread_attr_setschedpolicy(): ret: %d, errno: %d\n", ret, errno);
-    if(priority<sched_get_priority_min(SCHED_OAI) || priority>sched_get_priority_max(SCHED_OAI)) {
-      LOG_E(UTIL,"Prio not possible: %d, min is %d, max: %d, forced in the range\n",
-	    priority,
-	    sched_get_priority_min(SCHED_OAI),
-	    sched_get_priority_max(SCHED_OAI));
-      if(priority<sched_get_priority_min(SCHED_OAI))
-        priority=sched_get_priority_min(SCHED_OAI);
-      if(priority>sched_get_priority_max(SCHED_OAI))
-        priority=sched_get_priority_max(SCHED_OAI);
-    }
-    AssertFatal(priority<=sched_get_priority_max(SCHED_OAI),"");
-    struct sched_param sparam={0};
+    AssertFatal(priority >= sched_get_priority_min(SCHED_OAI) && priority <= sched_get_priority_max(SCHED_OAI),
+                "Scheduling priority %d not possible: must be within [%d, %d]\n",
+                priority,
+                sched_get_priority_min(SCHED_OAI),
+                sched_get_priority_max(SCHED_OAI));
+    AssertFatal(priority <= sched_get_priority_max(SCHED_OAI), "");
+    struct sched_param sparam = {0};
     sparam.sched_priority = priority;
-    ret=pthread_attr_setschedparam(&attr, &sparam);
+    ret = pthread_attr_setschedparam(&attr, &sparam);
     AssertFatal(ret == 0, "Error in pthread_attr_setschedparam(): ret: %d errno: %d\n", ret, errno);
+    LOG_I(UTIL, "%s() for %s: creating thread with affinity %x, priority %d\n", __func__, name, affinity, priority);
+  } else {
+    affinity = -1;
+    priority = -1;
+    LOG_I(UTIL, "%s() for %s: creating thread (no affinity, default priority)\n", __func__, name);
   }
- 
-  LOG_I(UTIL,"threadCreate for %s, affinity %x, priority %d\n",name,affinity,priority); 
+
   ret=pthread_create(t, &attr, func, param);
   AssertFatal(ret == 0, "Error in pthread_create(): ret: %d, errno: %d\n", ret, errno);
   
