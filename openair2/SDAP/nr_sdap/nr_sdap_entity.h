@@ -76,6 +76,15 @@ typedef struct qfi2drb_s {
 
 void nr_pdcp_submit_sdap_ctrl_pdu(ue_id_t ue_id, rb_id_t sdap_ctrl_pdu_drb, nr_sdap_ul_hdr_t ctrl_pdu);
 
+typedef struct sdap2drb_s {
+  int pdusession_id;
+  bool has_sdap_rx;
+  bool has_sdap_tx;
+  bool is_sdap_DefaultDRB;
+  NR_QFI_t *mappedQFIs2Add;
+  uint8_t mappedQFIs2AddCount;
+} sdap2drb_t;
+
 typedef struct nr_sdap_entity_s {
   ue_id_t ue_id;
   rb_id_t default_drb;
@@ -118,21 +127,7 @@ typedef struct nr_sdap_entity_s {
 } nr_sdap_entity_t;
 
 /* QFI to DRB Mapping Related Function */
-void nr_sdap_qfi2drb_map_update(nr_sdap_entity_t *entity, uint8_t qfi, rb_id_t drb, bool has_sdap_rx, bool has_sdap_tx);
-
-/* QFI to DRB Mapping Related Function */
 void nr_sdap_qfi2drb_map_del(nr_sdap_entity_t *entity, uint8_t qfi);
-
-/*
- * TS 37.324
- * 4.4 Functions
- * Mapping between a QoS flow and a DRB for both DL and UL.
- *
- * 5.2.1 Uplink
- * If there is no stored QoS flow to DRB mapping rule for the QoS flow as specified in the subclause 5.3, map the SDAP SDU to the default DRB
- * else, map the SDAP SDU to the DRB according to the stored QoS flow to DRB mapping rule.
- */
-rb_id_t nr_sdap_qfi2drb_map(nr_sdap_entity_t *entity, uint8_t qfi);
 
 /*
  * TS 37.324 5.3 QoS flow to DRB Mapping 
@@ -154,6 +149,16 @@ rb_id_t nr_sdap_map_ctrl_pdu(nr_sdap_entity_t *entity, rb_id_t pdcp_entity, int 
  */
 void nr_sdap_submit_ctrl_pdu(ue_id_t ue_id, rb_id_t sdap_ctrl_pdu_drb, nr_sdap_ul_hdr_t ctrl_pdu);
 
+
+void nr_sdap_ue_qfi2drb_config(nr_sdap_entity_t *existing_sdap_entity,
+                               rb_id_t pdcp_entity,
+                               ue_id_t ue_id,
+                               NR_QFI_t *mapped_qfi_2_add,
+                               uint8_t mappedQFIs2AddCount,
+                               uint8_t drb_identity,
+                               bool has_sdap_rx,
+                               bool has_sdap_tx);
+
 /*
  * TS 37.324 4.4 5.1.1 SDAP entity establishment
  * Establish an SDAP entity.
@@ -162,11 +167,7 @@ nr_sdap_entity_t *new_nr_sdap_entity(int is_gnb,
                                      bool has_sdap_rx,
                                      bool has_sdap_tx,
                                      ue_id_t ue_id,
-                                     int pdusession_id,
-                                     bool is_defaultDRB,
-                                     uint8_t default_DRB,
-                                     NR_QFI_t *mapped_qfi_2_add,
-                                     uint8_t mappedQFIs2AddCount);
+                                     int pdusession_id);
 
 /* Entity Handling Related Functions */
 nr_sdap_entity_t *nr_sdap_get_entity(ue_id_t ue_id, int pdusession_id);
