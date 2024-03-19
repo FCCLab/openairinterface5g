@@ -87,18 +87,21 @@ logical_chan_id_t nr_rlc_get_lcid_from_rb(int ue_id, bool is_srb, int rb_id)
 {
   nr_rlc_manager_lock(nr_rlc_ue_manager);
   nr_rlc_ue_t *ue = nr_rlc_manager_get_ue(nr_rlc_ue_manager, ue_id);
+  logical_chan_id_t lcid = 0;
   for (logical_chan_id_t id = 1; id <= 32; id++) {
     nr_rlc_rb_t *rb = &ue->lcid2rb[id - 1];
     if (is_srb) {
       if (rb->type == NR_RLC_SRB && rb->choice.srb_id == rb_id)
-        return id;
+        lcid = id;
     } else {
       if (rb->type == NR_RLC_DRB && rb->choice.drb_id == rb_id)
-        return id;
+        lcid = id;
     }
   }
-  LOG_E(RLC, "Couldn't find LCID corresponding to %s %d\n", is_srb ? "SRB" : "DRB", rb_id);
-  return 0;
+  if (lcid == 0)
+    LOG_E(RLC, "Couldn't find LCID corresponding to %s %d\n", is_srb ? "SRB" : "DRB", rb_id);
+  nr_rlc_manager_unlock(nr_rlc_ue_manager);
+  return lcid;
 }
 
 static nr_rlc_entity_t *get_rlc_entity_from_lcid(nr_rlc_ue_t *ue, logical_chan_id_t channel_id)
