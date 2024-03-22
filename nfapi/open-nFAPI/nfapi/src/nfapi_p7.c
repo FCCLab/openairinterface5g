@@ -38,6 +38,7 @@
 #include <nfapi.h>
 #include <debug.h>
 #include "nfapi_nr_interface_scf.h"
+#include "nr_nfapi_p7.h"
 
 extern int nfapi_unpack_p7_vendor_extension(nfapi_p7_message_header_t *header, uint8_t **ppReadPackedMsg, void *user_data);
 extern int nfapi_pack_p7_vendor_extension(nfapi_p7_message_header_t *header, uint8_t **ppWritePackedMsg, void *user_data);
@@ -829,7 +830,7 @@ static uint8_t pack_dl_config_request_body_value(void *tlv, uint8_t **ppWritePac
   return 1;
 }
 
-static uint8_t pack_dl_tti_request(void *msg, uint8_t **ppWritePackedMsg, uint8_t *end, nfapi_p7_codec_config_t *config)
+uint8_t pack_dl_tti_request(void *msg, uint8_t **ppWritePackedMsg, uint8_t *end, nfapi_p7_codec_config_t *config)
 {
   nfapi_nr_dl_tti_request_t *pNfapiMsg = (nfapi_nr_dl_tti_request_t *)msg;
 
@@ -1658,7 +1659,7 @@ static uint8_t pack_ul_config_request_body_value(void *tlv, uint8_t **ppWritePac
   return 1;
 }
 
-static uint8_t pack_ul_tti_request(void *msg, uint8_t **ppWritePackedMsg, uint8_t *end, nfapi_p7_codec_config_t *config)
+uint8_t pack_ul_tti_request(void *msg, uint8_t **ppWritePackedMsg, uint8_t *end, nfapi_p7_codec_config_t *config)
 {
   nfapi_nr_ul_tti_request_t *pNfapiMsg = (nfapi_nr_ul_tti_request_t *)msg;
   pNfapiMsg->n_ulcch = 0;
@@ -1987,7 +1988,7 @@ static uint8_t pack_ul_dci_pdu_list_value(void *tlv, uint8_t **ppWritePackedMsg,
   return push16(value->PDUSize, &pPackedLengthField, end);
 }
 
-static uint8_t pack_ul_dci_request(void *msg, uint8_t **ppWritePackedMsg, uint8_t *end, nfapi_p7_codec_config_t *config) {
+uint8_t pack_ul_dci_request(void *msg, uint8_t **ppWritePackedMsg, uint8_t *end, nfapi_p7_codec_config_t *config) {
   nfapi_nr_ul_dci_request_t *pNfapiMsg = (nfapi_nr_ul_dci_request_t *)msg;
 
   if (!(push16(pNfapiMsg->SFN, ppWritePackedMsg, end) &&
@@ -2152,7 +2153,7 @@ static uint8_t pack_release_request_body_value(void *tlv, uint8_t **ppWritePacke
   return 1;
 }
 
-static uint8_t pack_ue_release_request(void *msg, uint8_t **ppWritePackedMsg, uint8_t *end, nfapi_p7_codec_config_t *config) {
+uint8_t pack_ue_release_request(void *msg, uint8_t **ppWritePackedMsg, uint8_t *end, nfapi_p7_codec_config_t *config) {
   nfapi_ue_release_request_t *pNfapiMsg = (nfapi_ue_release_request_t *)msg;
   int x = push16(pNfapiMsg->sfn_sf, ppWritePackedMsg, end);
   int y = pack_tlv(NFAPI_UE_RELEASE_BODY_TAG, &pNfapiMsg->ue_release_request_body, ppWritePackedMsg, end, &pack_release_request_body_value);
@@ -2172,7 +2173,7 @@ static uint8_t pack_nr_ue_release_request(void *msg, uint8_t **ppWritePackedMsg,
          && pack_p7_vendor_extension_tlv(pNfapiMsg->vendor_extension, ppWritePackedMsg, end, config);
 }
 
-static uint8_t pack_ue_release_response(void *msg, uint8_t **ppWritePackedMsg, uint8_t *end, nfapi_p7_codec_config_t *config) {
+uint8_t pack_ue_release_response(void *msg, uint8_t **ppWritePackedMsg, uint8_t *end, nfapi_p7_codec_config_t *config) {
   nfapi_ue_release_response_t *pNfapiMsg = (nfapi_ue_release_response_t *)msg;
   int x = push32(pNfapiMsg->error_code, ppWritePackedMsg, end);
   int z = pack_p7_vendor_extension_tlv(pNfapiMsg->vendor_extension, ppWritePackedMsg, end, config);
@@ -3080,7 +3081,7 @@ static uint8_t pack_nrach_indication(void *msg, uint8_t **ppWritePackedMsg, uint
            pack_p7_vendor_extension_tlv(pNfapiMsg->vendor_extension, ppWritePackedMsg, end, config));
 }
 
-static uint8_t pack_nr_dl_node_sync(void *msg, uint8_t **ppWritePackedMsg, uint8_t *end, nfapi_p7_codec_config_t *config) {
+uint8_t pack_nr_dl_node_sync(void *msg, uint8_t **ppWritePackedMsg, uint8_t *end, nfapi_p7_codec_config_t *config) {
   nfapi_nr_dl_node_sync_t *pNfapiMsg = (nfapi_nr_dl_node_sync_t *)msg;
   return ( push32(pNfapiMsg->t1, ppWritePackedMsg, end) &&
            pushs32(pNfapiMsg->delta_sfn_slot, ppWritePackedMsg, end) &&
@@ -3094,7 +3095,7 @@ static uint8_t pack_dl_node_sync(void *msg, uint8_t **ppWritePackedMsg, uint8_t 
            pack_p7_vendor_extension_tlv(pNfapiMsg->vendor_extension, ppWritePackedMsg, end, config));
 }
 
-static uint8_t pack_nr_ul_node_sync(void *msg, uint8_t **ppWritePackedMsg, uint8_t *end, nfapi_p7_codec_config_t *config) {
+uint8_t pack_nr_ul_node_sync(void *msg, uint8_t **ppWritePackedMsg, uint8_t *end, nfapi_p7_codec_config_t *config) {
   nfapi_nr_ul_node_sync_t *pNfapiMsg = (nfapi_nr_ul_node_sync_t *)msg;
   return (push32(pNfapiMsg->t1, ppWritePackedMsg, end) &&
           push32(pNfapiMsg->t2, ppWritePackedMsg, end) &&
@@ -3129,7 +3130,7 @@ static uint8_t pack_timing_info(void *msg, uint8_t **ppWritePackedMsg, uint8_t *
           pack_p7_vendor_extension_tlv(pNfapiMsg->vendor_extension, ppWritePackedMsg, end, config));
 }
 
-static uint8_t pack_nr_timing_info(void *msg, uint8_t **ppWritePackedMsg, uint8_t *end, nfapi_p7_codec_config_t *config) {
+uint8_t pack_nr_timing_info(void *msg, uint8_t **ppWritePackedMsg, uint8_t *end, nfapi_p7_codec_config_t *config) {
   nfapi_nr_timing_info_t *pNfapiMsg = (nfapi_nr_timing_info_t *)msg;
   return (push32(pNfapiMsg->last_sfn, ppWritePackedMsg, end) &&
           push32(pNfapiMsg->last_slot, ppWritePackedMsg, end) &&
@@ -3153,7 +3154,7 @@ static uint8_t pack_nr_timing_info(void *msg, uint8_t **ppWritePackedMsg, uint8_
 
 //SLOT INDICATION
 
-static uint8_t pack_nr_slot_indication(void *msg, uint8_t **ppWritePackedMsg, uint8_t *end, nfapi_p7_codec_config_t* config)
+uint8_t pack_nr_slot_indication(void *msg, uint8_t **ppWritePackedMsg, uint8_t *end, nfapi_p7_codec_config_t* config)
 {
 	nfapi_nr_slot_indication_scf_t *pNfapiMsg = (nfapi_nr_slot_indication_scf_t*)msg;
 
@@ -3187,7 +3188,7 @@ static uint8_t pack_nr_rx_data_indication_body(nfapi_nr_rx_data_pdu_t *value, ui
 }
 
 
-static uint8_t pack_nr_rx_data_indication(void *msg, uint8_t **ppWritePackedMsg, uint8_t *end, nfapi_p7_codec_config_t* config)
+uint8_t pack_nr_rx_data_indication(void *msg, uint8_t **ppWritePackedMsg, uint8_t *end, nfapi_p7_codec_config_t* config)
 {
   nfapi_nr_rx_data_indication_t *pNfapiMsg = (nfapi_nr_rx_data_indication_t*)msg;
 
@@ -3231,7 +3232,7 @@ static uint8_t pack_nr_crc_indication_body(nfapi_nr_crc_t *value, uint8_t **ppWr
   return 1;
 }
 
-static uint8_t pack_nr_crc_indication(void *msg, uint8_t **ppWritePackedMsg, uint8_t *end, nfapi_p7_codec_config_t* config)
+uint8_t pack_nr_crc_indication(void *msg, uint8_t **ppWritePackedMsg, uint8_t *end, nfapi_p7_codec_config_t* config)
 {
   nfapi_nr_crc_indication_t *pNfapiMsg = (nfapi_nr_crc_indication_t*)msg;
 
@@ -3359,7 +3360,7 @@ static uint8_t pack_nr_srs_indication_body(nfapi_nr_srs_indication_pdu_t *value,
   return 1;
 }
 
-static uint8_t pack_nr_srs_indication(void *msg, uint8_t **ppWritePackedMsg, uint8_t *end, nfapi_p7_codec_config_t* config) {
+uint8_t pack_nr_srs_indication(void *msg, uint8_t **ppWritePackedMsg, uint8_t *end, nfapi_p7_codec_config_t* config) {
 
   nfapi_nr_srs_indication_t *pNfapiMsg = (nfapi_nr_srs_indication_t*)msg;
 
@@ -3405,7 +3406,7 @@ static uint8_t pack_nr_rach_indication_body(void* tlv, uint8_t **ppWritePackedMs
 	return 1;
 }
 
-static uint8_t pack_nr_rach_indication(void *msg, uint8_t **ppWritePackedMsg, uint8_t *end, nfapi_p7_codec_config_t* config)
+uint8_t pack_nr_rach_indication(void *msg, uint8_t **ppWritePackedMsg, uint8_t *end, nfapi_p7_codec_config_t* config)
 {
 	nfapi_nr_rach_indication_t *pNfapiMsg = (nfapi_nr_rach_indication_t*)msg;
 
@@ -3630,7 +3631,7 @@ static uint8_t pack_nr_uci_indication_body(nfapi_nr_uci_t* value, uint8_t **ppWr
   return 1;
 }
 
-static uint8_t pack_nr_uci_indication(void *msg, uint8_t **ppWritePackedMsg, uint8_t *end, nfapi_p7_codec_config_t* config)
+uint8_t pack_nr_uci_indication(void *msg, uint8_t **ppWritePackedMsg, uint8_t *end, nfapi_p7_codec_config_t* config)
 {
   nfapi_nr_uci_indication_t *pNfapiMsg = (nfapi_nr_uci_indication_t*)msg;
 
@@ -6055,7 +6056,7 @@ static uint8_t unpack_tx_request(uint8_t **ppReadPackedMsg, uint8_t *end, void *
 
 //SLOT INDICATION
 
-static uint8_t unpack_nr_slot_indication(uint8_t **ppReadPackedMsg, uint8_t *end, nfapi_nr_slot_indication_scf_t *msg, nfapi_p7_codec_config_t* config)
+uint8_t unpack_nr_slot_indication(uint8_t **ppReadPackedMsg, uint8_t *end, nfapi_nr_slot_indication_scf_t *msg, nfapi_p7_codec_config_t* config)
 {
 	nfapi_nr_slot_indication_scf_t *pNfapiMsg = (nfapi_nr_slot_indication_scf_t*)msg;
 
@@ -6115,7 +6116,7 @@ static uint8_t unpack_nr_rx_data_indication(uint8_t **ppReadPackedMsg, uint8_t *
 
 //NR CRC INDICATION
 
-static uint8_t unpack_nr_crc_indication_body(nfapi_nr_crc_t *value, uint8_t **ppReadPackedMsg, uint8_t *end)
+uint8_t unpack_nr_crc_indication_body(nfapi_nr_crc_t *value, uint8_t **ppReadPackedMsg, uint8_t *end)
 {
   if (!(pull32(ppReadPackedMsg, &value->handle, end) && pull16(ppReadPackedMsg, &value->rnti, end)
         && pull8(ppReadPackedMsg, &value->harq_id, end) && pull8(ppReadPackedMsg, &value->tb_crc_status, end)
@@ -6141,7 +6142,7 @@ static uint8_t unpack_nr_crc_indication_body(nfapi_nr_crc_t *value, uint8_t **pp
   return 1;
 }
 
-static uint8_t unpack_nr_crc_indication(uint8_t **ppReadPackedMsg, uint8_t *end, nfapi_nr_crc_indication_t *msg, nfapi_p7_codec_config_t* config)
+uint8_t unpack_nr_crc_indication(uint8_t **ppReadPackedMsg, uint8_t *end, nfapi_nr_crc_indication_t *msg, nfapi_p7_codec_config_t* config)
 {
   nfapi_nr_crc_indication_t *pNfapiMsg = (nfapi_nr_crc_indication_t*)msg;
 
@@ -6270,7 +6271,7 @@ static uint8_t unpack_nr_srs_indication_body(nfapi_nr_srs_indication_pdu_t *valu
   return 1;
 }
 
-static uint8_t unpack_nr_srs_indication(uint8_t **ppReadPackedMsg, uint8_t *end, nfapi_nr_srs_indication_t *pNfapiMsg, nfapi_p7_codec_config_t* config) {
+uint8_t unpack_nr_srs_indication(uint8_t **ppReadPackedMsg, uint8_t *end, nfapi_nr_srs_indication_t *pNfapiMsg, nfapi_p7_codec_config_t* config) {
 
   if (!(pull16(ppReadPackedMsg,&pNfapiMsg->sfn, end) &&
         pull16(ppReadPackedMsg,&pNfapiMsg->slot, end) &&
@@ -6312,7 +6313,7 @@ static uint8_t unpack_nr_rach_indication_body(nfapi_nr_prach_indication_pdu_t *v
   return 1;
 }
 
-static uint8_t unpack_nr_rach_indication(uint8_t **ppReadPackedMsg,
+uint8_t unpack_nr_rach_indication(uint8_t **ppReadPackedMsg,
                                          uint8_t *end,
                                          nfapi_nr_rach_indication_t *msg,
                                          nfapi_p7_codec_config_t *config)
@@ -6603,7 +6604,7 @@ static uint8_t unpack_nr_uci_indication_body(nfapi_nr_uci_t *value,
   return 1;
 }
 
-static uint8_t unpack_nr_uci_indication(uint8_t **ppReadPackedMsg, uint8_t *end, void *msg, nfapi_p7_codec_config_t *config)
+uint8_t unpack_nr_uci_indication(uint8_t **ppReadPackedMsg, uint8_t *end, void *msg, nfapi_p7_codec_config_t *config)
 {
   nfapi_nr_uci_indication_t *pNfapiMsg = (nfapi_nr_uci_indication_t *)msg;
 
