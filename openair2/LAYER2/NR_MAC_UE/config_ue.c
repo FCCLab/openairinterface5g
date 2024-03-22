@@ -1416,15 +1416,14 @@ static void configure_common_BWP_ul(NR_UE_MAC_INST_t *mac, int bwp_id, NR_BWP_Up
   }
 }
 
-void nr_rrc_mac_config_req_reset(module_id_t module_id,
-                                 NR_UE_MAC_reset_cause_t cause)
+void nr_rrc_mac_config_req_reset(module_id_t module_id, NR_UE_MAC_reset_cause_t cause)
 {
   NR_UE_MAC_INST_t *mac = get_mac_inst(module_id);
   switch (cause) {
     case GO_TO_IDLE:
       reset_ra(mac, true);
-      release_mac_configuration(mac, cause);
       nr_ue_init_mac(mac);
+      release_mac_configuration(mac, cause);
       nr_ue_mac_default_configs(mac);
       // new sync but no target cell id -> -1
       nr_ue_send_synch_request(mac, module_id, 0, -1);
