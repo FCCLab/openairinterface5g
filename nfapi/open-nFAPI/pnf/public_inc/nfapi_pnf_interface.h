@@ -214,7 +214,7 @@ typedef struct nfapi_pnf_config
 	 *  STOP.request. This can be done in the call back. 
 	 */
 	int (*stop_req)(nfapi_pnf_config_t* config, nfapi_pnf_phy_config_t* phy, nfapi_stop_request_t* req);
-	int (*nr_stop_req)(nfapi_pnf_config_t* config, nfapi_pnf_phy_config_t* phy, nfapi_nr_stop_request_t* req);
+	int (*nr_stop_req)(nfapi_pnf_config_t* config, nfapi_pnf_phy_config_t* phy, nfapi_nr_stop_request_scf_t* req);
 
 	/*! A callback for the MEASUREMENT.request
 	 *  \param config A pointer to the pnf configuration

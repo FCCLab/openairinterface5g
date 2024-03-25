@@ -946,7 +946,7 @@ void pnf_nr_handle_stop_request(pnf_t* pnf, void *pRecvMsg, int recvMsgLen)
 	}
 	else
 	{
-		nfapi_nr_stop_request_t req;
+    nfapi_nr_stop_request_scf_t req;
 
 		NFAPI_TRACE(NFAPI_TRACE_INFO, "STOP.request received\n");
 

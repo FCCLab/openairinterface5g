@@ -51,7 +51,7 @@ typedef enum {
   NFAPI_NR_PHY_MSG_TYPE_STOP_REQUEST=   0X05,
   NFAPI_NR_PHY_MSG_TYPE_STOP_INDICATION=0X06,
   NFAPI_NR_PHY_MSG_TYPE_ERROR_INDICATION=0X07,
-  NFAPI_NR_PHY_MSG_TYPE_START_RESPONSE=0X010D,
+  NFAPI_NR_PHY_MSG_TYPE_START_RESPONSE=0X0108, // SCF 222.10.04 Section 3.2 Start.Response - 0x108, as of nFAPIv2
   NFAPI_NR_PHY_MSG_TYPE_STOP_RESPONSE=0X010F,
   //RESERVED 0X08 ~ 0X7F
   NFAPI_NR_PHY_MSG_TYPE_DL_TTI_REQUEST= 0X80,
@@ -608,13 +608,22 @@ typedef struct {
 typedef struct {
   nfapi_p4_p5_message_header_t header;
   nfapi_vendor_extension_tlv_t vendor_extension;
-} nfapi_nr_stop_request_t;
+} nfapi_nr_stop_request_scf_t;
 
 
 typedef struct {
   nfapi_p4_p5_message_header_t header;
   nfapi_vendor_extension_tlv_t vendor_extension;
-} nfapi_nr_stop_indication_t;
+} nfapi_nr_stop_indication_scf_t;
+
+typedef struct {
+  nfapi_p4_p5_message_header_t header;
+  uint16_t sfn;
+  uint16_t slot;
+  uint8_t message_id; // Which message received on the PNF has an error
+  uint8_t error_code;
+  nfapi_vendor_extension_tlv_t vendor_extension;
+} nfapi_nr_error_indication_scf_t;
 
 typedef enum {
   NFAPI_NR_STOP_MSG_INVALID_STATE
