@@ -951,8 +951,13 @@ static int _at_response_encode_cgdcont(char* buffer, const at_response_t* data)
 
             offset += sprintf(buffer+offset, ",%s", cgdcont->APN[i]);
             /* No data/header compression */
-            offset += sprintf(buffer+offset, ",%u,%u\r\n",
-                              (unsigned int)(AT_CGDCONT_D_COMP_OFF), (unsigned int)(AT_CGDCONT_H_COMP_OFF));
+            offset +=
+                sprintf(buffer + offset, ",%u,%u", (unsigned int)(AT_CGDCONT_D_COMP_OFF), (unsigned int)(AT_CGDCONT_H_COMP_OFF));
+            offset += sprintf(buffer + offset, ",,,,,,,,,,,"); /* Currently unused parameters */
+            /* NSSAI */
+            offset += sprintf(buffer + offset, ",%s", cgdcont->nssaiStr[i]);
+            /* Preferred access type */
+            offset += sprintf(buffer + offset, ",\r\n");
         }
     } else if (data->type == AT_COMMAND_TST) {
         const at_cgdcont_tst_t * cgdcont = &(data->response.cgdcont.tst);

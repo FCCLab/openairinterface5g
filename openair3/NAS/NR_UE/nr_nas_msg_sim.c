@@ -53,12 +53,16 @@
 #include "openair3/SECU/nas_stream_eia2.h"
 #include "openair3/UTILS/conversions.h"
 
+#include "openair3/NAS/UE/nas_user.h"
+#include "openair3/NAS/UE/API/USER/user_api.h"
+#include "openair3/NAS/UE/user_defs.h"
+#include "executables/nr-uesoftmodem.h"
+
 uint8_t  *registration_request_buf;
 uint32_t  registration_request_len;
 extern char *baseNetAddress;
 extern uint16_t NB_UE_INST;
 static nr_ue_nas_t nr_ue_nas = {0};
-static nr_nas_msg_snssai_t nas_allowed_nssai[8];
 static nr_nas_thread_info_t softmodem_nas_info;
 
 static int nas_protected_security_header_encode(
@@ -801,7 +805,7 @@ static void generateDeregistrationRequest(nr_ue_nas_t *nas, as_nas_info_t *initi
     initialNasMsg->data[2 + i] = mac[i];
 }
 
-static void generatePduSessionEstablishRequest(nr_ue_nas_t *nas, as_nas_info_t *initialNasMsg, nas_pdu_session_req_t *pdu_req)
+static void generatePduSessionEstablishRequest(nr_ue_nas_t *nas, as_nas_info_t *initialNasMsg, nr_nas_pdp_context_t *pdu_req)
 {
   int size = 0;
   fgs_nas_message_t nas_msg={0};
@@ -811,11 +815,11 @@ static void generatePduSessionEstablishRequest(nr_ue_nas_t *nas, as_nas_info_t *
   uint8_t *req_buffer = malloc(req_length);
   pdu_session_establishment_request_msg pdu_session_establish;
   pdu_session_establish.protocoldiscriminator = FGS_SESSION_MANAGEMENT_MESSAGE;
-  pdu_session_establish.pdusessionid = pdu_req->pdusession_id;
+  pdu_session_establish.pdusessionid = pdu_req->pdu_session_id;
   pdu_session_establish.pti = 1;
   pdu_session_establish.pdusessionestblishmsgtype = FGS_PDU_SESSION_ESTABLISHMENT_REQ;
   pdu_session_establish.maxdatarate = 0xffff;
-  pdu_session_establish.pdusessiontype = pdu_req->pdusession_type;
+  pdu_session_establish.pdusessiontype = pdu_req->pdu_session_type;
   encode_pdu_session_establishment_request(&pdu_session_establish, req_buffer);
 
 
@@ -850,25 +854,25 @@ static void generatePduSessionEstablishRequest(nr_ue_nas_t *nas, as_nas_info_t *
   mm_msg->uplink_nas_transport.fgspayloadcontainer.payloadcontainercontents.length = req_length;
   mm_msg->uplink_nas_transport.fgspayloadcontainer.payloadcontainercontents.value = req_buffer;
   size += (2+req_length);
-  mm_msg->uplink_nas_transport.pdusessionid = pdu_req->pdusession_id;
+  mm_msg->uplink_nas_transport.pdusessionid = pdu_req->pdu_session_id;
   mm_msg->uplink_nas_transport.requesttype = 1;
   size += 3;
-  const bool has_nssai_sd = pdu_req->sd != 0xffffff; // 0xffffff means "no SD", TS 23.003
+  const bool has_nssai_sd = pdu_req->nssai_sd != 0xffffff; // 0xffffff means "no SD", TS 23.003
   const size_t nssai_len = has_nssai_sd ? 4 : 1;
   mm_msg->uplink_nas_transport.snssai.length = nssai_len;
   //Fixme: it seems there are a lot of memory errors in this: this value was on the stack, 
   // but pushed  in a itti message to another thread
   // this kind of error seems in many places in 5G NAS
   mm_msg->uplink_nas_transport.snssai.value = calloc(1, nssai_len);
-  mm_msg->uplink_nas_transport.snssai.value[0] = pdu_req->sst;
+  mm_msg->uplink_nas_transport.snssai.value[0] = pdu_req->nssai_sst;
   if (has_nssai_sd)
-    INT24_TO_BUFFER(pdu_req->sd, &mm_msg->uplink_nas_transport.snssai.value[1]);
+    INT24_TO_BUFFER(pdu_req->nssai_sd, &mm_msg->uplink_nas_transport.snssai.value[1]);
   size += 1 + 1 + nssai_len;
-  int dnnSize=strlen(nas->uicc->dnnStr);
+  int dnnSize = strlen(pdu_req->dnn);
   mm_msg->uplink_nas_transport.dnn.value=calloc(1,dnnSize+1);
   mm_msg->uplink_nas_transport.dnn.length = dnnSize + 1;
   mm_msg->uplink_nas_transport.dnn.value[0] = dnnSize;
-  memcpy(mm_msg->uplink_nas_transport.dnn.value + 1, nas->uicc->dnnStr, dnnSize);
+  memcpy(mm_msg->uplink_nas_transport.dnn.value + 1, pdu_req->dnn, dnnSize);
   size += (1+1+dnnSize+1);
 
   // encode the message
@@ -1033,24 +1037,155 @@ static void get_allowed_nssai(nr_nas_msg_snssai_t nssai[8], const uint8_t *pdu_b
   }
 }
 
-static void request_default_pdusession(int instance, int nssai_idx)
+static void request_pdusession(const nr_nas_pdp_context_t *pdp_cxt, int instance)
 {
   MessageDef *message_p = itti_alloc_new_message(TASK_NAS_NRUE, 0, NAS_PDU_SESSION_REQ);
-  NAS_PDU_SESSION_REQ(message_p).pdusession_id = softmodem_nas_info.default_pdu_session_id;
-  NAS_PDU_SESSION_REQ(message_p).pdusession_type = 0x91;
-  NAS_PDU_SESSION_REQ(message_p).sst = nas_allowed_nssai[nssai_idx].sst;
-  NAS_PDU_SESSION_REQ(message_p).sd = nas_allowed_nssai[nssai_idx].sd;
+  NAS_PDU_SESSION_REQ(message_p) = *pdp_cxt;
   itti_send_msg_to_task(TASK_NAS_NRUE, instance, message_p);
 }
 
-static int get_user_nssai_idx(const nr_nas_msg_snssai_t allowed_nssai[8], const nr_ue_nas_t *nas)
+int nas_request_pdu_release(nas_user_t *user, int cid)
+{
+  LOG_E(NAS, "PDU release not implemented yet\n");
+  return RETURNerror;
+}
+
+int nas_request_pdusession(nas_user_t *nas_user, int cid)
+{
+  int ret = RETURNerror;
+  if ((cid < MAX_PDP_CONTEXTS) && (cid > 0)) {
+    nr_nas_pdp_context_t *pdp_cxt = &nas_user->pdp_context[cid];
+    request_pdusession(pdp_cxt, 0 /*instance*/);
+    ret = RETURNok;
+  } else {
+    LOG_E(NAS, "Invalid PDP context id: %d\n", cid);
+  }
+  return ret;
+}
+
+/* @brief Set active flag for PDP context */
+static void set_pdp_active_flag(nr_ue_nas_t *nas, int pdu_session_id, bool flag)
+{
+  for (int i = 0; i < MAX_PDP_CONTEXTS; i++) {
+    nr_nas_pdp_context_t *p = &nas->nas_user->pdp_context[i];
+    if (p->pdu_session_id == pdu_session_id) {
+      AssertFatal(p->is_defined, "Trying to de/activate a PDP context (%d) thats not defined by user. Something went wrong!\n", i);
+      p->is_active = true;
+      break;
+    }
+  }
+}
+
+/* @brief Check if user entered NSSAI fields match with
+          the list received from the network */
+static bool valid_user_nssai(const nr_nas_msg_snssai_t allowed_nssai[8], const nr_nas_pdp_context_t *pdp_cxt)
 {
   for (int i = 0; i < 8; i++) {
     const nr_nas_msg_snssai_t *nssai = allowed_nssai + i;
-    if ((nas->uicc->nssai_sst == nssai->sst) && (nas->uicc->nssai_sd == nssai->sd))
-      return i;
+    if ((pdp_cxt->nssai_sst == nssai->sst) && (pdp_cxt->nssai_sd == nssai->sd))
+      return true;
   }
-  return -1;
+  return false;
+}
+
+static void parse_nssai_string(const char *nssaiStr, int *sst, int *sd)
+{
+  if (nssaiStr[0] == '\0')
+    return;
+  const char *del = ".";
+  char *tmp = (char *)nssaiStr;
+  char *token = strtok(tmp, del);
+  *sst = atoi(token);
+  token = strtok(NULL, del);
+  *sd = atoi(token);
+  token = strtok(NULL, del);
+  DevAssert(token == NULL);
+}
+
+int nas_reset_pdp_context(nas_user_t *user, int index)
+{
+  if ((user == NULL) || (index >= MAX_PDP_CONTEXTS)) {
+    LOG_E(NAS, "Can't reset PDP context\n");
+    return RETURNerror;
+  }
+  memset(&user->pdp_context[index], 0, sizeof(user->pdp_context[index]));
+  return RETURNok;
+}
+
+/* @brief Sets additional PDP context from user */
+int nas_set_pdp_context(nas_user_t *user,
+                        int index,
+                        int pdu_session_type,
+                        const char *dnn,
+                        int ipv4_addr,
+                        int emergency,
+                        int p_cscf,
+                        int im_cn_signal,
+                        const char *nssai)
+{
+  if (!((index > 0) && (index < MAX_PDP_CONTEXTS))) {
+    LOG_E(NAS, "Invalid index.\n"); // index 0 for default PDP
+    return RETURNerror;
+  }
+  if (!dnn || !nssai) {
+    LOG_E(NAS, "No DNN or NSSAI config.\n");
+    return RETURNerror;
+  }
+  nr_nas_pdp_context_t *pdp_cxt = &user->pdp_context[index];
+  pdp_cxt->pdu_session_id = user->pdp_context[0].pdu_session_id + index;
+  pdp_cxt->pdu_session_type = 0x90 | (pdu_session_type & 0xf);
+  strcpy(pdp_cxt->nssaiStr, nssai);
+  parse_nssai_string(nssai, &pdp_cxt->nssai_sst, &pdp_cxt->nssai_sd);
+  pdp_cxt->is_defined = true;
+  memcpy(&pdp_cxt->dnn, dnn, strlen(dnn));
+  return RETURNok;
+}
+
+/* @brief Sets the first and default PDP context in NAS.
+          This is requested after registration. */
+static void set_default_pdp_context(nr_ue_nas_t *nas)
+{
+  nr_nas_pdp_context_t *pdp_cxt = &nas->nas_user->pdp_context[0];
+  pdp_cxt->pdu_session_id = get_softmodem_params()->default_pdu_session_id;
+  pdp_cxt->pdu_session_type = 0x91; // IPv4 (first octet: 0x01)
+  pdp_cxt->nssai_sd = nas->uicc->nssai_sd;
+  pdp_cxt->nssai_sst = nas->uicc->nssai_sst;
+  sprintf(pdp_cxt->nssaiStr, "%02d.%06d", pdp_cxt->nssai_sst, pdp_cxt->nssai_sd); /* used by AT get command */
+  pdp_cxt->is_defined = true;
+  memcpy(&pdp_cxt->dnn, nas->uicc->dnnStr, strlen(nas->uicc->dnnStr));
+}
+
+int nas_get_pdp_status(nas_user_t *user, int *index, int *status, int n_pdn_max)
+{
+  int n_pdn = 0;
+  for (int i = 0; ((i < MAX_PDP_CONTEXTS) && (n_pdn < n_pdn_max)); i++) {
+    if (!user->pdp_context[i].is_defined)
+      continue;
+    *(index++) = i;
+    *(status++) = user->pdp_context[i].is_active;
+    n_pdn++;
+  }
+  return n_pdn;
+}
+
+int nas_get_pdp_contexts(nas_user_t *user, int *index, int *types, const char **apns, const char **nssai, int n_pdn_max)
+{
+  int n_pdn = 0;
+  for (int i = 0; ((i < MAX_PDP_CONTEXTS) && (n_pdn < n_pdn_max)); i++) {
+    if (!user->pdp_context[i].is_defined)
+      continue;
+    *(index++) = i;
+    *(types++) = user->pdp_context[i].pdu_session_type;
+    *(apns++) = user->pdp_context[i].dnn;
+    *(nssai++) = user->pdp_context[i].nssaiStr;
+    n_pdn++;
+  }
+  return n_pdn;
+}
+
+int nas_get_pdp_range(nas_user_t *user)
+{
+  return MAX_PDP_CONTEXTS;
 }
 
 void *nas_nrue_task(void *args_p)
@@ -1059,6 +1194,9 @@ void *nas_nrue_task(void *args_p)
   softmodem_nas_info = *nas_info;
   free(nas_info);
   nr_ue_nas.uicc = checkUicc(0);
+  nas_user_t nas_user = {0};
+  nr_ue_nas.nas_user = &nas_user;
+  set_default_pdp_context(&nr_ue_nas);
   while (1) {
     nas_nrue(NULL);
   }
@@ -1071,7 +1209,7 @@ static void handle_registration_accept(instance_t instance,
 {
   LOG_I(NAS, "[UE] Received REGISTRATION ACCEPT message\n");
   decodeRegistrationAccept(pdu_buffer, msg_length, nas);
-  get_allowed_nssai(nas_allowed_nssai, pdu_buffer, msg_length);
+  get_allowed_nssai(nas->nas_allowed_nssai, pdu_buffer, msg_length);
 
   as_nas_info_t initialNasMsg = {0};
   generateRegistrationComplete(nas, &initialNasMsg, NULL);
@@ -1079,11 +1217,11 @@ static void handle_registration_accept(instance_t instance,
     send_nas_uplink_data_req(instance, &initialNasMsg);
     LOG_I(NAS, "Send NAS_UPLINK_DATA_REQ message(RegistrationComplete)\n");
   }
-  const int nssai_idx = get_user_nssai_idx(nas_allowed_nssai, nas);
-  if (nssai_idx < 0) {
+  if (!valid_user_nssai(nas->nas_allowed_nssai, &nas->nas_user->pdp_context[0])) {
     LOG_E(NAS, "NSSAI parameters not match with allowed NSSAI. Couldn't request PDU session.\n");
   } else {
-    request_default_pdusession(instance, nssai_idx);
+    /* Default PDU session */
+    request_pdusession(&nas->nas_user->pdp_context[0], instance);
   }
 }
 
@@ -1144,7 +1282,7 @@ void *nas_nrue(void *args_p)
 
       case NAS_PDU_SESSION_REQ: {
         as_nas_info_t pduEstablishMsg = {0};
-        nas_pdu_session_req_t *pduReq = &NAS_PDU_SESSION_REQ(msg_p);
+        nr_nas_pdp_context_t *pduReq = &NAS_PDU_SESSION_REQ(msg_p);
         nr_ue_nas_t *nas = get_ue_nas_info(0);
         generatePduSessionEstablishRequest(nas, &pduEstablishMsg, pduReq);
         if (pduEstablishMsg.length > 0) {
@@ -1165,11 +1303,13 @@ void *nas_nrue(void *args_p)
         uint8_t *pdu_buffer = NAS_CONN_ESTABLI_CNF(msg_p).nasMsg.data;
         int msg_type = get_msg_type(pdu_buffer, NAS_CONN_ESTABLI_CNF(msg_p).nasMsg.length);
 
+        nr_ue_nas_t *nas = get_ue_nas_info(0);
         if (msg_type == REGISTRATION_ACCEPT) {
-          nr_ue_nas_t *nas = get_ue_nas_info(0);
           handle_registration_accept(instance, nas, pdu_buffer, NAS_CONN_ESTABLI_CNF(msg_p).nasMsg.length);
         } else if (msg_type == FGS_PDU_SESSION_ESTABLISHMENT_ACC) {
-          capture_pdu_session_establishment_accept_msg(pdu_buffer, NAS_CONN_ESTABLI_CNF(msg_p).nasMsg.length);
+          int pdu_session_id = -1;
+          capture_pdu_session_establishment_accept_msg(pdu_buffer, NAS_CONN_ESTABLI_CNF(msg_p).nasMsg.length, &pdu_session_id);
+          set_pdp_active_flag(nas, pdu_session_id, true);
         }
 
         break;
@@ -1312,8 +1452,8 @@ void *nas_nrue(void *args_p)
 
       case NAS_PDU_SESSION_REL: {
         // TODO: Initiate PDU session release request & send NAS signal to network
-        nas_pdu_session_req_t *pdu_rel = &NAS_PDU_SESSION_REL(msg_p);
-        nr_sdap_delete_entity(instance, pdu_rel->pdusession_id, true);
+        nr_nas_pdp_context_t *pdu_rel = &NAS_PDU_SESSION_REL(msg_p);
+        nr_sdap_delete_entity(instance, pdu_rel->pdu_session_id, true);
         break;
       }
 
@@ -1326,4 +1466,53 @@ void *nas_nrue(void *args_p)
     AssertFatal(result == EXIT_SUCCESS, "Failed to free memory (%d)!\n", result);
   }
   return NULL;
+}
+
+static void *nas_user_mngr(void *args)
+{
+  user_api_id_t user_api = {0};
+  at_response_t atr = {0};
+  user_at_commands_t atc = {0};
+
+  if (user_api_initialize(&user_api, NULL, NULL, get_nrUE_params()->at_interface_name, "9600") != RETURNok) {
+    LOG_E(NAS, "Unable to initialize NAS user interface\n");
+  }
+  nas_user_t *nas_user = nr_ue_nas.nas_user;
+  nas_user->nas_ue_type = UE_NR;
+  nas_user->nas_reset_pdn = nas_reset_pdp_context;
+  nas_user->nas_get_pdn = nas_get_pdp_contexts;
+  nas_user->nas_set_pdn = nas_set_pdp_context;
+  nas_user->nas_get_pdn_range = nas_get_pdp_range;
+  nas_user->nas_deactivate_pdn = nas_request_pdu_release;
+  nas_user->nas_activate_pdn = nas_request_pdusession;
+  nas_user->nas_get_pdn_status = nas_get_pdp_status;
+  nas_user->user_api_id = &user_api;
+  nas_user->at_response = &atr;
+  nas_user->user_at_commands = &atc;
+
+  nas_user_context_t user_ctxt = {0};
+  const char *version = "v1.0";
+  nas_user_context_initialize(&user_ctxt, version);
+  user_ctxt.sim_status = NAS_USER_READY; /* set SIM ready by default */
+  nas_user->nas_user_context = &user_ctxt;
+
+  bool exit_loop = false;
+
+  int fd = user_api_get_fd(&user_api);
+  LOG_I(NAS, "User interface manager started with fd %d\n", fd);
+
+  while (!exit_loop) {
+    exit_loop = nas_user_receive_and_process(nr_ue_nas.nas_user, NULL);
+  }
+
+  user_api_close(nr_ue_nas.nas_user->user_api_id);
+  LOG_I(NAS, "User interface manager ended\n");
+
+  return NULL;
+}
+
+void nas_nrue_user(void *args_p)
+{
+  pthread_t user_mngr;
+  threadCreate(&user_mngr, nas_user_mngr, NULL, "UE-nas", -1, OAI_PRIORITY_RT_LOW);
 }

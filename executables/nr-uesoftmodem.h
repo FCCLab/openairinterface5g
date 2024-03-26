@@ -12,6 +12,12 @@
 #define  CONFIG_HLP_DLSCH_PARA             "number of threads for dlsch processing 0 for no parallelization\n"
 #define  CONFIG_HLP_OFFSET_DIV             "Divisor for computing OFDM symbol offset in Rx chain (num samples in CP/<the value>). Default value is 8. To set the sample offset to 0, set this value ~ 10e6\n"
 #define  CONFIG_HLP_MAX_LDPC_ITERATIONS    "Maximum LDPC decoder iterations\n"
+#define CONFIG_HLP_AT_IF                                                                                                      \
+  "Name of the virtual serial interface to be used by UE process (used along with --AT). Use 'socat' utility to connect two " \
+  "virtual serial ports and "                                                                                                 \
+  "access the AT command interface. One interface (given here) will be used by the UE process and other interface can be "    \
+  "accessed via minicom or screen.\n"
+#define CONFIG_HLP_AT "Enable AT-command interface\n"
 /***************************************************************************************************************************************/
 /* command line options definitions, CMDLINE_XXXX_DESC macros are used to initialize paramdef_t arrays which are then used as argument
    when calling config_get or config_getlist functions                                                                                 */
@@ -61,6 +67,8 @@
   {"chest-time",                   CONFIG_HLP_CHESTTIME,       0,               .iptr=&(nrUE_params.chest_time),             .defintval=0,      TYPE_INT,      0}, \
   {"ue-timing-correction-disable", CONFIG_HLP_DISABLETIMECORR, PARAMFLAG_BOOL,  .iptr=&(nrUE_params.no_timing_correction),   .defintval=0,      TYPE_INT,      0}, \
   {"SLC",                          CONFIG_HLP_SLF,             0,               .u64ptr=&(sidelink_frequency[0][0]),         .defuintval=2600000000,TYPE_UINT64,0}, \
+  {"AT",                       CONFIG_HLP_AT,                  PARAMFLAG_BOOL,  .iptr=&(nrUE_params.enable_AT),                     .defintval=0,      TYPE_INT,      0}, \
+  {"AT-interface",             CONFIG_HLP_AT_IF,               0,               .strptr=&(nrUE_params.at_interface_name), .defstrval="/dev/pts/7", TYPE_STRING, 0}, \
 }
 // clang-format on
 
@@ -80,6 +88,8 @@ typedef struct {
   int nb_antennas_tx;
   int            N_RB_DL;
   int            ssb_start_subcarrier;
+  int enable_AT;
+  char *at_interface_name;
 } nrUE_params_t;
 extern uint64_t get_nrUE_optmask(void);
 extern uint64_t set_nrUE_optmask(uint64_t bitmask);

@@ -65,6 +65,9 @@ Description Defines the ATtention (AT) command set supported by the NAS
 #define AT_COMMAND_PARAM14  0x2000  /* 14th parameter is present  */
 #define AT_COMMAND_PARAM15  0x4000  /* 15th parameter is present  */
 #define AT_COMMAND_PARAM16  0x8000  /* 16th parameter is present  */
+#define AT_COMMAND_PARAM17 0x10000 /* 17th parameter is present  */
+#define AT_COMMAND_PARAM18 0x20000 /* 18th parameter is present  */
+#define AT_COMMAND_PARAM19 0x40000 /* 19th parameter is present  */
 
 /* Value of the mask parameter for AT commands without any parameters */
 #define AT_COMMAND_NO_PARAM AT_COMMAND_PARAM0
@@ -737,6 +740,15 @@ typedef struct {
 #define AT_CGDCONT_EMERGECY_INDICATION_MASK   AT_COMMAND_PARAM8
 #define AT_CGDCONT_P_CSCF_DISCOVERY_MASK    AT_COMMAND_PARAM9
 #define AT_CGDCONT_IM_CN_SIGNALLING_FLAG_IND_MASK AT_COMMAND_PARAM10
+#define AT_CGDCONT_NSPLI AT_COMMAND_PARAM11
+#define AT_CGDCONT_SECURE_PCO AT_COMMAND_PARAM12
+#define AT_CGDCONT_IPV4_MTU_DIS AT_COMMAND_PARAM13
+#define AT_CGDCONT_LOCAL_ADDR_IND AT_COMMAND_PARAM14
+#define AT_CGDCONT_NON_IP_MTU_DIS AT_COMMAND_PARAM15
+#define AT_CGDCONT_REL_DATA_SERVICE AT_COMMAND_PARAM16
+#define AT_CGDCONT_SSC_MODE AT_COMMAND_PARAM17
+#define AT_CGDCONT_NSSAI AT_COMMAND_PARAM18
+#define AT_CGDCONT_PREF_ACCESS_TYPE AT_COMMAND_PARAM19
 
 /* CGDCONT AT command type */
 typedef struct {
@@ -754,6 +766,16 @@ typedef struct {
   int emergency_indication;
   int P_CSCF_discovery;
   int IM_CN_Signalling_Flag_Ind;
+  int nspli;
+  int secure_PCO;
+  int IPv4_MTU_discovery;
+  int Local_Addr_Ind;
+  int Non_IP_MTU_discovery;
+  int Reliable_Data_Service;
+  int SSC_mode;
+#define AT_CGDCONT_NSSAI_SIZE 16
+  char nssaiStr[AT_CGDCONT_NSSAI_SIZE];
+  int Pref_access_type;
 } at_cgdcont_t;
 
 /* CGACT: PDP context activate or deactivate

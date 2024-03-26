@@ -55,8 +55,8 @@ Description Defines the ATtention (AT) command set supported by the NAS
 /****************************************************************************/
 
 // FIXME Put this in .h
-extern int at_response_format_v1;
-extern int at_error_code_suppression_q1;
+extern bool at_response_format_v1;
+extern bool at_error_code_suppression_q1;
 extern at_error_format_t at_error_format;
 
 /****************************************************************************/
@@ -1512,7 +1512,11 @@ static int parse_cereg_test(const char* string, int position, at_command_t* at_c
 
 static int parse_cgdcont_set(const char* string, int position, at_command_t* at_command)
 {
-  /* CGDCONT parameter command - Parameters [<cid>[,<PDP_type>[,<APN>[,<PDP_addr>[,<d_comp>[,<h_comp>[,<IPv4AddrAlloc>[,<emergency indication>[,<P-CSCF_discovery>[,<IM_CN_Signalling_Flag_Ind>]]]]]]]]]] */
+  /* CGDCONT parameter command - Parameters [<cid>[,<PDP_type>[,<APN>[,<PDP_addr>[,<d_comp>[,<h_comp>
+  [,<IPv4AddrAlloc>[,<request_type>[,<P-CSCF_discovery>[,<IM_CN_Signalling_Flag_Ind>[,<NSLPI>[,<securePCO>
+  [,<IPv4_MTU_discovery>[,<Local_Addr_Ind>[,<Non-IP_MTU_discovery>[,<Reliable_Data_Service>[,<SSC_mode>
+  [,<S-NSSAI>[,<Pref_access_type>]]]]]]]]]]]]]]]]]]]
+  */
   at_command->id = AT_CGDCONT;
   unsigned char* parameter_start_index = (unsigned char*) string + position;
 
@@ -1750,6 +1754,80 @@ static int parse_cgdcont_set(const char* string, int position, at_command_t* at_
 
     at_command->mask = AT_CGDCONT_CID_MASK | AT_CGDCONT_PDP_TYPE_MASK | AT_CGDCONT_APN_MASK | AT_CGDCONT_PDP_ADDR_MASK | AT_CGDCONT_D_COMP_MASK | AT_CGDCONT_H_COMP_MASK | AT_CGDCONT_IPV4ADDRALLOC_MASK |
                        AT_CGDCONT_EMERGECY_INDICATION_MASK | AT_CGDCONT_P_CSCF_DISCOVERY_MASK | AT_CGDCONT_IM_CN_SIGNALLING_FLAG_IND_MASK;
+    break;
+
+  case 19: /* <cid>,<PDP_type>,<APN>,<PDP_addr>,<d_comp>,<h_comp>
+  ,<IPv4AddrAlloc>,<request_type>,<P-CSCF_discovery>,<IM_CN_Signalling_Flag_Ind>,<NSLPI>,<securePCO>
+  ,<IPv4_MTU_discovery>,<Local_Addr_Ind>,<Non-IP_MTU_discovery>,<Reliable_Data_Service>,<SSC_mode>
+  ,<S-NSSAI>,<Pref_access_type> are present */
+    if (ParseCommand(parameter_start_index,
+                     "@i,@r,@r,@r,@I,@I,@I,@I,@I,@I,@I,@I,@I,@I,@I,@I,@I,@r,@I",
+                     &at_command->command.cgdcont.cid,
+                     &at_command->command.cgdcont.PDP_type,
+                     AT_CGDCONT_PDP_SIZE,
+                     &at_command->command.cgdcont.APN,
+                     AT_CGDCONT_APN_SIZE,
+                     &at_command->command.cgdcont.PDP_addr,
+                     AT_CGDCONT_ADDR_SIZE,
+                     &at_command->command.cgdcont.d_comp,
+                     &at_command->command.cgdcont.h_comp,
+                     &at_command->command.cgdcont.IPv4AddrAlloc,
+                     &at_command->command.cgdcont.emergency_indication,
+                     &at_command->command.cgdcont.P_CSCF_discovery,
+                     &at_command->command.cgdcont.IM_CN_Signalling_Flag_Ind,
+                     &at_command->command.cgdcont.nspli,
+                     &at_command->command.cgdcont.secure_PCO,
+                     &at_command->command.cgdcont.IPv4_MTU_discovery,
+                     &at_command->command.cgdcont.Local_Addr_Ind,
+                     &at_command->command.cgdcont.Non_IP_MTU_discovery,
+                     &at_command->command.cgdcont.Reliable_Data_Service,
+                     &at_command->command.cgdcont.SSC_mode,
+                     &at_command->command.cgdcont.nssaiStr,
+                     AT_CGDCONT_NSSAI_SIZE,
+                     &at_command->command.cgdcont.Pref_access_type)
+        != RETURNok) {
+      LOG_TRACE(ERROR,
+                "USR-API   - Parsing of "
+                "AT+CGDCONT=<cid>,<PDP_type>,<APN>,<PDP_addr>,<d_comp>,<h_comp>,<IPv4AddrAlloc>,<request_type>,<P-CSCF_discovery>,<"
+                "IM_CN_Signalling_Flag_Ind>,<NSLPI>,<securePCO>,<IPv4_MTU_discovery>,<Local_Addr_Ind>,<Non-IP_MTU_discovery>,<"
+                "Reliable_Data_Service>,<SSC_mode>,<S-NSSAI>,<Pref_access_type> failed\n");
+      return RETURNerror;
+    }
+
+    LOG_TRACE(INFO,
+              "USR-API   - Parsing of "
+              "AT+CGDCONT=<cid>,<PDP_type>,<APN>,<PDP_addr>,<d_comp>,<h_comp>,<IPv4AddrAlloc>,<request_type>,<P-CSCF_discovery>,<"
+              "IM_CN_Signalling_Flag_Ind>,<NSLPI>,<securePCO>,<IPv4_MTU_discovery>,<Local_Addr_Ind>,<Non-IP_MTU_discovery>,<"
+              "Reliable_Data_Service>,<SSC_mode>,<S-NSSAI>,<Pref_access_type> succeeded (cid:%d, PDP_type:%s ,APN:%s, PDP_addr:%s, "
+              "d_comp:%d, h_comp:%d, IPv4AddrAlloc:%d, request_type:%d, P-CSCF_discovery:%d, IM_CN_Signalling_Flag_Ind:%d, "
+              "NSLPI:%d, securePCO:%d, IPv4_MTU_discovery:%d, Local_Addr_Ind:%d, Non-IP_MTU_discovery:%d, "
+              "Reliable_Data_Service:%d, SSC_mode:%d, S-NSSAI:%s, Pref_access_type:%d)",
+              at_command->command.cgdcont.cid,
+              at_command->command.cgdcont.PDP_type,
+              at_command->command.cgdcont.APN,
+              at_command->command.cgdcont.PDP_addr,
+              at_command->command.cgdcont.d_comp,
+              at_command->command.cgdcont.h_comp,
+              at_command->command.cgdcont.IPv4AddrAlloc,
+              at_command->command.cgdcont.emergency_indication,
+              at_command->command.cgdcont.P_CSCF_discovery,
+              at_command->command.cgdcont.IM_CN_Signalling_Flag_Ind,
+              at_command->command.cgdcont.nspli,
+              at_command->command.cgdcont.secure_PCO,
+              at_command->command.cgdcont.IPv4_MTU_discovery,
+              at_command->command.cgdcont.Local_Addr_Ind,
+              at_command->command.cgdcont.Non_IP_MTU_discovery,
+              at_command->command.cgdcont.Reliable_Data_Service,
+              at_command->command.cgdcont.SSC_mode,
+              at_command->command.cgdcont.nssaiStr,
+              at_command->command.cgdcont.Pref_access_type);
+
+    at_command->mask = AT_CGDCONT_CID_MASK | AT_CGDCONT_PDP_TYPE_MASK | AT_CGDCONT_APN_MASK | AT_CGDCONT_PDP_ADDR_MASK
+                       | AT_CGDCONT_D_COMP_MASK | AT_CGDCONT_H_COMP_MASK | AT_CGDCONT_IPV4ADDRALLOC_MASK
+                       | AT_CGDCONT_EMERGECY_INDICATION_MASK | AT_CGDCONT_P_CSCF_DISCOVERY_MASK
+                       | AT_CGDCONT_IM_CN_SIGNALLING_FLAG_IND_MASK | AT_CGDCONT_NSPLI | AT_CGDCONT_SECURE_PCO
+                       | AT_CGDCONT_IPV4_MTU_DIS | AT_CGDCONT_LOCAL_ADDR_IND | AT_CGDCONT_NON_IP_MTU_DIS
+                       | AT_CGDCONT_REL_DATA_SERVICE | AT_CGDCONT_SSC_MODE | AT_CGDCONT_NSSAI | AT_CGDCONT_PREF_ACCESS_TYPE;
     break;
 
   default:

@@ -43,6 +43,7 @@ Description NAS procedure functions triggered by the user
 #include "emm_main.h"
 #include "esm_ebr.h"
 #include "user_defs.h"
+#include "openair3/NAS/NR_UE/nr_nas_msg_sim.h"
 
 /****************************************************************************/
 /*********************  G L O B A L    C O N S T A N T S  *******************/
@@ -68,5 +69,7 @@ bool nas_user_receive_and_process(nas_user_t *user, char *message);
 int nas_user_process_data(nas_user_t *user, const void *data);
 
 const void *nas_user_get_data(nas_user_t *nas_user);
+
+void nas_user_context_initialize(nas_user_context_t *nas_user_context, const char *version);
 
 #endif /* __NAS_USER_H__*/

@@ -50,7 +50,7 @@ Description Defines error codes returned when execution of AT command
 /****************************************************************************/
 
 // FIXME put this in .h
-extern int at_response_format_v1;
+extern bool at_response_format_v1;
 
 /*
  * Result code suppression indicator (set by ATQ0 and ATQ1)

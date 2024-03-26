@@ -641,6 +641,19 @@ typedef struct {
   const char* APN[AT_CGDCONT_RESP_SIZE];
   int d_comp[AT_CGDCONT_RESP_SIZE];
   int h_comp[AT_CGDCONT_RESP_SIZE];
+  int IPv4AddrAlloc[AT_CGDCONT_RESP_SIZE];
+  int emergency_indication[AT_CGDCONT_RESP_SIZE];
+  int P_CSCF_discovery[AT_CGDCONT_RESP_SIZE];
+  int IM_CN_Signalling_Flag_Ind[AT_CGDCONT_RESP_SIZE];
+  int nspli[AT_CGDCONT_RESP_SIZE];
+  int secure_PCO[AT_CGDCONT_RESP_SIZE];
+  int IPv4_MTU_discovery[AT_CGDCONT_RESP_SIZE];
+  int Local_Addr_Ind[AT_CGDCONT_RESP_SIZE];
+  int Non_IP_MTU_discovery[AT_CGDCONT_RESP_SIZE];
+  int Reliable_Data_Service[AT_CGDCONT_RESP_SIZE];
+  int SSC_mode[AT_CGDCONT_RESP_SIZE];
+  const char* nssaiStr[AT_CGDCONT_RESP_SIZE];
+  int Pref_access_type[AT_CGDCONT_RESP_SIZE];
 } at_cgdcont_get_t;
 
 /* Structure of CGDCONT AT read parameter command */

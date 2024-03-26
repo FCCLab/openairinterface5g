@@ -53,6 +53,8 @@ Description NAS procedure functions triggered by the user
 #include <string.h> // memset, strncpy, strncmp
 #include <stdlib.h> // free
 
+#include "openair3/NAS/NR_UE/nr_nas_msg_sim.h"
+
 /****************************************************************************/
 /****************  E X T E R N A L    D E F I N I T I O N S  ****************/
 /****************************************************************************/
@@ -128,7 +130,8 @@ static const char *const _nas_user_sim_status_str[] = {"READY", "SIM PIN", "SIM 
 /******************  E X P O R T E D    F U N C T I O N S  ******************/
 /****************************************************************************/
 
-void _nas_user_context_initialize(nas_user_context_t *nas_user_context, const char *version) {
+void nas_user_context_initialize(nas_user_context_t *nas_user_context, const char *version)
+{
   nas_user_context->version = version;
   nas_user_context->sim_status = NAS_USER_SIM_PIN;
   nas_user_context->fun = AT_CFUN_FUN_DEFAULT;
@@ -164,7 +167,7 @@ void nas_user_initialize(nas_user_t *user, emm_indication_callback_t emm_cb,
   }
 
   user->nas_user_context = calloc_or_fail(1, sizeof(nas_user_context_t));
-  _nas_user_context_initialize(user->nas_user_context, version);
+  nas_user_context_initialize(user->nas_user_context, version);
 
   /* Initialize the internal NAS processing data */
   nas_proc_initialize(user, emm_cb, esm_cb, user->nas_user_nvdata->IMEI);
@@ -201,6 +204,7 @@ bool nas_user_receive_and_process(nas_user_t *user, char *message)
   } else {
     /* Read the user data message */
     bytes = user_api_read_data (user_api_id);
+    LOG_TRACE(INFO, "%d bytes read\n", bytes);
 
     if (bytes == RETURNerror) {
       /* Failed to read data from the user application layer;
@@ -1816,6 +1820,7 @@ static int _nas_user_proc_cgdcont(nas_user_t *user, const at_command_t *data)
   int emergency = AT_CGDCONT_EBS_DEFAULT;
   int p_cscf = AT_CGDCONT_PCSCF_DEFAULT;
   int im_cn_signalling = AT_CGDCONT_IM_CM_DEFAULT;
+  const char *nssai = NULL;
   bool reset_pdn = true;
 
   at_response->id = data->id;
@@ -1967,18 +1972,20 @@ static int _nas_user_proc_cgdcont(nas_user_t *user, const at_command_t *data)
       im_cn_signalling = data->command.cgdcont.IM_CN_Signalling_Flag_Ind;
     }
 
+    if (data->mask & AT_CGDCONT_NSSAI) {
+      nssai = data->command.cgdcont.nssaiStr;
+    }
+
     /*
      * Setup PDN context
      */
     if (reset_pdn) {
       /* A special form of the set command, +CGDCONT=<cid> causes
        * the values for context number <cid> to become undefined */
-      ret_code = nas_proc_reset_pdn(user, cid);
+      ret_code = user->nas_reset_pdn(user, cid);
     } else {
       /* Define a new PDN connection */
-      ret_code = nas_proc_set_pdn(user, cid, pdn_type, apn,
-                                  ipv4_addr_allocation, emergency,
-                                  p_cscf, im_cn_signalling);
+      ret_code = user->nas_set_pdn(user, cid, pdn_type, apn, ipv4_addr_allocation, emergency, p_cscf, im_cn_signalling, nssai);
     }
 
     if (ret_code != RETURNok) {
@@ -1994,10 +2001,8 @@ static int _nas_user_proc_cgdcont(nas_user_t *user, const at_command_t *data)
      * Read command returns the current settings for each
      * defined PDN connection/default EPS bearer context
      */
-    cgdcont->n_pdns = nas_proc_get_pdn_param(user->esm_data, cgdcont->cid,
-                      cgdcont->PDP_type,
-                      cgdcont->APN,
-                      AT_CGDCONT_RESP_SIZE);
+    cgdcont->n_pdns =
+        user->nas_get_pdn(user, cgdcont->cid, cgdcont->PDP_type, cgdcont->APN, cgdcont->nssaiStr, AT_CGDCONT_RESP_SIZE);
 
     if (cgdcont->n_pdns == 0) {
       LOG_TRACE(ERROR, "USR-MAIN  - No any PDN context is defined");
@@ -2012,7 +2017,7 @@ static int _nas_user_proc_cgdcont(nas_user_t *user, const at_command_t *data)
      */
   {
     /* Get the maximum value of a PDN context identifier */
-    int cid_max = nas_proc_get_pdn_range(user->esm_data);
+    int cid_max = user->nas_get_pdn_range(user);
 
     if (cid_max > AT_CGDCONT_RESP_SIZE) {
       /* The range is defined by the user interface */
@@ -2115,9 +2120,9 @@ static int _nas_user_proc_cgact(nas_user_t *user, const at_command_t *data)
     ret_code = RETURNerror;
 
     if (state == AT_CGACT_DEACTIVATED) {
-      ret_code = nas_proc_deactivate_pdn(user, cid);
+      ret_code = user->nas_deactivate_pdn(user, cid);
     } else if (state == AT_CGACT_ACTIVATED) {
-      ret_code = nas_proc_activate_pdn(user, cid);
+      ret_code = user->nas_activate_pdn(user, cid);
     }
 
     if (ret_code != RETURNok) {
@@ -2135,8 +2140,7 @@ static int _nas_user_proc_cgact(nas_user_t *user, const at_command_t *data)
      * The read command returns the current activation states for
      * all the defined PDN/EPS bearer contexts
      */
-    cgact->n_pdns = nas_proc_get_pdn_status(user, cgact->cid, cgact->state,
-                                            AT_CGACT_RESP_SIZE);
+    cgact->n_pdns = user->nas_get_pdn_status(user, cgact->cid, cgact->state, AT_CGACT_RESP_SIZE);
 
     if (cgact->n_pdns == 0) {
       LOG_TRACE(ERROR, "USR-MAIN  - No any PDN context is defined");

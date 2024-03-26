@@ -464,13 +464,6 @@ typedef ul_info_transfer_cnf_t dl_info_transfer_cnf_t;
  */
 typedef ul_info_transfer_ind_t dl_info_transfer_ind_t;
 
-typedef struct nas_pdu_session_req_s {
-  int pdusession_id;
-  int pdusession_type;
-  int sst;
-  int sd;
-} nas_pdu_session_req_t;
-
 typedef struct nas_nos1_msg_s {
   rnti_t rnti;
 } nas_nos1_msg_t;
@@ -551,6 +544,18 @@ typedef struct rab_release_req_s {
 typedef struct rab_release_ind_s {
   as_rab_id_t rabID;      /* Radio access bearer identity     */
 } rab_release_ind_t;
+
+/* PDP context stored in UE */
+typedef struct nr_nas_pdp_context_s {
+  int pdu_session_id;
+  int pdu_session_type;
+  char dnn[64];
+  char nssaiStr[64];
+  int nssai_sst;
+  int nssai_sd;
+  bool is_active;
+  bool is_defined;
+} nr_nas_pdp_context_t;
 
 /*
  * --------------------------------------------------------------------------

@@ -27,19 +27,19 @@
 
 extern char *baseNetAddress;
 
-static uint16_t getShort(uint8_t *input)
+static uint16_t getShort(const uint8_t *input)
 {
   uint16_t tmp16;
   memcpy(&tmp16, input, sizeof(tmp16));
   return htons(tmp16);
 }
 
-void capture_pdu_session_establishment_accept_msg(uint8_t *buffer, uint32_t msg_length)
+void capture_pdu_session_establishment_accept_msg(const uint8_t *buffer, uint32_t msg_length, int *pdu_id)
 {
   security_protected_nas_5gs_msg_t       sec_nas_hdr;
   security_protected_plain_nas_5gs_msg_t sec_nas_msg;
   pdu_session_establishment_accept_msg_t psea_msg;
-  uint8_t *curPtr = buffer;
+  const uint8_t *curPtr = buffer;
   sec_nas_hdr.epd = *curPtr++;
   sec_nas_hdr.sht = *curPtr++;
   uint32_t tmp;
@@ -56,6 +56,7 @@ void capture_pdu_session_establishment_accept_msg(uint8_t *buffer, uint32_t msg_
   /* Mandatory Presence IEs */
   psea_msg.epd = *curPtr++;
   psea_msg.pdu_id = *curPtr++;
+  *pdu_id = psea_msg.pdu_id;
   psea_msg.pti = *curPtr++;
   psea_msg.msg_type = *curPtr++;
   psea_msg.pdu_type = *curPtr & 0x0f;
