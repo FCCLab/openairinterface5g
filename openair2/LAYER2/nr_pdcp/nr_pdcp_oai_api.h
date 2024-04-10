@@ -59,7 +59,8 @@ void add_drb(int is_gnb,
              int ciphering_algorithm,
              int integrity_algorithm,
              unsigned char *ciphering_key,
-             unsigned char *integrity_key);
+             unsigned char *integrity_key,
+             bool alreadyLocked);
 
 void nr_pdcp_remove_UE(ue_id_t ue_id);
 void nr_pdcp_reestablishment(ue_id_t ue_id, int rb_id, bool srb_flag);
@@ -71,14 +72,14 @@ void nr_pdcp_reconfigure_drb(ue_id_t ue_id, int drb_id, NR_PDCP_Config_t *pdcp_c
 void nr_pdcp_release_srb(ue_id_t ue_id, int srb_id);
 void nr_pdcp_release_drb(ue_id_t ue_id, int drb_id);
 
-
 void add_srb(int is_gnb,
              ue_id_t UEid,
              struct NR_SRB_ToAddMod *s,
              int ciphering_algorithm,
              int integrity_algorithm,
              unsigned char *ciphering_key,
-             unsigned char *integrity_key);
+             unsigned char *integrity_key,
+             bool alreadyLocked);
 
 void nr_pdcp_config_set_security(ue_id_t ue_id,
                                  const rb_id_t rb_id,
@@ -86,12 +87,6 @@ void nr_pdcp_config_set_security(ue_id_t ue_id,
                                  uint8_t *const kRRCenc_pP,
                                  uint8_t *const kRRCint_pP,
                                  uint8_t *const kUPenc_pP);
-
-bool nr_pdcp_check_integrity_srb(ue_id_t ue_id,
-                                 int srb_id,
-                                 const uint8_t *msg,
-                                 int msg_size,
-                                 const nr_pdcp_integrity_data_t *msg_integrity);
 
 bool cu_f1u_data_req(protocol_ctxt_t  *ctxt_pP,
                      const srb_flag_t srb_flagP,

@@ -55,7 +55,24 @@ typedef struct RrcDcchDataReq_s {
   uint16_t     rnti;
   uint8_t      module_id;
   uint8_t eNB_index;
+  int returnTask; // itti circular include, impossible to use the correct enum
 } RrcDcchDataReq;
+
+#include "openair2/RRC/NR/nr_rrc_common.h"
+#define maxMSGs (10)
+#define maxSZ (maxMSGs * 100)
+typedef struct RrcDcchDataResp_s {
+  bool doCyphering;
+  bool doIntegrity;
+  uint8_t integrityProtAlgorithm;
+  uint8_t cipheringAlgorithm;
+  uint8_t kRRCenc[NR_K_KEY_SIZE];
+  uint8_t kUPenc[NR_K_KEY_SIZE];
+  uint8_t kRRCint[NR_K_KEY_SIZE];
+  int srbID;
+  uint8_t buffer[maxSZ];
+  int sz[maxMSGs];
+} RrcDcchDataResp;
 
 typedef struct RrcDcchDataInd_s {
   uint32_t frame;
@@ -100,6 +117,7 @@ typedef struct NRRrcDcchDataInd_s {
   uint8_t gNB_index; // LG: needed in UE
   /* 'msg_integrity' is needed for RRC to check integrity of the PDCP SDU */
   nr_pdcp_integrity_data_t msg_integrity;
+  bool integrityResult;
 } NRRrcDcchDataInd;
 
 typedef struct RrcPcchDataReq_s {

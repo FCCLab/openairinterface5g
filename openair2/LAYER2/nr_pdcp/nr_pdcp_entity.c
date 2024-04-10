@@ -308,7 +308,7 @@ static bool nr_pdcp_entity_check_integrity(struct nr_pdcp_entity_t *entity,
                                            const nr_pdcp_integrity_data_t *msg_integrity)
 {
   if (!entity->has_integrity)
-    return false;
+    return true;
 
   int header_size = msg_integrity->header_size;
 
