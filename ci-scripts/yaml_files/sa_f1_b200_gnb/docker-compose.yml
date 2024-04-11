@@ -1,6 +1,6 @@
 services:
     gnb_cu:
-        image: oai-gnb:latest
+        image: oaisoftwarealliance/oai-gnb:develop
         privileged: true
         container_name: sa-cu-gnb
         ulimits:
@@ -21,7 +21,7 @@ services:
             retries: 5
 
     gnb_du_fdd:
-        image: oai-gnb:latest
+        image: oaisoftwarealliance/oai-gnb:develop
         privileged: true
         container_name: sa-du-b200-gnb
         ulimits:
