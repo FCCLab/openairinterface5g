@@ -627,7 +627,7 @@ void remove_ue_ip_if(nr_sdap_entity_t *entity)
                             (entity->pdusession_id != get_softmodem_params()->default_pdu_session_id) ? ifnameSuffix : NULL,
                             ifnameFull,
                             sizeof(ifnameFull));
-  if (bringInterfaceUpOrDown(ifnameFull, false) == 0) {
+  if (bringInterfaceUpOrDown(ifnameFull, false, false) == 0) {
     // Close the socket associated with the interface
     close(entity->pdusession_sock);
     LOG_I(SDAP, "Interface %s is now down.\n", ifnameFull);

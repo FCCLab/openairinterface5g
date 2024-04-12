@@ -31,6 +31,7 @@
 
 #include <netinet/in.h>
 #include <stdbool.h>
+#include <nr_nas_msg_sim.h>
 
 /*! \fn void void nas_getparams(void)(void)
  * \brief This function get parameters used to configure network interface when running in noS1 mode
@@ -62,7 +63,7 @@ int NAS_config(char *interfaceName, char *ipAddress, char *networkMask, char *br
  * \note
  * @ingroup  _nas
  */
-int nas_config(int interface_id, int thirdOctet, int fourthOctet, const char *ifname, const char *ifname_suffix);
+int nas_config(bool ipv6, int interface_id, const uint8_t addr[IPV4V6_ADDR_LEN], const char *ifname);
 
 /*! \fn int  nas_config_mbms(char*, int, int)
  * \brief This function initializes the nasmesh interface using the basic values,
@@ -101,7 +102,7 @@ int nas_config_mbms_s1(int interface_id, int thirdOctet, int fourthOctet, char *
  * \note
  * @ingroup  _nas
  */
-int setInterfaceParameter(char *interfaceName, char *settingAddress, int operation);
+int setInterfaceParameter(const char *interfaceName, const char *settingAddress, int operation);
 
 /*! \fn int  set_gateway(char*, char*)
  * \brief This function sets the interface gateway
@@ -161,7 +162,7 @@ void setBroadcastAddress(char *baseAddr);
  */
 char *getBroadcastAddress(void);
 
-int bringInterfaceUpOrDown(const char *interfaceName, bool up);
+int bringInterfaceUpOrDown(const char *interfaceName, bool ipv6, bool up);
 
 int rb_validate_config_ipv4(int cx, int inst, int rb);
 int rb_conf_ipv4(int action, int cx, int inst, int rb, int dscp, in_addr_t saddr_ipv4, in_addr_t daddr_ipv4);
