@@ -52,9 +52,11 @@
 //default values according to the examples,
 
 char *baseNetAddress ;
+char *baseNetAddressIPv6;
 char *netMask ;
 char *broadcastAddr ;
 #define NASHLP_NETPREFIX "<NAS network prefix, two first bytes of network addresses>\n"
+#define NASHLP_NETPREFIX_IPV6 "<NAS IPv6 network prefix, eight first bytes of network addresses>\n"
 #define NASHLP_NETMASK   "<NAS network mask>\n"
 #define NASHLP_BROADCASTADDR   "<NAS network broadcast address>\n"
 void nas_getparams(void) {
@@ -66,9 +68,10 @@ void nas_getparams(void) {
     /*                                            configuration parameters for netlink, includes network parameters when running in noS1 mode                             */
     /*   optname                     helpstr                paramflags           XXXptr                               defXXXval               type                 numelt */
     /*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
-    {"NetworkPrefix",    NASHLP_NETPREFIX,       0,              .strptr=&baseNetAddress,        .defstrval="10.0",            TYPE_STRING,  0 },
-    {"NetworkMask",      NASHLP_NETMASK,         0,              .strptr=&netMask,               .defstrval="255.255.255.0",   TYPE_STRING,  0 },
-    {"BroadcastAddr",    NASHLP_BROADCASTADDR,   0,              .strptr=&broadcastAddr,         .defstrval="10.0.255.255",    TYPE_STRING,  0 },
+    {"NetworkPrefix",     NASHLP_NETPREFIX,       0,              .strptr=&baseNetAddress,        .defstrval="10.0",                TYPE_STRING,  0 },
+    {"NetworkPrefixIPv6", NASHLP_NETPREFIX_IPV6,  0,              .strptr=&baseNetAddressIPv6,    .defstrval="FE80:0000:0000:0000", TYPE_STRING,  0 },
+    {"NetworkMask",       NASHLP_NETMASK,         0,              .strptr=&netMask,               .defstrval="255.255.255.0",       TYPE_STRING,  0 },
+    {"BroadcastAddr",     NASHLP_BROADCASTADDR,   0,              .strptr=&broadcastAddr,         .defstrval="10.0.255.255",        TYPE_STRING,  0 },
   };
   // clang-format on
   config_get(config_get_if(), nasoptions, sizeofArray(nasoptions), "nas.noS1");
@@ -148,7 +151,8 @@ int set_gateway(char *interfaceName, char *gateway) {
 
 // sets a genneric interface parameter
 // (SIOCSIFADDR, SIOCSIFNETMASK, SIOCSIFBRDADDR, SIOCSIFFLAGS)
-int setInterfaceParameter(char *interfaceName, char *settingAddress, int operation) {
+int setInterfaceParameter(const char *interfaceName, const char *settingAddress, int operation)
+{
   int sock_fd;
   struct ifreq ifr;
   struct sockaddr_in addr;
@@ -163,8 +167,8 @@ int setInterfaceParameter(char *interfaceName, char *settingAddress, int operati
   strncpy(ifr.ifr_name, interfaceName, sizeof(ifr.ifr_name)-1);
   memset(&addr, 0, sizeof(struct sockaddr_in));
   addr.sin_family = AF_INET;
-  inet_aton(settingAddress,&addr.sin_addr);
-  memcpy(&ifr.ifr_ifru.ifru_addr,&addr,sizeof(struct sockaddr_in));
+  inet_pton(AF_INET, settingAddress, &addr.sin_addr);
+  memcpy(&ifr.ifr_ifru.ifru_addr, &addr, sizeof(addr));
 
   if(ioctl(sock_fd,operation,&ifr) < 0)    {
     close(sock_fd);
@@ -177,14 +181,53 @@ int setInterfaceParameter(char *interfaceName, char *settingAddress, int operati
   return 0;
 }
 
-// sets a genneric interface parameter
-// (SIOCSIFADDR, SIOCSIFNETMASK, SIOCSIFBRDADDR, SIOCSIFFLAGS)
-int bringInterfaceUpOrDown(const char *interfaceName, bool up)
+struct in6_ifreq {
+  struct in6_addr addr;
+  uint32_t prefixlen;
+  unsigned int ifindex;
+};
+
+int setInterfaceParameterIPv6(const char *interfaceName, const char *settingAddress, int operation)
 {
   int sock_fd;
   struct ifreq ifr;
+  struct in6_ifreq ifr6;
 
-  if ((sock_fd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+  if ((sock_fd = socket(AF_INET6, SOCK_DGRAM, 0)) < 0) {
+    LOG_E(OIP, "Setting operation %d, for %s, address, %s : socket failed\n", operation, interfaceName, settingAddress);
+    return 1;
+  }
+
+  memset(&ifr, 0, sizeof(ifr));
+  strncpy(ifr.ifr_name, interfaceName, sizeof(ifr.ifr_name) - 1);
+  if (ioctl(sock_fd, SIOGIFINDEX, &ifr) < 0) {
+    close(sock_fd);
+    LOG_E(OIP, "Setting interface name failed %s\n", interfaceName);
+  }
+  memset(&ifr6.addr, 0, sizeof(ifr6.addr));
+  inet_pton(AF_INET6, settingAddress, &ifr6.addr);
+  ifr6.ifindex = ifr.ifr_ifindex;
+  ifr6.prefixlen = 64;
+
+  if (ioctl(sock_fd, operation, &ifr6) < 0) {
+    close(sock_fd);
+    LOG_E(OIP, "Setting operation %d, for %s, address, %s : ioctl call failed\n", operation, interfaceName, settingAddress);
+    return 2;
+  }
+
+  close(sock_fd);
+  return 0;
+}
+
+// sets a genneric interface parameter
+// (SIOCSIFADDR, SIOCSIFNETMASK, SIOCSIFBRDADDR, SIOCSIFFLAGS)
+int bringInterfaceUpOrDown(const char *interfaceName, bool ipv6, bool up)
+{
+  int sock_fd;
+  struct ifreq ifr;
+  int family = ipv6 ? AF_INET6 : AF_INET;
+
+  if ((sock_fd = socket(family, SOCK_DGRAM, 0)) < 0) {
     LOG_E(OIP,"Bringing interface UP, for %s, failed creating socket\n", interfaceName);
     return 1;
   }
@@ -215,9 +258,10 @@ int bringInterfaceUpOrDown(const char *interfaceName, bool up)
   close( sock_fd );
   return 0;
 }
+
 // non blocking full configuration of the interface (address, net mask, and broadcast mask)
 int NAS_config(char *interfaceName, char *ipAddress, char *networkMask, char *broadcastAddress) {
-  bringInterfaceUpOrDown(interfaceName, false);
+  bringInterfaceUpOrDown(interfaceName, false, false);
   // sets the machine address
   int returnValue= setInterfaceParameter(interfaceName, ipAddress,SIOCSIFADDR);
 
@@ -232,7 +276,7 @@ int NAS_config(char *interfaceName, char *ipAddress, char *networkMask, char *br
   //  if(!returnValue)
   //  returnValue=set_gateway(interfaceName, broadcastAddress);
   if(!returnValue)
-    returnValue = bringInterfaceUpOrDown(interfaceName, true);
+    returnValue = bringInterfaceUpOrDown(interfaceName, false, true);
 
   return returnValue;
 }
@@ -270,7 +314,7 @@ int nas_config_mbms(int interface_id, int thirdOctet, int fourthOctet, char *ifn
   sprintf(broadcastAddress, "%s.%d.255",baseNetAddress, thirdOctet);
   sprintf(interfaceName, "%s%s%d", (UE_NAS_USE_TUN || ENB_NAS_USE_TUN)?"oaitun_":ifname,
           UE_NAS_USE_TUN?ifname/*"ue"*/: (ENB_NAS_USE_TUN?ifname/*"enb"*/:""),interface_id);
-  bringInterfaceUpOrDown(interfaceName, false);
+  bringInterfaceUpOrDown(interfaceName, false, false);
   // sets the machine address
   returnValue= setInterfaceParameter(interfaceName, ipAddress,SIOCSIFADDR);
 
@@ -283,7 +327,7 @@ int nas_config_mbms(int interface_id, int thirdOctet, int fourthOctet, char *ifn
     returnValue= setInterfaceParameter(interfaceName, broadcastAddress,SIOCSIFBRDADDR);
 
   if(!returnValue)
-    bringInterfaceUpOrDown(interfaceName, true);
+    bringInterfaceUpOrDown(interfaceName, false, true);
 
   if(!returnValue)
     LOG_I(OIP,"Interface %s successfully configured, ip address %s, mask %s broadcast address %s\n",
@@ -308,7 +352,7 @@ int nas_config_mbms_s1(int interface_id, int thirdOctet, int fourthOctet, char *
 
   sprintf(broadcastAddress, "%s.%d.255","10.0", thirdOctet);
   sprintf(interfaceName, "%s%s%d", "oaitun_",ifname,interface_id);
-  bringInterfaceUpOrDown(interfaceName, false);
+  bringInterfaceUpOrDown(interfaceName, false, false);
   // sets the machine address
   returnValue= setInterfaceParameter(interfaceName, ipAddress,SIOCSIFADDR);
 
@@ -323,7 +367,7 @@ int nas_config_mbms_s1(int interface_id, int thirdOctet, int fourthOctet, char *
   printf("returnValue %d\n",returnValue);
 
   if(!returnValue)
-    bringInterfaceUpOrDown(interfaceName, true);
+    bringInterfaceUpOrDown(interfaceName, false, true);
   printf("returnValue %d\n",returnValue);
 
   if(!returnValue)
@@ -350,29 +394,34 @@ void nas_config_interface_name(int if_id, const char *ifname, const char *ifname
 }
 
 // non blocking full configuration of the interface (address, and the two lest octets of the address)
-int nas_config(int interface_id, int thirdOctet, int fourthOctet, const char *ifname, const char *ifname_suffix)
+int nas_config(bool ipv6, int interface_id, const uint8_t addr[IPV4V6_ADDR_LEN], const char *interfaceName)
 {
-  char ipAddress[20];
+  char ipAddress[30];
   char broadcastAddress[20];
-  char interfaceName[20];
   int returnValue;
-  sprintf(ipAddress, "%s.%d.%d", baseNetAddress,thirdOctet,fourthOctet);
-  sprintf(broadcastAddress, "%s.%d.255",baseNetAddress, thirdOctet);
-  nas_config_interface_name(interface_id, ifname, ifname_suffix, interfaceName, sizeof(interfaceName));
-  bringInterfaceUpOrDown(interfaceName, false);
+  const uint16_t *paddr = (const uint16_t *)addr;
+  if (ipv6) {
+    sprintf(ipAddress, "%s:%04x:%04x:%04x:%04x", baseNetAddressIPv6, paddr[0], paddr[1], paddr[2], paddr[3]);
+  } else {
+    sprintf(ipAddress, "%s.%d.%d", baseNetAddress, addr[0], addr[1]);
+  }
+  sprintf(broadcastAddress, "%s.%d.255", baseNetAddress, addr[0]);
+  bringInterfaceUpOrDown(interfaceName, ipv6, false);
+  int (*p_setInterfaceParameter)(const char *, const char *, int);
+  p_setInterfaceParameter = ipv6 ? setInterfaceParameterIPv6 : setInterfaceParameter;
   // sets the machine address
-  returnValue= setInterfaceParameter(interfaceName, ipAddress,SIOCSIFADDR);
+  returnValue = p_setInterfaceParameter(interfaceName, ipAddress, SIOCSIFADDR);
 
   // sets the machine network mask
-  if(!returnValue)
-    returnValue= setInterfaceParameter(interfaceName, netMask,SIOCSIFNETMASK);
+  if (!returnValue && !ipv6)
+    returnValue = p_setInterfaceParameter(interfaceName, netMask, SIOCSIFNETMASK);
 
   // sets the machine broadcast address
-  if(!returnValue)
-    returnValue= setInterfaceParameter(interfaceName, broadcastAddress,SIOCSIFBRDADDR);
+  if (!returnValue && !ipv6)
+    returnValue = p_setInterfaceParameter(interfaceName, broadcastAddress, SIOCSIFBRDADDR);
 
   if(!returnValue)
-    returnValue = bringInterfaceUpOrDown(interfaceName, true);
+    returnValue = bringInterfaceUpOrDown(interfaceName, ipv6, true);
 
   if(!returnValue)
     LOG_I(OIP,"Interface %s successfully configured, ip address %s, mask %s broadcast address %s\n",

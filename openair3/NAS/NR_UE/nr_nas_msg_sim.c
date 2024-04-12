@@ -720,7 +720,7 @@ static void generateRegistrationComplete(nr_ue_nas_t *nas, as_nas_info_t *initia
   }
 }
 
-void nr_ue_create_ip_if(char *ifname, int ue_id, int pdu_session_id, int third_octet, int fourth_octet)
+void nr_ue_create_ip_if(const char *ifname, int ue_id, int pdu_session_id, bool ipv6, const uint8_t addr[IPV4V6_ADDR_LEN])
 {
   char ifname_full[20];
   char ifname_suffix[10];
@@ -736,7 +736,7 @@ void nr_ue_create_ip_if(char *ifname, int ue_id, int pdu_session_id, int third_o
     return;
   }
   const int sock = init_single_tun(ifname_full);
-  nas_config(ue_id, third_octet, fourth_octet, ifname, (pdu_session_id != default_pdu) ? ifname_suffix : NULL);
+  nas_config(ipv6, ue_id, addr, ifname_full);
   start_sdap_tun_ue(ue_id - 1, pdu_session_id, sock); // interface name suffix is ue_id+1
 }
 
@@ -744,11 +744,12 @@ void decodeDownlinkNASTransport(as_nas_info_t *initialNasMsg, uint8_t * pdu_buff
   uint8_t msg_type = *(pdu_buffer + 16);
   if(msg_type == FGS_PDU_SESSION_ESTABLISHMENT_ACC){
     sprintf(baseNetAddress, "%d.%d", *(pdu_buffer + 39),*(pdu_buffer + 40));
-    int third_octet = *(pdu_buffer + 41);
-    int fourth_octet = *(pdu_buffer + 42);
+    uint8_t addr[IPV4V6_ADDR_LEN] = {0};
+    addr[0] = *(pdu_buffer + 41);
+    addr[1] = *(pdu_buffer + 42);
     int pdu_session_id = *(pdu_buffer + 14);
     LOG_A(NAS, "Received PDU Session Establishment Accept\n");
-    nr_ue_create_ip_if("oaitun_", 1, pdu_session_id, third_octet, fourth_octet);
+    nr_ue_create_ip_if("oaitun_", 1, pdu_session_id, false, addr);
   } else {
     LOG_E(NAS, "Received unexpected message in DLinformationTransfer %d\n", msg_type);
   }
@@ -1268,15 +1269,16 @@ void *nas_nrue(void *args_p)
                 if ((*(payload_container + offset + 1) == 0x05) && (*(payload_container + offset + 2) == 0x01)) { // IPV4
                   nas_getparams();
                   sprintf(baseNetAddress, "%d.%d", *(payload_container + offset + 3), *(payload_container + offset + 4));
-                  int third_octet = *(payload_container + offset + 5);
-                  int fourth_octet = *(payload_container + offset + 6);
+                  uint8_t addr[IPV4V6_ADDR_LEN] = {0};
+                  addr[0] = *(payload_container + offset + 5);
+                  addr[1] = *(payload_container + offset + 6);
                   LOG_I(NAS,
                         "Received PDU Session Establishment Accept, UE IP: %d.%d.%d.%d\n",
                         *(payload_container + offset + 3),
                         *(payload_container + offset + 4),
                         *(payload_container + offset + 5),
                         *(payload_container + offset + 6));
-                  nr_ue_create_ip_if("oaitun_", 1, pdu_session_id, third_octet, fourth_octet);
+                  nr_ue_create_ip_if("oaitun_", 1, pdu_session_id, false, addr);
                   break;
                 }
               }
@@ -1299,10 +1301,11 @@ void *nas_nrue(void *args_p)
         const int ue_id = instance;
         const int pdu_session_id = softmodem_nas_info.default_pdu_session_id;
         const int qfi = 7;
-        const int third_octet = 1;
-        const int fourth_octet = !softmodem_nas_info.nsa ? 2 : 3;
+        uint8_t addr[IPV4V6_ADDR_LEN] = {0};
+        addr[0] = 1;
+        addr[1] = !softmodem_nas_info.nsa ? 2 : 3;
         nas_getparams();
-        nr_ue_create_ip_if("oaitun_", ue_id + 1, pdu_session_id, third_octet, fourth_octet);
+        nr_ue_create_ip_if("oaitun_", ue_id + 1, pdu_session_id, false, addr);
         set_qfi(qfi, pdu_session_id, ue_id);
         break;
       }

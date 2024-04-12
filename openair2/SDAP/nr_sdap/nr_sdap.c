@@ -87,7 +87,10 @@ void start_sdap_tun_gnb(int id)
   char ifname[20];
   nas_config_interface_name(id + 1, "oaitun_", NULL, ifname, sizeof(ifname));
   arg->sock_fd = init_single_tun(ifname);
-  nas_config(id + 1, 1, 1, ifname, NULL);
+  uint8_t addr[IPV4V6_ADDR_LEN] = {0};
+  addr[0] = 1;
+  addr[1] = 1;
+  nas_config(false, id + 1, addr, ifname);
   {
     // default ue id & pdu session id in nos1 mode
     nr_sdap_entity_t *entity = nr_sdap_get_entity(1, get_softmodem_params()->default_pdu_session_id);
