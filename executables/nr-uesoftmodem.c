@@ -209,7 +209,10 @@ int create_tasks_nrue(uint32_t ue_nb) {
         return -1;
       }
     }
-    const ittiTask_parms_t parmsNAS = {NULL, nas_nrue};
+    nr_nas_thread_info_t *nas_info = calloc(1, sizeof(*nas_info));
+    nas_info->default_pdu_session_id = get_softmodem_params()->default_pdu_session_id;
+    nas_info->nsa = get_softmodem_params()->nsa;
+    const ittiTask_parms_t parmsNAS = {(void *)nas_info, nas_nrue};
     if (itti_create_task(TASK_NAS_NRUE, nas_nrue_task, &parmsNAS) < 0) {
       LOG_E(NR_RRC, "Create task for NAS UE failed\n");
       return -1;
@@ -369,19 +372,14 @@ void init_openair0(void) {
 
 static void init_pdcp(int ue_id)
 {
-  uint32_t pdcp_initmask = (!IS_SOFTMODEM_NOS1) ? LINK_ENB_PDCP_TO_GTPV1U_BIT : (LINK_ENB_PDCP_TO_GTPV1U_BIT | PDCP_USE_NETLINK_BIT | LINK_ENB_PDCP_TO_IP_DRIVER_BIT);
-
-  /*if (IS_SOFTMODEM_RFSIM || (nfapi_getmode()==NFAPI_UE_STUB_PNF)) {
-    pdcp_initmask = pdcp_initmask | UE_NAS_USE_TUN_BIT;
-  }*/
-
-  if (IS_SOFTMODEM_NOKRNMOD) {
-    pdcp_initmask = pdcp_initmask | UE_NAS_USE_TUN_BIT;
-  }
   if (get_softmodem_params()->nsa && rlc_module_init(0) != 0) {
     LOG_I(RLC, "Problem at RLC initiation \n");
   }
+
   nr_pdcp_layer_init(false);
+  uint64_t pdcp_initmask = 0;
+  /* TUN is created for nos1 and SA modes */
+  pdcp_initmask |= UE_NAS_USE_TUN_BIT;
   nr_pdcp_module_init(pdcp_initmask, ue_id);
   pdcp_set_rlc_data_req_func((send_rlc_data_req_func_t) rlc_data_req);
   pdcp_set_pdcp_data_ind_func((pdcp_data_ind_func_t) pdcp_data_ind);
@@ -510,6 +508,11 @@ int main(int argc, char **argv)
     memset(PHY_vars_UE_g[0][CC_id], 0, sizeof(*PHY_vars_UE_g[0][CC_id]));
   }
 
+  if (create_tasks_nrue(1) < 0) {
+    printf("cannot create ITTI tasks\n");
+    exit(-1); // need a softer mode
+  }
+
   int mode_offset = get_softmodem_params()->nsa ? NUMBER_OF_UE_MAX : 1;
   uint16_t node_number = get_softmodem_params()->node_number;
   ue_id_g = (node_number == 0) ? 0 : node_number - 2;
@@ -583,11 +586,6 @@ int main(int argc, char **argv)
 
   // wait for end of program
   printf("TYPE <CTRL-C> TO TERMINATE\n");
-
-  if (create_tasks_nrue(1) < 0) {
-    printf("cannot create ITTI tasks\n");
-    exit(-1); // need a softer mode
-  }
 
   // Sleep a while before checking all parameters have been used
   // Some are used directly in external threads, asynchronously

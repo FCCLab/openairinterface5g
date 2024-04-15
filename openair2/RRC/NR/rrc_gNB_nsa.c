@@ -163,7 +163,10 @@ void rrc_add_nsa_user(gNB_RRC_INST *rrc, rrc_gNB_ue_context_t *ue_context_p, x2a
   NR_RRCReconfiguration_IEs_t *reconfig_ies=calloc(1,sizeof(NR_RRCReconfiguration_IEs_t));
   UE->reconfig->criticalExtensions.choice.rrcReconfiguration = reconfig_ies;
   if (get_softmodem_params()->phy_test == 1 || get_softmodem_params()->do_ra == 1 || get_softmodem_params()->sa == 1){
-    UE->rb_config = get_default_rbconfig(10 /* EPS bearer ID */, 1 /* drb ID */, NR_CipheringAlgorithm_nea0, NR_SecurityConfig__keyToUse_master);
+    UE->rb_config = get_default_rbconfig(get_softmodem_params()->default_pdu_session_id,
+                                         1 /* drb ID */,
+                                         NR_CipheringAlgorithm_nea0,
+                                         NR_SecurityConfig__keyToUse_master);
   } else {
     /* TODO: handle more than one bearer */
     if (m == NULL) {

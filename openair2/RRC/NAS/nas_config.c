@@ -41,6 +41,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <net/route.h>
+#include <stdbool.h>
 
 #include "nas_config.h"
 #include "common/utils/LOG/log.h"
@@ -230,9 +231,28 @@ int NAS_config(char *interfaceName, char *ipAddress, char *networkMask, char *br
   //  if(!returnValue)
   //  returnValue=set_gateway(interfaceName, broadcastAddress);
   if(!returnValue)
-    returnValue = bringInterfaceUp(interfaceName, 1);
+    returnValue = bringInterfaceUpOrDown(interfaceName, true);
 
   return returnValue;
+}
+
+bool doesInterfaceExist(const char *interfaceName)
+{
+  int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+
+  AssertFatal(sockfd != -1, "Failed to create socket\n");
+
+  struct ifreq ifr;
+  memset(&ifr, 0, sizeof(struct ifreq));
+  strncpy(ifr.ifr_name, interfaceName, IFNAMSIZ - 1);
+
+  if (ioctl(sockfd, SIOCGIFFLAGS, &ifr) == -1) {
+    close(sockfd);
+    return false;
+  }
+
+  close(sockfd);
+  return true;
 }
 
 int nas_config_mbms(int interface_id, int thirdOctet, int fourthOctet, char *ifname) {
@@ -315,19 +335,30 @@ int nas_config_mbms_s1(int interface_id, int thirdOctet, int fourthOctet, char *
   return returnValue;
 }
 
+void nas_config_interface_name(int if_id, const char *ifname, const char *ifname_suffix, char *ret, int ret_size)
+{
+  snprintf(ret,
+           ret_size,
+           "%s%s%d",
+           (UE_NAS_USE_TUN || ENB_NAS_USE_TUN) ? "oaitun_" : ifname,
+           UE_NAS_USE_TUN ? "ue" : (ENB_NAS_USE_TUN ? "enb" : ""),
+           if_id);
+  if (UE_NAS_USE_TUN && ifname_suffix) {
+    snprintf(ret + strlen(ret), ret_size - strlen(ret), "%s", ifname_suffix);
+  }
+}
 
 // non blocking full configuration of the interface (address, and the two lest octets of the address)
-int nas_config(int interface_id, int thirdOctet, int fourthOctet, char *ifname) {
-  //char buf[5];
+int nas_config(int interface_id, int thirdOctet, int fourthOctet, const char *ifname, const char *ifname_suffix)
+{
   char ipAddress[20];
   char broadcastAddress[20];
   char interfaceName[20];
   int returnValue;
   sprintf(ipAddress, "%s.%d.%d", baseNetAddress,thirdOctet,fourthOctet);
   sprintf(broadcastAddress, "%s.%d.255",baseNetAddress, thirdOctet);
-  sprintf(interfaceName, "%s%s%d", (UE_NAS_USE_TUN || ENB_NAS_USE_TUN)?"oaitun_":ifname,
-          UE_NAS_USE_TUN?"ue": (ENB_NAS_USE_TUN?"enb":""),interface_id);
   bringInterfaceUp(interfaceName, 0);
+  nas_config_interface_name(interface_id, ifname, ifname_suffix, interfaceName, sizeof(interfaceName));
   // sets the machine address
   returnValue= setInterfaceParameter(interfaceName, ipAddress,SIOCSIFADDR);
 
@@ -352,13 +383,15 @@ int nas_config(int interface_id, int thirdOctet, int fourthOctet, char *ifname) 
   int res;
   char command_line[500];
   res = sprintf(command_line,
-    "ip rule add from %s/32 table %d && "
-    "ip rule add to %s/32 table %d && "
-    "ip route add default dev %s%d table %d",
-    ipAddress, interface_id - 1 + 10000,
-    ipAddress, interface_id - 1 + 10000,
-    UE_NAS_USE_TUN ? "oaitun_ue" : "oip",
-    interface_id, interface_id - 1 + 10000);
+                "ip rule add from %s/32 table %d && "
+                "ip rule add to %s/32 table %d && "
+                "ip route add default dev %s table %d",
+                ipAddress,
+                interface_id - 1 + 10000,
+                ipAddress,
+                interface_id - 1 + 10000,
+                interfaceName,
+                interface_id - 1 + 10000);
 
   if (res < 0) {
     LOG_E(OIP,"Could not create ip rule/route commands string\n");
@@ -368,23 +401,6 @@ int nas_config(int interface_id, int thirdOctet, int fourthOctet, char *ifname) 
   background_system(command_line);
 
   return returnValue;
-}
-
-// Blocking full configuration of the interface (address, net mask, and broadcast mask)
-int blocking_NAS_config(char *interfaceName, char *ipAddress, char *networkMask, char *broadcastAddress) {
-  char command[200];
-  command[0]='\0';
-  strcat(command, "ifconfig ");
-  strncat(command, interfaceName, sizeof(command) - strlen(command) - 1);
-  strncat(command, " ", sizeof(command) - strlen(command) - 1);
-  strncat(command, ipAddress, sizeof(command) - strlen(command) - 1);
-  strncat(command, " networkMask ", sizeof(command) - strlen(command) - 1);
-  strncat(command, networkMask, sizeof(command) - strlen(command) - 1);
-  strncat(command, " broadcast ", sizeof(command) - strlen(command) - 1);
-  strncat(command, broadcastAddress, sizeof(command) - strlen(command) - 1);
-  // ifconfig nasmesh0 10.0.1.1 networkMask 255.255.255.0 broadcast 10.0.1.255
-  int i = system (command);
-  return i;
 }
 
 // program help

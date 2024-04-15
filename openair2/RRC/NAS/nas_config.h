@@ -30,6 +30,7 @@
 #define NAS_CONFIG_H_
 
 #include <netinet/in.h>
+#include <stdbool.h>
 
 /*! \fn void void nas_getparams(void)(void)
  * \brief This function get parameters used to configure network interface when running in noS1 mode
@@ -61,7 +62,7 @@ int NAS_config(char *interfaceName, char *ipAddress, char *networkMask, char *br
  * \note
  * @ingroup  _nas
  */
-int nas_config(int interface_id, int thirdOctet, int fourthOctet, char *ifsuffix);
+int nas_config(int interface_id, int thirdOctet, int fourthOctet, const char *ifname, const char *ifname_suffix);
 
 /*! \fn int  nas_config_mbms(char*, int, int)
  * \brief This function initializes the nasmesh interface using the basic values,
@@ -88,19 +89,6 @@ int nas_config_mbms(int interface_id, int thirdOctet, int fourthOctet, char *ifs
  * @ingroup  _nas
  */
 int nas_config_mbms_s1(int interface_id, int thirdOctet, int fourthOctet, char *ifsuffix);
-
-/*! \fn int  blocking_NAS_config(char*, char*, char*, char*)
- * \brief This function initializes the nasmesh interface, in a blocking way,
- * the system calls are interrupted
- * \param[in] interfaceName, the name of the interface, e.g. nasmesh0 or nasmesh1
- * \param[in] ipAddress, the address of the interface, e.g. 10.0.1.1
- * \param[in] networkMask, the network mask to be used, e.g. 255.255.255.0
- * \param[in] broadcastAddress, the broadcast address for the subnet, e.g. 10.0.1.255
- * \return 0 on success, otherwise 1
- * \note
- * @ingroup  _nas
- */
-int blocking_NAS_config(char *interfaceName, char *ipAddress, char *networkMask, char *broadcastAddress);
 
 /*! \fn int  setInterfaceParameter(char*, char*, int)
  * \brief This function sets an genneric interface parameter (SIOCSIFADDR,
@@ -181,4 +169,6 @@ void rb_ioctl_init(int inst);
 int rb_stats_req(int inst);
 void init_socket(void);
 in_addr_t ipv4_address(int thirdOctet, int fourthOctet);
+bool doesInterfaceExist(const char *interfaceName);
+void nas_config_interface_name(int if_id, const char *ifname, const char *ifname_suffix, char *ret, int ret_size);
 #endif /*NAS_CONFIG_H_*/

@@ -5257,10 +5257,11 @@ rrc_eNB_process_RRCConnectionReconfigurationComplete(
             LOG_I(OIP, "[eNB %d] trying to bring up the OAI interface oai%d\n",
                   ctxt_pP->module_id,
                   ctxt_pP->module_id);
-            oip_ifup = nas_config(ctxt_pP->module_id,   // interface index
-                                  ctxt_pP->module_id + 1,   // third octet
-                                  ctxt_pP->module_id + 1,   // fourth octet
-                                  "oai");
+            oip_ifup = nas_config(ctxt_pP->module_id, // interface index
+                                  ctxt_pP->module_id + 1, // third octet
+                                  ctxt_pP->module_id + 1, // fourth octet
+                                  "oai",
+                                  NULL);
 
             if (oip_ifup == 0) { // interface is up --> send a config the DRB
               module_id_t ue_module_id;

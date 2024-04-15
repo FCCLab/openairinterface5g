@@ -112,7 +112,7 @@ void capture_pdu_session_establishment_accept_msg(uint8_t *buffer, uint32_t msg_
           psea_msg.pdu_addr_ie.pdu_addr_oct4 = *curPtr++;
           nas_getparams();
           sprintf(baseNetAddress, "%d.%d", psea_msg.pdu_addr_ie.pdu_addr_oct1, psea_msg.pdu_addr_ie.pdu_addr_oct2);
-          nas_config(1, psea_msg.pdu_addr_ie.pdu_addr_oct3, psea_msg.pdu_addr_ie.pdu_addr_oct4, "oaitun_ue");
+          nr_ue_create_ip_if("", 1, psea_msg.pdu_id, psea_msg.pdu_addr_ie.pdu_addr_oct3, psea_msg.pdu_addr_ie.pdu_addr_oct4);
           LOG_T(NAS, "PDU SESSION ESTABLISHMENT ACCEPT - Received UE IP: %d.%d.%d.%d\n",
                 psea_msg.pdu_addr_ie.pdu_addr_oct1,
                 psea_msg.pdu_addr_ie.pdu_addr_oct2,
@@ -185,6 +185,7 @@ void capture_pdu_session_establishment_accept_msg(uint8_t *buffer, uint32_t msg_
     }
   }
 
-  set_qfi_pduid(qos_rule.qfi, psea_msg.pdu_id);
+  const int ue_id = 0;
+  set_qfi(qos_rule.qfi, psea_msg.pdu_id, ue_id);
   return;
 }
