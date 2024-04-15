@@ -134,6 +134,7 @@ static void *ue_tun_read_thread(void *arg)
     if (entity == NULL) {
       break;
     }
+    nr_sdap_lock(entity, SDAP_MUTEX_TX);
     entity->tx_entity(entity,
                       &ctxt,
                       SRB_FLAG_NO,
@@ -147,6 +148,8 @@ static void *ue_tun_read_thread(void *arg)
                       NULL,
                       entity->qfi,
                       dc);
+    stop_thread = entity->stop_thread;
+    nr_sdap_unlock(entity, SDAP_MUTEX_TX);
   }
   free(arg);
 
@@ -196,6 +199,7 @@ bool sdap_data_req(protocol_ctxt_t *ctxt_p,
     return false;
   }
 
+  nr_sdap_lock(sdap_entity, SDAP_MUTEX_TX);
   bool ret = sdap_entity->tx_entity(sdap_entity,
                                     ctxt_p,
                                     srb_flag,
@@ -209,6 +213,7 @@ bool sdap_data_req(protocol_ctxt_t *ctxt_p,
                                     destinationL2Id,
                                     qfi,
                                     rqi);
+  nr_sdap_unlock(sdap_entity, SDAP_MUTEX_TX);
   return ret;
 }
 
@@ -233,6 +238,7 @@ void sdap_data_ind(rb_id_t pdcp_entity,
     return;
   }
 
+  nr_sdap_lock(sdap_entity, SDAP_MUTEX_RX);
   sdap_entity->rx_entity(sdap_entity,
                          pdcp_entity,
                          is_gnb,
@@ -241,4 +247,5 @@ void sdap_data_ind(rb_id_t pdcp_entity,
                          ue_id,
                          buf,
                          size);
+  nr_sdap_unlock(sdap_entity, SDAP_MUTEX_RX);
 }

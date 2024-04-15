@@ -1310,7 +1310,7 @@ void *nas_nrue(void *args_p)
       case NAS_PDU_SESSION_REL: {
         // TODO: Initiate PDU session release request & send NAS signal to network
         nas_pdu_session_req_t *pdu_rel = &NAS_PDU_SESSION_REL(msg_p);
-        remove_ue_ip_if(instance, pdu_rel->pdusession_id);
+        nr_sdap_delete_entity(instance, pdu_rel->pdusession_id, true);
         break;
       }
 

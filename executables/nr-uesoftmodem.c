@@ -86,6 +86,7 @@ unsigned short config_frames[4] = {2,9,11,13};
 #include "nr_nas_msg_sim.h"
 #include <openair1/PHY/MODULATION/nr_modulation.h>
 #include "openair2/GNB_APP/gnb_paramdef.h"
+#include "openair2/SDAP/nr_sdap/nr_sdap_entity.h"
 
 extern const char *duplex_mode[];
 THREAD_STRUCT thread_struct;
@@ -518,6 +519,7 @@ int main(int argc, char **argv)
   ue_id_g = (node_number == 0) ? 0 : node_number - 2;
   AssertFatal(ue_id_g >= 0, "UE id is expected to be nonnegative.\n");
 
+  sdap_init();
   if(node_number == 0)
     init_pdcp(0);
   else

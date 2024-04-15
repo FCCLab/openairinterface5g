@@ -29,16 +29,47 @@
 #include <openair2/LAYER2/nr_pdcp/nr_pdcp_oai_api.h>
 #include <openair3/ocp-gtpu/gtp_itf.h>
 #include "openair2/LAYER2/nr_pdcp/nr_pdcp_ue_manager.h"
+//#include "common/utils/collection/queue.h"
+#include "sys/queue.h"
 
 #include <stdlib.h>
 #include <string.h>
 #include <pthread.h>
 
-typedef struct {
-  nr_sdap_entity_t *sdap_entity_llist;
-} nr_sdap_entity_info;
+struct nr_sdap_entity_sl {
+  nr_sdap_entity_t *entity;
+  SLIST_ENTRY(nr_sdap_entity_sl) elements;
+};
 
-static nr_sdap_entity_info sdap_info;
+SLIST_HEAD(nr_sdap_entity_list_head, nr_sdap_entity_sl);
+static struct nr_sdap_entity_list_head entity_head = SLIST_HEAD_INITIALIZER(head);
+
+void sdap_init(void)
+{
+  SLIST_INIT(&entity_head);
+}
+
+static pthread_mutex_t sdap_lock = PTHREAD_MUTEX_INITIALIZER;
+
+void nr_sdap_lock(nr_sdap_entity_t *ent, enum Sdap_Mutex_Type mutexType)
+{
+  if (ent != NULL) {
+    if (0 != pthread_mutex_lock(ent->mutex + mutexType))
+      LOG_E(SDAP, "Couldn't lock SDAP entity\n");
+  } else {
+    LOG_E(SDAP, "Entity is NULL\n");
+  }
+}
+
+void nr_sdap_unlock(nr_sdap_entity_t *ent, enum Sdap_Mutex_Type mutexType)
+{
+  if (ent != NULL) {
+    if (0 != pthread_mutex_unlock(ent->mutex + mutexType))
+      LOG_E(SDAP, "Couldn't release SDAP entity\n");
+  } else {
+    LOG_E(SDAP, "Entity is NULL\n");
+  }
+}
 
 instance_t *N3GTPUInst = NULL;
 
@@ -486,9 +517,9 @@ nr_sdap_entity_t *new_nr_sdap_entity(int is_gnb,
 {
   /* check whether the SDAP entity already exists and
      update QFI to DRB mapping rules in that case */
-  if (nr_sdap_get_entity(ue_id, pdusession_id)) {
+  nr_sdap_entity_t *existing_sdap_entity = nr_sdap_get_entity(ue_id, pdusession_id);
+  if (existing_sdap_entity) {
     LOG_E(SDAP, "SDAP Entity for UE already exists with RNTI/UE ID: %lu and PDU SESSION ID: %d\n", ue_id, pdusession_id);
-    nr_sdap_entity_t *existing_sdap_entity = nr_sdap_get_entity(ue_id, pdusession_id);
     rb_id_t pdcp_entity = existing_sdap_entity->default_drb;
     if(!is_gnb)
       nr_sdap_ue_qfi2drb_config(existing_sdap_entity,
@@ -532,19 +563,14 @@ nr_sdap_entity_t *new_nr_sdap_entity(int is_gnb,
       sdap_entity->qfi2drb_map_update(sdap_entity, mapped_qfi_2_add[i], sdap_entity->default_drb, has_sdap_rx, has_sdap_tx);
   }
 
-  sdap_entity->next_entity = sdap_info.sdap_entity_llist;
-  sdap_info.sdap_entity_llist = sdap_entity;
+  pthread_mutex_init(sdap_entity->mutex, NULL);
+  pthread_mutex_init(sdap_entity->mutex + 1, NULL);
+  pthread_mutex_lock(&sdap_lock);
+  struct nr_sdap_entity_sl *s = malloc(sizeof(*s));
+  s->entity = sdap_entity;
+  SLIST_INSERT_HEAD(&entity_head, s, elements);
+  pthread_mutex_unlock(&sdap_lock);
   return sdap_entity;
-}
-
-/* TODO: modify data in sdap_info with mutex lock */
-bool nr_sdap_get_first_ue_id(ue_id_t *ret)
-{
-  if (sdap_info.sdap_entity_llist == NULL) {
-    return false;
-  }
-  *ret = sdap_info.sdap_entity_llist->ue_id;
-  return true;
 }
 
 /**
@@ -554,26 +580,27 @@ bool nr_sdap_get_first_ue_id(ue_id_t *ret)
  */
 nr_sdap_entity_t *nr_sdap_get_entity(ue_id_t ue_id, int pdusession_id)
 {
-  nr_sdap_entity_t *sdap_entity;
-  sdap_entity = sdap_info.sdap_entity_llist;
-
-  if(sdap_entity == NULL)
-    return NULL;
-
-  while ((sdap_entity->ue_id != ue_id || sdap_entity->pdusession_id != pdusession_id) && sdap_entity->next_entity != NULL) {
-    sdap_entity = sdap_entity->next_entity;
+  struct nr_sdap_entity_sl *el = NULL;
+  nr_sdap_entity_t *sdap_entity = NULL;
+  pthread_mutex_lock(&sdap_lock);
+  SLIST_FOREACH(el, &entity_head, elements)
+  {
+    nr_sdap_entity_t *s = el->entity;
+    if (s->ue_id == ue_id && s->pdusession_id == pdusession_id) {
+      sdap_entity = s;
+      break;
+    }
   }
-
-  if (sdap_entity->ue_id == ue_id && sdap_entity->pdusession_id == pdusession_id)
-    return sdap_entity;
-
-  return NULL;
+  pthread_mutex_unlock(&sdap_lock);
+  return sdap_entity;
 }
 
 void nr_sdap_release_drb(ue_id_t ue_id, int drb_id, int pdusession_id)
 {
   // remove all QoS flow to DRB mappings associated with the released DRB
   nr_sdap_entity_t *sdap = nr_sdap_get_entity(ue_id, pdusession_id);
+  nr_sdap_lock(sdap, SDAP_MUTEX_TX);
+  nr_sdap_lock(sdap, SDAP_MUTEX_RX);
   if (sdap) {
     for (int i = 0; i < SDAP_MAX_QFI; i++) {
       if (sdap->qfi2drb_table[i].drb_id == drb_id)
@@ -582,21 +609,24 @@ void nr_sdap_release_drb(ue_id_t ue_id, int drb_id, int pdusession_id)
   }
   else
     LOG_E(SDAP, "Couldn't find a SDAP entity associated with PDU session ID %d\n", pdusession_id);
+  nr_sdap_unlock(sdap, SDAP_MUTEX_TX);
+  nr_sdap_unlock(sdap, SDAP_MUTEX_RX);
 }
 
-void remove_ue_ip_if(ue_id_t ue_id, int pdusession_id)
+void remove_ue_ip_if(nr_sdap_entity_t *entity)
 {
-  nr_sdap_entity_t *entity = nr_sdap_get_entity(ue_id, pdusession_id);
   DevAssert(entity != NULL);
   // Stop the read thread
   entity->stop_thread = true;
   // Bring down the IP interface
   char ifnameFull[20];
+  char ifnameSuffix[10];
+  snprintf(ifnameSuffix, sizeof(ifnameSuffix), "p%d", entity->pdusession_id);
   nas_config_interface_name(entity->ue_id,
-                            entity->pdusession_id,
                             "oaitun_",
+                            (entity->pdusession_id != get_softmodem_params()->default_pdu_session_id) ? ifnameSuffix : NULL,
                             ifnameFull,
-                            (entity->pdusession_id != get_softmodem_params()->default_pdu_session_id));
+                            sizeof(ifnameFull));
   if (bringInterfaceUpOrDown(ifnameFull, false) == 0) {
     // Close the socket associated with the interface
     close(entity->pdusession_sock);
@@ -605,79 +635,72 @@ void remove_ue_ip_if(ue_id_t ue_id, int pdusession_id)
     LOG_E(SDAP, "Could not bring interface %s down.\n", ifnameFull);
     exit(1);
   }
-  nr_sdap_delete_entity(ue_id, pdusession_id);
 }
 
-bool nr_sdap_delete_entity(ue_id_t ue_id, int pdusession_id)
+bool nr_sdap_delete_entity(ue_id_t ue_id, int pdusession_id, bool deleteIF)
 {
-  nr_sdap_entity_t *entityPtr = sdap_info.sdap_entity_llist;
-  nr_sdap_entity_t *entityPrev = NULL;
-  bool ret = false;
-  int upperBound = 0;
+  struct nr_sdap_entity_sl *el = NULL;
+  nr_sdap_entity_t *sdap_entity = NULL;
+  pthread_mutex_lock(&sdap_lock);
 
-  if (entityPtr == NULL && (pdusession_id) * (pdusession_id - NGAP_MAX_PDU_SESSION) > 0) {
-    LOG_E(SDAP, "SDAP entities not established or Invalid range of pdusession_id [0, 256].\n");
-    return ret;
-  }
-  LOG_D(SDAP, "Deleting SDAP entity for UE %lx and PDU Session id %d\n", ue_id, entityPtr->pdusession_id);
-
-  if (entityPtr->ue_id == ue_id && entityPtr->pdusession_id == pdusession_id) {
-    sdap_info.sdap_entity_llist = sdap_info.sdap_entity_llist->next_entity;
-    free(entityPtr);
-    LOG_D(SDAP, "Successfully deleted Entity.\n");
-    ret = true;
-  } else {
-    while ((entityPtr->ue_id != ue_id || entityPtr->pdusession_id != pdusession_id) && entityPtr->next_entity != NULL
-           && upperBound < SDAP_MAX_NUM_OF_ENTITIES) {
-      entityPrev = entityPtr;
-      entityPtr = entityPtr->next_entity;
-      upperBound++;
-    }
-
-    if (entityPtr->ue_id == ue_id && entityPtr->pdusession_id == pdusession_id) {
-      entityPrev->next_entity = entityPtr->next_entity;
-      free(entityPtr);
-      LOG_D(SDAP, "Successfully deleted Entity.\n");
-      ret = true;
+  SLIST_FOREACH(el, &entity_head, elements)
+  {
+    sdap_entity = el->entity;
+    if (sdap_entity->ue_id == ue_id && sdap_entity->pdusession_id == pdusession_id) {
+      break;
     }
   }
-  LOG_E(SDAP, "Entity does not exist or it was not found.\n");
-  return ret;
+  if (sdap_entity == NULL) {
+    LOG_E(SDAP, "Cannot delete SDAP entity (ue id %ld, pdu %d) from list.\n", ue_id, pdusession_id);
+    pthread_mutex_unlock(&sdap_lock);
+    return false;
+  }
+  // we lock all mutex before deleting the entity because some thread might be running tx_entity() or rx_entity()
+  nr_sdap_lock(sdap_entity, SDAP_MUTEX_TX);
+  nr_sdap_lock(sdap_entity, SDAP_MUTEX_RX);
+  SLIST_REMOVE(&entity_head, el, nr_sdap_entity_sl, elements);
+  free(el);
+  if (deleteIF) {
+    remove_ue_ip_if(sdap_entity);
+  }
+  nr_sdap_unlock(sdap_entity, SDAP_MUTEX_TX);
+  nr_sdap_unlock(sdap_entity, SDAP_MUTEX_RX);
+  free(sdap_entity);
+
+  pthread_mutex_unlock(&sdap_lock);
+  return true;
 }
 
 bool nr_sdap_delete_ue_entities(ue_id_t ue_id)
 {
-  nr_sdap_entity_t *entityPtr = sdap_info.sdap_entity_llist;
-  nr_sdap_entity_t *entityPrev = NULL;
-  int upperBound = 0;
-  bool ret = false;
+  struct nr_sdap_entity_sl *el = NULL;
+  nr_sdap_entity_t *sdap_entity = NULL;
+  pthread_mutex_lock(&sdap_lock);
 
-  if (entityPtr == NULL && (ue_id) * (ue_id - SDAP_MAX_UE_ID) > 0) {
-    LOG_W(SDAP, "SDAP entities not established or Invalid range of ue_id [0, 65536]\n");
-    return ret;
-  }
-
-  /* Handle scenario where ue_id matches the head of the list */
-  while (entityPtr != NULL && entityPtr->ue_id == ue_id && upperBound < MAX_DRBS_PER_UE) {
-    sdap_info.sdap_entity_llist = entityPtr->next_entity;
-    free(entityPtr);
-    entityPtr = sdap_info.sdap_entity_llist;
-    ret = true;
-  }
-
-  while (entityPtr != NULL && upperBound < SDAP_MAX_NUM_OF_ENTITIES) {
-    if (entityPtr->ue_id != ue_id) {
-      entityPrev = entityPtr;
-      entityPtr = entityPtr->next_entity;
-    } else {
-      entityPrev->next_entity = entityPtr->next_entity;
-      free(entityPtr);
-      entityPtr = entityPrev->next_entity;
-      LOG_I(SDAP, "Successfully deleted SDAP entity for UE %ld\n", ue_id);
-      ret = true;
+  bool deleted = false;
+  SLIST_FOREACH(el, &entity_head, elements)
+  {
+    sdap_entity = el->entity;
+    if (sdap_entity->ue_id == ue_id) {
+      // we lock all mutex before deleting the entity because some thread might be running tx_entity() or rx_entity()
+      nr_sdap_lock(sdap_entity, SDAP_MUTEX_TX);
+      nr_sdap_lock(sdap_entity, SDAP_MUTEX_RX);
+      SLIST_REMOVE(&entity_head, el, nr_sdap_entity_sl, elements);
+      free(el);
+      nr_sdap_unlock(sdap_entity, SDAP_MUTEX_TX);
+      nr_sdap_unlock(sdap_entity, SDAP_MUTEX_RX);
+      free(sdap_entity);
+      deleted = true;
     }
   }
-  return ret;
+
+  if (!deleted) {
+    LOG_E(SDAP, "Cannot delete SDAP entity (ue id %ld) from list.\n", ue_id);
+    return false;
+  }
+
+  pthread_mutex_unlock(&sdap_lock);
+  return true;
 }
 
 /**
@@ -691,6 +714,8 @@ void nr_reconfigure_sdap_entity(NR_SDAP_Config_t *sdap_config, ue_id_t ue_id, in
   bool is_gnb = false;
   /* fetch SDAP entity */
   nr_sdap_entity_t *sdap_entity = nr_sdap_get_entity(ue_id, pdusession_id);
+  nr_sdap_lock(sdap_entity, SDAP_MUTEX_TX);
+  nr_sdap_lock(sdap_entity, SDAP_MUTEX_RX);
   AssertError(sdap_entity != NULL,
               return,
               "Could not find SDAP Entity for RNTI/UE ID: %lu and PDU SESSION ID: %d\n",
@@ -718,12 +743,18 @@ void nr_reconfigure_sdap_entity(NR_SDAP_Config_t *sdap_config, ue_id_t ue_id, in
       sdap_entity->qfi2drb_map_delete(sdap_entity, qfi);
     }
   }
+  nr_sdap_unlock(sdap_entity, SDAP_MUTEX_TX);
+  nr_sdap_unlock(sdap_entity, SDAP_MUTEX_RX);
 }
 
 void set_qfi(uint8_t qfi, uint8_t pduid, ue_id_t ue_id)
 {
   nr_sdap_entity_t *entity = nr_sdap_get_entity(ue_id, pduid);
+  nr_sdap_lock(entity, SDAP_MUTEX_TX);
+  nr_sdap_lock(entity, SDAP_MUTEX_RX);
   DevAssert(entity != NULL);
   entity->qfi = qfi;
+  nr_sdap_unlock(entity, SDAP_MUTEX_TX);
+  nr_sdap_unlock(entity, SDAP_MUTEX_RX);
   return;
 }
