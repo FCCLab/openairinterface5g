@@ -179,11 +179,12 @@ int setInterfaceParameter(char *interfaceName, char *settingAddress, int operati
 
 // sets a genneric interface parameter
 // (SIOCSIFADDR, SIOCSIFNETMASK, SIOCSIFBRDADDR, SIOCSIFFLAGS)
-int bringInterfaceUp(char *interfaceName, int up) {
+int bringInterfaceUpOrDown(const char *interfaceName, bool up)
+{
   int sock_fd;
   struct ifreq ifr;
 
-  if((sock_fd = socket(AF_INET,SOCK_DGRAM,0)) < 0) {
+  if ((sock_fd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
     LOG_E(OIP,"Bringing interface UP, for %s, failed creating socket\n", interfaceName);
     return 1;
   }
@@ -191,7 +192,7 @@ int bringInterfaceUp(char *interfaceName, int up) {
   memset(&ifr, 0, sizeof(ifr));
   strncpy(ifr.ifr_name, interfaceName, sizeof(ifr.ifr_name)-1);
 
-  if(up) {
+  if (up) {
     ifr.ifr_flags |= IFF_UP | IFF_NOARP | IFF_MULTICAST;
 
     if (ioctl(sock_fd, SIOCSIFFLAGS, (caddr_t)&ifr) == -1) {
@@ -216,7 +217,7 @@ int bringInterfaceUp(char *interfaceName, int up) {
 }
 // non blocking full configuration of the interface (address, net mask, and broadcast mask)
 int NAS_config(char *interfaceName, char *ipAddress, char *networkMask, char *broadcastAddress) {
-  bringInterfaceUp(interfaceName, 0);
+  bringInterfaceUpOrDown(interfaceName, false);
   // sets the machine address
   int returnValue= setInterfaceParameter(interfaceName, ipAddress,SIOCSIFADDR);
 
@@ -269,7 +270,7 @@ int nas_config_mbms(int interface_id, int thirdOctet, int fourthOctet, char *ifn
   sprintf(broadcastAddress, "%s.%d.255",baseNetAddress, thirdOctet);
   sprintf(interfaceName, "%s%s%d", (UE_NAS_USE_TUN || ENB_NAS_USE_TUN)?"oaitun_":ifname,
           UE_NAS_USE_TUN?ifname/*"ue"*/: (ENB_NAS_USE_TUN?ifname/*"enb"*/:""),interface_id);
-  bringInterfaceUp(interfaceName, 0);
+  bringInterfaceUpOrDown(interfaceName, false);
   // sets the machine address
   returnValue= setInterfaceParameter(interfaceName, ipAddress,SIOCSIFADDR);
 
@@ -282,7 +283,7 @@ int nas_config_mbms(int interface_id, int thirdOctet, int fourthOctet, char *ifn
     returnValue= setInterfaceParameter(interfaceName, broadcastAddress,SIOCSIFBRDADDR);
 
   if(!returnValue)
-    bringInterfaceUp(interfaceName, 1);
+    bringInterfaceUpOrDown(interfaceName, true);
 
   if(!returnValue)
     LOG_I(OIP,"Interface %s successfully configured, ip address %s, mask %s broadcast address %s\n",
@@ -307,7 +308,7 @@ int nas_config_mbms_s1(int interface_id, int thirdOctet, int fourthOctet, char *
 
   sprintf(broadcastAddress, "%s.%d.255","10.0", thirdOctet);
   sprintf(interfaceName, "%s%s%d", "oaitun_",ifname,interface_id);
-  bringInterfaceUp(interfaceName, 0);
+  bringInterfaceUpOrDown(interfaceName, false);
   // sets the machine address
   returnValue= setInterfaceParameter(interfaceName, ipAddress,SIOCSIFADDR);
 
@@ -322,7 +323,7 @@ int nas_config_mbms_s1(int interface_id, int thirdOctet, int fourthOctet, char *
   printf("returnValue %d\n",returnValue);
 
   if(!returnValue)
-    bringInterfaceUp(interfaceName, 1);
+    bringInterfaceUpOrDown(interfaceName, true);
   printf("returnValue %d\n",returnValue);
 
   if(!returnValue)
@@ -357,8 +358,8 @@ int nas_config(int interface_id, int thirdOctet, int fourthOctet, const char *if
   int returnValue;
   sprintf(ipAddress, "%s.%d.%d", baseNetAddress,thirdOctet,fourthOctet);
   sprintf(broadcastAddress, "%s.%d.255",baseNetAddress, thirdOctet);
-  bringInterfaceUp(interfaceName, 0);
   nas_config_interface_name(interface_id, ifname, ifname_suffix, interfaceName, sizeof(interfaceName));
+  bringInterfaceUpOrDown(interfaceName, false);
   // sets the machine address
   returnValue= setInterfaceParameter(interfaceName, ipAddress,SIOCSIFADDR);
 
@@ -371,7 +372,7 @@ int nas_config(int interface_id, int thirdOctet, int fourthOctet, const char *if
     returnValue= setInterfaceParameter(interfaceName, broadcastAddress,SIOCSIFBRDADDR);
 
   if(!returnValue)
-	  returnValue=bringInterfaceUp(interfaceName, 1);
+    returnValue = bringInterfaceUpOrDown(interfaceName, true);
 
   if(!returnValue)
     LOG_I(OIP,"Interface %s successfully configured, ip address %s, mask %s broadcast address %s\n",
