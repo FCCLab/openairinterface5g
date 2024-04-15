@@ -118,9 +118,16 @@ typedef struct nr_sdap_entity_s {
                     char *buf,
                     int size);
 
-  /* List of entities */
-  struct nr_sdap_entity_s *next_entity;
+  /* SDAP TX and RX are handled by different threads. Common mutex would block one thread if the other is busy.
+     Protecting the tx_entity() and rx_entity() is required to prevent accessing the data after the SDAP entity
+     has been deleted by another thread. Hence, a separate mutex is used for tx and rx threads. */
+  pthread_mutex_t mutex[2]; // 0: tx mutex, 1: rx mutex
 } nr_sdap_entity_t;
+
+enum Sdap_Mutex_Type {
+  SDAP_MUTEX_TX,
+  SDAP_MUTEX_RX,
+};
 
 /* QFI to DRB Mapping Related Function */
 void nr_sdap_qfi2drb_map_update(nr_sdap_entity_t *entity, uint8_t qfi, rb_id_t drb, bool has_sdap_rx, bool has_sdap_tx);
@@ -187,7 +194,7 @@ void nr_sdap_release_drb(ue_id_t ue_id, int drb_id, int pdusession_id);
  * @param[in] pdusession_id Unique identifier for the Packet Data Unit Session. ID Range [0, 256].
  * @return                  True, if successfully deleted entity, false otherwise.
  */
-bool nr_sdap_delete_entity(ue_id_t ue_id, int pdusession_id);
+bool nr_sdap_delete_entity(ue_id_t ue_id, int pdusession_id, bool deleteIF);
 
 /**
  * @brief Function to delete all SDAP Entities based on the ue_id.
@@ -217,6 +224,7 @@ bool is_sdap_tx(bool is_gnb, NR_SDAP_Config_t *sdap_config);
 void nr_reconfigure_sdap_entity(NR_SDAP_Config_t *sdap_config, ue_id_t ue_id, int pdusession_id, int drb_id);
 
 void set_qfi(uint8_t qfi, uint8_t pduid, ue_id_t ue_id);
-bool nr_sdap_get_first_ue_id(ue_id_t *ret);
-void remove_ue_ip_if(ue_id_t ue_id, int pdusession_id);
+void nr_sdap_lock(nr_sdap_entity_t *ent, enum Sdap_Mutex_Type mutexType);
+void nr_sdap_unlock(nr_sdap_entity_t *ent, enum Sdap_Mutex_Type mutexType);
+void sdap_init(void);
 #endif
