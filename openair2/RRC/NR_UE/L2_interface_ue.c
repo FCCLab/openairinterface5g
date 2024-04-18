@@ -126,6 +126,13 @@ int8_t nr_mac_rrc_data_ind_ue(const module_id_t module_id,
   return(0);
 }
 
+void nr_mac_rrc_inactivity_timer_ind(const module_id_t mod_id)
+{
+  MessageDef *message_p = itti_alloc_new_message(TASK_MAC_UE, 0, NR_RRC_MAC_INAC_IND);
+  NR_RRC_MAC_INAC_IND (message_p).inactivity_timer_expired = true;
+  itti_send_msg_to_task(TASK_RRC_NRUE, GNB_MODULE_ID_TO_INSTANCE(mod_id), message_p);
+}
+
 void nr_mac_rrc_msg3_ind(const module_id_t mod_id, const int rnti, int gnb_id)
 {
   MessageDef *message_p = itti_alloc_new_message(TASK_MAC_UE, 0, NR_RRC_MAC_MSG3_IND);

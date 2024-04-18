@@ -1737,6 +1737,12 @@ void *rrc_nrue(void *notUsed)
     nr_rrc_SI_timers(SInfo);
     break;
 
+  case NR_RRC_MAC_INAC_IND:
+    LOG_D(NR_RRC, "Received data inactivity indication from lower layers\n");
+    NR_Release_Cause_t release_cause = RRC_CONNECTION_FAILURE;
+    nr_rrc_going_to_IDLE(rrc, release_cause, NULL);
+    break;
+
   case NR_RRC_MAC_MSG3_IND:
     nr_rrc_handle_msg3_indication(rrc, NR_RRC_MAC_MSG3_IND(msg_p).rnti);
     break;
