@@ -38,7 +38,7 @@
 #include "executables/nr-softmodem.h"
 
 /* RRC*/
-#include "RRC/NR_UE/rrc_proto.h"
+#include "RRC/NR_UE/L2_interface_ue.h"
 
 /* MAC */
 #include "NR_MAC_COMMON/nr_mac.h"

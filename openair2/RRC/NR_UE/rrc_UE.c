@@ -47,6 +47,7 @@
 
 #include "rrc_defs.h"
 #include "rrc_proto.h"
+#include "L2_interface_ue.h"
 #include "LAYER2/NR_MAC_UE/mac_proto.h"
 
 #include "intertask_interface.h"

@@ -31,7 +31,7 @@
  */
 
 /* RRC */
-#include "RRC/NR_UE/rrc_proto.h"
+#include "RRC/NR_UE/L2_interface_ue.h"
 
 /* MAC */
 #include "LAYER2/NR_MAC_COMMON/nr_mac_extern.h"

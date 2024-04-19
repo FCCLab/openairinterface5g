@@ -27,6 +27,7 @@
 #include "PHY/INIT/nr_phy_init.h"
 #include "NR_MAC_UE/mac_proto.h"
 #include "RRC/NR_UE/rrc_proto.h"
+#include "RRC/NR_UE/L2_interface_ue.h"
 #include "SCHED_NR_UE/phy_frame_config_nr.h"
 #include "SCHED_NR_UE/defs.h"
 #include "PHY/NR_UE_TRANSPORT/nr_transport_proto_ue.h"
