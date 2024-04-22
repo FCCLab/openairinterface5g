@@ -555,6 +555,7 @@ typedef struct {
  int ta_frame;
  int ta_slot;
  int ta_command;
+ int ta_offset;
  bool is_rar;
 } fapi_nr_ta_command_pdu;
 

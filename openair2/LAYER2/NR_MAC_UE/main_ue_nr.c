@@ -70,6 +70,7 @@ void nr_ue_init_mac(NR_UE_MAC_INST_t *mac)
   mac->uecap_maxMIMO_PUSCH_layers_nocb = 0;
   mac->p_Max = INT_MIN;
   mac->p_Max_alt = INT_MIN;
+  mac->n_ta_offset = -1;
   reset_mac_inst(mac);
 
   // need to inizialize because might not been setup (optional timer)

@@ -374,9 +374,19 @@ static void configure_ta_command(PHY_VARS_NR_UE *ue, fapi_nr_ta_command_pdu *ta_
       ue->ta_frame = ta_command_pdu->ta_frame;
     ue->ta_command = ta_command_pdu->ta_command;
   }
+
   LOG_D(PHY,
         "TA command received in %d.%d Starting UL time alignment procedures. TA update will be applied at frame %d slot %d\n",
         ta_command_pdu->ta_frame, ta_command_pdu->ta_slot, ue->ta_frame, ue->ta_slot);
+
+  if (ta_command_pdu->ta_offset != -1) {
+    // ta_offset_samples : ta_offset = samples_per_subframe : (Δf_max x N_f / 1000)
+    // As described in Section 4.3.1 in 38.211
+    int ta_offset_samples = (ta_command_pdu->ta_offset * samples_per_subframe) / (4096 * 480);
+    ue->N_TA_offset = ta_offset_samples;
+    LOG_D(PHY, "Received N_TA offset %d from upper layers. Corresponds to %d samples.\n",
+          ta_command_pdu->ta_offset, ta_offset_samples);
+  }
 }
 
 static void nr_ue_scheduled_response_dl(NR_UE_MAC_INST_t *mac,
