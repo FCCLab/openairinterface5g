@@ -224,42 +224,6 @@ void nr_feptx_prec(RU_t *ru,int frame_tx,int tti_tx) {
   stop_meas(&ru->precoding_stats);
 }
 
-
-void nr_fep_full(RU_t *ru, int slot) {
-
-  RU_proc_t *proc = &ru->proc;
-  int l, aa;
-  NR_DL_FRAME_PARMS *fp = ru->nr_frame_parms;
-
-  // if ((fp->frame_type == TDD) && 
-     // (subframe_select(fp,proc->tti_rx) != NR_UPLINK_SLOT)) return;
-
-  LOG_D(PHY,"In fep_full for slot = %d\n", proc->tti_rx);
-
-  start_meas(&ru->ofdm_demod_stats);
-  if (ru->idx == 0) VCD_SIGNAL_DUMPER_DUMP_FUNCTION_BY_NAME( VCD_SIGNAL_DUMPER_FUNCTIONS_PHY_PROCEDURES_RU_FEPRX, 1 );
-
-
-  // remove_7_5_kHz(ru,proc->tti_rx<<1);
-  // remove_7_5_kHz(ru,1+(proc->tti_rx<<1));
-  int offset = (proc->tti_rx % RU_RX_SLOT_DEPTH) * (fp->symbols_per_slot * fp->ofdm_symbol_size);
-  for (l = 0; l < fp->symbols_per_slot; l++) {
-    for (aa = 0; aa < fp->nb_antennas_rx; aa++) {
-      nr_slot_fep_ul(fp,
-                     ru->common.rxdata[aa],
-                     &ru->common.rxdataF[aa][offset],
-                     l,
-                     proc->tti_rx,
-                     ru->N_TA_offset);
-    }
-  }
-
-  if (ru->idx == 0) VCD_SIGNAL_DUMPER_DUMP_FUNCTION_BY_NAME( VCD_SIGNAL_DUMPER_FUNCTIONS_PHY_PROCEDURES_RU_FEPRX, 0 );
-  stop_meas(&ru->ofdm_demod_stats);
-  
-  
-}
-
 // core routine for FEP TX, called from threads in RU TX thread-pool 
 void nr_feptx(void *arg) {
 
@@ -363,8 +327,8 @@ void nr_feptx_tp(RU_t *ru, int frame_tx, int slot) {
 }
 
 // core RX FEP routine, called by threads in RU thread-pool
-void nr_fep(void* arg) {
-	
+void nr_fep(void* arg)
+{
   feprx_cmd_t *feprx_cmd = (feprx_cmd_t *)arg;
 
   RU_t *ru         = feprx_cmd->ru;
