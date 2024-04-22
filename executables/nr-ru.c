@@ -959,43 +959,10 @@ int setup_RU_buffers(RU_t *ru) {
   int mu = config->ssb_config.scs_common.value;
   int N_RB = config->carrier_config.dl_grid_size[config->ssb_config.scs_common.value].value;
 
-  if (config->cell_config.frame_duplex_type.value == TDD) {
-    int N_TA_offset =  config->carrier_config.uplink_frequency.value < 6000000 ? 400 : 431; // reference samples  for 25600Tc @ 30.72 Ms/s for FR1, same @ 61.44 Ms/s for FR2
-    double factor=1;
-
-    switch (mu) {
-      case 0: //15 kHz scs
-        AssertFatal(N_TA_offset == 400, "scs_common 15kHz only for FR1\n");
-        factor = fp->samples_per_subframe / 30720.0;
-        break;
-
-      case 1: //30 kHz sc
-        AssertFatal(N_TA_offset == 400, "scs_common 30kHz only for FR1\n");
-        factor = fp->samples_per_subframe / 30720.0;
-        break;
-
-      case 2: //60 kHz scs
-        AssertFatal(1==0, "scs_common should not be 60 kHz\n");
-        break;
-
-      case 3: //120 kHz scs
-        AssertFatal(N_TA_offset == 431, "scs_common 120kHz only for FR2\n");
-        factor = fp->samples_per_subframe / 61440.0;
-        break;
-
-      case 4: //240 kHz scs
-        AssertFatal(N_TA_offset == 431, "scs_common 240kHz only for FR2\n");
-        factor = fp->samples_per_subframe / 61440.0;
-        break;
-
-      default:
-        AssertFatal(1==0, "Invalid scs_common!\n");
-    }
-
-    ru->N_TA_offset = (int)(N_TA_offset * factor);
-    LOG_I(PHY,"RU %d Setting N_TA_offset to %d samples (factor %f, UL Freq %d, N_RB %d, mu %d)\n",ru->idx,ru->N_TA_offset,factor,
-          config->carrier_config.uplink_frequency.value, N_RB, mu);
-  } else ru->N_TA_offset = 0;
+  ru->N_TA_offset = set_default_nta_offset(fp->freq_range, config->cell_config.frame_duplex_type.value, fp->samples_per_subframe);
+  LOG_I(PHY,
+        "RU %d Setting N_TA_offset to %d samples (UL Freq %d, N_RB %d, mu %d)\n",
+        ru->idx, ru->N_TA_offset, config->carrier_config.uplink_frequency.value, N_RB, mu);
 
   if (ru->openair0_cfg.mmapped_dma == 1) {
     // replace RX signal buffers with mmaped HW versions

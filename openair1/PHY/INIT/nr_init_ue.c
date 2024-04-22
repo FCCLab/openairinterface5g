@@ -655,45 +655,13 @@ void init_N_TA_offset(PHY_VARS_NR_UE *ue)
 {
   NR_DL_FRAME_PARMS *fp = &ue->frame_parms;
 
-  if (fp->frame_type == FDD) {
-    ue->N_TA_offset = 0;
-  } else {
-    // reference samples  for 25600Tc @ 30.72 Ms/s for FR1, same @ 61.44 Ms/s for FR2
-    int N_TA_offset = fp->ul_CarrierFreq < 6e9 ? 400 : 431;
+  ue->N_TA_offset = set_default_nta_offset(fp->freq_range, fp->frame_type, fp->samples_per_subframe);
+  ue->ta_frame = -1;
+  ue->ta_slot = -1;
 
-    double factor = 1.0;
-    switch (fp->numerology_index) {
-      case 0: //15 kHz scs
-        AssertFatal(N_TA_offset == 400, "scs_common 15kHz only for FR1\n");
-        factor = fp->samples_per_subframe / 30720.0;
-        break;
-      case 1: //30 kHz sc
-        AssertFatal(N_TA_offset == 400, "scs_common 30kHz only for FR1\n");
-        factor = fp->samples_per_subframe / 30720.0;
-        break;
-      case 2: //60 kHz scs
-        AssertFatal(1==0, "scs_common should not be 60 kHz\n");
-        break;
-      case 3: //120 kHz scs
-        AssertFatal(N_TA_offset == 431, "scs_common 120kHz only for FR2\n");
-        factor = fp->samples_per_subframe / 61440.0;
-        break;
-      case 4: //240 kHz scs
-        AssertFatal(N_TA_offset == 431, "scs_common 240kHz only for FR2\n");
-        factor = fp->samples_per_subframe / 61440.0;
-        break;
-      default:
-        AssertFatal(1==0, "Invalid scs_common!\n");
-    }
-
-    ue->N_TA_offset = (int)(N_TA_offset * factor);
-    ue->ta_frame = -1;
-    ue->ta_slot = -1;
-
-    LOG_I(PHY,
-          "UE %d Setting N_TA_offset to %d samples (factor %f, UL Freq %lu, N_RB %d, mu %d)\n",
-          ue->Mod_id, ue->N_TA_offset, factor, fp->ul_CarrierFreq, fp->N_RB_DL, fp->numerology_index);
-  }
+  LOG_I(PHY,
+        "UE %d Setting N_TA_offset to %d samples (UL Freq %lu, N_RB %d, mu %d)\n",
+        ue->Mod_id, ue->N_TA_offset, fp->ul_CarrierFreq, fp->N_RB_DL, fp->numerology_index);
 }
 
 void phy_init_nr_top(PHY_VARS_NR_UE *ue) {
