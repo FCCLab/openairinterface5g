@@ -1754,12 +1754,29 @@ static void configure_maccellgroup(NR_UE_MAC_INST_t *mac, const NR_MAC_CellGroup
     }
   }
   if (mcg->tag_Config) {
-    // TODO TAG not handled
-    if(mcg->tag_Config->tag_ToAddModList) {
+    if (mcg->tag_Config->tag_ToReleaseList) {
+      for (int i = 0; i < mcg->tag_Config->tag_ToReleaseList->list.count; i++) {
+        for (int j = 0; j < mac->TAG_list.count; j++) {
+          if (*mcg->tag_Config->tag_ToReleaseList->list.array[i] == mac->TAG_list.array[j]->tag_Id)
+            asn_sequence_del(&mac->TAG_list, j, 1);
+        }
+      }
+    }
+    if (mcg->tag_Config->tag_ToAddModList) {
       for (int i = 0; i < mcg->tag_Config->tag_ToAddModList->list.count; i++) {
-        if (mcg->tag_Config->tag_ToAddModList->list.array[i]->timeAlignmentTimer !=
-            NR_TimeAlignmentTimer_infinity)
-          LOG_E(NR_MAC, "TimeAlignmentTimer not handled\n");
+        int j;
+        for (j = 0; j < mac->TAG_list.count; j++) {
+          if (mac->TAG_list.array[j]->tag_Id == mcg->tag_Config->tag_ToAddModList->list.array[i]->tag_Id)
+            break;
+        }
+        if (j < mac->TAG_list.count) {
+          UPDATE_IE(mac->TAG_list.array[j], mcg->tag_Config->tag_ToAddModList->list.array[i], NR_TAG_t);
+        }
+        else {
+          NR_TAG_t *local_tag = NULL;
+          UPDATE_IE(local_tag, mcg->tag_Config->tag_ToAddModList->list.array[i], NR_TAG_t);
+          ASN_SEQUENCE_ADD(&mac->TAG_list, local_tag);
+        }
       }
     }
   }

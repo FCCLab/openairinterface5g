@@ -76,7 +76,7 @@
 #define NR_INVALID_LCGID (NR_MAX_NUM_LCGID)
 
 #define MAX_NUM_BWP_UE 5
-#define NUM_SLOT_FRAME 10
+#define MAX_NUM_TAGS 4
 #define NR_MAX_SR_ID 8  // SchedulingRequestId ::= INTEGER (0..7)
 
 /*!\brief value for indicating BSR Timer is not running */
@@ -573,6 +573,7 @@ typedef struct NR_UE_MAC_INST_s {
   NR_UL_HARQ_INFO_t ul_harq_info[NR_MAX_HARQ_PROCESSES];
 
   NR_TAG_Id_t tag_Id;
+  A_SEQUENCE_OF(NR_TAG_t) TAG_list;
 
   nr_emulated_l1_t nr_ue_emul_l1;
 
