@@ -209,6 +209,183 @@ bool compare_param_response(const nfapi_nr_param_response_scf_t *unpacked_req, c
 
   return 0;
 }
+
+bool compare_config_request(const nfapi_nr_config_request_scf_t *unpacked_req, const nfapi_nr_config_request_scf_t *req)
+{
+  CMP(unpacked_req->header.message_id, req->header.message_id);
+  CMP(unpacked_req->header.message_length, req->header.message_length);
+  CMP(unpacked_req->num_tlv, req->num_tlv);
+
+  CMP(unpacked_req->carrier_config.dl_bandwidth.tl.tag, req->carrier_config.dl_bandwidth.tl.tag);
+  CMP(unpacked_req->carrier_config.dl_bandwidth.value, req->carrier_config.dl_bandwidth.value);
+
+  CMP(unpacked_req->carrier_config.dl_frequency.tl.tag, req->carrier_config.dl_frequency.tl.tag);
+  CMP(unpacked_req->carrier_config.dl_frequency.value, req->carrier_config.dl_frequency.value);
+
+  for (int i = 0; i < 5; ++i) {
+    CMP(unpacked_req->carrier_config.dl_k0[i].tl.tag, req->carrier_config.dl_k0[i].tl.tag);
+    CMP(unpacked_req->carrier_config.dl_k0[i].value, req->carrier_config.dl_k0[i].value);
+
+    CMP(unpacked_req->carrier_config.dl_grid_size[i].tl.tag, req->carrier_config.dl_grid_size[i].tl.tag);
+    CMP(unpacked_req->carrier_config.dl_grid_size[i].value, req->carrier_config.dl_grid_size[i].value);
+  }
+
+  CMP(unpacked_req->carrier_config.num_tx_ant.tl.tag, req->carrier_config.num_tx_ant.tl.tag);
+  CMP(unpacked_req->carrier_config.num_tx_ant.value, req->carrier_config.num_tx_ant.value);
+
+  CMP(unpacked_req->carrier_config.uplink_bandwidth.tl.tag, req->carrier_config.uplink_bandwidth.tl.tag);
+  CMP(unpacked_req->carrier_config.uplink_bandwidth.value, req->carrier_config.uplink_bandwidth.value);
+
+  CMP(unpacked_req->carrier_config.uplink_frequency.tl.tag, req->carrier_config.uplink_frequency.tl.tag);
+  CMP(unpacked_req->carrier_config.uplink_frequency.value, req->carrier_config.uplink_frequency.value);
+
+  for (int i = 0; i < 5; ++i) {
+    CMP(unpacked_req->carrier_config.ul_k0[i].tl.tag, req->carrier_config.ul_k0[i].tl.tag);
+    CMP(unpacked_req->carrier_config.ul_k0[i].value, req->carrier_config.ul_k0[i].value);
+
+    CMP(unpacked_req->carrier_config.ul_grid_size[i].tl.tag, req->carrier_config.ul_grid_size[i].tl.tag);
+    CMP(unpacked_req->carrier_config.ul_grid_size[i].value, req->carrier_config.ul_grid_size[i].value);
+  }
+
+  CMP(unpacked_req->carrier_config.num_rx_ant.tl.tag, req->carrier_config.num_rx_ant.tl.tag);
+  CMP(unpacked_req->carrier_config.num_rx_ant.value, req->carrier_config.num_rx_ant.value);
+
+  CMP(unpacked_req->carrier_config.frequency_shift_7p5khz.tl.tag, req->carrier_config.frequency_shift_7p5khz.tl.tag);
+  CMP(unpacked_req->carrier_config.frequency_shift_7p5khz.value, req->carrier_config.frequency_shift_7p5khz.value);
+
+  CMP(unpacked_req->cell_config.phy_cell_id.tl.tag, req->cell_config.phy_cell_id.tl.tag);
+  CMP(unpacked_req->cell_config.phy_cell_id.value, req->cell_config.phy_cell_id.value);
+
+  CMP(unpacked_req->cell_config.frame_duplex_type.tl.tag, req->cell_config.frame_duplex_type.tl.tag);
+  CMP(unpacked_req->cell_config.frame_duplex_type.value, req->cell_config.frame_duplex_type.value);
+
+  CMP(unpacked_req->ssb_config.ss_pbch_power.tl.tag, req->ssb_config.ss_pbch_power.tl.tag);
+  CMP(unpacked_req->ssb_config.ss_pbch_power.value, req->ssb_config.ss_pbch_power.value);
+
+  CMP(unpacked_req->ssb_config.bch_payload.tl.tag, req->ssb_config.bch_payload.tl.tag);
+  CMP(unpacked_req->ssb_config.bch_payload.value, req->ssb_config.bch_payload.value);
+
+  CMP(unpacked_req->ssb_config.scs_common.tl.tag, req->ssb_config.scs_common.tl.tag);
+  CMP(unpacked_req->ssb_config.scs_common.value, req->ssb_config.scs_common.value);
+
+  CMP(unpacked_req->prach_config.prach_sequence_length.tl.tag, req->prach_config.prach_sequence_length.tl.tag);
+  CMP(unpacked_req->prach_config.prach_sequence_length.value, req->prach_config.prach_sequence_length.value);
+
+  CMP(unpacked_req->prach_config.prach_sub_c_spacing.tl.tag, req->prach_config.prach_sub_c_spacing.tl.tag);
+  CMP(unpacked_req->prach_config.prach_sub_c_spacing.value, req->prach_config.prach_sub_c_spacing.value);
+
+  CMP(unpacked_req->prach_config.restricted_set_config.tl.tag, req->prach_config.restricted_set_config.tl.tag);
+  CMP(unpacked_req->prach_config.restricted_set_config.value, req->prach_config.restricted_set_config.value);
+
+  CMP(unpacked_req->prach_config.num_prach_fd_occasions.tl.tag, req->prach_config.num_prach_fd_occasions.tl.tag);
+  CMP(unpacked_req->prach_config.num_prach_fd_occasions.value, req->prach_config.num_prach_fd_occasions.value);
+
+  CMP(unpacked_req->prach_config.prach_ConfigurationIndex.tl.tag, req->prach_config.prach_ConfigurationIndex.tl.tag);
+  CMP(unpacked_req->prach_config.prach_ConfigurationIndex.value, req->prach_config.prach_ConfigurationIndex.value);
+
+  for (int i = 0; i < unpacked_req->prach_config.num_prach_fd_occasions.value; i++) {
+    nfapi_nr_num_prach_fd_occasions_t unpacked_prach_fd_occasion = unpacked_req->prach_config.num_prach_fd_occasions_list[i];
+    nfapi_nr_num_prach_fd_occasions_t req_prach_fd_occasion = req->prach_config.num_prach_fd_occasions_list[i];
+
+    CMP(unpacked_prach_fd_occasion.prach_root_sequence_index.tl.tag, req_prach_fd_occasion.prach_root_sequence_index.tl.tag);
+    CMP(unpacked_prach_fd_occasion.prach_root_sequence_index.value, req_prach_fd_occasion.prach_root_sequence_index.value);
+
+    CMP(unpacked_prach_fd_occasion.num_root_sequences.tl.tag, req_prach_fd_occasion.num_root_sequences.tl.tag);
+    CMP(unpacked_prach_fd_occasion.num_root_sequences.value, req_prach_fd_occasion.num_root_sequences.value);
+
+    CMP(unpacked_prach_fd_occasion.k1.tl.tag, req_prach_fd_occasion.k1.tl.tag);
+    CMP(unpacked_prach_fd_occasion.k1.value, req_prach_fd_occasion.k1.value);
+
+    CMP(unpacked_prach_fd_occasion.prach_zero_corr_conf.tl.tag, req_prach_fd_occasion.prach_zero_corr_conf.tl.tag);
+    CMP(unpacked_prach_fd_occasion.prach_zero_corr_conf.value, req_prach_fd_occasion.prach_zero_corr_conf.value);
+
+    CMP(unpacked_prach_fd_occasion.num_unused_root_sequences.tl.tag, req_prach_fd_occasion.num_unused_root_sequences.tl.tag);
+    CMP(unpacked_prach_fd_occasion.num_unused_root_sequences.value, req_prach_fd_occasion.num_unused_root_sequences.value);
+    for (int k = 0; k < unpacked_prach_fd_occasion.num_unused_root_sequences.value; k++) {
+      CMP(unpacked_prach_fd_occasion.unused_root_sequences_list[k].tl.tag,
+          req_prach_fd_occasion.unused_root_sequences_list[k].tl.tag);
+      CMP(unpacked_prach_fd_occasion.unused_root_sequences_list[k].value,
+          req_prach_fd_occasion.unused_root_sequences_list[k].value);
+    }
+  }
+
+  CMP(unpacked_req->prach_config.ssb_per_rach.tl.tag, req->prach_config.ssb_per_rach.tl.tag);
+  CMP(unpacked_req->prach_config.ssb_per_rach.value, req->prach_config.ssb_per_rach.value);
+
+  CMP(unpacked_req->prach_config.prach_multiple_carriers_in_a_band.tl.tag,
+      req->prach_config.prach_multiple_carriers_in_a_band.tl.tag);
+  CMP(unpacked_req->prach_config.prach_multiple_carriers_in_a_band.value,
+      req->prach_config.prach_multiple_carriers_in_a_band.value);
+
+  CMP(unpacked_req->ssb_table.ssb_offset_point_a.tl.tag, req->ssb_table.ssb_offset_point_a.tl.tag);
+  CMP(unpacked_req->ssb_table.ssb_offset_point_a.value, req->ssb_table.ssb_offset_point_a.value);
+
+  CMP(unpacked_req->ssb_table.ssb_period.tl.tag, req->ssb_table.ssb_period.tl.tag);
+  CMP(unpacked_req->ssb_table.ssb_period.value, req->ssb_table.ssb_period.value);
+
+  CMP(unpacked_req->ssb_table.ssb_subcarrier_offset.tl.tag, req->ssb_table.ssb_subcarrier_offset.tl.tag);
+  CMP(unpacked_req->ssb_table.ssb_subcarrier_offset.value, req->ssb_table.ssb_subcarrier_offset.value);
+
+  CMP(unpacked_req->ssb_table.MIB.tl.tag, req->ssb_table.MIB.tl.tag);
+  CMP(unpacked_req->ssb_table.MIB.value, req->ssb_table.MIB.value);
+
+  CMP(unpacked_req->ssb_table.ssb_mask_list[0].ssb_mask.tl.tag, req->ssb_table.ssb_mask_list[0].ssb_mask.tl.tag);
+  CMP(unpacked_req->ssb_table.ssb_mask_list[0].ssb_mask.value, req->ssb_table.ssb_mask_list[0].ssb_mask.value);
+
+  CMP(unpacked_req->ssb_table.ssb_mask_list[1].ssb_mask.tl.tag, req->ssb_table.ssb_mask_list[1].ssb_mask.tl.tag);
+  CMP(unpacked_req->ssb_table.ssb_mask_list[1].ssb_mask.value, req->ssb_table.ssb_mask_list[1].ssb_mask.value);
+
+  for (int i = 0; i < 64; i++) {
+    CMP(unpacked_req->ssb_table.ssb_beam_id_list[i].beam_id.tl.tag, req->ssb_table.ssb_beam_id_list[i].beam_id.tl.tag);
+    CMP(unpacked_req->ssb_table.ssb_beam_id_list[i].beam_id.value, req->ssb_table.ssb_beam_id_list[i].beam_id.value);
+  }
+
+  CMP(unpacked_req->tdd_table.tdd_period.tl.tag, req->tdd_table.tdd_period.tl.tag);
+  CMP(unpacked_req->tdd_table.tdd_period.value, req->tdd_table.tdd_period.value);
+
+  const uint8_t slotsperframe[5] = {10, 20, 40, 80, 160};
+  // Assuming always CP_Normal, because Cyclic prefix is not included in CONFIG.request 10.02, but is present in 10.04
+  uint8_t cyclicprefix = 1;
+  bool normal_CP = cyclicprefix ? false : true;
+  // 3GPP 38.211 Table 4.3.2.1 & Table 4.3.2.2
+  uint8_t number_of_symbols_per_slot = normal_CP ? 14 : 12;
+
+  for (int i = 0; i < slotsperframe[unpacked_req->ssb_config.scs_common.value]; i++) {
+    for (int k = 0; k < number_of_symbols_per_slot; k++) {
+      CMP(unpacked_req->tdd_table.max_tdd_periodicity_list[i].max_num_of_symbol_per_slot_list[k].slot_config.tl.tag,
+          req->tdd_table.max_tdd_periodicity_list[i].max_num_of_symbol_per_slot_list[k].slot_config.tl.tag);
+      CMP(unpacked_req->tdd_table.max_tdd_periodicity_list[i].max_num_of_symbol_per_slot_list[k].slot_config.value,
+          req->tdd_table.max_tdd_periodicity_list[i].max_num_of_symbol_per_slot_list[k].slot_config.value);
+    }
+  }
+
+  CMP(unpacked_req->measurement_config.rssi_measurement.tl.tag, req->measurement_config.rssi_measurement.tl.tag);
+  CMP(unpacked_req->measurement_config.rssi_measurement.value, req->measurement_config.rssi_measurement.value);
+
+  CMP(unpacked_req->nfapi_config.p7_vnf_address_ipv4.tl.tag, req->nfapi_config.p7_vnf_address_ipv4.tl.tag);
+  for (int i = 0; i < NFAPI_IPV4_ADDRESS_LENGTH; ++i) {
+    CMP(unpacked_req->nfapi_config.p7_vnf_address_ipv4.address[i], req->nfapi_config.p7_vnf_address_ipv4.address[i]);
+  }
+
+  CMP(unpacked_req->nfapi_config.p7_vnf_address_ipv6.tl.tag, req->nfapi_config.p7_vnf_address_ipv6.tl.tag);
+  for (int i = 0; i < NFAPI_IPV6_ADDRESS_LENGTH; ++i) {
+    CMP(unpacked_req->nfapi_config.p7_vnf_address_ipv6.address[i], req->nfapi_config.p7_vnf_address_ipv6.address[i]);
+  }
+
+  CMP(unpacked_req->nfapi_config.p7_vnf_port.tl.tag, req->nfapi_config.p7_vnf_port.tl.tag);
+  CMP(unpacked_req->nfapi_config.p7_vnf_port.value, req->nfapi_config.p7_vnf_port.value);
+
+  CMP(unpacked_req->nfapi_config.timing_window.tl.tag, req->nfapi_config.timing_window.tl.tag);
+  CMP(unpacked_req->nfapi_config.timing_window.value, req->nfapi_config.timing_window.value);
+
+  CMP(unpacked_req->nfapi_config.timing_info_mode.tl.tag, req->nfapi_config.timing_info_mode.tl.tag);
+  CMP(unpacked_req->nfapi_config.timing_info_mode.value, req->nfapi_config.timing_info_mode.value);
+
+  CMP(unpacked_req->nfapi_config.timing_info_period.tl.tag, req->nfapi_config.timing_info_period.tl.tag);
+  CMP(unpacked_req->nfapi_config.timing_info_period.value, req->nfapi_config.timing_info_period.value);
+  return 0;
+}
+
 void free_param_request(nfapi_nr_param_request_scf_t *msg)
 {
   if (msg->vendor_extension) {
@@ -226,6 +403,35 @@ void free_param_response(nfapi_nr_param_response_scf_t *msg)
     free(msg->cell_param.config_tlvs_to_report_list);
   }
 }
+
+void free_config_request(nfapi_nr_config_request_scf_t *msg)
+{
+  if (msg->vendor_extension) {
+    free(msg->vendor_extension);
+  }
+
+  if (msg->prach_config.num_prach_fd_occasions_list) {
+    for (int i = 0; i < msg->prach_config.num_prach_fd_occasions.value; i++) {
+      nfapi_nr_num_prach_fd_occasions_t *prach_fd_occasion = &(msg->prach_config.num_prach_fd_occasions_list[i]);
+      if(prach_fd_occasion->unused_root_sequences_list){
+        free(prach_fd_occasion->unused_root_sequences_list);
+      }
+    }
+    free(msg->prach_config.num_prach_fd_occasions_list);
+  }
+  const uint8_t slotsperframe[5] = {10, 20, 40, 80, 160};
+  if (msg->tdd_table.max_tdd_periodicity_list) {
+    for (int i = 0; i < slotsperframe[msg->ssb_config.scs_common.value]; i++) {
+      free(msg->tdd_table.max_tdd_periodicity_list[i].max_num_of_symbol_per_slot_list);
+    }
+    free(msg->tdd_table.max_tdd_periodicity_list);
+  }
+
+  if (msg->pmi_list.pmi_pdu) {
+    free(msg->pmi_list.pmi_pdu);
+  }
+}
+
 void copy_tl(const nfapi_tl_t *src, nfapi_tl_t *dst)
 {
   dst->tag = src->tag;
@@ -427,6 +633,225 @@ void copy_param_response(const nfapi_nr_param_response_scf_t *src, nfapi_nr_para
 
   copy_tl(&src->measurement_param.rssi_measurement_support.tl, &dst->measurement_param.rssi_measurement_support.tl);
   dst->measurement_param.rssi_measurement_support.value = src->measurement_param.rssi_measurement_support.value;
+
+  copy_tl(&src->nfapi_config.p7_vnf_address_ipv4.tl, &dst->nfapi_config.p7_vnf_address_ipv4.tl);
+  memcpy(dst->nfapi_config.p7_vnf_address_ipv4.address,
+         src->nfapi_config.p7_vnf_address_ipv4.address,
+         sizeof(dst->nfapi_config.p7_vnf_address_ipv4.address));
+
+  copy_tl(&src->nfapi_config.p7_vnf_address_ipv6.tl, &dst->nfapi_config.p7_vnf_address_ipv6.tl);
+  memcpy(dst->nfapi_config.p7_vnf_address_ipv6.address,
+         src->nfapi_config.p7_vnf_address_ipv6.address,
+         sizeof(dst->nfapi_config.p7_vnf_address_ipv6.address));
+
+  copy_tl(&src->nfapi_config.p7_vnf_port.tl, &dst->nfapi_config.p7_vnf_port.tl);
+  dst->nfapi_config.p7_vnf_port.value = src->nfapi_config.p7_vnf_port.value;
+
+  copy_tl(&src->nfapi_config.p7_pnf_address_ipv4.tl, &dst->nfapi_config.p7_pnf_address_ipv4.tl);
+  memcpy(dst->nfapi_config.p7_pnf_address_ipv4.address,
+         src->nfapi_config.p7_pnf_address_ipv4.address,
+         sizeof(dst->nfapi_config.p7_pnf_address_ipv4.address));
+
+  copy_tl(&src->nfapi_config.p7_pnf_address_ipv6.tl, &dst->nfapi_config.p7_pnf_address_ipv6.tl);
+  memcpy(dst->nfapi_config.p7_pnf_address_ipv6.address,
+         src->nfapi_config.p7_pnf_address_ipv6.address,
+         sizeof(dst->nfapi_config.p7_pnf_address_ipv6.address));
+
+  copy_tl(&src->nfapi_config.p7_pnf_port.tl, &dst->nfapi_config.p7_pnf_port.tl);
+  dst->nfapi_config.p7_pnf_port.value = src->nfapi_config.p7_pnf_port.value;
+
+  copy_tl(&src->nfapi_config.timing_window.tl, &dst->nfapi_config.timing_window.tl);
+  dst->nfapi_config.timing_window.value = src->nfapi_config.timing_window.value;
+
+  copy_tl(&src->nfapi_config.timing_info_mode.tl, &dst->nfapi_config.timing_info_mode.tl);
+  dst->nfapi_config.timing_info_mode.value = src->nfapi_config.timing_info_mode.value;
+
+  copy_tl(&src->nfapi_config.timing_info_period.tl, &dst->nfapi_config.timing_info_period.tl);
+  dst->nfapi_config.timing_info_period.value = src->nfapi_config.timing_info_period.value;
+
+  copy_tl(&src->nfapi_config.dl_tti_timing_offset.tl, &dst->nfapi_config.dl_tti_timing_offset.tl);
+  dst->nfapi_config.dl_tti_timing_offset.value = src->nfapi_config.dl_tti_timing_offset.value;
+
+  copy_tl(&src->nfapi_config.ul_tti_timing_offset.tl, &dst->nfapi_config.ul_tti_timing_offset.tl);
+  dst->nfapi_config.ul_tti_timing_offset.value = src->nfapi_config.ul_tti_timing_offset.value;
+
+  copy_tl(&src->nfapi_config.ul_dci_timing_offset.tl, &dst->nfapi_config.ul_dci_timing_offset.tl);
+  dst->nfapi_config.ul_dci_timing_offset.value = src->nfapi_config.ul_dci_timing_offset.value;
+
+  copy_tl(&src->nfapi_config.tx_data_timing_offset.tl, &dst->nfapi_config.tx_data_timing_offset.tl);
+  dst->nfapi_config.tx_data_timing_offset.value = src->nfapi_config.tx_data_timing_offset.value;
+}
+
+void copy_config_request(const nfapi_nr_config_request_scf_t *src, nfapi_nr_config_request_scf_t *dst)
+{
+  dst->header.message_id = src->header.message_id;
+  dst->header.message_length = src->header.message_length;
+  if (src->vendor_extension) {
+    dst->vendor_extension = calloc(1, sizeof(nfapi_vendor_extension_tlv_t));
+    dst->vendor_extension->tag = src->vendor_extension->tag;
+    dst->vendor_extension->length = src->vendor_extension->length;
+    // TODO: FIGURE OUT WHERE THE VENDOR EXTENSION VALUE IS
+  }
+
+  dst->num_tlv = src->num_tlv;
+
+  copy_tl(&src->carrier_config.dl_bandwidth.tl, &dst->carrier_config.dl_bandwidth.tl);
+  dst->carrier_config.dl_bandwidth.value = src->carrier_config.dl_bandwidth.value;
+
+  copy_tl(&src->carrier_config.dl_frequency.tl, &dst->carrier_config.dl_frequency.tl);
+  dst->carrier_config.dl_frequency.value = src->carrier_config.dl_frequency.value;
+
+  for (int i = 0; i < 5; ++i) {
+    copy_tl(&src->carrier_config.dl_k0[i].tl, &dst->carrier_config.dl_k0[i].tl);
+    dst->carrier_config.dl_k0[i].value = src->carrier_config.dl_k0[i].value;
+
+    copy_tl(&src->carrier_config.dl_grid_size[i].tl, &dst->carrier_config.dl_grid_size[i].tl);
+    dst->carrier_config.dl_grid_size[i].value = src->carrier_config.dl_grid_size[i].value;
+  }
+
+  copy_tl(&src->carrier_config.num_tx_ant.tl, &dst->carrier_config.num_tx_ant.tl);
+  dst->carrier_config.num_tx_ant.value = src->carrier_config.num_tx_ant.value;
+
+  copy_tl(&src->carrier_config.uplink_bandwidth.tl, &dst->carrier_config.uplink_bandwidth.tl);
+  dst->carrier_config.uplink_bandwidth.value = src->carrier_config.uplink_bandwidth.value;
+
+  copy_tl(&src->carrier_config.uplink_frequency.tl, &dst->carrier_config.uplink_frequency.tl);
+  dst->carrier_config.uplink_frequency.value = src->carrier_config.uplink_frequency.value;
+
+  copy_tl(&src->carrier_config.uplink_frequency.tl, &dst->carrier_config.uplink_frequency.tl);
+  dst->carrier_config.uplink_frequency.value = src->carrier_config.uplink_frequency.value;
+
+  for (int i = 0; i < 5; ++i) {
+    copy_tl(&src->carrier_config.ul_k0[i].tl, &dst->carrier_config.ul_k0[i].tl);
+    dst->carrier_config.ul_k0[i].value = src->carrier_config.ul_k0[i].value;
+
+    copy_tl(&src->carrier_config.ul_grid_size[i].tl, &dst->carrier_config.ul_grid_size[i].tl);
+    dst->carrier_config.ul_grid_size[i].value = src->carrier_config.ul_grid_size[i].value;
+  }
+
+  copy_tl(&src->carrier_config.num_rx_ant.tl, &dst->carrier_config.num_rx_ant.tl);
+  dst->carrier_config.num_rx_ant.value = src->carrier_config.num_rx_ant.value;
+
+  copy_tl(&src->carrier_config.frequency_shift_7p5khz.tl, &dst->carrier_config.frequency_shift_7p5khz.tl);
+  dst->carrier_config.frequency_shift_7p5khz.value = src->carrier_config.frequency_shift_7p5khz.value;
+
+  copy_tl(&src->cell_config.phy_cell_id.tl, &dst->cell_config.phy_cell_id.tl);
+  dst->cell_config.phy_cell_id.value = src->cell_config.phy_cell_id.value;
+
+  copy_tl(&src->cell_config.frame_duplex_type.tl, &dst->cell_config.frame_duplex_type.tl);
+  dst->cell_config.frame_duplex_type.value = src->cell_config.frame_duplex_type.value;
+
+  copy_tl(&src->ssb_config.ss_pbch_power.tl, &dst->ssb_config.ss_pbch_power.tl);
+  dst->ssb_config.ss_pbch_power.value = src->ssb_config.ss_pbch_power.value;
+
+  copy_tl(&src->ssb_config.bch_payload.tl, &dst->ssb_config.bch_payload.tl);
+  dst->ssb_config.bch_payload.value = src->ssb_config.bch_payload.value;
+
+  copy_tl(&src->ssb_config.scs_common.tl, &dst->ssb_config.scs_common.tl);
+  dst->ssb_config.scs_common.value = src->ssb_config.scs_common.value;
+
+  copy_tl(&src->prach_config.prach_sequence_length.tl, &dst->prach_config.prach_sequence_length.tl);
+  dst->prach_config.prach_sequence_length.value = src->prach_config.prach_sequence_length.value;
+
+  copy_tl(&src->prach_config.prach_sub_c_spacing.tl, &dst->prach_config.prach_sub_c_spacing.tl);
+  dst->prach_config.prach_sub_c_spacing.value = src->prach_config.prach_sub_c_spacing.value;
+
+  copy_tl(&src->prach_config.restricted_set_config.tl, &dst->prach_config.restricted_set_config.tl);
+  dst->prach_config.restricted_set_config.value = src->prach_config.restricted_set_config.value;
+
+  copy_tl(&src->prach_config.num_prach_fd_occasions.tl, &dst->prach_config.num_prach_fd_occasions.tl);
+  dst->prach_config.num_prach_fd_occasions.value = src->prach_config.num_prach_fd_occasions.value;
+
+  copy_tl(&src->prach_config.prach_ConfigurationIndex.tl, &dst->prach_config.prach_ConfigurationIndex.tl);
+  dst->prach_config.prach_ConfigurationIndex.value = src->prach_config.prach_ConfigurationIndex.value;
+
+  copy_tl(&src->prach_config.prach_ConfigurationIndex.tl, &dst->prach_config.prach_ConfigurationIndex.tl);
+  dst->prach_config.prach_ConfigurationIndex.value = src->prach_config.prach_ConfigurationIndex.value;
+
+  dst->prach_config.num_prach_fd_occasions_list = (nfapi_nr_num_prach_fd_occasions_t *)malloc(
+      dst->prach_config.num_prach_fd_occasions.value * sizeof(nfapi_nr_num_prach_fd_occasions_t));
+  for (int i = 0; i < dst->prach_config.num_prach_fd_occasions.value; i++) {
+    nfapi_nr_num_prach_fd_occasions_t *src_prach_fd_occasion = &(src->prach_config.num_prach_fd_occasions_list[i]);
+    nfapi_nr_num_prach_fd_occasions_t *dst_prach_fd_occasion = &(dst->prach_config.num_prach_fd_occasions_list[i]);
+
+    copy_tl(&src_prach_fd_occasion->prach_root_sequence_index.tl, &dst_prach_fd_occasion->prach_root_sequence_index.tl);
+    dst_prach_fd_occasion->prach_root_sequence_index.value = src_prach_fd_occasion->prach_root_sequence_index.value;
+
+    copy_tl(&src_prach_fd_occasion->num_root_sequences.tl, &dst_prach_fd_occasion->num_root_sequences.tl);
+    dst_prach_fd_occasion->num_root_sequences.value = src_prach_fd_occasion->num_root_sequences.value;
+
+    copy_tl(&src_prach_fd_occasion->k1.tl, &dst_prach_fd_occasion->k1.tl);
+    dst_prach_fd_occasion->k1.value = src_prach_fd_occasion->k1.value;
+
+    copy_tl(&src_prach_fd_occasion->prach_zero_corr_conf.tl, &dst_prach_fd_occasion->prach_zero_corr_conf.tl);
+    dst_prach_fd_occasion->prach_zero_corr_conf.value = src_prach_fd_occasion->prach_zero_corr_conf.value;
+
+    copy_tl(&src_prach_fd_occasion->num_unused_root_sequences.tl, &dst_prach_fd_occasion->num_unused_root_sequences.tl);
+    dst_prach_fd_occasion->num_unused_root_sequences.value = src_prach_fd_occasion->num_unused_root_sequences.value;
+
+    dst_prach_fd_occasion->unused_root_sequences_list =
+        (nfapi_uint8_tlv_t *)malloc(dst_prach_fd_occasion->num_unused_root_sequences.value * sizeof(nfapi_uint8_tlv_t));
+    for (int k = 0; k < dst_prach_fd_occasion->num_unused_root_sequences.value; k++) {
+      copy_tl(&src_prach_fd_occasion->unused_root_sequences_list[k].tl, &dst_prach_fd_occasion->unused_root_sequences_list[k].tl);
+      dst_prach_fd_occasion->unused_root_sequences_list[k].value = src_prach_fd_occasion->unused_root_sequences_list[k].value;
+    }
+  }
+
+  copy_tl(&src->prach_config.ssb_per_rach.tl, &dst->prach_config.ssb_per_rach.tl);
+  dst->prach_config.ssb_per_rach.value = src->prach_config.ssb_per_rach.value;
+
+  copy_tl(&src->prach_config.prach_multiple_carriers_in_a_band.tl, &dst->prach_config.prach_multiple_carriers_in_a_band.tl);
+  dst->prach_config.prach_multiple_carriers_in_a_band.value = src->prach_config.prach_multiple_carriers_in_a_band.value;
+
+  copy_tl(&src->ssb_table.ssb_offset_point_a.tl, &dst->ssb_table.ssb_offset_point_a.tl);
+  dst->ssb_table.ssb_offset_point_a.value = src->ssb_table.ssb_offset_point_a.value;
+
+  copy_tl(&src->ssb_table.ssb_period.tl, &dst->ssb_table.ssb_period.tl);
+  dst->ssb_table.ssb_period.value = src->ssb_table.ssb_period.value;
+
+  copy_tl(&src->ssb_table.ssb_subcarrier_offset.tl, &dst->ssb_table.ssb_subcarrier_offset.tl);
+  dst->ssb_table.ssb_subcarrier_offset.value = src->ssb_table.ssb_subcarrier_offset.value;
+
+  copy_tl(&src->ssb_table.MIB.tl, &dst->ssb_table.MIB.tl);
+  dst->ssb_table.MIB.value = src->ssb_table.MIB.value;
+
+  copy_tl(&src->ssb_table.ssb_mask_list[0].ssb_mask.tl, &dst->ssb_table.ssb_mask_list[0].ssb_mask.tl);
+  dst->ssb_table.ssb_mask_list[0].ssb_mask.value = src->ssb_table.ssb_mask_list[0].ssb_mask.value;
+
+  copy_tl(&src->ssb_table.ssb_mask_list[1].ssb_mask.tl, &dst->ssb_table.ssb_mask_list[1].ssb_mask.tl);
+  dst->ssb_table.ssb_mask_list[1].ssb_mask.value = src->ssb_table.ssb_mask_list[1].ssb_mask.value;
+
+  for (int i = 0; i < 64; i++) {
+    copy_tl(&src->ssb_table.ssb_beam_id_list[i].beam_id.tl, &dst->ssb_table.ssb_beam_id_list[i].beam_id.tl);
+    dst->ssb_table.ssb_beam_id_list[i].beam_id.value = src->ssb_table.ssb_beam_id_list[i].beam_id.value;
+  }
+
+  copy_tl(&src->tdd_table.tdd_period.tl, &dst->tdd_table.tdd_period.tl);
+  dst->tdd_table.tdd_period.value = src->tdd_table.tdd_period.value;
+  const uint8_t slotsperframe[5] = {10, 20, 40, 80, 160};
+  // Assuming always CP_Normal, because Cyclic prefix is not included in CONFIG.request 10.02, but is present in 10.04
+  uint8_t cyclicprefix = 1;
+  bool normal_CP = cyclicprefix ? false : true;
+  // 3GPP 38.211 Table 4.3.2.1 & Table 4.3.2.2
+  uint8_t number_of_symbols_per_slot = normal_CP ? 14 : 12;
+  dst->tdd_table.max_tdd_periodicity_list = (nfapi_nr_max_tdd_periodicity_t *)malloc(slotsperframe[dst->ssb_config.scs_common.value]
+                                                                                     * sizeof(nfapi_nr_max_tdd_periodicity_t));
+
+  for (int i = 0; i < slotsperframe[dst->ssb_config.scs_common.value]; i++) {
+    dst->tdd_table.max_tdd_periodicity_list[i].max_num_of_symbol_per_slot_list =
+        (nfapi_nr_max_num_of_symbol_per_slot_t *)malloc(number_of_symbols_per_slot * sizeof(nfapi_nr_max_num_of_symbol_per_slot_t));
+  }
+  for (int i = 0; i < slotsperframe[dst->ssb_config.scs_common.value]; i++) { // TODO check right number of slots
+    for (int k = 0; k < number_of_symbols_per_slot; k++) { // TODO can change?
+      copy_tl(&src->tdd_table.max_tdd_periodicity_list[i].max_num_of_symbol_per_slot_list[k].slot_config.tl,
+              &dst->tdd_table.max_tdd_periodicity_list[i].max_num_of_symbol_per_slot_list[k].slot_config.tl);
+      dst->tdd_table.max_tdd_periodicity_list[i].max_num_of_symbol_per_slot_list[k].slot_config.value =
+          src->tdd_table.max_tdd_periodicity_list[i].max_num_of_symbol_per_slot_list[k].slot_config.value;
+    }
+  }
+
+  copy_tl(&src->measurement_config.rssi_measurement.tl, &dst->measurement_config.rssi_measurement.tl);
+  dst->measurement_config.rssi_measurement.value = src->measurement_config.rssi_measurement.value;
 
   copy_tl(&src->nfapi_config.p7_vnf_address_ipv4.tl, &dst->nfapi_config.p7_vnf_address_ipv4.tl);
   memcpy(dst->nfapi_config.p7_vnf_address_ipv4.address,
