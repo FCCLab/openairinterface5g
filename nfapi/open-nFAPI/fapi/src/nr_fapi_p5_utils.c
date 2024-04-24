@@ -460,6 +460,13 @@ bool compare_start_response(const nfapi_nr_start_response_scf_t *unpacked_req, c
   return 0;
 }
 
+bool compare_stop_request(const nfapi_nr_stop_request_scf_t *unpacked_req, const nfapi_nr_stop_request_scf_t *req)
+{
+  CMP(unpacked_req->header.message_id, req->header.message_id);
+  CMP(unpacked_req->header.message_length, req->header.message_length);
+  return 0;
+}
+
 void free_param_request(nfapi_nr_param_request_scf_t *msg)
 {
   if (msg->vendor_extension) {
@@ -537,6 +544,13 @@ void free_start_request(nfapi_nr_start_request_scf_t *msg)
 }
 
 void free_start_response(nfapi_nr_start_response_scf_t *msg)
+{
+  if (msg->vendor_extension) {
+    free(msg->vendor_extension);
+  }
+}
+
+void free_stop_request(nfapi_nr_stop_request_scf_t *msg)
 {
   if (msg->vendor_extension) {
     free(msg->vendor_extension);
@@ -1083,4 +1097,16 @@ void copy_start_response(const nfapi_nr_start_response_scf_t *src, nfapi_nr_star
     // TODO: FIGURE OUT WHERE THE VENDOR EXTENSION VALUE IS
   }
   dst->error_code = src->error_code;
+}
+
+void copy_stop_request(const nfapi_nr_stop_request_scf_t *src, nfapi_nr_stop_request_scf_t *dst)
+{
+  dst->header.message_id = src->header.message_id;
+  dst->header.message_length = src->header.message_length;
+  if (src->vendor_extension) {
+    dst->vendor_extension = calloc(1, sizeof(nfapi_vendor_extension_tlv_t));
+    dst->vendor_extension->tag = src->vendor_extension->tag;
+    dst->vendor_extension->length = src->vendor_extension->length;
+    // TODO: FIGURE OUT WHERE THE VENDOR EXTENSION VALUE IS
+  }
 }
