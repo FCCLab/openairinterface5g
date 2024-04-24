@@ -42,17 +42,20 @@ bool compare_param_response(const nfapi_nr_param_response_scf_t *unpacked_req, c
 bool compare_config_request(const nfapi_nr_config_request_scf_t *unpacked_req, const nfapi_nr_config_request_scf_t *req);
 bool compare_config_response(const nfapi_nr_config_response_scf_t *unpacked_req, const nfapi_nr_config_response_scf_t *req);
 bool compare_start_request(const nfapi_nr_start_request_scf_t *unpacked_req, const nfapi_nr_start_request_scf_t *req);
+bool compare_start_response(const nfapi_nr_start_response_scf_t *unpacked_req, const nfapi_nr_start_response_scf_t *req);
 
 void free_param_request(nfapi_nr_param_request_scf_t *msg);
 void free_param_response(nfapi_nr_param_response_scf_t *msg);
 void free_config_request(nfapi_nr_config_request_scf_t *msg);
 void free_config_response(nfapi_nr_config_response_scf_t *msg);
 void free_start_request(nfapi_nr_start_request_scf_t *msg);
+void free_start_response(nfapi_nr_start_response_scf_t *msg);
 
 void copy_param_request(const nfapi_nr_param_request_scf_t *src,  nfapi_nr_param_request_scf_t *dst);
 void copy_param_response(const nfapi_nr_param_response_scf_t *src,  nfapi_nr_param_response_scf_t *dst);
 void copy_config_request(const nfapi_nr_config_request_scf_t *src,  nfapi_nr_config_request_scf_t *dst);
 void copy_config_response(const nfapi_nr_config_response_scf_t *src,  nfapi_nr_config_response_scf_t *dst);
 void copy_start_request(const nfapi_nr_start_request_scf_t *src,  nfapi_nr_start_request_scf_t *dst);
+void copy_start_response(const nfapi_nr_start_response_scf_t *src,  nfapi_nr_start_response_scf_t *dst);
 
 #endif // OPENAIRINTERFACE_NR_FAPI_P5_UTILS_H
