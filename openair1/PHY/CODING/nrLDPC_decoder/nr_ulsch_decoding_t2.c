@@ -26,6 +26,7 @@
 #include "SCHED_NR/sched_nr.h"
 #include "SCHED_NR/fapi_nr_l1.h"
 #include "defs.h"
+#include "common/config/config_userapi.h"
 #include "common/utils/LOG/vcd_signal_dumper.h"
 #include "common/utils/LOG/log.h"
 #include <syscall.h>
@@ -1528,8 +1529,16 @@ int32_t nr_ulsch_decoding_init()
   int dev_id = 0;
   struct rte_bbdev_info info;
   struct active_device *ad = active_devs;
-  char *dpdk_dev = "41:00.0"; //PCI address of the card
-  char *argv_re[] = {"bbdev", "-a", dpdk_dev, "-l", "8-9", "--file-prefix=b6", "--"};
+  char *dpdk_dev = NULL; //PCI address of the card
+  char *dpdk_core_list = NULL;
+  paramdef_t LoaderParams[] = {
+    {"dpdk_dev",    NULL, 0, .strptr = &dpdk_dev,    .defstrval = NULL, TYPE_STRING, 0, NULL},
+    {"dpdk_core_list", NULL, 0, .strptr = &dpdk_core_list, .defstrval = NULL,   TYPE_STRING, 0, NULL}
+  };
+  config_get(config_get_if(), LoaderParams, sizeofArray(LoaderParams), "nr_ulsch_decoding");
+  AssertFatal(dpdk_dev!=NULL, "nr_ulsch_decoding.dpdk_dev was not provided");
+  AssertFatal(dpdk_core_list!=NULL, "nr_ulsch_decoding.dpdk_core_list was not provided");
+  char *argv_re[] = {"bbdev", "-a", dpdk_dev, "-l", dpdk_core_list, "--file-prefix=b6", "--"};
   // EAL initialization, if already initialized (init in xran lib) try to probe DPDK device
   ret = rte_eal_init(7, argv_re);
   if (ret < 0) {

@@ -85,6 +85,9 @@ For the DPDK EAL initialization, device is specified by `-a` option and list
 of cores to run the DPDK application on is selected by `-l` option. PCI adress of
 the T2 card can be detected by `lspci | grep "Xilinx"` command.
 
+**Note:** When doing one-shot decoding of slots, the implementation of the initialization is different and allows to provide the device address and the list of isolated cores in the gNB configuration.
+They can sit in the *nr_ulsch_decoding* section of the gNB configuration or on the command line with options *--nr_ulsch_decoding.dpdk_dev "<device address>" --nr_ulsch_decoding.dpdk_core_list "<isolated cpu list>"*
+
 # OAI Build
 OTA deployment is precisely described in the following tutorial:
 - [NR_SA_Tutorial_COTS_UE](https://gitlab.eurecom.fr/oai/openairinterface5g/-/blob/develop/doc/NR_SA_Tutorial_COTS_UE.md)
@@ -138,6 +141,20 @@ cd ~/openairinterface5g
 source oaienv
 cd cmake_targets/ran_build/build
 sudo ./nr-softmodem --sa -O ../../../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band78.fr1.106PRB.usrpb210.conf --ldpc-offload-enable
+```
+
+# OTA test with slotwise decoding
+Decoding with the AMD Xilinx T2 is also available with a newer interface allowing one-shot decoding of slots.
+Refer to [LDPCImplementation.md](https://gitlab.eurecom.fr/oai/openairinterface5g/-/blob/develop/openair1/PHY/CODING/DOC/LDPCImplementation.md) for more information on this newer interface.
+Offload of the channel encoding and decoding to the AMD Xilinx T2 card is enabled by *--ulsch-decode-enable --loader.nr_ulsch_decoding.shlibversion _interface_t2* options.
+Then it is also necessary to provide the device address and the list of cores isolated for DPDK in the gNB *nr_ulsch_decoding* section of the configuration or through the command line with the options *--nr_ulsch_decoding.dpdk_dev "<device address>" --nr_ulsch_decoding.dpdk_core_list "<isolated cpu list>"*
+
+## Run OAI gNB with USRP B210
+```
+cd ~/openairinterface5g
+source oaienv
+cd cmake_targets/ran_build/build
+sudo ./nr-softmodem --sa -O ../../../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band78.fr1.106PRB.usrpb210.conf --ulsch-decode-enable --loader.nr_ulsch_decoding.shlibversion _interface_t2 --nr_ulsch_decoding.dpdk_dev "41:00.0" --nr_ulsch_decoding.dpdk_core_list "14-15"
 ```
 
 # Limitations
