@@ -2246,6 +2246,7 @@ void nr_rrc_mac_config_req_cg(module_id_t module_id,
       handle_reconfiguration_with_sync(mac, cc_idP, spCellConfig->reconfigurationWithSync);
     }
     if (scd) {
+      mac->tag_Id = scd->tag_Id;
       configure_servingcell_info(&mac->sc_info, scd);
       configure_BWPs(mac, scd);
     }

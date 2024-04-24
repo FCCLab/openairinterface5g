@@ -3507,14 +3507,16 @@ void nr_ue_process_mac_pdu(NR_UE_MAC_INST_t *mac, nr_downlink_indication_t *dl_i
         //  38.321 Ch6.1.3.4
         mac_len = 1;
 
-        /*uint8_t ta_command = ((NR_MAC_CE_TA *)pduP)[1].TA_COMMAND;
-          uint8_t tag_id = ((NR_MAC_CE_TA *)pduP)[1].TAGID;*/
-
         const int ta = ((NR_MAC_CE_TA *)pduP)[1].TA_COMMAND;
         const int tag = ((NR_MAC_CE_TA *)pduP)[1].TAGID;
 
+        if (tag != mac->tag_Id) {
+          LOG_E(NR_MAC, "MAC CE TAG %d does not correspond to the one configured at MAC %ld\n", tag, mac->tag_Id);
+          done = 1;
+          break;
+        }
+
         NR_UL_TIME_ALIGNMENT_t *ul_time_alignment = &mac->ul_time_alignment;
-        ul_time_alignment->tag_id = tag;
         ul_time_alignment->ta_command = ta;
         ul_time_alignment->frame = frameP;
         ul_time_alignment->slot = slot;
@@ -3529,7 +3531,6 @@ void nr_ue_process_mac_pdu(NR_UE_MAC_INST_t *mac, nr_downlink_indication_t *dl_i
           LOG_D(NR_MAC, "[%d.%d] Received TA_COMMAND %u TAGID %u CC_id %d \n", frameP, slot, ta, tag, CC_id);
         else
           LOG_I(NR_MAC, "[%d.%d] Received TA_COMMAND %u TAGID %u CC_id %d \n", frameP, slot, ta, tag, CC_id);
-
         break;
       case DL_SCH_LCID_CON_RES_ID:
         //  Clause 5.1.5 and 6.1.3.3 of 3GPP TS 38.321 version 16.2.1 Release 16
