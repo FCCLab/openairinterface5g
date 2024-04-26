@@ -47,7 +47,7 @@ char *arguments_phy_simulators[64]={"ldpctest",NULL};
 int load_nr_ulsch_decoding_interface(char *version, nr_ulsch_decoding_interface_t *itf)
 {
   char *ptr = (char *)config_get_if();
-  char libname[64] = "nr_ulsch_decoding";
+  char libname[64] = "ldpc";
 
   if (ptr == NULL) { // phy simulators, config module possibly not loaded
     uniqCfg = load_configmodule(1, arguments_phy_simulators, CONFIG_ENABLECMDLINEONLY);
@@ -59,7 +59,10 @@ int load_nr_ulsch_decoding_interface(char *version, nr_ulsch_decoding_interface_
                                       {.fname = "nr_ulsch_decoding_decoder"}};
   int ret;
   ret = load_module_version_shlib(libname, version, shlib_fdesc, sizeofArray(shlib_fdesc), NULL);
-  AssertFatal((ret >= 0), "Error loading NR ULSCH decoding module");
+  if(ret < 0){
+    LOG_D(PHY, "NR ULSCH decoding module unavailable");
+    return ret;
+  }
   itf->nr_ulsch_decoding_init = (nr_ulsch_decoding_init_t *)shlib_fdesc[0].fptr;
   itf->nr_ulsch_decoding_shutdown = (nr_ulsch_decoding_shutdown_t *)shlib_fdesc[1].fptr;
   itf->nr_ulsch_decoding_decoder = (nr_ulsch_decoding_decoder_t *)shlib_fdesc[2].fptr;
