@@ -207,48 +207,50 @@ The code loading the LDPC library is in [nr_ulsch_decoding_interface_load.c](fil
 
 ### Selecting the LDPC library at run time
 
-By default the function `int load_nr_ulsch_decoding_interface(void)` looks for `libnr_ulsch_decoding.so`, this default behavior can be changed using the oai loader configuration options in the configuration file or from the command line as shown below:
+By default the function `int load_nr_ulsch_decoding_interface(void)` looks for `libldpc.so`.\
+If `libldpc.so` does not implement the LDPC slot decoder interface then the loader just fails which allows to fallback to the code segment decoding interface.\
+This default behavior can be changed using the oai loader configuration options in the configuration file or from the command line as shown below:
 
 #### Examples of ldpc shared lib selection when running nr softmodem's:
 
-loading `libnr_ulsch_decoding_interface_demo.so` instead of `libnr_ulsch_decoding.so`:
+loading `libldpc_slot_demo.so` instead of `libldpc.so`:
 
 ```
-./nr-softmodem -O libconfig:gnb.band78.tm1.106PRB.usrpx300.conf:dbgl5  --loader.nr_ulsch_decoding.shlibversion _interface_demo
+./nr-softmodem -O libconfig:gnb.band78.tm1.106PRB.usrpx300.conf:dbgl5  --loader.ldpc.shlibversion _slot_demo
 .......................
-[CONFIG] loader.nr_ulsch_decoding.shlibversion set to default value ""
-[LIBCONFIG] loader.nr_ulsch_decoding: 2/2 parameters successfully set, (1 to default value)
-[CONFIG] shlibversion set to  _interface_demo from command line
-[CONFIG] loader.nr_ulsch_decoding 1 options set from command line
-shlib_path libnr_ulsch_decoding_interface_demo.so
-[LOADER] library libnr_ulsch_decoding_interface_demo.so successfully loaded
+[CONFIG] loader.ldpc.shlibversion set to default value ""
+[LIBCONFIG] loader.ldpc: 2/2 parameters successfully set, (1 to default value)
+[CONFIG] shlibversion set to  _slot_demo from command line
+[CONFIG] loader.ldpc 1 options set from command line
+shlib_path libldpc_slot_demo.so
+[LOADER] library libldpc_slot_demo.so successfully loaded
 ........................
 ```
 
-loading `libnr_ulsch_decoding_interface_t2.so` instead of `libnr_ulsch_decoding.so`:
+loading `libldpc_slot_t2.so` instead of `libldpc.so`:
 
-`make nr_ulsch_decoding_interface_t2`
+`make ldpc_slot_t2`
 
-This command creates the `libnr_ulsch_decoding_interface_t2.so` shared library.
+This command creates the `libldpc_slot_t2.so` shared library.
 
 ```
-Building C object CMakeFiles/nr_ulsch_decoding_interface_t2.dir/openair1/PHY/CODING/nrLDPC_decoder/nr_ulsch_decoding_t2.c.o
-Linking C shared module libnr_ulsch_decoding_interface_t2.so
+Building C object CMakeFiles/ldpc_slot_t2.dir/openair1/PHY/CODING/nrLDPC_decoder/nr_ulsch_decoding_t2.c.o
+Linking C shared module libldpc_slot_t2.so
 ```
 
 At runtime, to successfully use the T2 board, you need to install vendor specific drivers and tools.
 
-`./nr-softmodem -O  libconfig:gnb.band78.sa.fr1.106PRB.usrpb210.conf:dbgl5 --rfsim --rfsimulator.serveraddr server  --sa --log_config.gtpu_log_level info  --loader.nr_ulsch_decoding.shlibversion _interface_t2`
+`./nr-softmodem -O  libconfig:gnb.band78.sa.fr1.106PRB.usrpb210.conf:dbgl5 --rfsim --rfsimulator.serveraddr server  --sa --log_config.gtpu_log_level info  --loader.ldpc.shlibversion _slot_t2`
 
 ``` 
 
 .......................
-[CONFIG] loader.nr_ulsch_decoding.shlibversion set to default value ""
-[LIBCONFIG] loader.nr_ulsch_decoding: 2/2 parameters successfully set, (1 to default value)
-[CONFIG] shlibversion set to  _interface_t2 from command line
-[CONFIG] loader.nr_ulsch_decoding 1 options set from command line
-shlib_path libnr_ulsch_decoding_interface_t2.so
-[LOADER] library libnr_ulsch_decoding_interface_t2.so successfully loaded
+[CONFIG] loader.ldpc.shlibversion set to default value ""
+[LIBCONFIG] loader.ldpc: 2/2 parameters successfully set, (1 to default value)
+[CONFIG] shlibversion set to  _slot_t2 from command line
+[CONFIG] loader.ldpc 1 options set from command line
+shlib_path libldpc_slot_t2.so
+[LOADER] library libldpc_slot_t2.so successfully loaded
 ........................
 ```
 
@@ -257,10 +259,10 @@ shlib_path libnr_ulsch_decoding_interface_t2.so
 Slot decoding libraries cannot be used within ldpctest.
 
 ### LDPC libraries
-Libraries implementing the slotwise LDPC decoding must be named `libnr_ulsch_decoding<_version>.so`, they must implement three functions: `nr_ulsch_decoding_init`, `nr_ulsch_decoding_shutdown` and `nr_ulsch_decoding_decoder`. The prototypes for these functions is defined in [nr_ulsch_decoding_interface.h](file://../nr_ulsch_decoding_interface.h).
+Libraries implementing the slotwise LDPC decoding must be named `libldpc<_version>.so`, in addition of the code segment decoding interface that is necessary for encoding, they must implement three functions: `nr_ulsch_decoding_init`, `nr_ulsch_decoding_shutdown` and `nr_ulsch_decoding_decoder`. The prototypes for these functions is defined in [nr_ulsch_decoding_interface.h](file://../nr_ulsch_decoding_interface.h).
 
-`libnr_ulsch_decoding_interface_demo.so`has been tested with the `nr_ulsim` and `nr-softmodem` executables.
+`libldpc_slot_demo.so`has been tested with the `nr_ulsim` and `nr-softmodem` executables.
 
-`libnr_ulsch_decoding_interface_t2.so`is under development.
+`libnr_slot_t2.so`is under development.
 
 [oai Wikis home](https://gitlab.eurecom.fr/oai/openairinterface5g/wikis/home)

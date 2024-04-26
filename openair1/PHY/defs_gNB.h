@@ -638,7 +638,6 @@ typedef struct PHY_VARS_gNB_s {
 
   /// NR ULSCH decoding related
   int nr_ulsch_decoding_interface_flag; // Flag enabling NR ULSCH decoding module
-  char nr_ulsch_decoding_interface_version[64];
 
   int max_ldpc_iterations;
   /// indicate the channel estimation technique in time domain
