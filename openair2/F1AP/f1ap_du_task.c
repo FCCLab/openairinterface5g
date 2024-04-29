@@ -44,7 +44,7 @@ static instance_t du_create_gtpu_instance_to_cu(const f1ap_net_config_t *nc)
 {
   openAddr_t tmp = {0};
   strncpy(tmp.originHost, nc->DU_f1u_ip_address, sizeof(tmp.originHost) - 1);
-  strncpy(tmp.destinationHost, nc->CU_f1_ip_address.ipv4_address, sizeof(tmp.destinationHost) - 1);
+  strncpy(tmp.destinationHost, nc->CU_f1_ip_address, sizeof(tmp.destinationHost) - 1);
   sprintf(tmp.originService, "%d", nc->DUport);
   sprintf(tmp.destinationService, "%d", nc->CUport);
   return gtpv1Init(tmp);

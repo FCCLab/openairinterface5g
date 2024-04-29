@@ -78,11 +78,9 @@
 #define F1AP_MAX_NO_OF_TNL_ASSOCIATIONS 32
 #define F1AP_MAX_NO_UE_ID 1024
 
-typedef net_ip_address_t f1ap_net_ip_address_t;
-
 typedef struct f1ap_net_config_t {
-  f1ap_net_ip_address_t CU_f1_ip_address;
-  f1ap_net_ip_address_t DU_f1c_ip_address;
+  char *CU_f1_ip_address;
+  char *DU_f1c_ip_address;
   char *DU_f1u_ip_address;
   uint16_t CUport;
   uint16_t DUport;

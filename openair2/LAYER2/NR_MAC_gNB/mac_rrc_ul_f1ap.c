@@ -33,20 +33,16 @@ static f1ap_net_config_t read_DU_IP_config(const eth_params_t* f1_params, const 
 {
   f1ap_net_config_t nc = {0};
 
-  nc.CU_f1_ip_address.ipv6 = 0;
-  nc.CU_f1_ip_address.ipv4 = 1;
-  strcpy(nc.CU_f1_ip_address.ipv4_address, f1_params->remote_addr);
+  nc.CU_f1_ip_address= strdup(f1_params->remote_addr);
   nc.CUport = f1_params->remote_portd;
 
-  nc.DU_f1c_ip_address.ipv6 = 0;
-  nc.DU_f1c_ip_address.ipv4 = 1;
-  strcpy(nc.DU_f1c_ip_address.ipv4_address, f1_params->my_addr);
+  nc.DU_f1c_ip_address = strdup(f1_params->my_addr);
   nc.DU_f1u_ip_address = strdup(f1u_ip_addr);
   nc.DUport = f1_params->my_portd;
   LOG_I(F1AP,
         "F1-C DU IPaddr %s, connect to F1-C CU %s, binding GTP to %s\n",
-        nc.DU_f1c_ip_address.ipv4_address,
-        nc.CU_f1_ip_address.ipv4_address,
+        nc.DU_f1c_ip_address,
+        nc.CU_f1_ip_address,
         nc.DU_f1u_ip_address);
 
   // sctp_in_streams/sctp_out_streams are given by SCTP layer
