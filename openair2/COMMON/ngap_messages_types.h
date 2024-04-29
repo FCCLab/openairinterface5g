@@ -33,6 +33,7 @@
 #include "common/platform_types.h"
 #include "common/ngran_types.h"
 #include "LTE_asn_constant.h"
+#include "s1ap_messages_types.h"
 //-------------------------------------------------------------------------------------------//
 // Defines to access message fields.
 

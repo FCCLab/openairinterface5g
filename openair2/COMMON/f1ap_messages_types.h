@@ -24,7 +24,6 @@
 
 #include <netinet/in.h>
 #include <netinet/sctp.h>
-#include "s1ap_messages_types.h"
 #include "ngap_messages_types.h"
 
 //-------------------------------------------------------------------------------------------//
