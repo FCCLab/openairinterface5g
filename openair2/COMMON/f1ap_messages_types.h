@@ -393,6 +393,7 @@ typedef struct f1ap_drb_information_s {
   uint8_t flows_to_be_setup_length;
 } f1ap_drb_information_t;
 
+typedef enum f1ap_rlc_mode_t { F1AP_RLC_MODE_AM, F1AP_RLC_MODE_UM_BIDIR, F1AP_RLC_UM_UNI_UL, F1AP_RLC_UM_UNI_DL } f1ap_rlc_mode_t;
 typedef struct f1ap_drb_to_be_setup_s {
   long           drb_id;
   f1ap_up_tnl_t  up_ul_tnl[2];
@@ -400,7 +401,7 @@ typedef struct f1ap_drb_to_be_setup_s {
   f1ap_up_tnl_t  up_dl_tnl[2];
   uint8_t        up_dl_tnl_length;
   f1ap_drb_information_t drb_info;
-  rlc_mode_t     rlc_mode;
+  f1ap_rlc_mode_t rlc_mode;
   nssai_t nssai;
 } f1ap_drb_to_be_setup_t;
 
