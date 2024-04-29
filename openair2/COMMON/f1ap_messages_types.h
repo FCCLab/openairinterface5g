@@ -339,7 +339,7 @@ typedef struct f1ap_ul_rrc_message_s {
 
 typedef struct f1ap_up_tnl_s {
   in_addr_t tl_address; // currently only IPv4 supported
-  teid_t  teid;
+  uint32_t teid;
   uint16_t port;
 } f1ap_up_tnl_t;
 
