@@ -24,7 +24,7 @@
 
 #include <netinet/in.h>
 #include <netinet/sctp.h>
-#include "ngap_messages_types.h"
+#include "common/5g_platform_types.h"
 
 //-------------------------------------------------------------------------------------------//
 // Defines to access message fields.
