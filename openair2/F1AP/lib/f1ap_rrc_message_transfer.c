@@ -1,0 +1,187 @@
+/*
+ * Licensed to the OpenAirInterface (OAI) Software Alliance under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The OpenAirInterface Software Alliance licenses this file to You under
+ * the OAI Public License, Version 1.1  (the "License"); you may not use this file
+ * except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.openairinterface.org/?page_id=698
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *-------------------------------------------------------------------------------
+ * For more information about the OpenAirInterface (OAI) Software Alliance:
+ *      contact@openairinterface.org
+ */
+
+#include "f1ap_rrc_message_transfer.h"
+
+#include "f1ap_lib_common.h"
+#include "f1ap_lib_includes.h"
+
+#include "f1ap_messages_types.h"
+
+#include "common/utils/assertions.h"
+#include "openair3/UTILS/conversions.h"
+#include "common/utils/oai_asn1.h"
+
+F1AP_F1AP_PDU_t *encode_initial_ul_rrc_message_transfer(const f1ap_initial_ul_rrc_message_t *msg)
+{
+  F1AP_F1AP_PDU_t *pdu = calloc(1, sizeof(*pdu));
+  AssertFatal(pdu != NULL, "out of memory\n");
+
+  /* 0. Message Type */
+  pdu->present = F1AP_F1AP_PDU_PR_initiatingMessage;
+  asn1cCalloc(pdu->choice.initiatingMessage, tmp);
+  tmp->procedureCode = F1AP_ProcedureCode_id_InitialULRRCMessageTransfer;
+  tmp->criticality = F1AP_Criticality_ignore;
+  tmp->value.present = F1AP_InitiatingMessage__value_PR_InitialULRRCMessageTransfer;
+  F1AP_InitialULRRCMessageTransfer_t *out = &tmp->value.choice.InitialULRRCMessageTransfer;
+
+  /* mandatory */
+  /* c1. GNB_DU_UE_F1AP_ID */
+  asn1cSequenceAdd(out->protocolIEs.list, F1AP_InitialULRRCMessageTransferIEs_t, ie1);
+  ie1->id = F1AP_ProtocolIE_ID_id_gNB_DU_UE_F1AP_ID;
+  ie1->criticality = F1AP_Criticality_reject;
+  ie1->value.present = F1AP_InitialULRRCMessageTransferIEs__value_PR_GNB_DU_UE_F1AP_ID;
+  ie1->value.choice.GNB_DU_UE_F1AP_ID = msg->gNB_DU_ue_id;
+
+  /* mandatory */
+  /* c2. NRCGI */
+  asn1cSequenceAdd(out->protocolIEs.list, F1AP_InitialULRRCMessageTransferIEs_t, ie2);
+  ie2->id = F1AP_ProtocolIE_ID_id_NRCGI;
+  ie2->criticality = F1AP_Criticality_reject;
+  ie2->value.present = F1AP_InitialULRRCMessageTransferIEs__value_PR_NRCGI;
+  MCC_MNC_TO_PLMNID(msg->plmn.mcc, msg->plmn.mnc, msg->plmn.mnc_digit_length, &ie2->value.choice.NRCGI.pLMN_Identity);
+  NR_CELL_ID_TO_BIT_STRING(msg->nr_cellid, &ie2->value.choice.NRCGI.nRCellIdentity);
+
+  /* mandatory */
+  /* c3. C_RNTI */ // 16
+  asn1cSequenceAdd(out->protocolIEs.list, F1AP_InitialULRRCMessageTransferIEs_t, ie3);
+  ie3->id = F1AP_ProtocolIE_ID_id_C_RNTI;
+  ie3->criticality = F1AP_Criticality_reject;
+  ie3->value.present = F1AP_InitialULRRCMessageTransferIEs__value_PR_C_RNTI;
+  ie3->value.choice.C_RNTI = msg->crnti;
+
+  /* mandatory */
+  /* c4. RRCContainer */
+  asn1cSequenceAdd(out->protocolIEs.list, F1AP_InitialULRRCMessageTransferIEs_t, ie4);
+  ie4->id = F1AP_ProtocolIE_ID_id_RRCContainer;
+  ie4->criticality = F1AP_Criticality_reject;
+  ie4->value.present = F1AP_InitialULRRCMessageTransferIEs__value_PR_RRCContainer;
+  OCTET_STRING_fromBuf(&ie4->value.choice.RRCContainer, (const char *)msg->rrc_container, msg->rrc_container_length);
+
+  /* optional */
+  /* c5. DUtoCURRCContainer */
+  if (msg->du2cu_rrc_container != NULL) {
+    asn1cSequenceAdd(out->protocolIEs.list, F1AP_InitialULRRCMessageTransferIEs_t, ie5);
+    ie5->id = F1AP_ProtocolIE_ID_id_DUtoCURRCContainer;
+    ie5->criticality = F1AP_Criticality_reject;
+    ie5->value.present = F1AP_InitialULRRCMessageTransferIEs__value_PR_DUtoCURRCContainer;
+    OCTET_STRING_fromBuf(&ie5->value.choice.DUtoCURRCContainer,
+                         (const char *)msg->du2cu_rrc_container,
+                         msg->du2cu_rrc_container_length);
+  }
+
+  /* mandatory */
+  /* c6. Transaction ID (integer value) */
+  asn1cSequenceAdd(out->protocolIEs.list, F1AP_InitialULRRCMessageTransferIEs_t, ie6);
+  ie6->id = F1AP_ProtocolIE_ID_id_TransactionID;
+  ie6->criticality = F1AP_Criticality_ignore;
+  ie6->value.present = F1AP_InitialULRRCMessageTransferIEs__value_PR_TransactionID;
+  ie6->value.choice.TransactionID = msg->transaction_id;
+
+  return pdu;
+}
+
+bool decode_initial_ul_rrc_message_transfer(const F1AP_F1AP_PDU_t *pdu, f1ap_initial_ul_rrc_message_t *out)
+{
+  DevAssert(out != NULL);
+  memset(out, 0, sizeof(*out));
+
+  F1AP_InitialULRRCMessageTransfer_t *container = &pdu->choice.initiatingMessage->value.choice.InitialULRRCMessageTransfer;
+  F1AP_InitialULRRCMessageTransferIEs_t *ie;
+
+  F1AP_LIB_FIND_IE(F1AP_InitialULRRCMessageTransferIEs_t, ie, container, F1AP_ProtocolIE_ID_id_gNB_DU_UE_F1AP_ID, true);
+  out->gNB_DU_ue_id = ie->value.choice.GNB_DU_UE_F1AP_ID;
+
+  F1AP_LIB_FIND_IE(F1AP_InitialULRRCMessageTransferIEs_t, ie, container, F1AP_ProtocolIE_ID_id_NRCGI, true);
+  PLMNID_TO_MCC_MNC(&ie->value.choice.NRCGI.pLMN_Identity, out->plmn.mcc, out->plmn.mnc, out->plmn.mnc_digit_length);
+  BIT_STRING_TO_NR_CELL_IDENTITY(&ie->value.choice.NRCGI.nRCellIdentity, out->nr_cellid);
+
+  F1AP_LIB_FIND_IE(F1AP_InitialULRRCMessageTransferIEs_t, ie, container, F1AP_ProtocolIE_ID_id_C_RNTI, true);
+  out->crnti = ie->value.choice.C_RNTI;
+
+  F1AP_LIB_FIND_IE(F1AP_InitialULRRCMessageTransferIEs_t, ie, container, F1AP_ProtocolIE_ID_id_RRCContainer, true);
+  out->rrc_container = cp_octet_string(&ie->value.choice.RRCContainer, &out->rrc_container_length);
+
+  F1AP_LIB_FIND_IE(F1AP_InitialULRRCMessageTransferIEs_t, ie, container, F1AP_ProtocolIE_ID_id_DUtoCURRCContainer, false);
+  if (ie != NULL)
+    out->du2cu_rrc_container = cp_octet_string(&ie->value.choice.DUtoCURRCContainer, &out->du2cu_rrc_container_length);
+
+  F1AP_LIB_FIND_IE(F1AP_InitialULRRCMessageTransferIEs_t, ie, container, F1AP_ProtocolIE_ID_id_TransactionID, true);
+  out->transaction_id = ie->value.choice.TransactionID;
+
+  return true;
+}
+
+f1ap_initial_ul_rrc_message_t cp_initial_ul_rrc_message_transfer(const f1ap_initial_ul_rrc_message_t *msg)
+{
+  uint8_t *rrc_container = calloc(msg->rrc_container_length, sizeof(*rrc_container));
+  AssertFatal(rrc_container != NULL, "out of memory\n");
+  memcpy(rrc_container, msg->rrc_container, msg->rrc_container_length);
+  uint8_t *du2cu_rrc_container = NULL;
+  if (msg->du2cu_rrc_container_length > 0) {
+    DevAssert(msg->du2cu_rrc_container != NULL);
+    du2cu_rrc_container = calloc(msg->du2cu_rrc_container_length, sizeof(*du2cu_rrc_container));
+    AssertFatal(du2cu_rrc_container != NULL, "out of memory\n");
+    memcpy(du2cu_rrc_container, msg->du2cu_rrc_container, msg->du2cu_rrc_container_length);
+  }
+  f1ap_initial_ul_rrc_message_t cp = {
+    .gNB_DU_ue_id = msg->gNB_DU_ue_id,
+    .plmn = msg->plmn,
+    .nr_cellid = msg->nr_cellid,
+    .crnti = msg->crnti,
+    .rrc_container = rrc_container,
+    .rrc_container_length = msg->rrc_container_length,
+    .du2cu_rrc_container = du2cu_rrc_container,
+    .du2cu_rrc_container_length = msg->du2cu_rrc_container_length,
+    .transaction_id = msg->transaction_id
+  };
+  return cp;
+}
+
+bool eq_initial_ul_rrc_message_transfer(const f1ap_initial_ul_rrc_message_t *a, const f1ap_initial_ul_rrc_message_t *b)
+{
+  if (a->gNB_DU_ue_id != b->gNB_DU_ue_id)
+    return false;
+  if (!eq_f1ap_plmn(&a->plmn, &b->plmn))
+    return false;
+  if (a->nr_cellid != b->nr_cellid)
+    return false;
+  if (a->crnti != b->crnti)
+    return false;
+  if (a->rrc_container_length != b->rrc_container_length)
+    return false;
+  if (memcmp(a->rrc_container, b->rrc_container, a->rrc_container_length) != 0)
+    return false;
+  if (a->du2cu_rrc_container_length != b->du2cu_rrc_container_length)
+    return false;
+  if (memcmp(a->du2cu_rrc_container, b->du2cu_rrc_container, a->du2cu_rrc_container_length) != 0)
+    return false;
+  if (a->transaction_id != b->transaction_id)
+    return false;
+  return true;
+}
+
+void free_initial_ul_rrc_message_transfer(f1ap_initial_ul_rrc_message_t *msg)
+{
+  DevAssert(msg != NULL);
+  free(msg->rrc_container);
+  free(msg->du2cu_rrc_container);
+}

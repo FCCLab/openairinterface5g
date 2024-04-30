@@ -22,4 +22,6 @@
 #ifndef F1AP_LIB_EXTERN_H_
 #define F1AP_LIB_EXTERN_H_
 
+#include "f1ap_rrc_message_transfer.h"
+
 #endif /* F1AP_LIB_EXTERN_H_ */

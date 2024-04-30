@@ -7,6 +7,8 @@
 #include "f1ap_messages_types.h"
 #include "F1AP_F1AP-PDU.h"
 
+#include "f1ap_lib_extern.h"
+
 void exit_function(const char *file, const char *function, const int line, const char *s, const int assert)
 {
   printf("detected error at %s:%d:%s: %s\n", file, line, function, s);
@@ -41,7 +43,44 @@ static void f1ap_msg_free(F1AP_F1AP_PDU_t *pdu)
   ASN_STRUCT_FREE(asn_DEF_F1AP_F1AP_PDU, pdu);
 }
 
+static void test_initial_ul_rrc_message_transfer(void)
+{
+  f1ap_plmn_t plmn = { .mcc = 208, .mnc = 95, .mnc_digit_length = 2 };
+  uint8_t rrc[] = "RRC Container";
+  uint8_t du2cu[] = "DU2CU Container";
+  f1ap_initial_ul_rrc_message_t orig = {
+    .gNB_DU_ue_id = 12,
+    .plmn = plmn,
+    .nr_cellid = 135,
+    .crnti = 0x1234,
+    .rrc_container = rrc,
+    .rrc_container_length = sizeof(rrc),
+    .du2cu_rrc_container = du2cu,
+    .du2cu_rrc_container_length = sizeof(du2cu),
+    .transaction_id = 2,
+  };
+
+  F1AP_F1AP_PDU_t *f1enc = encode_initial_ul_rrc_message_transfer(&orig);
+  F1AP_F1AP_PDU_t *f1dec = f1ap_encode_decode(f1enc);
+  f1ap_msg_free(f1enc);
+
+  f1ap_initial_ul_rrc_message_t decoded;
+  bool ret = decode_initial_ul_rrc_message_transfer(f1dec, &decoded);
+  AssertFatal(ret, "decode_initial_ul_rrc_message_transfer(): could not decode message\n");
+  f1ap_msg_free(f1dec);
+
+  ret = eq_initial_ul_rrc_message_transfer(&orig, &decoded);
+  AssertFatal(ret, "eq_initial_ul_rrc_message_transfer(): decoded message doesn't match\n");
+  free_initial_ul_rrc_message_transfer(&decoded);
+
+  f1ap_initial_ul_rrc_message_t cp = cp_initial_ul_rrc_message_transfer(&orig);
+  ret = eq_initial_ul_rrc_message_transfer(&orig, &cp);
+  AssertFatal(ret, "eq_initial_ul_rrc_message_transfer(): copied message doesn't match\n");
+  free_initial_ul_rrc_message_transfer(&cp);
+}
+
 int main()
 {
+  test_initial_ul_rrc_message_transfer();
   return 0;
 }

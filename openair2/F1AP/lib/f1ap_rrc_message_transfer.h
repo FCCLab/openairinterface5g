@@ -19,13 +19,18 @@
  *      contact@openairinterface.org
  */
 
-#ifndef F1AP_LIB_INCLUDES_H_
-#define F1AP_LIB_INCLUDES_H_
+#ifndef F1AP_RRC_MESSAGE_TRANSFER_H_
+#define F1AP_RRC_MESSAGE_TRANSFER_H_
 
-#include "F1AP_F1AP-PDU.h"
-#include "F1AP_InitialULRRCMessageTransfer.h"
-#include "F1AP_InitiatingMessage.h"
-#include "F1AP_NRCellIdentity.h"
-#include "F1AP_ProtocolIE-Field.h"
+#include <stdbool.h>
+#include "f1ap_messages_types.h"
 
-#endif /* F1AP_LIB_INCLUDES_H_ */
+struct F1AP_F1AP_PDU;
+
+struct F1AP_F1AP_PDU *encode_initial_ul_rrc_message_transfer(const f1ap_initial_ul_rrc_message_t *msg);
+bool decode_initial_ul_rrc_message_transfer(const struct F1AP_F1AP_PDU *pdu, f1ap_initial_ul_rrc_message_t *out);
+f1ap_initial_ul_rrc_message_t cp_initial_ul_rrc_message_transfer(const f1ap_initial_ul_rrc_message_t *msg);
+bool eq_initial_ul_rrc_message_transfer(const f1ap_initial_ul_rrc_message_t *a, const f1ap_initial_ul_rrc_message_t *b);
+void free_initial_ul_rrc_message_transfer(f1ap_initial_ul_rrc_message_t *msg);
+
+#endif /* F1AP_RRC_MESSAGE_TRANSFER_H_ */

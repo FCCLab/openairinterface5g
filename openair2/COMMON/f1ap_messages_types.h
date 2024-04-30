@@ -326,6 +326,7 @@ typedef struct f1ap_initial_ul_rrc_message_s {
   int      rrc_container_length;
   uint8_t *du2cu_rrc_container;
   int      du2cu_rrc_container_length;
+  uint8_t transaction_id;
 } f1ap_initial_ul_rrc_message_t;
 
 typedef struct f1ap_ul_rrc_message_s {
