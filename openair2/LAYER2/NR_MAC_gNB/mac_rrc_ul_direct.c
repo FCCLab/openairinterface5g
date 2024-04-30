@@ -23,6 +23,7 @@
 #include "intertask_interface.h"
 
 #include "mac_rrc_ul.h"
+#include "f1ap_lib_extern.h"
 
 static void f1_setup_request_direct(const f1ap_setup_req_t *req)
 {
@@ -265,20 +266,8 @@ static void initial_ul_rrc_message_transfer_direct(module_id_t module_id, const 
 {
   MessageDef *msg = itti_alloc_new_message(TASK_MAC_GNB, 0, F1AP_INITIAL_UL_RRC_MESSAGE);
   msg->ittiMsgHeader.originInstance = -1; // means monolithic
-  /* copy all fields, but reallocate rrc_containers! */
   f1ap_initial_ul_rrc_message_t *f1ap_msg = &F1AP_INITIAL_UL_RRC_MESSAGE(msg);
-  *f1ap_msg = *ul_rrc;
-
-  f1ap_msg->rrc_container = malloc(ul_rrc->rrc_container_length);
-  DevAssert(f1ap_msg->rrc_container);
-  memcpy(f1ap_msg->rrc_container, ul_rrc->rrc_container, ul_rrc->rrc_container_length);
-  f1ap_msg->rrc_container_length = ul_rrc->rrc_container_length;
-
-  f1ap_msg->du2cu_rrc_container = malloc(ul_rrc->du2cu_rrc_container_length);
-  DevAssert(f1ap_msg->du2cu_rrc_container);
-  memcpy(f1ap_msg->du2cu_rrc_container, ul_rrc->du2cu_rrc_container, ul_rrc->du2cu_rrc_container_length);
-  f1ap_msg->du2cu_rrc_container_length = ul_rrc->du2cu_rrc_container_length;
-
+  *f1ap_msg = cp_initial_ul_rrc_message_transfer(ul_rrc);
   itti_send_msg_to_task(TASK_RRC_GNB, module_id, msg);
 }
 

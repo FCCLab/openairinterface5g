@@ -463,7 +463,8 @@ add_library(f1ap
             ${F1AP_DIR}/f1ap_itti_messaging.c)
 target_include_directories(f1ap PUBLIC F1AP_DIR)
 target_link_libraries(f1ap PUBLIC asn1_f1ap)
-target_link_libraries(f1ap PRIVATE ngap nr_rrc HASHTABLE)
+target_link_libraries(f1ap PRIVATE ngap nr_rrc HASHTABLE f1ap_lib)
+target_include_directories(f1ap PRIVATE ${F1AP_DIR}/lib)
 
 # LPP
 ##############
@@ -1458,6 +1459,8 @@ add_library(L2_NR
   ${MAC_NR_SRC}
   ${GNB_APP_SRC}
   )
+target_link_libraries(L2_NR PRIVATE f1ap_lib)
+target_include_directories(L2_NR PRIVATE ${F1AP_DIR}/lib)
 
 add_library(e1_if
   ${NR_RRC_DIR}/cucp_cuup_direct.c

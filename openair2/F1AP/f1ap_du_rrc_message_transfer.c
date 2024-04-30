@@ -53,6 +53,8 @@
 
 #include "openair2/LAYER2/NR_MAC_gNB/mac_rrc_dl_handler.h"
 
+#include "f1ap_rrc_message_transfer.h"
+
 /*  DL RRC Message Transfer */
 int DU_handle_DL_RRC_MESSAGE_TRANSFER(instance_t instance, sctp_assoc_t assoc_id, uint32_t stream, F1AP_F1AP_PDU_t *pdu)
 {
@@ -141,73 +143,21 @@ int DU_handle_DL_RRC_MESSAGE_TRANSFER(instance_t instance, sctp_assoc_t assoc_id
 /*  UL RRC Message Transfer */
 int DU_send_INITIAL_UL_RRC_MESSAGE_TRANSFER(sctp_assoc_t assoc_id, const f1ap_initial_ul_rrc_message_t *msg)
 {
-  F1AP_F1AP_PDU_t                       pdu= {0};
-  F1AP_InitialULRRCMessageTransfer_t    *out;
-  uint8_t  *buffer=NULL;
-  uint32_t  len=0;
-
-  /* Create */
-  /* 0. Message Type */
-  pdu.present = F1AP_F1AP_PDU_PR_initiatingMessage;
-  asn1cCalloc(pdu.choice.initiatingMessage, tmp);
-  tmp->procedureCode = F1AP_ProcedureCode_id_InitialULRRCMessageTransfer;
-  tmp->criticality   = F1AP_Criticality_ignore;
-  tmp->value.present = F1AP_InitiatingMessage__value_PR_InitialULRRCMessageTransfer;
-  out = &tmp->value.choice.InitialULRRCMessageTransfer;
-  /* mandatory */
-  /* c1. GNB_DU_UE_F1AP_ID */
-  asn1cSequenceAdd(out->protocolIEs.list, F1AP_InitialULRRCMessageTransferIEs_t, ie1);
-  ie1->id                             = F1AP_ProtocolIE_ID_id_gNB_DU_UE_F1AP_ID;
-  ie1->criticality                    = F1AP_Criticality_reject;
-  ie1->value.present                  = F1AP_InitialULRRCMessageTransferIEs__value_PR_GNB_DU_UE_F1AP_ID;
-  ie1->value.choice.GNB_DU_UE_F1AP_ID = msg->gNB_DU_ue_id;
-  /* mandatory */
-  /* c2. NRCGI */
-  asn1cSequenceAdd(out->protocolIEs.list, F1AP_InitialULRRCMessageTransferIEs_t, ie2);
-  ie2->id                             = F1AP_ProtocolIE_ID_id_NRCGI;
-  ie2->criticality                    = F1AP_Criticality_reject;
-  ie2->value.present                  = F1AP_InitialULRRCMessageTransferIEs__value_PR_NRCGI;
-  //Fixme: takes always the first cell
-  addnRCGI(ie2->value.choice.NRCGI, &getCxt(0)->setupReq.cell[0].info);
-  /* mandatory */
-  /* c3. C_RNTI */  // 16
-  asn1cSequenceAdd(out->protocolIEs.list, F1AP_InitialULRRCMessageTransferIEs_t, ie3);
-  ie3->id                             = F1AP_ProtocolIE_ID_id_C_RNTI;
-  ie3->criticality                    = F1AP_Criticality_reject;
-  ie3->value.present                  = F1AP_InitialULRRCMessageTransferIEs__value_PR_C_RNTI;
-  ie3->value.choice.C_RNTI = msg->crnti;
-  /* mandatory */
-  /* c4. RRCContainer */
-  asn1cSequenceAdd(out->protocolIEs.list, F1AP_InitialULRRCMessageTransferIEs_t, ie4);
-  ie4->id                            = F1AP_ProtocolIE_ID_id_RRCContainer;
-  ie4->criticality                   = F1AP_Criticality_reject;
-  ie4->value.present                 = F1AP_InitialULRRCMessageTransferIEs__value_PR_RRCContainer;
-  OCTET_STRING_fromBuf(&ie4->value.choice.RRCContainer, (const char *)msg->rrc_container, msg->rrc_container_length);
-
-  /* optional */
-  /* c5. DUtoCURRCContainer */
-  if (msg->du2cu_rrc_container != NULL) {
-    asn1cSequenceAdd(out->protocolIEs.list, F1AP_InitialULRRCMessageTransferIEs_t, ie5);
-    ie5->id                             = F1AP_ProtocolIE_ID_id_DUtoCURRCContainer;
-    ie5->criticality                    = F1AP_Criticality_reject;
-    ie5->value.present                  = F1AP_InitialULRRCMessageTransferIEs__value_PR_DUtoCURRCContainer;
-    OCTET_STRING_fromBuf(&ie5->value.choice.DUtoCURRCContainer,
-                         (const char *)msg->du2cu_rrc_container,
-                         msg->du2cu_rrc_container_length);
+  F1AP_F1AP_PDU_t *pdu = encode_initial_ul_rrc_message_transfer(msg);
+  if (pdu == NULL) {
+    LOG_E(F1AP, "cannot encode F1 INITIAL UL RRC MESSAGE TRANSFER, can't send message\n");
+    ASN_STRUCT_FREE(asn_DEF_F1AP_F1AP_PDU, pdu);
+    return -1;
   }
-  /* mandatory */
-  /* c6. Transaction ID (integer value) */
-  asn1cSequenceAdd(out->protocolIEs.list, F1AP_InitialULRRCMessageTransferIEs_t, ie6);
-  ie6->id                        = F1AP_ProtocolIE_ID_id_TransactionID;
-  ie6->criticality               = F1AP_Criticality_ignore;
-  ie6->value.present             = F1AP_InitialULRRCMessageTransferIEs__value_PR_TransactionID;
-  ie6->value.choice.TransactionID = F1AP_get_next_transaction_identifier(0, 0);
 
   /* encode */
-  if (f1ap_encode_pdu(&pdu, &buffer, &len) < 0) {
+  uint8_t *buffer = NULL;
+  uint32_t len = 0;
+  if (f1ap_encode_pdu(pdu, &buffer, &len) < 0) {
     LOG_E(F1AP, "Failed to encode F1 INITIAL UL RRC MESSAGE TRANSFER\n");
     return -1;
   }
+  ASN_STRUCT_FREE(asn_DEF_F1AP_F1AP_PDU, pdu);
 
   f1ap_itti_send_sctp_data_req(assoc_id, buffer, len);
   return 0;

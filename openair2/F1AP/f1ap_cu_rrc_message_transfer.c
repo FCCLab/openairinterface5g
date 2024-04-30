@@ -39,67 +39,25 @@
 #include "openair3/UTILS/conversions.h"
 #include "LAYER2/nr_pdcp/nr_pdcp_oai_api.h"
 
+#include "f1ap_rrc_message_transfer.h"
+
 /*
     Initial UL RRC Message Transfer
 */
 
 int CU_handle_INITIAL_UL_RRC_MESSAGE_TRANSFER(instance_t instance, sctp_assoc_t assoc_id, uint32_t stream, F1AP_F1AP_PDU_t *pdu)
 {
-  LOG_D(F1AP, "CU_handle_INITIAL_UL_RRC_MESSAGE_TRANSFER\n");
-  // decode the F1 message
-  // get the rrc message from the contauiner
-  // call func rrc_eNB_decode_ccch: <-- needs some update here
-  MessageDef                            *message_p;
-  F1AP_InitialULRRCMessageTransfer_t    *container;
-  F1AP_InitialULRRCMessageTransferIEs_t *ie;
-  DevAssert(pdu != NULL);
-
-  if (stream != 0) {
-    LOG_E(F1AP, "[SCTP %d] Received F1 on stream != 0 (%d)\n",
-          assoc_id, stream);
+  f1ap_initial_ul_rrc_message_t msg;
+  if (!decode_initial_ul_rrc_message_transfer(pdu, &msg)) {
+    LOG_E(F1AP, "cannot decode F1 initial UL RRC message Transfer\n");
     return -1;
   }
 
-  container = &pdu->choice.initiatingMessage->value.choice.InitialULRRCMessageTransfer;
-  /* GNB_DU_UE_F1AP_ID */
-  F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_InitialULRRCMessageTransferIEs_t, ie, container,
-                             F1AP_ProtocolIE_ID_id_gNB_DU_UE_F1AP_ID, true);
-  uint32_t du_ue_id = ie->value.choice.GNB_DU_UE_F1AP_ID;
-
-  /* NRCGI
-  * Fixme: process NRCGI
-  */
-  F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_InitialULRRCMessageTransferIEs_t, ie, container,
-                             F1AP_ProtocolIE_ID_id_NRCGI, true);
-  uint64_t nr_cellid;
-  BIT_STRING_TO_NR_CELL_IDENTITY(&ie->value.choice.NRCGI.nRCellIdentity,nr_cellid);
-  /* RNTI */
-  F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_InitialULRRCMessageTransferIEs_t, ie, container,
-                             F1AP_ProtocolIE_ID_id_C_RNTI, true);
-  rnti_t rnti = ie->value.choice.C_RNTI;
-  F1AP_InitialULRRCMessageTransferIEs_t *rrccont;
-  F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_InitialULRRCMessageTransferIEs_t, rrccont, container,
-                             F1AP_ProtocolIE_ID_id_RRCContainer, true);
-  AssertFatal(rrccont!=NULL,"RRCContainer is missing\n");
-
-  F1AP_InitialULRRCMessageTransferIEs_t *du2cu;
-  F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_InitialULRRCMessageTransferIEs_t, du2cu, container,
-                             F1AP_ProtocolIE_ID_id_DUtoCURRCContainer, false);
-
   // create an ITTI message and copy SDU
-  message_p = itti_alloc_new_message(TASK_CU_F1, 0, F1AP_INITIAL_UL_RRC_MESSAGE);
+  MessageDef *message_p = itti_alloc_new_message(TASK_CU_F1, 0, F1AP_INITIAL_UL_RRC_MESSAGE);
   message_p->ittiMsgHeader.originInstance = assoc_id;
   f1ap_initial_ul_rrc_message_t *ul_rrc = &F1AP_INITIAL_UL_RRC_MESSAGE(message_p);
-  ul_rrc->gNB_DU_ue_id = du_ue_id;
-  ul_rrc->nr_cellid = nr_cellid; // CU instance
-  ul_rrc->crnti = rnti;
-  ul_rrc->rrc_container_length = rrccont->value.choice.RRCContainer.size;
-  ul_rrc->rrc_container = malloc(ul_rrc->rrc_container_length);
-  memcpy(ul_rrc->rrc_container, rrccont->value.choice.RRCContainer.buf, ul_rrc->rrc_container_length);
-  AssertFatal(du2cu != NULL, "no masterCellGroup in initial UL RRC message\n");
-  ul_rrc->du2cu_rrc_container_length = du2cu->value.choice.DUtoCURRCContainer.size;
-  ul_rrc->du2cu_rrc_container = malloc(ul_rrc->du2cu_rrc_container_length);
-  memcpy(ul_rrc->du2cu_rrc_container, du2cu->value.choice.DUtoCURRCContainer.buf, ul_rrc->du2cu_rrc_container_length);
+  *ul_rrc = msg; /* "move" message into ITTI, RRC thread will free it */
   itti_send_msg_to_task(TASK_RRC_GNB, instance, message_p);
 
   return 0;

@@ -97,6 +97,7 @@
 #include <openair2/RRC/NR/nr_rrc_proto.h>
 #include "openair2/F1AP/f1ap_common.h"
 #include "openair2/F1AP/f1ap_ids.h"
+#include "openair2/F1AP/lib/f1ap_lib_extern.h"
 #include "openair2/SDAP/nr_sdap/nr_sdap_entity.h"
 #include "openair2/E1AP/e1ap.h"
 #include "cucp_cuup_if.h"
@@ -1664,11 +1665,6 @@ void rrc_gNB_process_initial_ul_rrc_message(sctp_assoc_t assoc_id, const f1ap_in
     }
   }
   ASN_STRUCT_FREE(asn_DEF_NR_UL_CCCH_Message, ul_ccch_msg);
-
-  if (ul_rrc->rrc_container)
-    free(ul_rrc->rrc_container);
-  if (ul_rrc->du2cu_rrc_container)
-    free(ul_rrc->du2cu_rrc_container);
 }
 
 void rrc_gNB_process_release_request(const module_id_t gnb_mod_idP, x2ap_ENDC_sgnb_release_request_t *m)
@@ -2219,6 +2215,7 @@ void *rrc_gnb_task(void *args_p) {
         AssertFatal(NODE_IS_CU(RC.nrrrc[instance]->node_type) || NODE_IS_MONOLITHIC(RC.nrrrc[instance]->node_type),
                     "should not receive F1AP_INITIAL_UL_RRC_MESSAGE, need call by CU!\n");
         rrc_gNB_process_initial_ul_rrc_message(msg_p->ittiMsgHeader.originInstance, &F1AP_INITIAL_UL_RRC_MESSAGE(msg_p));
+        free_initial_ul_rrc_message_transfer(&F1AP_INITIAL_UL_RRC_MESSAGE(msg_p));
         break;
 
       /* Messages from PDCP */
