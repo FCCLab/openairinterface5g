@@ -1492,10 +1492,12 @@ void nr_rrc_mac_config_req_sib1(module_id_t module_id,
   configure_common_BWP_dl(mac,
                           0, // bwp-id
                           &scc->downlinkConfigCommon.initialDownlinkBWP);
-  if (scc->uplinkConfigCommon)
+  if (scc->uplinkConfigCommon) {
+    mac->timeAlignmentTimerCommon = scc->uplinkConfigCommon->timeAlignmentTimerCommon;
     configure_common_BWP_ul(mac,
                             0, // bwp-id
                             &scc->uplinkConfigCommon->initialUplinkBWP);
+  }
   // set current BWP only if coming from non-connected state
   // otherwise it is just a periodically update of the SIB1 content
   if (mac->state < UE_CONNECTED) {

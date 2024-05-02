@@ -574,6 +574,7 @@ typedef struct NR_UE_MAC_INST_s {
 
   NR_TAG_Id_t tag_Id;
   A_SEQUENCE_OF(NR_TAG_t) TAG_list;
+  NR_TimeAlignmentTimer_t timeAlignmentTimerCommon;
 
   nr_emulated_l1_t nr_ue_emul_l1;
 
