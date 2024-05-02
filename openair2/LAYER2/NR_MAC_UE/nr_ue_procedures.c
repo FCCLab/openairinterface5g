@@ -2910,6 +2910,11 @@ void nr_ue_send_sdu(NR_UE_MAC_INST_t *mac, nr_downlink_indication_t *dl_info, in
   // it parses MAC CEs subheaders, MAC CEs, SDU subheaderds and SDUs
   switch (dl_info->rx_ind->rx_indication_body[pdu_id].pdu_type) {
     case FAPI_NR_RX_PDU_TYPE_DLSCH :
+      // DL data arrival during RRC_CONNECTED when UL synchronisation status is "non-synchronised"
+      if (!is_nr_timer_active(mac->time_alignment_timer) && mac->state == UE_CONNECTED) {
+        trigger_MAC_UE_RA(mac);
+        break;
+      }
       nr_ue_process_mac_pdu(mac, dl_info, pdu_id);
       break;
     case FAPI_NR_RX_PDU_TYPE_RAR :

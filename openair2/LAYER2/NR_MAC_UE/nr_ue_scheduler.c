@@ -1159,6 +1159,22 @@ static bool check_pucchres_for_pending_SR(NR_PUCCH_Config_t *pucch_Config, int t
   return false;
 }
 
+void schedule_RA_after_SR_failure(NR_UE_MAC_INST_t *mac)
+{
+  trigger_MAC_UE_RA(mac);
+  // release PUCCH for all Serving Cells;
+  // release SRS for all Serving Cells;
+  release_PUCCH_SRS(mac);
+  // clear any configured downlink assignments and uplink grants;
+  int scs = mac->current_UL_BWP->scs;
+  if (mac->dl_config_request)
+    memset(mac->dl_config_request, 0, sizeof(*mac->dl_config_request));
+  if (mac->ul_config_request)
+    clear_ul_config_request(mac, scs);
+  // clear any PUSCH resources for semi-persistent CSI reporting
+  // TODO we don't have semi-persistent CSI reporting
+}
+
 static void nr_update_sr(NR_UE_MAC_INST_t *mac)
 {
   NR_UE_SCHEDULING_INFO *sched_info = &mac->scheduling_info;
@@ -1345,6 +1361,11 @@ void nr_ue_ul_scheduler(NR_UE_MAC_INST_t *mac, nr_uplink_indication_t *ul_info)
       } else {
         if (ulcfg_pdu->pusch_config_pdu.pusch_data.new_data_indicator
             && (mac->state == UE_CONNECTED || (ra->ra_state == nrRA_WAIT_RAR && ra->cfra))) {
+          if (!is_nr_timer_active(mac->time_alignment_timer) && mac->state == UE_CONNECTED) {
+            // UL data arrival during RRC_CONNECTED when UL synchronisation status is "non-synchronised"
+            trigger_MAC_UE_RA(mac);
+            return;
+          }
           // Getting IP traffic to be transmitted
           nr_ue_get_sdu(mac, cc_id, frame_tx, slot_tx, gNB_index, ulsch_input_buffer, TBS_bytes);
           mac_pdu_exist = 1;
