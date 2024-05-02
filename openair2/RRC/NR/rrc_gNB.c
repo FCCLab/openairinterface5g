@@ -247,6 +247,36 @@ static void rrc_gNB_CU_DU_init(gNB_RRC_INST *rrc)
   cu_init_f1_ue_data();
 }
 
+void nr_HO_trigger()
+{
+  LOG_E(NR_RRC, "Handover procedures are not implemented yet!\n");
+}
+
+void nr_rrc_update_ho_timer(gNB_RRC_INST *rrc)
+{
+  rrc_gNB_ue_context_t *ue_context_p = NULL;
+  // Cast is necessary to eliminate warning "discards ‘const’ qualifier
+  RB_FOREACH (ue_context_p, rrc_nr_ue_tree_s, &((gNB_RRC_INST *)rrc)->rrc_ue_head) {
+    gNB_RRC_UE_t *ue_p = &ue_context_p->ue_context;
+
+    if (ue_p->handover_info.location_ho_timer_active) {
+      nr_rrc_du_container_t *du = get_du_for_ue(rrc, ue_p->rrc_ue_id);
+      const f1ap_setup_req_t *sr = du->setup_req;
+      LOG_W(NR_RRC, "[DU %lx] LOCATION-BASED TRIGGER TIMER = %2i\n", sr->gNB_DU_id, ue_p->handover_info.location_ho_timer);
+
+      ue_p->handover_info.location_ho_timer--;
+
+      if (ue_p->handover_info.location_ho_timer == 0) {
+        nr_HO_trigger();
+      }
+
+    } else {
+      ue_p->handover_info.location_ho_timer_active = true;
+      ue_p->handover_info.location_ho_timer = rrc->location_ho_trigger;
+    }
+  }
+}
+
 void openair_rrc_gNB_configuration(gNB_RRC_INST *rrc, gNB_RrcConfigurationReq *configuration)
 {
   AssertFatal(rrc != NULL, "RC.nrrrc not initialized!");
@@ -2185,7 +2215,14 @@ void *rrc_gnb_task(void *args_p) {
     /* timer to write stats to file */
     timer_setup(1, 0, TASK_RRC_GNB, 0, TIMER_PERIODIC, NULL, &stats_timer_id);
   }
-  
+
+  gNB_RRC_INST *rrc = RC.nrrrc[0];
+  long ho_timer_id = 2;
+  if (rrc->node_type == ngran_gNB_CU && rrc->location_ho_trigger > 0) {
+    // Timer to location-based handover trigger
+    timer_setup(1, 0, TASK_RRC_GNB, 0, TIMER_PERIODIC, NULL, &ho_timer_id);
+  }
+
   itti_mark_task_ready(TASK_RRC_GNB);
   LOG_I(NR_RRC,"Entering main loop of NR_RRC message task\n");
 
@@ -2211,8 +2248,11 @@ void *rrc_gnb_task(void *args_p) {
 
       case TIMER_HAS_EXPIRED:
         /* only this one handled for now */
-        DevAssert(TIMER_HAS_EXPIRED(msg_p).timer_id == stats_timer_id);
-        write_rrc_stats(RC.nrrrc[0]);
+        DevAssert(TIMER_HAS_EXPIRED(msg_p).timer_id == stats_timer_id || TIMER_HAS_EXPIRED(msg_p).timer_id == ho_timer_id);
+        if (TIMER_HAS_EXPIRED(msg_p).timer_id == stats_timer_id)
+          write_rrc_stats(rrc);
+        else if (TIMER_HAS_EXPIRED(msg_p).timer_id == ho_timer_id)
+          nr_rrc_update_ho_timer(rrc);
         break;
 
       case F1AP_INITIAL_UL_RRC_MESSAGE:

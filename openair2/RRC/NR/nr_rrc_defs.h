@@ -143,21 +143,14 @@ typedef struct nr_e_rab_param_s {
 } __attribute__ ((__packed__)) nr_e_rab_param_t;
 
 
-typedef struct HANDOVER_INFO_NR_s {
-  uint8_t                                             ho_prepare;
-  uint8_t                                             ho_complete;
-  uint8_t                                             modid_s;            //module_idP of serving cell
-  uint8_t                                             modid_t;            //module_idP of target cell
-  uint8_t                                             ueid_s;             //UE index in serving cell
-  uint8_t                                             ueid_t;             //UE index in target cell
-
-  // NR not define at this moment
-  //AS_Config_t                                       as_config;          /* these two parameters are taken from 36.331 section 10.2.2: HandoverPreparationInformation-r8-IEs */
-  //AS_Context_t                                      as_context;         /* They are mandatory for HO */
-
-  uint8_t                                             buf[RRC_BUF_SIZE];  /* ASN.1 encoded handoverCommandMessage */
-  int                                                 size;               /* size of above message in bytes */
-} NR_HANDOVER_INFO;
+typedef struct nr_handover_info_s {
+  bool location_ho_timer_active;
+  int location_ho_timer;
+  rnti_t source_rnti;
+  rnti_t target_rnti;
+  sctp_assoc_t source_assoc_id;
+  sctp_assoc_t target_assoc_id;
+} nr_handover_info_t;
 
 #define NR_RRC_BUFFER_SIZE                            sizeof(RRC_BUFFER_NR)
 
@@ -256,7 +249,7 @@ typedef struct gNB_RRC_UE_s {
 
   NR_SRB_INFO_TABLE_ENTRY Srb[NR_NUM_SRB];
   NR_MeasConfig_t                   *measConfig;
-  NR_HANDOVER_INFO                  *handover_info;
+  nr_handover_info_t                handover_info;
   NR_MeasResults_t                  *measResults;
 
   bool as_security_active;
@@ -415,6 +408,8 @@ typedef struct gNB_RRC_INST_s {
 
   // gNB N3 GTPU instance
   instance_t e1_inst;
+
+  int location_ho_trigger;
 
   char *uecap_file;
 

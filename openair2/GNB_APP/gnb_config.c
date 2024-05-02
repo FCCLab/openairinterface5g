@@ -1656,9 +1656,8 @@ void RCconfig_NRRRC(gNB_RRC_INST *rrc)
       rrc->eth_params_s.transp_preference        = ETH_UDP_MODE;
     }
 
-   
-
-    rrc->nr_cellid        = (uint64_t)*(GNBParamList.paramarray[i][GNB_NRCELLID_IDX].u64ptr);
+    rrc->nr_cellid           = (uint64_t)*(GNBParamList.paramarray[i][GNB_NRCELLID_IDX].u64ptr);
+    rrc->location_ho_trigger = (int32_t)*(GNBParamList.paramarray[i][GNB_LOCATION_HO_TRIGGER_IDX].iptr);
 
     if (strcmp(*(GNBParamList.paramarray[i][GNB_TRANSPORT_S_PREFERENCE_IDX].strptr), "local_mac") == 0) {
       

@@ -134,6 +134,7 @@ typedef enum {
 #define GNB_CONFIG_STRING_FORCEUL256QAMOFF              "force_UL256qam_off"
 #define GNB_CONFIG_STRING_GNB_DU_ID "gNB_DU_ID"
 #define GNB_CONFIG_STRING_GNB_CU_UP_ID "gNB_CU_UP_ID"
+#define GNB_CONFIG_STRING_LOCATION_HO_TRIGGER           "location_ho_trigger"
 
 #define GNB_CONFIG_HLP_STRING_ENABLE_SDAP               "enable the SDAP layer\n"
 #define GNB_CONFIG_HLP_FORCE256QAMOFF                   "suppress activation of 256 QAM despite UE support"
@@ -180,6 +181,7 @@ typedef enum {
 {GNB_CONFIG_STRING_USE_DELTA_MCS, GNB_CONFIG_HLP_USE_DELTA_MCS,     0,            .iptr=NULL,  .defintval=0,                 TYPE_INT,       0},  \
 {GNB_CONFIG_STRING_FORCEUL256QAMOFF, GNB_CONFIG_HLP_FORCEUL256QAMOFF,     0,            .iptr=NULL,  .defintval=0,                 TYPE_INT,       0},  \
 {GNB_CONFIG_STRING_MAXMIMOLAYERS, GNB_CONFIG_HLP_MAXMIMOLAYERS, 0,      .iptr=NULL, .defintval=-1,               TYPE_INT,    0},  \
+{GNB_CONFIG_STRING_LOCATION_HO_TRIGGER,          NULL,   0,           .iptr=NULL,   .defintval=-1,                TYPE_INT,       0},  \
 }
 // clang-format on
 
@@ -216,6 +218,7 @@ typedef enum {
 #define GNB_USE_DELTA_MCS_IDX           29
 #define GNB_FORCEUL256QAMOFF_IDX        30
 #define GNB_MAXMIMOLAYERS_IDX           31
+#define GNB_LOCATION_HO_TRIGGER_IDX     32
 
 #define TRACKING_AREA_CODE_OKRANGE {0x0001,0xFFFD}
 #define GNBPARAMS_CHECK {                                         \
