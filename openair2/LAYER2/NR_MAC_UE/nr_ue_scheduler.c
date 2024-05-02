@@ -141,8 +141,35 @@ static void trigger_regular_bsr(NR_UE_MAC_INST_t *mac, NR_LogicalChannelIdentity
     nr_timer_stop(&mac->scheduling_info.sr_DelayTimer);
 }
 
+void handle_time_alignment_timer_expired(NR_UE_MAC_INST_t *mac)
+{
+  // flush all HARQ buffers for all Serving Cells
+  for (int k = 0; k < NR_MAX_HARQ_PROCESSES; k++) {
+    memset(&mac->dl_harq_info[k], 0, sizeof(NR_UE_HARQ_STATUS_t));
+    memset(&mac->ul_harq_info[k], 0, sizeof(NR_UL_HARQ_INFO_t));
+    mac->dl_harq_info[k].last_ndi = -1; // initialize to invalid value
+    mac->ul_harq_info[k].last_ndi = -1; // initialize to invalid value
+  }
+  // release PUCCH for all Serving Cells;
+  // release SRS for all Serving Cells;
+  release_PUCCH_SRS(mac);
+  // clear any configured downlink assignments and uplink grants;
+  int scs = mac->current_UL_BWP ? mac->current_UL_BWP->scs : get_softmodem_params()->numerology;
+  if (mac->dl_config_request)
+    memset(mac->dl_config_request, 0, sizeof(*mac->dl_config_request));
+  if (mac->ul_config_request)
+    clear_ul_config_request(mac, scs);
+  // clear any PUSCH resources for semi-persistent CSI reporting
+  // TODO we don't have semi-persistent CSI reporting
+  // maintain N_TA
+  // TODO not sure what to do here
+}
+
 void update_mac_timers(NR_UE_MAC_INST_t *mac)
 {
+  bool alignment_timer_expired = nr_timer_tick(&mac->time_alignment_timer);
+  if (alignment_timer_expired)
+    handle_time_alignment_timer_expired(mac);
   nr_timer_tick(&mac->ra.contention_resolution_timer);
   for (int j = 0; j < NR_MAX_SR_ID; j++)
     nr_timer_tick(&mac->scheduling_info.sr_info[j].prohibitTimer);

@@ -884,9 +884,14 @@ void nr_ra_failed(NR_UE_MAC_INST_t *mac, uint8_t CC_id, NR_PRACH_RESOURCES_t *pr
 
   prach_resources->RA_PREAMBLE_TRANSMISSION_COUNTER++;
 
-  if (prach_resources->RA_PREAMBLE_TRANSMISSION_COUNTER == ra->preambleTransMax + 1){
+  // when the Contention Resolution is considered not successful
+  // stop timeAlignmentTimer
+  nr_timer_stop(&mac->time_alignment_timer);
 
-    LOG_D(MAC, "[UE %d][%d.%d] Maximum number of RACH attempts (%d) reached, selecting backoff time...\n",
+  if (prach_resources->RA_PREAMBLE_TRANSMISSION_COUNTER == ra->preambleTransMax + 1) {
+
+    LOG_D(NR_MAC,
+          "[UE %d][%d.%d] Maximum number of RACH attempts (%d) reached, selecting backoff time...\n",
           mac->ue_id,
           frame,
           slot,
