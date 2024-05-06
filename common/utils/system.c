@@ -263,8 +263,19 @@ void threadCreate(pthread_t* t, void * (*func)(void*), void * param, char* name,
  
   LOG_I(UTIL,"threadCreate for %s, affinity %x, priority %d\n",name,affinity,priority); 
   ret=pthread_create(t, &attr, func, param);
-  AssertFatal(ret == 0, "Error in pthread_create(): ret: %d, errno: %d\n", ret, errno);
-  
+  if (ret != 0) {
+    LOG_W(UTIL,
+          "Error in pthread_create(): ret: %d, errno: %d, %s, attempting fallback to default scheduling policy. "
+          "This is most likely caused by running without CAP_SYS_NICE capability. Run as root to prevent this.\n",
+          ret,
+          errno,
+          strerror(ret));
+    ret = pthread_attr_init(&attr);
+    AssertFatal(ret == 0, "Error in pthread_attr_init(): ret: %d, errno: %d\n", ret, errno);
+    ret = pthread_create(t, &attr, func, param);
+    AssertFatal(ret == 0, "Error in pthread_create(): ret: %d, errno: %d, %s\n", ret, errno, strerror(ret));
+  }
+
   pthread_setname_np(*t, name);
   if (affinity != -1 ) {
     cpu_set_t cpuset;
