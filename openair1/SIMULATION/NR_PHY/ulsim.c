@@ -221,8 +221,7 @@ int main(int argc, char *argv[])
   char *token;
   int number_of_UEs = 1;
   int start_rb = 0;
-  int nb_rb_ue1 = 0;
-  int nb_rb_ue2 = 0;
+  int nb_rb[MAX_UE_CONNECT] = {0, 0};
   int Imcs[MAX_UE_CONNECT] = {9, 9};
 
   //logInit();
@@ -252,8 +251,8 @@ int main(int argc, char *argv[])
         AssertFatal(n_rnti_ue1 > 0 && n_rnti_ue1<=65535,"Illegal n_rnti_ue1 %x\n",n_rnti_ue1);
         token = strtok(NULL, ",");
         if (token != NULL) {
-          nb_rb_ue2 = atoi(token);
-          AssertFatal(nb_rb_ue2 > 0 && nb_rb_ue2<=65535,"Illegal nb_rb_ue2 %x\n",nb_rb_ue2);
+          n_rnti_ue2 = atoi(token);
+          AssertFatal(n_rnti_ue2 > 0 && n_rnti_ue2<=65535,"Illegal n_rnti_ue2 %x\n",n_rnti_ue2);
         }
       }
       break;
@@ -367,12 +366,10 @@ int main(int argc, char *argv[])
     case 'r':
       token = strtok(optarg, ",");
       if (token != NULL) {
-        nb_rb_ue1 = atoi(token);
+        nb_rb[0] = atoi(token);
         token = strtok(NULL, ",");
         if (token != NULL)
-            nb_rb_ue2 = atoi(token);
-        else
-          nb_rb_ue2 = 0;
+            nb_rb[1] = atoi(token);
       }
       break;
 
@@ -566,13 +563,18 @@ int main(int argc, char *argv[])
     }
   }
   
-  int nb_rb = max(nb_rb_ue1, nb_rb_ue2);
-  if (number_of_UEs == 2 && nb_rb_ue2 == 0) {
-    printf("No allocated resource blocks for UE2's PUSCH\n");
-    exit(-1);
+  for (int UE_id = 0; UE_id < number_of_UEs; UE_id++) {
+    if (nb_rb[UE_id] == 0) {
+      printf("No allocated resource blocks for UE%d's PUSCH\n", UE_id + 1);
+      exit(-1);
+    }
   }
-  if (number_of_UEs == 2 && nb_rb_ue1 + nb_rb_ue2 > N_RB_DL) {
-    printf("UE1's rb + UE2's rb exceed maximum number of available resorce blocks\n");
+  int rb_sum = 0;
+  for (int UE_id = 0; UE_id < number_of_UEs; UE_id++) {
+    rb_sum += nb_rb[UE_id];
+  }
+  if (rb_sum > N_RB_UL) {
+    printf("Total RBs for UEs exceed maximum number of available resorce blocks\n");
     exit(-1);
   }
 
@@ -845,29 +847,27 @@ int main(int argc, char *argv[])
     num_dmrs_cdm_grps_no_data = 2;
 
   if (transform_precoding == transformPrecoder_enabled) {
+    for (int UE_id = 0; UE_id < number_of_UEs; UE_id++) {
+      AssertFatal(enable_ptrs == 0, "PTRS NOT SUPPORTED IF TRANSFORM PRECODING IS ENABLED\n");
 
-    AssertFatal(enable_ptrs == 0, "PTRS NOT SUPPORTED IF TRANSFORM PRECODING IS ENABLED\n");
+      int index = get_index_for_dmrs_lowpapr_seq((NR_NB_SC_PER_RB / 2) * nb_rb[UE_id]);
+      AssertFatal(index >= 0, "Num RBs not configured according to 3GPP 38.211 section 6.3.1.4. For PUSCH with transform precoding, num RBs cannot be multiple of any other primenumber other than 2,3,5\n");
 
-    int index = get_index_for_dmrs_lowpapr_seq((NR_NB_SC_PER_RB / 2) * nb_rb);
-    AssertFatal(index >= 0, "Num RBs not configured according to 3GPP 38.211 section 6.3.1.4. For PUSCH with transform precoding, num RBs cannot be multiple of any other primenumber other than 2,3,5\n");
+      dmrs_config_type = pusch_dmrs_type1;
+      nb_re_dmrs = 6;
 
-    dmrs_config_type = pusch_dmrs_type1;
-    nb_re_dmrs = 6;
-
-    printf("[ULSIM]: TRANSFORM PRECODING ENABLED. Num RBs: %d, index for DMRS_SEQ: %d\n", nb_rb, index);
+      printf("[ULSIM]: UE%d TRANSFORM PRECODING ENABLED. Num RBs: %d, index for DMRS_SEQ: %d\n", UE_id + 1, nb_rb[UE_id], index);
+    }
   }
 
   nb_re_dmrs = nb_re_dmrs * num_dmrs_cdm_grps_no_data;
   unsigned int TBS[number_of_UEs];
-  for (int UE_id = 0; UE_id < number_of_UEs; UE_id++) {
-    if (UE_id == 0)
-      TBS[UE_id] = nr_compute_tbs(mod_order[UE_id], code_rate[UE_id], nb_rb_ue1, nb_symb_sch, nb_re_dmrs* number_dmrs_symbols, 0, 0, precod_nbr_layers);
-    else if (UE_id == 1)
-      TBS[UE_id] = nr_compute_tbs(mod_order[UE_id], code_rate[UE_id], nb_rb_ue2, nb_symb_sch, nb_re_dmrs* number_dmrs_symbols, 0, 0, precod_nbr_layers);
-  }
+  for (int UE_id = 0; UE_id < number_of_UEs; UE_id++)
+    TBS[UE_id] = nr_compute_tbs(mod_order[UE_id], code_rate[UE_id], nb_rb[UE_id], nb_symb_sch, nb_re_dmrs* number_dmrs_symbols, 0, 0, precod_nbr_layers);
   
   printf("[ULSIM]: length_dmrs: %u, l_prime_mask: %u	number_dmrs_symbols: %u, mapping_type: %u add_pos: %d \n", length_dmrs, l_prime_mask, number_dmrs_symbols, mapping_type, add_pos);
-  printf("[ULSIM]: CDM groups: %u, dmrs_config_type: %d, num_rbs: %u, nb_symb_sch: %u\n", num_dmrs_cdm_grps_no_data, dmrs_config_type, nb_rb, nb_symb_sch);
+  printf("[ULSIM]: UE1 CDM groups: %u, dmrs_config_type: %d, num_rbs: %u, nb_symb_sch: %u\n", num_dmrs_cdm_grps_no_data, dmrs_config_type, nb_rb[0], nb_symb_sch);
+  printf("[ULSIM]: UE2 CDM groups: %u, dmrs_config_type: %d, num_rbs: %u, nb_symb_sch: %u\n", num_dmrs_cdm_grps_no_data, dmrs_config_type, nb_rb[1], nb_symb_sch);
   printf("[ULSIM]: UE1 MCS: %d, mod order: %u, code_rate: %u\n", Imcs[0], mod_order[0], code_rate[0]);
   printf("[ULSIM]: UE2 MCS: %d, mod order: %u, code_rate: %u\n", Imcs[1], mod_order[1], code_rate[1]);
 
@@ -882,7 +882,7 @@ int main(int argc, char *argv[])
   }
 
   uint8_t ptrs_time_density = get_L_ptrs(ptrs_mcs1, ptrs_mcs2, ptrs_mcs3, Imcs[0], mcs_table);
-  uint8_t ptrs_freq_density = get_K_ptrs(n_rb0, n_rb1, nb_rb);
+  uint8_t ptrs_freq_density = get_K_ptrs(n_rb0, n_rb1, nb_rb[0]);
 
   double ts = 1.0/(frame_parms->subcarrier_spacing * frame_parms->ofdm_symbol_size);
 
@@ -911,7 +911,7 @@ int main(int argc, char *argv[])
     if (pdu_bit_map[UE_id] & PUSCH_PDU_BITMAP_PUSCH_PTRS) {
       set_ptrs_symb_idx(&ptrsSymPos, nb_symb_sch, start_symbol, 1 << ptrs_time_density, l_prime_mask);
       ptrsSymbPerSlot = get_ptrs_symbols_in_slot(ptrsSymPos, start_symbol, nb_symb_sch);
-      ptrsRePerSymb = ((nb_rb + ptrs_freq_density - 1) / ptrs_freq_density);
+      ptrsRePerSymb = ((nb_rb[UE_id] + ptrs_freq_density - 1) / ptrs_freq_density);
       unav_res = ptrsSymbPerSlot * ptrsRePerSymb;
       LOG_D(PHY, "[ULSIM] PTRS Symbols in a slot: %2u, RE per Symbol: %3u, RE in a slot %4d\n", ptrsSymbPerSlot, ptrsRePerSymb, unav_res);
     }
@@ -919,10 +919,7 @@ int main(int argc, char *argv[])
 
   unsigned int available_bits[number_of_UEs];
   for (int UE_id = 0; UE_id < number_of_UEs; UE_id++) {
-    if (UE_id == 0)
-      available_bits[UE_id] = nr_get_G(nb_rb_ue1, nb_symb_sch, nb_re_dmrs, number_dmrs_symbols, unav_res, mod_order[0], precod_nbr_layers);
-    else if (UE_id == 1)
-      available_bits[UE_id] = nr_get_G(nb_rb_ue2, nb_symb_sch, nb_re_dmrs, number_dmrs_symbols, unav_res, mod_order[1], precod_nbr_layers);
+    available_bits[UE_id] = nr_get_G(nb_rb[UE_id], nb_symb_sch, nb_re_dmrs, number_dmrs_symbols, unav_res, mod_order[0], precod_nbr_layers);
     printf("[ULSIM]: UE%d VALUE OF G: %u, TBS: %u\n", UE_id + 1, available_bits[UE_id], TBS[UE_id]);
   }
 
@@ -951,8 +948,8 @@ int main(int argc, char *argv[])
       fseek(input_fd,file_offset*((slot_length<<2)+4000+16),SEEK_SET);
       read_errors+=fread((void*)&n_rnti_ue1,sizeof(int16_t),1,input_fd);
       printf("rnti %x\n",n_rnti_ue1);
-      read_errors+=fread((void*)&nb_rb,sizeof(int16_t),1,input_fd);
-      printf("nb_rb %d\n",nb_rb);
+      read_errors+=fread((void*)&nb_rb[0],sizeof(int16_t),1,input_fd);
+      printf("nb_rb[0] %d\n",nb_rb[0]);
       int16_t dummy;
       read_errors+=fread((void*)&start_rb,sizeof(int16_t),1,input_fd);
       //fread((void*)&dummy,sizeof(int16_t),1,input_fd);
@@ -1116,10 +1113,10 @@ int main(int argc, char *argv[])
           pusch_pdu->resource_alloc = 1;
           if (UE_id == 0) {
             pusch_pdu->rb_start = start_rb;
-            pusch_pdu->rb_size = nb_rb_ue1;
-          } else if (UE_id == 1) {
-            pusch_pdu->rb_start = nb_rb_ue1;
-            pusch_pdu->rb_size = nb_rb_ue2;
+            pusch_pdu->rb_size = nb_rb[UE_id];
+          } else {
+            pusch_pdu->rb_start = nb_rb[UE_id - 1];
+            pusch_pdu->rb_size = nb_rb[UE_id];
           }
           pusch_pdu->vrb_to_prb_mapping = 0;
           pusch_pdu->frequency_hopping = 0;
@@ -1210,10 +1207,10 @@ int main(int argc, char *argv[])
           pusch_config_pdu->qam_mod_order = mod_order[UE_id];
           if (UE_id == 0) {
             pusch_config_pdu->rb_start = start_rb;
-            pusch_config_pdu->rb_size = nb_rb_ue1;
-          } else if (UE_id == 1) {
-            pusch_config_pdu->rb_start = nb_rb_ue1;
-            pusch_config_pdu->rb_size = nb_rb_ue2;
+            pusch_config_pdu->rb_size = nb_rb[UE_id];
+          } else {
+            pusch_config_pdu->rb_start = nb_rb[UE_id - 1];
+            pusch_config_pdu->rb_size = nb_rb[UE_id];
           }
           pusch_config_pdu->nr_of_symbols = nb_symb_sch;
           pusch_config_pdu->start_symbol_index = start_symbol;
@@ -1324,11 +1321,11 @@ int main(int argc, char *argv[])
         if (input_fd == NULL) {
           // Justification of division by precod_nbr_layers:
           // When the channel is the identity matrix, the results in terms of SNR should be almost equal for 2x2 and 4x4.
-          sigma_dB = 10 * log10((double)txlev_sum / precod_nbr_layers * ((double)frame_parms->ofdm_symbol_size / (12 * nb_rb))) - SNR;
+          sigma_dB = 10 * log10((double)txlev_sum / precod_nbr_layers * ((double)frame_parms->ofdm_symbol_size / (12 * max(nb_rb[0], nb_rb[1])))) - SNR;
           sigma = pow(10, sigma_dB / 10);
 
           if (n_trials == 1)
-            printf("sigma %f (%f dB), txlev_sum %f (factor %f)\n", sigma, sigma_dB, 10 * log10((double)txlev_sum), (double)(double)frame_parms->ofdm_symbol_size / (12 * nb_rb));
+            printf("sigma %f (%f dB), txlev_sum %f (factor %f)\n", sigma, sigma_dB, 10 * log10((double)txlev_sum), (double)(double)frame_parms->ofdm_symbol_size / (12 * max(nb_rb[0], nb_rb[1])));
 
           // for (i = 0; i < slot_length; i++) {
           //   for (int aa = 0; aa < UE_list[1]->frame_parms.nb_antennas_tx; aa++) {
@@ -1394,7 +1391,7 @@ int main(int argc, char *argv[])
           if (n_trials == 1 && round == 0 && number_of_UEs == 1) {
             nfapi_nr_ul_tti_request_number_of_pdus_t *pdu_element0 = &UL_tti_req->pdus_list[0];
             nfapi_nr_pusch_pdu_t *pusch_pdu = &pdu_element0->pusch_pdu;
-            __attribute__((unused)) int off = ((nb_rb & 1) == 1) ? 4 : 0;
+            __attribute__((unused)) int off = ((nb_rb[0] & 1) == 1) ? 4 : 0;
 
             LOG_M("rxsigF0_ext.m",
                   "rxsF0_ext",
@@ -1772,8 +1769,8 @@ int main(int argc, char *argv[])
           "DMRS length:\t%d\n"
           "DMRS CDM gr w/o data:\t%d\n",
           number_of_UEs,
-          nb_rb_ue1,
-          nb_rb_ue2,
+          nb_rb[0],
+          nb_rb[1],
           N_RB_DL,
           nb_symb_sch,
           Imcs[0],
