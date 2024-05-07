@@ -2226,13 +2226,13 @@ NR_BCCH_DL_SCH_Message_t *get_SIB1_NR(const NR_ServingCellConfigCommon_t *scc, c
   // ue-TimersAndConstants
   sib1->ue_TimersAndConstants = CALLOC(1,sizeof(struct NR_UE_TimersAndConstants));
   AssertFatal(sib1->ue_TimersAndConstants != NULL, "out of memory\n");
-  sib1->ue_TimersAndConstants->t300 = NR_UE_TimersAndConstants__t300_ms400;
-  sib1->ue_TimersAndConstants->t301 = NR_UE_TimersAndConstants__t301_ms400;
+  sib1->ue_TimersAndConstants->t300 = NR_UE_TimersAndConstants__t300_ms2000;
+  sib1->ue_TimersAndConstants->t301 = NR_UE_TimersAndConstants__t301_ms2000;
   sib1->ue_TimersAndConstants->t310 = NR_UE_TimersAndConstants__t310_ms2000;
   sib1->ue_TimersAndConstants->n310 = NR_UE_TimersAndConstants__n310_n10;
   sib1->ue_TimersAndConstants->t311 = NR_UE_TimersAndConstants__t311_ms3000;
   sib1->ue_TimersAndConstants->n311 = NR_UE_TimersAndConstants__n311_n1;
-  sib1->ue_TimersAndConstants->t319 = NR_UE_TimersAndConstants__t319_ms400;
+  sib1->ue_TimersAndConstants->t319 = NR_UE_TimersAndConstants__t319_ms2000;
 
   // uac-BarringInfo
   /*sib1->uac_BarringInfo = CALLOC(1, sizeof(struct NR_SIB1__uac_BarringInfo));
