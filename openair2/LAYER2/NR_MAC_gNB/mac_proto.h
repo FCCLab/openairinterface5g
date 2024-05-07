@@ -264,7 +264,8 @@ NR_SearchSpace_t *get_searchspace(NR_ServingCellConfigCommon_t *scc,
 
 long get_K2(NR_PUSCH_TimeDomainResourceAllocationList_t *tdaList,
             int time_domain_assignment,
-            int mu);
+            int mu,
+            const NR_ServingCellConfigCommon_t *scc);
 
 const NR_DMRS_UplinkConfig_t *get_DMRS_UplinkConfig(const NR_PUSCH_Config_t *pusch_Config, const NR_tda_info_t *tda_info);
 

@@ -602,13 +602,21 @@ void nr_mac_config_scc(gNB_MAC_INST *nrmac, NR_ServingCellConfigCommon_t *scc, c
               "SSB Bitmap type %d is not valid\n",
               scc->ssb_PositionsInBurst->present);
 
-  int n = nr_slots_per_frame[*scc->ssbSubcarrierSpacing];
-  if (*scc->ssbSubcarrierSpacing == 0)
-    n <<= 1; // to have enough room for feedback possibly beyond the frame we need a larger array at 15kHz SCS
-  nrmac->common_channels[0].vrb_map_UL = calloc(n * MAX_BWP_SIZE, sizeof(uint16_t));
-  nrmac->vrb_map_UL_size = n;
+  int NTN_gNB_Koffset = 0;
+  if (scc->ext2 && scc->ext2->ntn_Config_r17 && scc->ext2->ntn_Config_r17->cellSpecificKoffset_r17)
+    NTN_gNB_Koffset = *scc->ext2->ntn_Config_r17->cellSpecificKoffset_r17 << *scc->ssbSubcarrierSpacing;
+
+  const int n = nr_slots_per_frame[*scc->ssbSubcarrierSpacing];
+  const int size = n << (int)ceil(log2((NTN_gNB_Koffset + 13) / n + 1)); // 13 is upper limit for max_fb_time
+
+  nrmac->vrb_map_UL_size = size;
+  nrmac->common_channels[0].vrb_map_UL = calloc(size * MAX_BWP_SIZE, sizeof(uint16_t));
   AssertFatal(nrmac->common_channels[0].vrb_map_UL,
               "could not allocate memory for RC.nrmac[]->common_channels[0].vrb_map_UL\n");
+
+  nrmac->UL_tti_req_ahead_size = size;
+  nrmac->UL_tti_req_ahead[0] = calloc(size, sizeof(nfapi_nr_ul_tti_request_t));
+  AssertFatal(nrmac->UL_tti_req_ahead[0], "could not allocate memory for nrmac->UL_tti_req_ahead[0]\n");
 
   LOG_I(NR_MAC, "Configuring common parameters from NR ServingCellConfig\n");
 
