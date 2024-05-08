@@ -963,6 +963,16 @@ static void setup_puschconfig(NR_PUSCH_Config_t *source, NR_PUSCH_Config_t *targ
   }
 }
 
+static void config_zp_CSI_RS_Resource(NR_ZP_CSI_RS_Resource_t *target, NR_ZP_CSI_RS_Resource_t *source)
+{
+  target->zp_CSI_RS_ResourceId = source->zp_CSI_RS_ResourceId;
+  target->resourceMapping = source->resourceMapping;
+  if (source->periodicityAndOffset)
+    UPDATE_IE(target->periodicityAndOffset,
+              source->periodicityAndOffset,
+              NR_CSI_ResourcePeriodicityAndOffset_t);
+}
+
 static void setup_pdschconfig(NR_PDSCH_Config_t *source, NR_PDSCH_Config_t *target)
 {
   UPDATE_IE(target->dataScramblingIdentityPDSCH, source->dataScramblingIdentityPDSCH, long);
@@ -1020,7 +1030,25 @@ static void setup_pdschconfig(NR_PDSCH_Config_t *source, NR_PDSCH_Config_t *targ
   UPDATE_IE(target->mcs_Table, source->mcs_Table, long);
   UPDATE_IE(target->maxNrofCodeWordsScheduledByDCI, source->maxNrofCodeWordsScheduledByDCI, long);
   UPDATE_NP_IE(target->prb_BundlingType, source->prb_BundlingType, struct NR_PDSCH_Config__prb_BundlingType);
-  AssertFatal(source->zp_CSI_RS_ResourceToAddModList == NULL, "Not handled\n");
+  if (source->zp_CSI_RS_ResourceToAddModList) {
+    if (!target->zp_CSI_RS_ResourceToAddModList)
+      target->zp_CSI_RS_ResourceToAddModList = calloc(1, sizeof(*target->zp_CSI_RS_ResourceToAddModList));
+    ADDMOD_IE_FROMLIST_WFUNCTION(source->zp_CSI_RS_ResourceToAddModList,
+                                 target->zp_CSI_RS_ResourceToAddModList,
+                                 zp_CSI_RS_ResourceId,
+                                 NR_ZP_CSI_RS_Resource_t,
+                                 config_zp_CSI_RS_Resource);
+  }
+  if (source->zp_CSI_RS_ResourceToReleaseList) {
+    RELEASE_IE_FROMLIST(source->zp_CSI_RS_ResourceToReleaseList,
+                        target->zp_CSI_RS_ResourceToAddModList,
+                        zp_CSI_RS_ResourceId);
+  }
+  if (source->p_ZP_CSI_RS_ResourceSet)
+    HANDLE_SETUPRELEASE_IE(target->p_ZP_CSI_RS_ResourceSet,
+                           source->p_ZP_CSI_RS_ResourceSet,
+                           NR_ZP_CSI_RS_ResourceSet_t,
+                           asn_DEF_NR_ZP_CSI_RS_ResourceSet);
   AssertFatal(source->aperiodic_ZP_CSI_RS_ResourceSetsToAddModList == NULL, "Not handled\n");
   AssertFatal(source->sp_ZP_CSI_RS_ResourceSetsToAddModList == NULL, "Not handled\n");
 }
