@@ -916,6 +916,15 @@ static void send_nas_detach_req(instance_t instance, bool wait_release)
   itti_send_msg_to_task(TASK_RRC_NRUE, instance, msg);
 }
 
+static void send_nas_5gmm_ind(instance_t instance, const Guti5GSMobileIdentity_t *guti)
+{
+  MessageDef *msg = itti_alloc_new_message(TASK_NAS_NRUE, 0, NAS_5GMM_IND);
+  nas_5gmm_ind_t *ind = &NAS_5GMM_IND(msg);
+  LOG_I(NR_RRC, "5G-GUTI: AMF pointer %u, AMF Set ID %u, 5G-TMSI %u \n", guti->amfpointer, guti->amfsetid, guti->tmsi);
+  ind->fiveG_STMSI = ((uint64_t)guti->amfsetid << 38) | ((uint64_t)guti->amfpointer << 32) | guti->tmsi;
+  itti_send_msg_to_task(TASK_RRC_NRUE, instance, msg);
+}
+
 static void parse_allowed_nssai(nr_nas_msg_snssai_t nssaiList[8], const uint8_t *buf, const uint32_t len)
 {
   int nssai_cnt = 0;
@@ -1046,6 +1055,9 @@ static void handle_registration_accept(instance_t instance,
   LOG_I(NAS, "[UE] Received REGISTRATION ACCEPT message\n");
   decodeRegistrationAccept(pdu_buffer, msg_length, nas);
   get_allowed_nssai(nas_allowed_nssai, pdu_buffer, msg_length);
+
+  if(nas->guti)
+    send_nas_5gmm_ind(instance, nas->guti);
 
   as_nas_info_t initialNasMsg = {0};
   generateRegistrationComplete(nas, &initialNasMsg, NULL);

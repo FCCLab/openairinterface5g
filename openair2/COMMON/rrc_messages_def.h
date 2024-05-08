@@ -63,6 +63,7 @@ MESSAGE_DEF(NAS_CONN_ESTABLI_REQ,       MESSAGE_PRIORITY_MED,       NasConnEstab
 MESSAGE_DEF(NAS_UPLINK_DATA_REQ,        MESSAGE_PRIORITY_MED,       NasUlDataReq,               nas_ul_data_req)
 MESSAGE_DEF(NAS_DETACH_REQ,             MESSAGE_PRIORITY_MED,       NasDetachReq,               nas_detach_req)
 MESSAGE_DEF(NAS_DEREGISTRATION_REQ,     MESSAGE_PRIORITY_MED,       NasDeregistrationReq,       nas_deregistration_req)
+MESSAGE_DEF(NAS_5GMM_IND,               MESSAGE_PRIORITY_MED,       Nas5GMMInd,                 nas_5gmm_ind)
 
 MESSAGE_DEF(NAS_RAB_ESTABLI_RSP,        MESSAGE_PRIORITY_MED,       NasRabEstRsp,               nas_rab_est_rsp)
 

@@ -44,6 +44,7 @@
 #include "NR_UL-DCCH-Message.h"
 #include "uper_encoder.h"
 #include "uper_decoder.h"
+#include "NR_InitialUE-Identity.h"
 
 #include "rrc_defs.h"
 #include "rrc_proto.h"
@@ -680,9 +681,10 @@ static void nr_rrc_ue_prepare_RRCSetupRequest(NR_UE_RRC_INST_t *rrc)
     rv[i] = taus() & 0xff;
 #endif
   }
-
   uint8_t buf[1024];
-  int len = do_RRCSetupRequest(buf, sizeof(buf), rv);
+  int len = do_RRCSetupRequest(buf, sizeof(buf), rv, rrc->rrc5GMMInfo.ue_identity_type, rrc->rrc5GMMInfo.fiveG_S_TMSI_part1);
+  /* RRCSetupComplete will set the ng-5G-S-TMSI-Value to ng-5G-S-TMSI-Part2 */
+  rrc->rrc5GMMInfo.ue_identity_type = NR_RRCSetupComplete_IEs__ng_5G_S_TMSI_Value_PR_ng_5G_S_TMSI_Part2;
 
   nr_rlc_srb_recv_sdu(rrc->ue_id, 0, buf, len);
 }
@@ -1697,6 +1699,19 @@ void nr_rrc_handle_ra_indication(NR_UE_RRC_INST_t *rrc, bool ra_succeeded)
   }
 }
 
+/**
+ * @brief Process 5G-S-TMSI (48 bits) and extract part 1 and part 2
+ */
+void process_fiveG_STMSI(NR_UE_RRC_INST_t *rrc, uint64_t fiveG_STMSI)
+{
+  /* ng-5G-S-TMSI-Part1: the rightmost 39 bits of 5G-S-TMSI
+   * BIT STRING (SIZE (39)) - 3GPP TS 38.331 */
+  rrc->rrc5GMMInfo.fiveG_S_TMSI_part1 = fiveG_STMSI & ((1ULL << 39) - 1);
+  /* ng-5G-S-TMSI-Part2: The leftmost 9 bits of 5G-S-TMSI. */
+  rrc->rrc5GMMInfo.fiveG_S_TMSI_part2 = (fiveG_STMSI >> 39) & ((1ULL << 9) - 1) ;
+}
+
+
 void *rrc_nrue_task(void *args_p)
 {
   itti_mark_task_ready(TASK_RRC_NRUE);
@@ -1810,6 +1825,12 @@ void *rrc_nrue(void *notUsed)
     nr_pdcp_data_req_srb(rrc->ue_id, srb_id, 0, length, buffer, deliver_pdu_srb_rlc, NULL);
     break;
   }
+
+  case NAS_5GMM_IND:
+    Nas5GMMInd *req = &NAS_5GMM_IND(msg_p);
+    process_fiveG_STMSI(rrc, req->fiveG_STMSI);
+    LOG_I(NR_RRC, "5G-S-TMSI: %lu, 5G-S-TMSI-Part1 %ld\n", req->fiveG_STMSI, rrc->rrc5GMMInfo.fiveG_S_TMSI_part1);
+    break;
 
   default:
     LOG_E(NR_RRC, "[UE %ld] Received unexpected message %s\n", rrc->ue_id, ITTI_MSG_NAME(msg_p));

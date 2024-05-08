@@ -770,7 +770,21 @@ int16_t do_RRCReconfiguration(const gNB_RRC_UE_t *UE,
     return((enc_rval.encoded+7)/8);
 }
 
-int do_RRCSetupRequest(uint8_t *buffer, size_t buffer_size, uint8_t *rv)
+/**
+ * @brief Encode the RRCSetupRequest message
+ *        According to clause 5.3.3.3 of TS 38.331
+ *        1) the UE sets the UE identity as follows:
+ *           - If upper layers provide a 5G-S-TMSI (ng-5G-S-TMSI):
+ *              - Sets the ue-Identity to ng-5G-S-TMSI-Part1.
+ *           - Otherwise:
+ *              - Draws a 39-bit random value in the range 0..239-1
+ *                and sets the ue-Identity to this value.
+ *        2) the UE sets the establishmentCause in accordance
+ *           with the information received from upper layers.
+ *
+ * @return length of encoded message in bytes
+ */
+int do_RRCSetupRequest(uint8_t *buffer, size_t buffer_size, uint8_t *rv, uint8_t ue_identity_type, uint64_t fiveG_S_TMSI_part1)
 {
   NR_UL_CCCH_Message_t ul_ccch_msg = {0};
   ul_ccch_msg.message.present           = NR_UL_CCCH_MessageType_PR_c1;
@@ -778,7 +792,8 @@ int do_RRCSetupRequest(uint8_t *buffer, size_t buffer_size, uint8_t *rv)
   c1->present = NR_UL_CCCH_MessageType__c1_PR_rrcSetupRequest;
   asn1cCalloc(c1->choice.rrcSetupRequest, rrcSetupRequest);
 
-  if (1) {
+  if (ue_identity_type != NR_InitialUE_Identity_PR_ng_5G_S_TMSI_Part1) {
+    /* set the ue-Identity to a random value */
     rrcSetupRequest->rrcSetupRequest.ue_Identity.present = NR_InitialUE_Identity_PR_randomValue;
     BIT_STRING_t *str = &rrcSetupRequest->rrcSetupRequest.ue_Identity.choice.randomValue;
     str->size = 5;
@@ -790,12 +805,21 @@ int do_RRCSetupRequest(uint8_t *buffer, size_t buffer_size, uint8_t *rv)
     str->buf[3] = rv[3];
     str->buf[4] = rv[4] & 0xfe;
   } else {
+    /* set the ue-Identity to ng-5G-S-TMSI-Part1 */
+    LOG_D(NR_RRC, "set the ue-Identity to ng-5G-S-TMSI-Part1 %lu\n", fiveG_S_TMSI_part1);
     rrcSetupRequest->rrcSetupRequest.ue_Identity.present = NR_InitialUE_Identity_PR_ng_5G_S_TMSI_Part1;
     BIT_STRING_t *str = &rrcSetupRequest->rrcSetupRequest.ue_Identity.choice.ng_5G_S_TMSI_Part1;
-    str->size = 1;
-    str->bits_unused = 0;
+    str->size = 5;
+    str->bits_unused = 1;
     str->buf = CALLOC(1, str->size);
-    str->buf[0] = 0x12;
+    /* shift, mask and fill the buffer */
+    int i;
+    uint8_t mask = 0xFF;
+    for (i = 0; i < str->size - 1; i++) {
+      int shift = ((str->size - i - 1) * 8) - str->bits_unused;
+      str->buf[i] = (fiveG_S_TMSI_part1 >> shift) & mask;
+    }
+    str->buf[i] = (fiveG_S_TMSI_part1 << str->bits_unused) & mask;
   }
 
   rrcSetupRequest->rrcSetupRequest.establishmentCause = NR_EstablishmentCause_mo_Signalling; //EstablishmentCause_mo_Data;

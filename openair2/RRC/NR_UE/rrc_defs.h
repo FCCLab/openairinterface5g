@@ -187,6 +187,13 @@ typedef struct rrcPerNB {
   NR_RSRP_Range_t s_measure;
 } rrcPerNB_t;
 
+typedef struct rrc5GMMInfo {
+  uint64_t fiveG_S_TMSI_part1;
+  uint16_t fiveG_S_TMSI_part2;
+  /* UE identity type */
+  uint8_t ue_identity_type;
+} rrc5GMMInfo_t;
+
 typedef struct NR_UE_RRC_INST_s {
   instance_t ue_id;
   rrcPerNB_t perNB[NB_CNX_UE];
@@ -222,6 +229,8 @@ typedef struct NR_UE_RRC_INST_s {
   NR_RRCRelease_t *RRCRelease;
   long selected_plmn_identity;
   Rrc_State_NR_t nrRrcState;
+  /* 5G Mobility Management */
+  rrc5GMMInfo_t rrc5GMMInfo;
 
   //Sidelink params
   NR_SL_PreconfigurationNR_r16_t *sl_preconfig;
