@@ -42,4 +42,5 @@ struct nr_rrc_du_container_t *get_du_by_assoc_id(struct gNB_RRC_INST_s *rrc, sct
 
 void dump_du_info(const struct gNB_RRC_INST_s *rrc, FILE *f);
 
+struct nr_rrc_du_container_t *find_target_du(struct gNB_RRC_INST_s *rrc, sctp_assoc_t source_assoc_id);
 #endif /* RRC_GNB_DU_H_ */

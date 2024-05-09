@@ -176,6 +176,24 @@ int DU_handle_UE_CONTEXT_SETUP_REQUEST(instance_t instance, sctp_assoc_t assoc_i
       f1ap_ue_context_setup_req->cu_to_du_rrc_information->uE_CapabilityRAT_ContainerList_length = ieCuRrcInfo->value.choice.CUtoDURRCInformation.uE_CapabilityRAT_ContainerList->size;
       LOG_D(F1AP, "Size f1ap_ue_context_setup_req->cu_to_du_rrc_information->uE_CapabilityRAT_ContainerList_length: %d \n", f1ap_ue_context_setup_req->cu_to_du_rrc_information->uE_CapabilityRAT_ContainerList_length);
     }
+    if (ieCuRrcInfo->value.choice.CUtoDURRCInformation.iE_Extensions != NULL) {
+      f1ap_ue_context_setup_req->cu_to_du_rrc_information->ie_extensions = (protocol_extension_container_t *)calloc(1, sizeof(protocol_extension_container_t));
+      F1AP_ProtocolExtensionContainer_10696P60_t *ie_extensions = (F1AP_ProtocolExtensionContainer_10696P60_t *)ieCuRrcInfo->value.choice.CUtoDURRCInformation.iE_Extensions;
+      for (int i_ext = 0; i_ext < ie_extensions->list.count; i_ext++) {
+        F1AP_CUtoDURRCInformation_ExtIEs_t *ie = ie_extensions->list.array[i_ext];
+        switch (ie->extensionValue.present) {
+          case F1AP_CUtoDURRCInformation_ExtIEs__extensionValue_PR_CellGroupConfig:
+            f1ap_ue_context_setup_req->cu_to_du_rrc_information->ie_extensions->cell_group_config =
+                (uint8_t *)calloc(1, ie->extensionValue.choice.CellGroupConfig.size*sizeof(uint8_t));
+            memcpy(f1ap_ue_context_setup_req->cu_to_du_rrc_information->ie_extensions->cell_group_config, ie->extensionValue.choice.CellGroupConfig.buf, ie->extensionValue.choice.CellGroupConfig.size);
+            f1ap_ue_context_setup_req->cu_to_du_rrc_information->ie_extensions->cell_group_config_length = ie->extensionValue.choice.CellGroupConfig.size;
+            break;
+          default:
+            LOG_E(F1AP, "%s: Procedures for extension value %i are not implemented yet!\n", __FUNCTION__, ie->extensionValue.present);
+            break;
+        }
+      }
+    }
   }
 
   /* DRB */
