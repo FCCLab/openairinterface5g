@@ -23,8 +23,13 @@ cmake .. -GNinja -DENABLE_TESTS=ON
 ninja tests
 ```
 
+The user can use either `ninja` or `make`.
+
+# Run unit tests
+
 Then, you can run `ctest` to run all tests:
-```
+
+```bash
 $ ctest
 Test project /home/richie/w/ctest/build
     Start 1: nr_rlc_tests
@@ -58,7 +63,8 @@ process is
 
 In the simplest case, in an existing `CMakeLists.txt`, you might add the
 following:
-```
+
+```bash
 if(ENABLE_TESTS)
   add_executable(my_test mytest.c)
   add_dependencies(tests my_test)

@@ -79,7 +79,7 @@ More details about the E1AP procedures in OAI are available in this document: [E
 
 # 2. Running the E1 Split
 
-The setup is assuming that all modules are running on the same machine. The user can refer to the [F1 design document](./../F1-design.md) for local deployment of the DU.
+The setup is assuming that all modules are running on the same machine. The user can refer to the [F1 design document](./../F1AP/F1-design.md) for local deployment of the DU.
 
 ## 2.1 Configuration File
 
