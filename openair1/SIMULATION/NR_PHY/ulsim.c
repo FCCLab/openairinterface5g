@@ -155,7 +155,7 @@ int main(int argc, char *argv[])
   int slot = 8, frame = 1;
   int do_SRS = 0;
   FILE *output_fd = NULL;
-  double **s_re,**s_im,**r_re,**r_im;
+  double ***s_re,***s_im,***r_re,***r_im;
   //uint8_t write_output_file = 0;
   int trial, n_trials = 1, n_false_positive = 0, delay = 0;
   double maxDoppler = 0.0;
@@ -635,10 +635,16 @@ int main(int argc, char *argv[])
   AssertFatal((gNB->if_inst = NR_IF_Module_init(0)) != NULL, "Cannot register interface");
   gNB->if_inst->NR_PHY_config_req = nr_phy_config_request;
 
-  s_re = malloc(n_tx*sizeof(double*));
-  s_im = malloc(n_tx*sizeof(double*));
-  r_re = malloc(n_rx*sizeof(double*));
-  r_im = malloc(n_rx*sizeof(double*));
+  s_re = malloc(number_of_UEs * sizeof(double**));
+  s_im = malloc(number_of_UEs * sizeof(double**));
+  r_re = malloc(number_of_UEs * sizeof(double**));
+  r_im = malloc(number_of_UEs * sizeof(double**));
+  for (int UE_id = 0; UE_id < number_of_UEs; UE_id++) {
+    s_re[UE_id] = malloc(n_tx * sizeof(double*));
+    s_im[UE_id] = malloc(n_tx * sizeof(double*));
+    r_re[UE_id] = malloc(n_rx * sizeof(double*));
+    r_im[UE_id] = malloc(n_rx * sizeof(double*));
+  }
 
   NR_ServingCellConfigCommon_t *scc = calloc(1,sizeof(*scc));;
   prepare_scc(scc);
@@ -924,14 +930,16 @@ int main(int argc, char *argv[])
   }
 
   int frame_length_complex_samples = frame_parms->samples_per_subframe*NR_NUMBER_OF_SUBFRAMES_PER_FRAME;
-  for (int aatx=0; aatx<n_tx; aatx++) {
-    s_re[aatx] = calloc(1,frame_length_complex_samples*sizeof(double));
-    s_im[aatx] = calloc(1,frame_length_complex_samples*sizeof(double));
-  }
 
-  for (int aarx=0; aarx<n_rx; aarx++) {
-    r_re[aarx] = calloc(1,frame_length_complex_samples*sizeof(double));
-    r_im[aarx] = calloc(1,frame_length_complex_samples*sizeof(double));
+  for (int UE_id = 0; UE_id < number_of_UEs; UE_id++) {
+    for (int aatx = 0; aatx < n_tx; aatx++) {
+      s_re[UE_id][aatx] = calloc(1, frame_length_complex_samples * sizeof(double));
+      s_im[UE_id][aatx] = calloc(1, frame_length_complex_samples * sizeof(double));
+    }
+    for (int aarx = 0; aarx < n_rx; aarx++) {
+      r_re[UE_id][aarx] = calloc(1, frame_length_complex_samples * sizeof(double));
+      r_im[UE_id][aarx] = calloc(1, frame_length_complex_samples * sizeof(double));
+    }
   }
 
   //for (int i=0;i<16;i++) printf("%f\n",gaussdouble(0.0,1.0));
@@ -1275,20 +1283,12 @@ int main(int argc, char *argv[])
             phy_procedures_nrUE_TX(UE, &UE_proc, &phy_data[UE_id]);
 
             // Multi-UE
-            if (UE_id == 0)
-              for (i = 0; i < slot_length; i++) {
-                for (int aa = 0; aa < UE->frame_parms.nb_antennas_tx; aa++) {
-                  s_re[aa][i] = (double)UE->common_vars.txData[aa][slot_offset + i].r;
-                  s_im[aa][i] = (double)UE->common_vars.txData[aa][slot_offset + i].i;
-                }
+            for (i = 0; i < slot_length; i++) {
+              for (int aa = 0; aa < UE->frame_parms.nb_antennas_tx; aa++) {
+                s_re[UE_id][aa][i] = (double)UE->common_vars.txData[aa][slot_offset + i].r;
+                s_im[UE_id][aa][i] = (double)UE->common_vars.txData[aa][slot_offset + i].i;
               }
-            else
-              for (i = 0; i < slot_length; i++) {
-                for (int aa = 0; aa < UE->frame_parms.nb_antennas_tx; aa++) {
-                  s_re[aa][i] += (double)UE->common_vars.txData[aa][slot_offset + i].r;
-                  s_im[aa][i] += (double)UE->common_vars.txData[aa][slot_offset + i].i;
-                }
-              }
+            }
 
             if (n_trials == 1) {
               LOG_M("txsig0.m", "txs0", &UE->common_vars.txData[0][slot_offset], slot_length, 1, 1);
@@ -1327,16 +1327,19 @@ int main(int argc, char *argv[])
           if (n_trials == 1)
             printf("sigma %f (%f dB), txlev_sum %f (factor %f)\n", sigma, sigma_dB, 10 * log10((double)txlev_sum), (double)(double)frame_parms->ofdm_symbol_size / (12 * max(nb_rb[0], nb_rb[1])));
 
-          // for (i = 0; i < slot_length; i++) {
-          //   for (int aa = 0; aa < UE_list[1]->frame_parms.nb_antennas_tx; aa++) {
-          //     s_re[aa][i] = (double)UE_list[1]->common_vars.txData[aa][slot_offset + i].r;
-          //     s_im[aa][i] = (double)UE_list[1]->common_vars.txData[aa][slot_offset + i].i;
-          //   }
-          // }
+          for (int UE_id = 0; UE_id < number_of_UEs; UE_id++) {
+            multipath_channel(UE2gNB, s_re[UE_id], s_im[UE_id], r_re[UE_id], r_im[UE_id], slot_length, 0, (n_trials == 1) ? 1 : 0);
+          }
 
-          multipath_channel(UE2gNB, s_re, s_im, r_re, r_im, slot_length, 0, (n_trials == 1) ? 1 : 0);
-          add_noise(rxdata, (const double **)r_re, (const double **)r_im, sigma, slot_length, slot_offset, ts, delay, pdu_bit_map[0], PUSCH_PDU_BITMAP_PUSCH_PTRS, frame_parms->nb_antennas_rx);
-
+          for (int UE_id = 1; UE_id < number_of_UEs; UE_id++) {
+            for (i = 0; i < slot_length; i++) {
+              for (int aa = 0; aa < UE_list[1]->frame_parms.nb_antennas_tx; aa++) {
+                r_re[0][aa][i] += r_re[UE_id][aa][i];
+                r_im[0][aa][i] += r_im[UE_id][aa][i];
+              }
+            }
+          }
+          add_noise(rxdata, (const double **)r_re[0], (const double **)r_im[0], sigma, slot_length, slot_offset, ts, delay, pdu_bit_map[0], PUSCH_PDU_BITMAP_PUSCH_PTRS, frame_parms->nb_antennas_rx);
         } /*End input_fd */
 
         //----------------------------------------------------------
