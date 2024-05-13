@@ -96,77 +96,69 @@ int CU_send_DL_RRC_MESSAGE_TRANSFER(sctp_assoc_t assoc_id, f1ap_dl_rrc_message_t
 */
 int CU_handle_UL_RRC_MESSAGE_TRANSFER(instance_t instance, sctp_assoc_t assoc_id, uint32_t stream, F1AP_F1AP_PDU_t *pdu)
 {
-  LOG_D(F1AP, "CU_handle_UL_RRC_MESSAGE_TRANSFER \n");
-  F1AP_ULRRCMessageTransfer_t    *container;
-  F1AP_ULRRCMessageTransferIEs_t *ie;
-  uint64_t        cu_ue_f1ap_id;
-  uint64_t        du_ue_f1ap_id;
-  uint64_t        srb_id;
-  DevAssert(pdu != NULL);
-
   if (stream != 0) {
     LOG_E(F1AP, "[SCTP %d] Received F1 on stream != 0 (%d)\n",
           assoc_id, stream);
     return -1;
   }
 
-  container = &pdu->choice.initiatingMessage->value.choice.ULRRCMessageTransfer;
-  /* GNB_CU_UE_F1AP_ID */
-  F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_ULRRCMessageTransferIEs_t, ie, container,
-                             F1AP_ProtocolIE_ID_id_gNB_CU_UE_F1AP_ID, true);
-  cu_ue_f1ap_id = ie->value.choice.GNB_CU_UE_F1AP_ID;
-  /* GNB_DU_UE_F1AP_ID */
-  F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_ULRRCMessageTransferIEs_t, ie, container,
-                             F1AP_ProtocolIE_ID_id_gNB_DU_UE_F1AP_ID, true);
-  du_ue_f1ap_id = ie->value.choice.GNB_DU_UE_F1AP_ID;
+  f1ap_ul_rrc_message_t msg;
 
-  if (!cu_exists_f1_ue_data(cu_ue_f1ap_id)) {
-    LOG_E(F1AP, "unknown CU UE ID %ld\n", cu_ue_f1ap_id);
-    return 1;
+  LOG_D(F1AP, "CU_handle_UL_RRC_MESSAGE_TRANSFER \n");
+  if (!decode_ul_rrc_message_transfer(pdu, &msg)) {
+    LOG_E(F1AP, "cannot decode F1 UL RRC message Transfer\n");
+    free_ul_rrc_message_transfer(&msg);
+    return -1;
+  }
+
+  if (!cu_exists_f1_ue_data(msg.gNB_CU_ue_id)) {
+    LOG_E(F1AP, "unknown CU UE ID %d\n", msg.gNB_CU_ue_id);
+    free_ul_rrc_message_transfer(&msg);
+    return -1;
   }
 
   /* the RLC-PDCP does not transport the DU UE ID (yet), so we drop it here.
    * For the moment, let's hope this won't become relevant; to sleep in peace,
    * let's put an assert to check that it is the expected DU UE ID. */
-  f1_ue_data_t ue_data = cu_get_f1_ue_data(cu_ue_f1ap_id);
-  if (ue_data.secondary_ue != du_ue_f1ap_id) {
-    LOG_E(F1AP, "unexpected DU UE ID %u received, expected it to be %lu\n", ue_data.secondary_ue, du_ue_f1ap_id);
-    return 1;
+  f1_ue_data_t ue_data = cu_get_f1_ue_data(msg.gNB_CU_ue_id);
+  if (ue_data.secondary_ue != msg.gNB_DU_ue_id) {
+    LOG_E(F1AP, "unexpected DU UE ID %u received, expected it to be %u\n", ue_data.secondary_ue, msg.gNB_DU_ue_id);
+    free_ul_rrc_message_transfer(&msg);
+    return -1;
   }
 
-  /* mandatory */
-  /* SRBID */
-  F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_ULRRCMessageTransferIEs_t, ie, container,
-                             F1AP_ProtocolIE_ID_id_SRBID, true);
-  srb_id = ie->value.choice.SRBID;
-
-  if (srb_id < 1 )
-    LOG_E(F1AP, "Unexpected UL RRC MESSAGE for srb_id %lu \n", srb_id);
+  if (msg.srb_id < 1)
+    LOG_E(F1AP, "Unexpected UL RRC MESSAGE for SRB %d \n", msg.srb_id);
   else
-    LOG_D(F1AP, "UL RRC MESSAGE for srb_id %lu in DCCH \n", srb_id);
+    LOG_D(F1AP, "UL RRC MESSAGE for SRB %d in DCCH \n", msg.srb_id);
 
-  // issue in here
-  /* mandatory */
-  /* RRC Container */
-  F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_ULRRCMessageTransferIEs_t, ie, container,
-                             F1AP_ProtocolIE_ID_id_RRCContainer, true);
-  protocol_ctxt_t ctxt={0};
-  ctxt.instance = instance;
-  ctxt.module_id = instance;
-  ctxt.rntiMaybeUEid = cu_ue_f1ap_id;
-  ctxt.enb_flag = 1;
-  ctxt.eNB_index = 0;
-  uint8_t *mb = malloc16(ie->value.choice.RRCContainer.size);
-  memcpy(mb, ie->value.choice.RRCContainer.buf, ie->value.choice.RRCContainer.size);
-  LOG_D(F1AP, "Calling pdcp_data_ind for UE RNTI %lx srb_id %lu with size %ld (DCCH) \n", ctxt.rntiMaybeUEid, srb_id, ie->value.choice.RRCContainer.size);
-  //for (int i = 0; i < ie->value.choice.RRCContainer.size; i++)
-  //  printf("%02x ", mb->data[i]);
-  //printf("\n");
-  pdcp_data_ind (&ctxt,
-                 1, // srb_flag
-                 0, // embms_flag
-                 srb_id,
-                 ie->value.choice.RRCContainer.size,
-                 mb, NULL, NULL);
+  protocol_ctxt_t ctxt = {
+    .instance = instance,
+    .module_id = instance,
+    .enb_flag = 1,
+    .eNB_index = 0,
+    .rntiMaybeUEid = msg.gNB_CU_ue_id,
+  };
+
+  LOG_D(F1AP, "[UE %lx] calling pdcp_data_ind for SRB %d with size %d (DCCH) \n", ctxt.rntiMaybeUEid, msg.srb_id, msg.rrc_container_length);
+  uint8_t *mb = malloc16(msg.rrc_container_length);
+  memcpy(mb, msg.rrc_container, msg.rrc_container_length);
+
+#ifdef DEBUG_F1AP
+  for (int i = 0; i < msg.rrc_container_length; i++)
+    printf("%02x ", mb->data[i]);
+  printf("\n");
+#endif
+
+  pdcp_data_ind(&ctxt,
+                1, // srb_flag
+                0, // embms_flag
+                msg.srb_id,
+                msg.rrc_container_length,
+                mb,
+                NULL,
+                NULL);
+  /* Free UL RRC Message Transfer */
+  free_ul_rrc_message_transfer(&msg);
   return 0;
 }

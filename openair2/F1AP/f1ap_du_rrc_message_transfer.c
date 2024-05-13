@@ -97,64 +97,29 @@ int DU_send_INITIAL_UL_RRC_MESSAGE_TRANSFER(sctp_assoc_t assoc_id, const f1ap_in
 
 int DU_send_UL_NR_RRC_MESSAGE_TRANSFER(sctp_assoc_t assoc_id, const f1ap_ul_rrc_message_t *msg)
 {
-  F1AP_F1AP_PDU_t                pdu= {0};
-  F1AP_ULRRCMessageTransfer_t    *out;
-  uint8_t *buffer = NULL;
-  uint32_t len;
   LOG_D(F1AP,
         "size %d UE RNTI %x in SRB %d\n",
         msg->rrc_container_length,
         msg->gNB_DU_ue_id,
         msg->srb_id);
-  //for (int i = 0;i < msg->rrc_container_length; i++)
-  //  printf("%02x ", msg->rrc_container[i]);
-  //printf("\n");
-  /* Create */
-  /* 0. Message Type */
-  pdu.present = F1AP_F1AP_PDU_PR_initiatingMessage;
-  asn1cCalloc(pdu.choice.initiatingMessage, tmp);
-  tmp->procedureCode = F1AP_ProcedureCode_id_ULRRCMessageTransfer;
-  tmp->criticality   = F1AP_Criticality_ignore;
-  tmp->value.present = F1AP_InitiatingMessage__value_PR_ULRRCMessageTransfer;
-  out = &tmp->value.choice.ULRRCMessageTransfer;
-  /* mandatory */
-  /* c1. GNB_CU_UE_F1AP_ID */
-  asn1cSequenceAdd(out->protocolIEs.list, F1AP_ULRRCMessageTransferIEs_t, ie1);
-  ie1->id                             = F1AP_ProtocolIE_ID_id_gNB_CU_UE_F1AP_ID;
-  ie1->criticality                    = F1AP_Criticality_reject;
-  ie1->value.present                  = F1AP_ULRRCMessageTransferIEs__value_PR_GNB_CU_UE_F1AP_ID;
-  ie1->value.choice.GNB_CU_UE_F1AP_ID = msg->gNB_CU_ue_id;
-  /* mandatory */
-  /* c2. GNB_DU_UE_F1AP_ID */
-  asn1cSequenceAdd(out->protocolIEs.list, F1AP_ULRRCMessageTransferIEs_t, ie2);
-  ie2->id                             = F1AP_ProtocolIE_ID_id_gNB_DU_UE_F1AP_ID;
-  ie2->criticality                    = F1AP_Criticality_reject;
-  ie2->value.present                  = F1AP_ULRRCMessageTransferIEs__value_PR_GNB_DU_UE_F1AP_ID;
-  ie2->value.choice.GNB_DU_UE_F1AP_ID = msg->gNB_DU_ue_id;
-  /* mandatory */
-  /* c3. SRBID */
-  asn1cSequenceAdd(out->protocolIEs.list, F1AP_ULRRCMessageTransferIEs_t, ie3);
-  ie3->id                            = F1AP_ProtocolIE_ID_id_SRBID;
-  ie3->criticality                   = F1AP_Criticality_reject;
-  ie3->value.present                 = F1AP_ULRRCMessageTransferIEs__value_PR_SRBID;
-  ie3->value.choice.SRBID            = msg->srb_id;
-  // issue in here
-  /* mandatory */
-  /* c4. RRCContainer */
-  asn1cSequenceAdd(out->protocolIEs.list, F1AP_ULRRCMessageTransferIEs_t, ie4);
-  ie4->id                            = F1AP_ProtocolIE_ID_id_RRCContainer;
-  ie4->criticality                   = F1AP_Criticality_reject;
-  ie4->value.present                 = F1AP_ULRRCMessageTransferIEs__value_PR_RRCContainer;
-  OCTET_STRING_fromBuf(&ie4->value.choice.RRCContainer,
-                       (const char *) msg->rrc_container,
-                       msg->rrc_container_length);
-
-  /* encode */
-  if (f1ap_encode_pdu(&pdu, &buffer, &len) < 0) {
-    LOG_E(F1AP, "Failed to encode F1 UL RRC MESSAGE TRANSFER \n");
+  /* encode UL RRC Message Transfer */
+  F1AP_F1AP_PDU_t *pdu = encode_ul_rrc_message_transfer(msg);
+  if (pdu == NULL) {
+    LOG_E(F1AP, "Failed to encode F1 UL RRC MESSAGE TRANSFER: cannot send message\n");
+    ASN_STRUCT_FREE(asn_DEF_F1AP_F1AP_PDU, pdu);
     return -1;
   }
-
+  /* encode F1AP PDU */
+  uint8_t *buffer = NULL;
+  uint32_t len;
+  if (f1ap_encode_pdu(pdu, &buffer, &len) < 0) {
+    LOG_E(F1AP, "Failed to encode F1 UL RRC MESSAGE TRANSFER \n");
+    ASN_STRUCT_FREE(asn_DEF_F1AP_F1AP_PDU, pdu);
+    return -1;
+  }
+  /* Free F1AP PDU */
+  ASN_STRUCT_FREE(asn_DEF_F1AP_F1AP_PDU, pdu);
+  /* Send to ITTI */
   f1ap_itti_send_sctp_data_req(assoc_id, buffer, len);
   return 0;
 }
