@@ -370,15 +370,12 @@ int DU_send_UE_CONTEXT_SETUP_RESPONSE(sctp_assoc_t assoc_id, f1ap_ue_context_set
 
   /* optional */
   /* c4. C_RNTI */
-  if (0) {
+  if (resp->crnti!=NULL) {
     asn1cSequenceAdd(out->protocolIEs.list, F1AP_UEContextSetupResponseIEs_t, ie4);
     ie4->id                             = F1AP_ProtocolIE_ID_id_C_RNTI;
     ie4->criticality                    = F1AP_Criticality_ignore;
     ie4->value.present                  = F1AP_UEContextSetupResponseIEs__value_PR_C_RNTI;
-    //C_RNTI_TO_BIT_STRING(rntiP, &ie->value.choice.C_RNTI);
-    ie4->value.choice.C_RNTI=0;
-    AssertFatal(false, "not implemented\n");
-    LOG_E(F1AP,"RNTI to code!\n");
+    ie4->value.choice.C_RNTI            = *resp->crnti;
   }
 
   /* optional */

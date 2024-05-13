@@ -616,6 +616,12 @@ int CU_handle_UE_CONTEXT_SETUP_RESPONSE(instance_t instance, sctp_assoc_t assoc_
                              F1AP_ProtocolIE_ID_id_gNB_DU_UE_F1AP_ID, true);
   f1ap_ue_context_setup_resp->gNB_DU_ue_id = ie->value.choice.GNB_DU_UE_F1AP_ID;
   LOG_D(F1AP, "f1ap_ue_context_setup_resp->gNB_DU_ue_id is: %d \n", f1ap_ue_context_setup_resp->gNB_DU_ue_id);
+  F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_UEContextSetupResponseIEs_t, ie, container, F1AP_ProtocolIE_ID_id_C_RNTI, false);
+  if (ie) {
+    f1ap_ue_context_setup_resp->crnti = calloc(1, sizeof(uint16_t));
+    *f1ap_ue_context_setup_resp->crnti = ie->value.choice.C_RNTI;
+  }
+
   // DUtoCURRCInformation
   F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_UEContextSetupResponseIEs_t, ie, container,
                              F1AP_ProtocolIE_ID_id_DUtoCURRCInformation, true);
