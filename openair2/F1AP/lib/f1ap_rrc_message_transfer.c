@@ -29,6 +29,13 @@
 #include "openair3/UTILS/conversions.h"
 #include "common/utils/oai_asn1.h"
 
+/* ====================================
+ * F1AP Initial UL RRC Message Transfer
+ * ==================================== */
+
+/**
+ * @brief Initial UL RRC Message Transfer encoding
+ */
 F1AP_F1AP_PDU_t *encode_initial_ul_rrc_message_transfer(const f1ap_initial_ul_rrc_message_t *msg)
 {
   F1AP_F1AP_PDU_t *pdu = calloc(1, sizeof(*pdu));
@@ -98,6 +105,9 @@ F1AP_F1AP_PDU_t *encode_initial_ul_rrc_message_transfer(const f1ap_initial_ul_rr
   return pdu;
 }
 
+/**
+ * @brief Initial UL RRC Message Transfer decoding
+ */
 bool decode_initial_ul_rrc_message_transfer(const F1AP_F1AP_PDU_t *pdu, f1ap_initial_ul_rrc_message_t *out)
 {
   DevAssert(out != NULL);
@@ -129,6 +139,9 @@ bool decode_initial_ul_rrc_message_transfer(const F1AP_F1AP_PDU_t *pdu, f1ap_ini
   return true;
 }
 
+/**
+ * @brief Initial UL RRC Message Transfer deep copy
+ */
 f1ap_initial_ul_rrc_message_t cp_initial_ul_rrc_message_transfer(const f1ap_initial_ul_rrc_message_t *msg)
 {
   uint8_t *rrc_container = calloc(msg->rrc_container_length, sizeof(*rrc_container));
@@ -155,6 +168,9 @@ f1ap_initial_ul_rrc_message_t cp_initial_ul_rrc_message_transfer(const f1ap_init
   return cp;
 }
 
+/**
+ * @brief Initial UL RRC Message Transfer equality check
+ */
 bool eq_initial_ul_rrc_message_transfer(const f1ap_initial_ul_rrc_message_t *a, const f1ap_initial_ul_rrc_message_t *b)
 {
   if (a->gNB_DU_ue_id != b->gNB_DU_ue_id)
@@ -178,6 +194,9 @@ bool eq_initial_ul_rrc_message_transfer(const f1ap_initial_ul_rrc_message_t *a, 
   return true;
 }
 
+/**
+ * @brief Initial UL RRC Message Transfer memory management
+ */
 void free_initial_ul_rrc_message_transfer(f1ap_initial_ul_rrc_message_t *msg)
 {
   DevAssert(msg != NULL);

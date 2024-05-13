@@ -75,6 +75,7 @@ int DU_handle_DL_RRC_MESSAGE_TRANSFER(instance_t instance, sctp_assoc_t assoc_id
 /*  UL RRC Message Transfer */
 int DU_send_INITIAL_UL_RRC_MESSAGE_TRANSFER(sctp_assoc_t assoc_id, const f1ap_initial_ul_rrc_message_t *msg)
 {
+  /* encode Initial UL RRC Message Transfer */
   F1AP_F1AP_PDU_t *pdu = encode_initial_ul_rrc_message_transfer(msg);
   if (pdu == NULL) {
     LOG_E(F1AP, "cannot encode F1 INITIAL UL RRC MESSAGE TRANSFER, can't send message\n");
@@ -82,7 +83,7 @@ int DU_send_INITIAL_UL_RRC_MESSAGE_TRANSFER(sctp_assoc_t assoc_id, const f1ap_in
     return -1;
   }
 
-  /* encode */
+  /* encode F1AP PDU */
   uint8_t *buffer = NULL;
   uint32_t len = 0;
   if (f1ap_encode_pdu(pdu, &buffer, &len) < 0) {
@@ -91,6 +92,7 @@ int DU_send_INITIAL_UL_RRC_MESSAGE_TRANSFER(sctp_assoc_t assoc_id, const f1ap_in
   }
   ASN_STRUCT_FREE(asn_DEF_F1AP_F1AP_PDU, pdu);
 
+  /* Send to ITTI */
   f1ap_itti_send_sctp_data_req(assoc_id, buffer, len);
   return 0;
 }
