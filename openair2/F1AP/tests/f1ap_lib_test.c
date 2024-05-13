@@ -79,8 +79,48 @@ static void test_initial_ul_rrc_message_transfer(void)
   free_initial_ul_rrc_message_transfer(&cp);
 }
 
+/**
+ * @brief Test DL RRC Message Transfer encoding/decoding
+ */
+static void test_dl_rrc_message_transfer(void)
+{
+  uint8_t *rrc = (uint8_t *)calloc(strlen("RRC Container") + 1, sizeof(uint8_t));
+  uint32_t *old_gNB_DU_ue_id = calloc(1, sizeof(uint32_t));
+  AssertFatal(rrc != NULL && old_gNB_DU_ue_id != NULL, "out of memory\n");
+  strcpy((char *)rrc, "RRC Container");
+
+  f1ap_dl_rrc_message_t orig = {
+    .gNB_DU_ue_id = 12,
+    .gNB_CU_ue_id = 12,
+    .old_gNB_DU_ue_id = old_gNB_DU_ue_id,
+    .srb_id = 1,
+    .rrc_container = rrc,
+    .rrc_container_length = sizeof(rrc),
+  };
+
+  F1AP_F1AP_PDU_t *f1enc = encode_dl_rrc_message_transfer(&orig);
+  F1AP_F1AP_PDU_t *f1dec = f1ap_encode_decode(f1enc);
+  f1ap_msg_free(f1enc);
+
+  f1ap_dl_rrc_message_t decoded;
+  bool ret = decode_dl_rrc_message_transfer(f1dec, &decoded);
+  AssertFatal(ret, "decode_initial_ul_rrc_message_transfer(): could not decode message\n");
+  f1ap_msg_free(f1dec);
+
+  ret = eq_dl_rrc_message_transfer(&orig, &decoded);
+  AssertFatal(ret, "eq_dl_rrc_message_transfer(): decoded message doesn't match\n");
+  free_dl_rrc_message_transfer(&decoded);
+
+  f1ap_dl_rrc_message_t cp = cp_dl_rrc_message_transfer(&orig);
+  ret = eq_dl_rrc_message_transfer(&orig, &cp);
+  AssertFatal(ret, "eq_dl_rrc_message_transfer(): copied message doesn't match\n");
+  free_dl_rrc_message_transfer(&orig);
+  free_dl_rrc_message_transfer(&cp);
+}
+
 int main()
 {
   test_initial_ul_rrc_message_transfer();
+  test_dl_rrc_message_transfer();
   return 0;
 }
