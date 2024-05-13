@@ -118,9 +118,44 @@ static void test_dl_rrc_message_transfer(void)
   free_dl_rrc_message_transfer(&cp);
 }
 
+/**
+ * @brief Test UL RRC Message Transfer encoding/decoding
+ */
+static void test_ul_rrc_message_transfer(void)
+{
+  uint8_t rrc[] = "RRC Container";
+
+  f1ap_ul_rrc_message_t orig = {
+    .gNB_DU_ue_id = 12,
+    .gNB_CU_ue_id = 12,
+    .srb_id = 1,
+    .rrc_container = rrc,
+    .rrc_container_length = sizeof(rrc),
+  };
+
+  F1AP_F1AP_PDU_t *f1enc = encode_ul_rrc_message_transfer(&orig);
+  F1AP_F1AP_PDU_t *f1dec = f1ap_encode_decode(f1enc);
+  f1ap_msg_free(f1enc);
+
+  f1ap_ul_rrc_message_t decoded;
+  bool ret = decode_ul_rrc_message_transfer(f1dec, &decoded);
+  AssertFatal(ret, "decode_initial_ul_rrc_message_transfer(): could not decode message\n");
+  f1ap_msg_free(f1dec);
+
+  ret = eq_ul_rrc_message_transfer(&orig, &decoded);
+  AssertFatal(ret, "eq_dl_rrc_message_transfer(): decoded message doesn't match\n");
+  free_ul_rrc_message_transfer(&decoded);
+
+  f1ap_ul_rrc_message_t cp = cp_ul_rrc_message_transfer(&orig);
+  ret = eq_ul_rrc_message_transfer(&orig, &cp);
+  AssertFatal(ret, "eq_dl_rrc_message_transfer(): copied message doesn't match\n");
+  free_ul_rrc_message_transfer(&cp);
+}
+
 int main()
 {
   test_initial_ul_rrc_message_transfer();
   test_dl_rrc_message_transfer();
+  test_ul_rrc_message_transfer();
   return 0;
 }
