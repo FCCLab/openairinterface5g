@@ -1030,6 +1030,7 @@ int DU_handle_UE_CONTEXT_MODIFICATION_REQUEST(instance_t instance, sctp_assoc_t 
     /* correct here */
     if ( ieRRC->value.choice.RRCContainer.size )  {
       f1ap_ue_context_modification_req->rrc_container = malloc(ieRRC->value.choice.RRCContainer.size);
+      f1ap_ue_context_modification_req->rrc_container_length = ieRRC->value.choice.RRCContainer.size;
       memcpy(f1ap_ue_context_modification_req->rrc_container,
           ieRRC->value.choice.RRCContainer.buf, ieRRC->value.choice.RRCContainer.size);
       f1ap_ue_context_modification_req->rrc_container_length = ieRRC->value.choice.RRCContainer.size;
@@ -1064,6 +1065,19 @@ int DU_handle_UE_CONTEXT_MODIFICATION_REQUEST(instance_t instance, sctp_assoc_t 
       cu2du->uE_CapabilityRAT_ContainerList_length = uecap->size;
       memcpy(cu2du->uE_CapabilityRAT_ContainerList, uecap->buf, uecap->size);
     }
+  }
+
+  /* TransmissionActionIndicator */
+  F1AP_UEContextModificationRequestIEs_t *ieTxInd;
+  F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_UEContextModificationRequestIEs_t,
+                             ieTxInd,
+                             container,
+                             F1AP_ProtocolIE_ID_id_TransmissionActionIndicator,
+                             false);
+
+  if (ieTxInd) {
+    f1ap_ue_context_modification_req->transmission_action_indicator = calloc(1, sizeof(uint8_t));
+    *f1ap_ue_context_modification_req->transmission_action_indicator = ieTxInd->value.choice.TransmissionActionIndicator;
   }
 
   ue_context_modification_request(f1ap_ue_context_modification_req);

@@ -26,6 +26,7 @@
 #include "openair2/F1AP/f1ap_common.h"
 #include "openair2/LAYER2/nr_rlc/nr_rlc_oai_api.h"
 #include "F1AP_CauseRadioNetwork.h"
+#include "NR_HandoverCommand.h"
 #include "openair3/ocp-gtpu/gtp_itf.h"
 #include "openair2/LAYER2/nr_pdcp/nr_pdcp_oai_api.h"
 
@@ -544,7 +545,31 @@ void ue_context_modification_request(const f1ap_ue_context_modif_req_t *req)
 
   if (req->rrc_container != NULL) {
     logical_chan_id_t id = 1;
-    nr_rlc_srb_recv_sdu(req->gNB_DU_ue_id, id, req->rrc_container, req->rrc_container_length);
+
+    NR_HandoverCommand_t *ho_command = NULL;
+    asn_dec_rval_t dec_rval = uper_decode(NULL,
+                                          &asn_DEF_NR_HandoverCommand,
+                                          (void **)&ho_command,
+                                          req->rrc_container,
+                                          req->rrc_container_length,
+                                          0,
+                                          0);
+
+    if (dec_rval.code == RC_OK && ho_command->criticalExtensions.present == NR_HandoverCommand__criticalExtensions_PR_c1
+        && ho_command->criticalExtensions.choice.c1->present == NR_HandoverCommand__criticalExtensions__c1_PR_handoverCommand) {
+
+      if (LOG_DEBUGFLAG(DEBUG_ASN1)) {
+        xer_fprint(stdout, &asn_DEF_NR_HandoverCommand, ho_command);
+      }
+      OCTET_STRING_t *handoverCommandMessage =
+          &ho_command->criticalExtensions.choice.c1->choice.handoverCommand->handoverCommandMessage;
+
+      // handoverCommandMessage->buf contains the RRCReconfiguration
+      nr_rlc_srb_recv_sdu(req->gNB_DU_ue_id, id, handoverCommandMessage->buf, handoverCommandMessage->size);
+      nr_mac_enable_ue_rrc_processing_timer(mac, UE, UE->apply_cellgroup);
+    } else {
+      nr_rlc_srb_recv_sdu(req->gNB_DU_ue_id, id, req->rrc_container, req->rrc_container_length);
+    }
   }
 
   if (req->ReconfigComplOutcome != RRCreconf_info_not_present && req->ReconfigComplOutcome != RRCreconf_success) {

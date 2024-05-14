@@ -1023,12 +1023,12 @@ int CU_send_UE_CONTEXT_MODIFICATION_REQUEST(sctp_assoc_t assoc_id, f1ap_ue_conte
 
   /* optional */
   /* c7. TransmissionActionIndicator */
-  if (0) {
+  if (f1ap_ue_context_modification_req->transmission_action_indicator != NULL) {
     asn1cSequenceAdd(out->protocolIEs.list, F1AP_UEContextModificationRequestIEs_t, ie7);
     ie7->id                                     = F1AP_ProtocolIE_ID_id_TransmissionActionIndicator;
     ie7->criticality                            = F1AP_Criticality_ignore;
     ie7->value.present                          = F1AP_UEContextModificationRequestIEs__value_PR_TransmissionActionIndicator;
-    ie7->value.choice.TransmissionActionIndicator = F1AP_TransmissionActionIndicator_stop;
+    ie7->value.choice.TransmissionActionIndicator = *f1ap_ue_context_modification_req->transmission_action_indicator;
   }
 
   /* optional */
