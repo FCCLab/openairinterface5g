@@ -1352,13 +1352,15 @@ static int handle_rrcSetupComplete(const protocol_ctxt_t *const ctxt_pP,
 
   if (setup_complete_ies->ng_5G_S_TMSI_Value != NULL) {
     uint64_t fiveg_s_TMSI = 0;
+    /* Extract UE identity */
     if (setup_complete_ies->ng_5G_S_TMSI_Value->present == NR_RRCSetupComplete_IEs__ng_5G_S_TMSI_Value_PR_ng_5G_S_TMSI_Part2) {
+      /* 5G-S-TMSI Part 2 */
       const BIT_STRING_t *part2 = &setup_complete_ies->ng_5G_S_TMSI_Value->choice.ng_5G_S_TMSI_Part2;
       if (part2->size != 2) {
         LOG_E(NR_RRC, "wrong ng_5G_S_TMSI_Part2 size, expected 2, provided %lu", part2->size);
         return -1;
       }
-
+      /* Set 5G-S-TMSI */
       if (UE->Initialue_identity_5g_s_TMSI.presence) {
         uint16_t stmsi_part2 = BIT_STRING_to_uint16(part2);
         LOG_I(RRC, "s_tmsi part2 %d (%02x %02x)\n", stmsi_part2, part2->buf[0], part2->buf[1]);
@@ -1369,12 +1371,12 @@ static int handle_rrcSetupComplete(const protocol_ctxt_t *const ctxt_pP,
         UE->Initialue_identity_5g_s_TMSI.presence = false;
       }
     } else if (setup_complete_ies->ng_5G_S_TMSI_Value->present == NR_RRCSetupComplete_IEs__ng_5G_S_TMSI_Value_PR_ng_5G_S_TMSI) {
+      /* 5G-S-TMSI */
       const NR_NG_5G_S_TMSI_t *bs_stmsi = &setup_complete_ies->ng_5G_S_TMSI_Value->choice.ng_5G_S_TMSI;
       if (bs_stmsi->size != 6) {
         LOG_E(NR_RRC, "wrong ng_5G_S_TMSI size, expected 6, provided %lu", bs_stmsi->size);
         return -1;
       }
-
       fiveg_s_TMSI = BIT_STRING_to_uint64(bs_stmsi);
       UE->Initialue_identity_5g_s_TMSI.presence = true;
     }
@@ -1384,13 +1386,15 @@ static int handle_rrcSetupComplete(const protocol_ctxt_t *const ctxt_pP,
       uint8_t amf_pointer = (fiveg_s_TMSI >> 32) & 0x3F;
       uint32_t fiveg_tmsi = (uint32_t) fiveg_s_TMSI;
       LOG_I(NR_RRC,
-            "5g_s_TMSI: 0x%lX, amf_set_id: 0x%X (%d), amf_pointer: 0x%X (%d), 5g TMSI: 0x%X \n",
+            "5G-S-TMSI: 0x%lX (%d) - AMF Set ID: 0x%X (%d) - AMF pointer: 0x%X (%d) - 5G-TMSI: 0x%X (%d)\n",
             fiveg_s_TMSI,
+            (int)fiveg_s_TMSI,
             amf_set_id,
-            amf_set_id,
+            (int)amf_set_id,
             amf_pointer,
             amf_pointer,
-            fiveg_tmsi);
+            fiveg_tmsi,
+            (int)fiveg_tmsi);
       UE->Initialue_identity_5g_s_TMSI.amf_set_id = amf_set_id;
       UE->Initialue_identity_5g_s_TMSI.amf_pointer = amf_pointer;
       UE->Initialue_identity_5g_s_TMSI.fiveg_tmsi = fiveg_tmsi;
