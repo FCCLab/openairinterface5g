@@ -747,7 +747,7 @@ int main( int argc, char **argv ) {
     start_NR_RU();
 #ifdef ENABLE_AERIAL
   gNB_MAC_INST *nrmac = RC.nrmac[0];
-  nvIPC_Init(nrmac->eth_params_s.local_if_name);
+  nvIPC_Init(nrmac->nvipc_params_s);
 #endif
   if (RC.nb_nr_L1_inst > 0) {
     printf("wait RUs\n");

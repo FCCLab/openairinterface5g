@@ -56,15 +56,17 @@ void *aerial_vnf_nr_p7_thread_start(void *ptr)
 {
   // set_thread_priority(79);
   int s;
-  cpu_set_t cpuset;
+  /*cpu_set_t cpuset;
 
-  //CPU_SET(8, &cpuset);
+  CPU_SET(8, &cpuset);
   s = pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
   if (s != 0)
     printf("failed to set afinity\n");
-
+  */
   set_priority(79);
 
+
+  // @Ruben, all of this code is useless, isn't it? ptAttr and thread_params are not used in the pthread_create below.
   pthread_attr_t ptAttr;
   if (pthread_attr_setschedpolicy(&ptAttr, SCHED_RR) != 0) {
     printf("Failed to set pthread sched policy SCHED_RR\n");
