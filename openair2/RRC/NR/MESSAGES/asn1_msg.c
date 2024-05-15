@@ -902,6 +902,8 @@ uint8_t do_RRCSetupComplete(uint8_t *buffer,
                             size_t buffer_size,
                             const uint8_t Transaction_id,
                             uint8_t sel_plmn_id,
+                            uint8_t ue_identity_type,
+                            uint16_t fiveG_S_TMSI_part2,
                             const int dedicatedInfoNASLength,
                             const char *dedicatedInfoNAS)
 {
@@ -917,7 +919,13 @@ uint8_t do_RRCSetupComplete(uint8_t *buffer,
   NR_RRCSetupComplete_IEs_t *ies = RrcSetupComplete->criticalExtensions.choice.rrcSetupComplete;
   ies->selectedPLMN_Identity = sel_plmn_id;
   ies->registeredAMF = NULL;
-  ies->ng_5G_S_TMSI_Value = NULL;
+  /* RRCSetup is received in response to an RRCSetupRequest
+   * set the ng-5G-S-TMSI-Value to ng-5G-S-TMSI-Part2 (5.3.3.4 of 3GPP TS 38.331) */
+  if (ue_identity_type == NR_RRCSetupComplete_IEs__ng_5G_S_TMSI_Value_PR_ng_5G_S_TMSI_Part2) {
+    ies->ng_5G_S_TMSI_Value = CALLOC(1, sizeof(struct NR_RRCSetupComplete_IEs__ng_5G_S_TMSI_Value));
+    ies->ng_5G_S_TMSI_Value->present = NR_RRCSetupComplete_IEs__ng_5G_S_TMSI_Value_PR_ng_5G_S_TMSI_Part2;
+    INT16_TO_BIT_STRING(fiveG_S_TMSI_part2, &ies->ng_5G_S_TMSI_Value->choice.ng_5G_S_TMSI_Part2);
+  }
 
   memset(&ies->dedicatedNAS_Message,0,sizeof(OCTET_STRING_t));
   OCTET_STRING_fromBuf(&ies->dedicatedNAS_Message, dedicatedInfoNAS, dedicatedInfoNASLength);
