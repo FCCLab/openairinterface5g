@@ -585,7 +585,7 @@ uint8_t unpackarray(uint8_t **ppReadPackedMsg, void *array, uint16_t array_eleme
   return 1;
 }
 
-uint32_t pack_dci_payload(uint8_t payload[], uint16_t payloadSizeBits, uint8_t **out, uint8_t *end)
+uint32_t pack_dci_payload(uint8_t *payload, uint16_t payloadSizeBits, uint8_t **out, uint8_t *end)
 {
   // Helper vars for DCI Payload
   uint8_t dci_bytes_inverted[DCI_PAYLOAD_BYTE_LEN] = {0};
@@ -611,7 +611,7 @@ uint32_t pack_dci_payload(uint8_t payload[], uint16_t payloadSizeBits, uint8_t *
   return pusharray8(dci_bytes_inverted, DCI_PAYLOAD_BYTE_LEN, dci_byte_len, out, end);
 }
 
-uint32_t unpack_dci_payload(uint8_t payload[], uint16_t payloadSizeBits, uint8_t **in, uint8_t *end)
+uint32_t unpack_dci_payload(uint8_t *payload, uint16_t payloadSizeBits, uint8_t **in, uint8_t *end)
 {
   // Pull the inverted DCI and invert it back
   //  Helper vars for DCI Payload
