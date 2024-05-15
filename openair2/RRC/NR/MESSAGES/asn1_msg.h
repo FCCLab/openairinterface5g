@@ -110,6 +110,8 @@ uint8_t do_RRCSetupComplete(uint8_t *buffer,
                             size_t buffer_size,
                             const uint8_t Transaction_id,
                             uint8_t sel_plmn_id,
+                            uint8_t ue_identity_type,
+                            uint16_t fiveG_S_TMSI_part2,
                             const int dedicatedInfoNASLength,
                             const char *dedicatedInfoNAS);
 
