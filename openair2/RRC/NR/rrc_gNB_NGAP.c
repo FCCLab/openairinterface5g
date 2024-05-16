@@ -425,9 +425,9 @@ void trigger_bearer_setup(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE, int n, pdusession
         cell_group_t *cellGroup = drb->cellGroupList + k;
         cellGroup->id = 0; // MCG
       }
-
-      drb->numQosFlow2Setup = session->nb_qos;
-      for (int k=0; k < drb->numQosFlow2Setup; k++) {
+      /* Loop throught the number of QoS flows mapped to this DRB */
+      drb->numQosFlow2Setup = 1; // TODO: update when iplementing multiple QoS per DRB: the mapping should come from SDAP
+      for (int k = 0; k < drb->numQosFlow2Setup; k++) {
         qos_flow_to_setup_t *qos_flow = drb->qosFlows + k;
         pdusession_level_qos_parameter_t *qos_session = session->qos + k;
 
