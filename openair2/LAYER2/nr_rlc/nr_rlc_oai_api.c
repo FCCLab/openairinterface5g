@@ -503,6 +503,7 @@ rb_found:
 	req->offset = 0;
 	req->ue_id = ue->ue_id;
 	req->bearer_id=rb_id;
+	req->qfi = -1;
 	LOG_D(RLC, "Received uplink user-plane traffic at RLC-DU to be sent to the CU, size %d \n", size);
 	extern instance_t DUuniqInstance;
 	itti_send_msg_to_task(TASK_GTPV1_U, DUuniqInstance, msg);

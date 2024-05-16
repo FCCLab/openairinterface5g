@@ -77,14 +77,8 @@ void sdap_data_ind(rb_id_t pdcp_entity,
     return;
   }
 
-  sdap_entity->rx_entity(sdap_entity,
-                         pdcp_entity,
-                         is_gnb,
-                         has_sdap_rx,
-                         pdusession_id,
-                         ue_id,
-                         buf,
-                         size);
+  int qfi = sdap_entity->drb2qfi_map(sdap_entity, pdcp_entity);
+  sdap_entity->rx_entity(sdap_entity, pdcp_entity, qfi, is_gnb, has_sdap_rx, pdusession_id, ue_id, buf, size);
 }
 
 void set_qfi_pduid(uint8_t qfi, uint8_t pduid){

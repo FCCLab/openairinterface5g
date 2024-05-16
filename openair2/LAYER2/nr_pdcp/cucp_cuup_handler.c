@@ -98,14 +98,15 @@ static int drb_gtpu_create(instance_t instance,
   teid_t dummy_teid = 0xffff; // we will update later with answer from DU
   in_addr_t dummy_address = {0}; // IPv4, updated later with answer from DU
   gtpCallback callBack = cu_f1u_data_req;
+  const int bearer_id = 0; // 1 DRB
   int qfi = -1; // don't put PDU session marker in GTP for F1-U
   gtpv1u_gnb_create_tunnel_req_t create_tunnel_req = {
-    .ue_id = ue_id,
-    .outgoing_teid = dummy_teid,
-    .outgoing_qfi = qfi,
-    .pdusession_id = drb->id,
-    .incoming_rb_id = drb->id,
-    .dst_addr.length = 32,
+      .ue_id = ue_id,
+      .outgoing_teid = dummy_teid,
+      .outgoing_qfi[bearer_id].qfi[0] = qfi,
+      .pdusession_id = drb->id,
+      .incoming_rb_id = drb->id,
+      .dst_addr.length = 32,
   };
   memcpy(&create_tunnel_req.dst_addr.buffer, &dummy_address, sizeof(uint8_t) * 4);
   LOG_D(E1AP, "In %s: Incoming RB ID %ld Outgoing RB ID %ld - UL TEID (dummy) %d QFI %d\n", __func__, drb->id, drb->id, dummy_teid, qfi);
@@ -131,20 +132,25 @@ static void fill_gtpu_n3_req(gtpv1u_gnb_create_tunnel_req_t *req_n3, const pdu_s
 }
 
 /**
- * @brief Loop though the number of QoS Flows to setup per DRB
+ * @brief Loop though the number of QoS Flows to setup per DRB and return DRB-to-QoS mapping
  */
-static int process_qosflowSetup(DRB_nGRAN_setup_t *resp_drb, const DRB_nGRAN_to_setup_t *req_drb)
+static gtpv1u_qos_t process_qosflowSetup(DRB_nGRAN_setup_t *resp_drb, const DRB_nGRAN_to_setup_t *req_drb)
 {
-  int outgoing_qfi;
-  resp_drb->numQosFlowSetup = 1;
-  /* Loop though the number of QoS Flows to setup
-   * NOTE (A) only 1 QFI per DRB */
-  for (int k = 0; k < resp_drb->numQosFlowSetup; k++) {
+  gtpv1u_qos_t outgoing_qfi;
+  int k;
+  resp_drb->numQosFlowSetup = req_drb->numQosFlow2Setup;
+  /* Loop though the number of QoS Flows to setup for current DRB */
+  outgoing_qfi.rb_id = resp_drb->id;
+  for (k = 0; k < resp_drb->numQosFlowSetup; k++) {
     const qos_flow_to_setup_t *qosflow2Setup = &req_drb->qosFlows[k];
     qos_flow_setup_t *qosflowSetup = &resp_drb->qosFlows[k];
     qosflowSetup->qfi = qosflow2Setup->qfi;
-    outgoing_qfi = qosflowSetup->qfi;
-    LOG_D(E1AP, "DRB %ld with QFI %ld to setup\n", resp_drb->id, qosflow2Setup->qfi);
+    outgoing_qfi.qfi[k] = qosflowSetup->qfi;
+    LOG_D(E1AP, "DRB %d with QFI %ld to setup\n", outgoing_qfi.rb_id, qosflow2Setup->qfi);
+  }
+  /* Set remaining QFIs to -1 */
+  for (int r = k + 1; r < SDAP_MAX_QFI; r++) {
+    outgoing_qfi.qfi[r] = -1;
   }
   return outgoing_qfi;
 }
@@ -209,7 +215,7 @@ void e1_bearer_context_setup(const e1ap_bearer_setup_req_t *req)
       DRB_nGRAN_setup_t *resp_drb = &resp_pdu->DRBnGRanList[d];
       resp_drb->id = req_drb->id;
       /* Fill PDU session markers */
-      req_n3.outgoing_qfi = process_qosflowSetup(resp_drb, req_drb);
+      req_n3.outgoing_qfi[d] = process_qosflowSetup(resp_drb, req_drb);
       // create PDCP bearers. This will also create SDAP bearers
       NR_DRB_ToAddModList_t DRB_configList = {0};
       fill_DRB_configList_e1(&DRB_configList, req_pdu);

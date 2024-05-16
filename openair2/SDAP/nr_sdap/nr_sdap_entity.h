@@ -94,7 +94,7 @@ typedef struct nr_sdap_entity_s {
   void (*qfi2drb_map_update)(struct nr_sdap_entity_s *entity, uint8_t qfi, rb_id_t drb, bool has_sdap_rx, bool has_sdap_tx);
   void (*qfi2drb_map_delete)(struct nr_sdap_entity_s *entity, uint8_t qfi);
   rb_id_t (*qfi2drb_map)(struct nr_sdap_entity_s *entity, uint8_t qfi);
-
+  int (*drb2qfi_map)(struct nr_sdap_entity_s *entity, rb_id_t drb_id);
   nr_sdap_ul_hdr_t (*sdap_construct_ctrl_pdu)(uint8_t qfi);
   rb_id_t (*sdap_map_ctrl_pdu)(struct nr_sdap_entity_s *entity, rb_id_t pdcp_entity, int map_type, uint8_t dl_qfi);
   void (*sdap_submit_ctrl_pdu)(ue_id_t ue_id, rb_id_t sdap_ctrl_pdu_drb, nr_sdap_ul_hdr_t ctrl_pdu);
@@ -115,6 +115,7 @@ typedef struct nr_sdap_entity_s {
 
   void (*rx_entity)(struct nr_sdap_entity_s *entity,
                     rb_id_t pdcp_entity,
+                    int qfi,
                     int is_gnb,
                     bool has_sdap_rx,
                     int pdusession_id,

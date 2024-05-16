@@ -232,6 +232,7 @@ static bool nr_sdap_tx_entity(nr_sdap_entity_t *entity,
 
 static void nr_sdap_rx_entity(nr_sdap_entity_t *entity,
                               rb_id_t pdcp_entity,
+                              int qfi,
                               int is_gnb,
                               bool has_sdap_rx,
                               int pdusession_id,
@@ -271,12 +272,13 @@ static void nr_sdap_rx_entity(nr_sdap_entity_t *entity,
     gtpv1u_tunnel_data_req_t *req = &GTPV1U_TUNNEL_DATA_REQ(message_p);
     uint8_t *gtpu_buffer_p = (uint8_t *) (req + 1);
     memcpy(gtpu_buffer_p + GTPU_HEADER_OVERHEAD_MAX, buf + offset, size - offset);
-    req->buffer        = gtpu_buffer_p;
-    req->length        = size - offset;
-    req->offset        = GTPU_HEADER_OVERHEAD_MAX;
-    req->ue_id         = ue_id;
-    req->bearer_id     = pdusession_id;
-    LOG_D(SDAP, "%s()  sending message to gtp size %d\n", __func__,  size-offset);
+    req->buffer = gtpu_buffer_p;
+    req->length = size - offset;
+    req->offset = GTPU_HEADER_OVERHEAD_MAX;
+    req->ue_id = ue_id;
+    req->bearer_id = pdusession_id;
+    req->qfi = qfi;
+    LOG_D(SDAP, "%s(): sending message to gtp size %d for QFI %d PDU SESSION %d \n", __func__, size - offset, qfi, pdusession_id);
     // very very dirty hack gloabl var N3GTPUInst
     itti_send_msg_to_task(TASK_GTPV1_U, *N3GTPUInst, message_p);
   } else { //nrUE
@@ -538,6 +540,7 @@ nr_sdap_entity_t *new_nr_sdap_entity(int is_gnb,
   sdap_entity->qfi2drb_map_update = nr_sdap_qfi2drb_map_update;
   sdap_entity->qfi2drb_map_delete = nr_sdap_qfi2drb_map_del;
   sdap_entity->qfi2drb_map = nr_sdap_qfi2drb;
+  sdap_entity->drb2qfi_map = nr_sdap_drb2qfi;
   /* update SDAP entity list pointers */
   sdap_entity->next_entity = sdap_info.sdap_entity_llist;
   sdap_info.sdap_entity_llist = sdap_entity;

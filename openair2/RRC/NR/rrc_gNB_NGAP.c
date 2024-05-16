@@ -396,18 +396,31 @@ void trigger_bearer_setup(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE, int n, pdusession
     pdu->teId = session->gtp_teid;
     memcpy(&pdu->tlAddress, session->upf_addr.buffer, 4); // Fixme: dirty IPv4 target
 
-    /* we assume for the moment one DRB per PDU session. Activate the bearer,
-     * and configure in RRC. */
-    int drb_id = get_next_available_drb_id(UE);
-    drb_t *rrc_drb = generateDRB(UE,
-                                 drb_id,
-                                 pduSession,
-                                 rrc->configuration.enable_sdap,
-                                 rrc->security.do_drb_integrity,
-                                 rrc->security.do_drb_ciphering);
-
-    pdu->numDRB2Setup = 1; // One DRB per PDU Session. TODO: Remove hardcoding
-    for (int j=0; j < pdu->numDRB2Setup; j++) {
+    /* we currently assume 1 QoS Flow per DRB, therefore we setup
+     * as many DRBs as the number of QoS Flows decoded from the
+     * PDU Session Resource Setup */
+    pdu->numDRB2Setup = session->nb_qos; // TODO: update when iplementing multiple QoS per DRB
+    /* Loop through the DRBs to setup */
+    for (int j = 0; j < pdu->numDRB2Setup; j++) {
+      int drb_id = get_next_available_drb_id(UE);
+      /* Fetch QoS Flow from the PDU Session QoS Flows list
+       * NOTE: the assumption is that each DRB is mapped to 1 QoS Flow only
+       * therefore the QoS flow list item pointer is shifted by j, which is
+       * the current DRB to setup */
+      pdusession_level_qos_parameter_t *qos_session = session->qos + j;
+      int qfi = qos_session->qfi;
+      int fiveQI = qos_session->fiveQI;
+      /* generate DRB */
+      LOG_I(NR_RRC, "Generating DRB %d for QFI %d 5QI %d\n", drb_id, qfi, fiveQI);
+      drb_t *rrc_drb = generateDRB(UE,
+                                   drb_id,
+                                   pduSession->param.pdusession_id,
+                                   rrc->configuration.enable_sdap,
+                                   rrc->security.do_drb_integrity,
+                                   rrc->security.do_drb_ciphering,
+                                   qfi,
+                                   fiveQI);
+      /* DRB to be setup */
       DRB_nGRAN_to_setup_t *drb = pdu->DRBnGRanList + j;
 
       drb->id = rrc_drb->drb_id;
@@ -426,11 +439,10 @@ void trigger_bearer_setup(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE, int n, pdusession
         cellGroup->id = 0; // MCG
       }
       /* Loop throught the number of QoS flows mapped to this DRB */
-      drb->numQosFlow2Setup = 1; // TODO: update when iplementing multiple QoS per DRB: the mapping should come from SDAP
+      drb->numQosFlow2Setup = 1; // NOTE: implementation assumption is 1 QoS Flow per 1 DRB
       for (int k = 0; k < drb->numQosFlow2Setup; k++) {
         qos_flow_to_setup_t *qos_flow = drb->qosFlows + k;
-        pdusession_level_qos_parameter_t *qos_session = session->qos + k;
-
+        /* QoS Characteristics */
         qos_characteristics_t *qos_char = &qos_flow->qos_params.qos_characteristics;
         qos_flow->qfi = qos_session->qfi;
         qos_char->qos_type = qos_session->fiveQI_type;

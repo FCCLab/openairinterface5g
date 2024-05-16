@@ -56,7 +56,9 @@ drb_t *generateDRB(gNB_RRC_UE_t *ue,
                    const rrc_pdu_session_param_t *pduSession,
                    bool enable_sdap,
                    int do_drb_integrity,
-                   int do_drb_ciphering);
+                   int do_drb_ciphering,
+                   int qfi,
+                   int fiveQI);
 
 /// @brief return the next available (inactive) DRB ID of UE ue
 uint8_t get_next_available_drb_id(gNB_RRC_UE_t *ue);

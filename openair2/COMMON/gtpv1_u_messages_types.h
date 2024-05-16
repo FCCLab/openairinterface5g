@@ -118,6 +118,7 @@ typedef struct gtpv1u_tunnel_data_req_s {
   uint32_t               offset;               ///< start of message offset in buffer
   ue_id_t                ue_id;
   rb_id_t                bearer_id;
+  int                    qfi;
 } gtpv1u_tunnel_data_req_t;
 
 typedef struct gtpv1u_enb_data_forwarding_req_s {
@@ -172,14 +173,24 @@ typedef struct {
 } Gtpv1uReq;
 
 /**
+ * @brief QoS Flow information for a given bearer
+ */
+typedef struct gtpv1u_qos_s {
+  /* QFIs list for each Bearer (0 ... Max Number of QFIs per Bearer) */
+  int qfi[NR_GTPV1U_MAX_QFI_PER_BEARER];
+  /* Bearer ID */
+  int rb_id;
+} gtpv1u_qos_t;
+
+/**
  * @brief GTP-U Create Tunnel Request
  */
 typedef struct gtpv1u_gnb_create_tunnel_req_s {
   ue_id_t                   ue_id;
   /* Outgoing TEID for the GTP tunnel request */
   teid_t                    outgoing_teid;
-  /* Outgoing QFIs for each Bearer within the tunnel (assuming 1 QoS Flow only) */
-  int                       outgoing_qfi;
+  /* Outgoing QFIs for each Bearer within the tunnel (0 ... Max Number of Bearers per PDU Session) */
+  gtpv1u_qos_t              outgoing_qfi[NR_GTPV1U_MAX_BEARERS_PER_UE];
   /* PDU Session ID for the GTP tunnel request */
   pdusessionid_t            pdusession_id;
   /* Incoming RB for the GTP tunnel request */

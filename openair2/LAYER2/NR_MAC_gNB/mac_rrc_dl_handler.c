@@ -54,15 +54,14 @@ static int drb_gtpu_create(instance_t instance,
                            gtpCallback callBack,
                            gtpv1u_gnb_create_tunnel_resp_t *resp_f1)
 {
+  const int bearer_id = 0;
   int qfi = -1; // don't put PDU session marker in GTP for F1-U
-  gtpv1u_gnb_create_tunnel_req_t create_tunnel_req = {
-    .ue_id = ue_id,
-    .outgoing_teid = drb->up_ul_tnl[0].teid,
-    .outgoing_qfi = qfi,
-    .pdusession_id = drb->drb_id,
-    .incoming_rb_id = drb->drb_id,
-    .dst_addr.length = 32
-  };
+  gtpv1u_gnb_create_tunnel_req_t create_tunnel_req = {.ue_id = ue_id,
+                                                      .outgoing_teid = drb->up_ul_tnl[0].teid,
+                                                      .outgoing_qfi[bearer_id].qfi[0] = qfi,
+                                                      .pdusession_id = drb->drb_id,
+                                                      .incoming_rb_id = drb->drb_id,
+                                                      .dst_addr.length = 32};
   memcpy(&create_tunnel_req.dst_addr.buffer, &drb->up_ul_tnl[0].tl_address, sizeof(uint8_t) * 4);  // only IPv4 now
   LOG_D(E1AP, "Incoming RB %ld / Outgoing RB %ld - UL TEID %d QFI %d\n", drb->drb_id, drb->drb_id, drb->up_ul_tnl[0].teid, qfi);
   // we use gtpv1u_create_ngu_tunnel because it returns the interface

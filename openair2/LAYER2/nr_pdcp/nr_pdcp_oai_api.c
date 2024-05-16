@@ -730,6 +730,7 @@ static void deliver_pdu_drb_gnb(void *deliver_pdu_data, ue_id_t ue_id, int rb_id
     req->offset        = GTPU_HEADER_OVERHEAD_MAX;
     req->ue_id = ue_id; // use CU UE ID as GTP will use that to look up TEID
     req->bearer_id = rb_id;
+    req->qfi = -1;
     LOG_D(PDCP, "%s() (drb %d) sending message to gtp size %d\n", __func__, rb_id, size);
     extern instance_t CUuniqInstance;
     itti_send_msg_to_task(TASK_GTPV1_U, CUuniqInstance, message_p);
