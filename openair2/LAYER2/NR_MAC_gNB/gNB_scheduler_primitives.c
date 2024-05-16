@@ -2728,7 +2728,7 @@ void nr_csirs_scheduling(int Mod_idP, frame_t frame, sub_frame_t slot, int n_slo
     if (UE_info->sched_csirs & (1 << dl_bwp->bwp_id))
       continue;
     NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
-    if (sched_ctrl->rrc_processing_timer > 0) {
+    if ((sched_ctrl->rrc_processing_timer > 0) || sched_ctrl->transmission_stop) {
       continue;
     }
 
@@ -3006,6 +3006,13 @@ int nr_mac_enable_ue_rrc_processing_timer(gNB_MAC_INST *mac, NR_UE_info_t *UE, b
   UE->UE_sched_ctrl.ta_frame = (mac->frame - 1 + 1024) % 1024;
 
   LOG_D(NR_MAC, "UE %04x: Activate RRC processing timer (%d ms)\n", UE->rnti, delay);
+  return 0;
+}
+
+int nr_transmission_action_indicator_stop(NR_UE_info_t *UE_info)
+{
+  UE_info->UE_sched_ctrl.transmission_stop = true;
+  LOG_I(NR_MAC, "gNB-DU received the TransmissionActionIndicator with Stop value for UE %04x\n", UE_info->rnti);
   return 0;
 }
 

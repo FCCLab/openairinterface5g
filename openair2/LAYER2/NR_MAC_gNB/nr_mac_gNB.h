@@ -634,6 +634,9 @@ typedef struct {
 
   /// per-LC configuration
   seq_arr_t lc_config;
+
+  /// Stop transmission when gNB-DU receives the transmission action indicator with value Stop
+  bool transmission_stop;
 } NR_UE_sched_ctrl_t;
 
 typedef struct {
