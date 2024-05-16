@@ -3431,17 +3431,10 @@ void nr_ue_process_mac_pdu(NR_UE_MAC_INST_t *mac, nr_downlink_indication_t *dl_i
           // 3GPP TS 38.321 - Figure 6.2.3a-2: successRAR
           cont_res_id[0] = pduP[n];
           n++;
-          cont_res_id[1] = pduP[n];
-          n++;
-          cont_res_id[2] = pduP[n];
-          n++;
-          cont_res_id[3] = pduP[n];
-          n++;
-          cont_res_id[4] = pduP[n];
-          n++;
-          cont_res_id[5] = pduP[n];
+          for (int i = 0; i < 6; ++i)
+            cont_res_id[i] = pduP[n + i];
           // Oct 7
-          n++;
+          n += 6;
           ra->MsgB_R = 0;
           ra->MsgB_CH_ACESS_CPEXT = (pduP[n] >> 5) & 0x3;
           ra->MsgB_TPC = (pduP[n] >> 3) & 3;
