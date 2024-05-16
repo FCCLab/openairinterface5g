@@ -1976,7 +1976,7 @@ void rrc_gNB_process_e1_bearer_context_setup_resp(e1ap_bearer_setup_resp_t *resp
   }
 
   /* Instruction towards the DU for DRB configuration and tunnel creation */
-  f1ap_drb_to_be_setup_t drbs[32]; // maximum DRB can be 32
+  f1ap_drb_to_be_setup_t drbs[MAX_DRBS_PER_UE];
   int nb_drb = 0;
   for (int p = 0; p < resp->numPDUSessions; ++p) {
     rrc_pdu_session_param_t *RRC_pduSession = find_pduSession(UE, resp->pduSession[p].id, false);

@@ -482,32 +482,32 @@ rb_found:
 
     if (NODE_IS_DU(type)) {
       if(is_srb) {
-	MessageDef *msg;
-	msg = itti_alloc_new_message(TASK_RLC_ENB, 0, F1AP_UL_RRC_MESSAGE);
-	uint8_t *message_buffer = itti_malloc (TASK_RLC_ENB, TASK_DU_F1, size);
-	memcpy (message_buffer, buf, size);
+        MessageDef *msg;
+        msg = itti_alloc_new_message(TASK_RLC_ENB, 0, F1AP_UL_RRC_MESSAGE);
+        uint8_t *message_buffer = itti_malloc(TASK_RLC_ENB, TASK_DU_F1, size);
+        memcpy(message_buffer, buf, size);
         F1AP_UL_RRC_MESSAGE(msg).gNB_CU_ue_id = ctx.rntiMaybeUEid;
-	F1AP_UL_RRC_MESSAGE(msg).gNB_DU_ue_id = ue->ue_id;
-	F1AP_UL_RRC_MESSAGE(msg).srb_id = rb_id;
-	F1AP_UL_RRC_MESSAGE(msg).rrc_container = message_buffer;
-	F1AP_UL_RRC_MESSAGE(msg).rrc_container_length = size;
-	itti_send_msg_to_task(TASK_DU_F1, ENB_MODULE_ID_TO_INSTANCE(0 /*ctxt_pP->module_id*/), msg);
-	return;
+        F1AP_UL_RRC_MESSAGE(msg).gNB_DU_ue_id = ue->ue_id;
+        F1AP_UL_RRC_MESSAGE(msg).srb_id = rb_id;
+        F1AP_UL_RRC_MESSAGE(msg).rrc_container = message_buffer;
+        F1AP_UL_RRC_MESSAGE(msg).rrc_container_length = size;
+        itti_send_msg_to_task(TASK_DU_F1, ENB_MODULE_ID_TO_INSTANCE(0 /*ctxt_pP->module_id*/), msg);
+        return;
       } else {
-	MessageDef *msg = itti_alloc_new_message_sized(TASK_RLC_ENB, 0, GTPV1U_TUNNEL_DATA_REQ,
-						       sizeof(gtpv1u_tunnel_data_req_t) + size);
-	gtpv1u_tunnel_data_req_t *req=&GTPV1U_TUNNEL_DATA_REQ(msg);
-	req->buffer=(uint8_t*)(req+1);
-	memcpy(req->buffer,buf,size);
-	req->length=size;
-	req->offset = 0;
-	req->ue_id = ue->ue_id;
-	req->bearer_id=rb_id;
-	req->qfi = -1;
-	LOG_D(RLC, "Received uplink user-plane traffic at RLC-DU to be sent to the CU, size %d \n", size);
-	extern instance_t DUuniqInstance;
-	itti_send_msg_to_task(TASK_GTPV1_U, DUuniqInstance, msg);
-	return;
+        MessageDef *msg =
+            itti_alloc_new_message_sized(TASK_RLC_ENB, 0, GTPV1U_TUNNEL_DATA_REQ, sizeof(gtpv1u_tunnel_data_req_t) + size);
+        gtpv1u_tunnel_data_req_t *req = &GTPV1U_TUNNEL_DATA_REQ(msg);
+        req->buffer = (uint8_t *)(req + 1);
+        memcpy(req->buffer, buf, size);
+        req->length = size;
+        req->offset = 0;
+        req->ue_id = ue->ue_id;
+        req->bearer_id = rb_id;
+        req->qfi = -1;
+        LOG_D(RLC, "Received uplink user-plane traffic at RLC-DU to be sent to the CU, size %d \n", size);
+        extern instance_t DUuniqInstance;
+        itti_send_msg_to_task(TASK_GTPV1_U, DUuniqInstance, msg);
+        return;
       }
     }
   }

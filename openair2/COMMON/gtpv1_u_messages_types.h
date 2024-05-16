@@ -211,6 +211,10 @@ typedef struct gtpv1u_gnb_create_tunnel_resp_s {
   pdusessionid_t         pdusession_id;
   transport_layer_addr_t gnb_addr;
 } gtpv1u_gnb_create_tunnel_resp_t;
+
+/**
+ * @brief GTP-U Delete Tunnel Request
+ */
 typedef struct gtpv1u_gnb_delete_tunnel_req_s {
   ue_id_t                ue_id;
   uint8_t                num_pdusession;

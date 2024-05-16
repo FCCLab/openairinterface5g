@@ -365,8 +365,8 @@ static int decodePDUSessionResourceSetup(pdusession_t *session)
 void trigger_bearer_setup(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE, int n, pdusession_t *sessions, uint64_t ueAggMaxBitRateDownlink)
 {
   e1ap_bearer_setup_req_t bearer_req = {0};
-
   e1ap_nssai_t cuup_nssai = {0};
+  /* Loop over the PDU sessions to setup */
   for (int i = 0; i < n; i++) {
     rrc_pdu_session_param_t *pduSession = find_pduSession(UE, sessions[i].pdusession_id, true);
     pdusession_t *session = &pduSession->param;
@@ -422,7 +422,6 @@ void trigger_bearer_setup(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE, int n, pdusession
                                    fiveQI);
       /* DRB to be setup */
       DRB_nGRAN_to_setup_t *drb = pdu->DRBnGRanList + j;
-
       drb->id = rrc_drb->drb_id;
       /* SDAP */
       struct sdap_config_s *sdap_config = &rrc_drb->cnAssociation.sdap_config;
@@ -431,9 +430,8 @@ void trigger_bearer_setup(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE, int n, pdusession
       drb->sdap_config.sDAP_Header_DL = sdap_config->sdap_HeaderDL;
       /* PDCP */
       set_bearer_context_pdcp_config(&drb->pdcp_config, rrc_drb, rrc->configuration.um_on_default_drb);
-
+      /* Cell groups */
       drb->numCellGroups = 1; // assume one cell group associated with a DRB
-
       for (int k=0; k < drb->numCellGroups; k++) {
         cell_group_t *cellGroup = drb->cellGroupList + k;
         cellGroup->id = 0; // MCG
@@ -453,7 +451,7 @@ void trigger_bearer_setup(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE, int n, pdusession
           qos_char->non_dynamic.fiveqi = qos_session->fiveQI;
           qos_char->non_dynamic.qos_priority_level = qos_session->qos_priority;
         }
-
+        /* Retention priority */
         ngran_allocation_retention_priority_t *rent_priority = &qos_flow->qos_params.alloc_reten_priority;
         ngap_allocation_retention_priority_t *rent_priority_in = &qos_session->allocation_retention_priority;
         rent_priority->priority_level = rent_priority_in->priority_level;

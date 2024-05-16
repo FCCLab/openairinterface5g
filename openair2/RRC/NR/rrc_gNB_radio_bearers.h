@@ -53,7 +53,7 @@ drb_t *get_drb(gNB_RRC_UE_t *ue, uint8_t drb_id);
 /// @return returns a pointer to the generated DRB structure
 drb_t *generateDRB(gNB_RRC_UE_t *ue,
                    uint8_t drb_id,
-                   const rrc_pdu_session_param_t *pduSession,
+                   const int pdusession_id,
                    bool enable_sdap,
                    int do_drb_integrity,
                    int do_drb_ciphering,

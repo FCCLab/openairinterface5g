@@ -170,6 +170,12 @@ static instance_t get_f1_gtp_instance(void)
   return inst->gtpInst;
 }
 
+/**
+ * @brief Process the E1 Bearer Context Setup Request
+ *        - Fill the E1 Bearer Context Setup Response
+ *        - Add PDCP entities
+ *        - Create GTP-U tunnels
+ */
 void e1_bearer_context_setup(const e1ap_bearer_setup_req_t *req)
 {
   bool need_ue_id_mgmt = e1_used();
@@ -184,7 +190,7 @@ void e1_bearer_context_setup(const e1ap_bearer_setup_req_t *req)
 
   instance_t n3inst = get_n3_gtp_instance();
   instance_t f1inst = get_f1_gtp_instance();
-
+  /* Init E1 Bearer Context Setup Response */
   e1ap_bearer_setup_resp_t resp = {
     .gNB_cu_cp_ue_id = req->gNB_cu_cp_ue_id,
     .gNB_cu_up_ue_id = cu_up_ue_id,
@@ -203,7 +209,6 @@ void e1_bearer_context_setup(const e1ap_bearer_setup_req_t *req)
     pdu_session_setup_t *resp_pdu = resp.pduSession + i;
     const pdu_session_to_setup_t *req_pdu = req->pduSession + i;
     resp_pdu->id = req_pdu->sessionId;
-
     AssertFatal(req_pdu->numDRB2Modify == 0, "DRB modification not implemented\n");
     resp_pdu->numDRBSetup = req_pdu->numDRB2Setup;
     fill_gtpu_n3_req(&req_n3, req_pdu, i);
@@ -241,7 +246,6 @@ void e1_bearer_context_setup(const e1ap_bearer_setup_req_t *req)
               resp_drb->UpParamList[d].tlAddress);
       }
     }
-
     // We assume all DRBs to setup have been setup successfully, so we always
     // send successful outcome in response and no failed DRBs
     resp_pdu->numDRBFailed = 0;

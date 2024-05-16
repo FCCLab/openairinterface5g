@@ -341,7 +341,6 @@ static void gtpv1uSend(instance_t instance, gtpv1u_tunnel_data_req_t *req, bool 
     ext.pdusession_cntr.Reflective_QoS_activation = false;
     ext.pdusession_cntr.Paging_Policy_Indicator = false;
     ext.NextExtHeaderType = NO_MORE_EXT_HDRS;
-
     gtpv1uCreateAndSendMsg(compatInst(instance),
                            tmp.outgoing_ip_addr,
                            tmp.outgoing_port,

@@ -82,7 +82,7 @@ void set_bearer_context_pdcp_config(bearer_context_pdcp_config_t *pdcp_config, d
 
 drb_t *generateDRB(gNB_RRC_UE_t *ue,
                    uint8_t drb_id,
-                   const rrc_pdu_session_param_t *pduSession,
+                   const int pdusession_id,
                    bool enable_sdap,
                    int do_drb_integrity,
                    int do_drb_ciphering,
@@ -104,7 +104,7 @@ drb_t *generateDRB(gNB_RRC_UE_t *ue,
 
   /* SDAP Configuration */
   est_drb->cnAssociation.present = NR_DRB_ToAddMod__cnAssociation_PR_sdap_Config;
-  est_drb->cnAssociation.sdap_config.pdusession_id = pduSession->param.pdusession_id;
+  est_drb->cnAssociation.sdap_config.pdusession_id = pdusession_id;
   if (enable_sdap) {
     est_drb->cnAssociation.sdap_config.sdap_HeaderDL = NR_SDAP_Config__sdap_HeaderDL_present;
     est_drb->cnAssociation.sdap_config.sdap_HeaderUL = NR_SDAP_Config__sdap_HeaderUL_present;

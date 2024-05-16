@@ -34,6 +34,18 @@ static uint16_t getShort(uint8_t *input)
   return htons(tmp16);
 }
 
+/**
+ * Handles the PDU Session Establishment Accept message received by the UE
+ * The PDU Session Establishment Accept message is sent by the SMF
+ * to the UE in response to the PDU Session Establishment Request message.
+ * It indicates the successful establishment of a PDU session.
+ * The direction is from the network to the UE.
+ *
+ * @param buffer      pointer to PDU Session Establishment Accept message
+ * @param msg_length  length of PDU Session Establishment Accept message
+ *
+ * @ref 3GPP TS 24.501 (Release 16)
+ */
 void capture_pdu_session_establishment_accept_msg(uint8_t *buffer, uint32_t msg_length)
 {
   security_protected_nas_5gs_msg_t       sec_nas_hdr;
