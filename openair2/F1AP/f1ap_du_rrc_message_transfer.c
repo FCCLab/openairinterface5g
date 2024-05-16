@@ -88,6 +88,7 @@ int DU_send_INITIAL_UL_RRC_MESSAGE_TRANSFER(sctp_assoc_t assoc_id, const f1ap_in
   uint32_t len = 0;
   if (f1ap_encode_pdu(pdu, &buffer, &len) < 0) {
     LOG_E(F1AP, "Failed to encode F1 INITIAL UL RRC MESSAGE TRANSFER\n");
+    ASN_STRUCT_FREE(asn_DEF_F1AP_F1AP_PDU, pdu);
     return -1;
   }
   ASN_STRUCT_FREE(asn_DEF_F1AP_F1AP_PDU, pdu);
