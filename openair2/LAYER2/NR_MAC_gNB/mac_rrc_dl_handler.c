@@ -45,31 +45,30 @@ static instance_t get_f1_gtp_instance(void)
   return inst->gtpInst;
 }
 
+/**
+ * @brief Create GTP-U tunnel on the F1 interface
+ */
 static int drb_gtpu_create(instance_t instance,
                            uint32_t ue_id,
-                           int incoming_id,
-                           int outgoing_id,
-                           int qfi,
-                           in_addr_t tlAddress, // only IPv4 now
-                           teid_t outgoing_teid,
+                           const f1ap_drb_to_be_setup_t *drb,
                            gtpCallback callBack,
-                           gtpCallbackSDAP callBackSDAP,
-                           gtpv1u_gnb_create_tunnel_resp_t *create_tunnel_resp)
+                           gtpv1u_gnb_create_tunnel_resp_t *resp_f1)
 {
-  gtpv1u_gnb_create_tunnel_req_t create_tunnel_req = {0};
-  create_tunnel_req.incoming_rb_id[0] = incoming_id;
-  create_tunnel_req.pdusession_id[0] = outgoing_id;
-  memcpy(&create_tunnel_req.dst_addr[0].buffer, &tlAddress, sizeof(uint8_t) * 4);
-  create_tunnel_req.dst_addr[0].length = 32;
-  create_tunnel_req.outgoing_teid[0] = outgoing_teid;
-  create_tunnel_req.outgoing_qfi[0] = qfi;
-  create_tunnel_req.num_tunnels = 1;
-  create_tunnel_req.ue_id = ue_id;
-
+  int qfi = -1; // don't put PDU session marker in GTP for F1-U
+  gtpv1u_gnb_create_tunnel_req_t create_tunnel_req = {
+    .ue_id = ue_id,
+    .outgoing_teid = drb->up_ul_tnl[0].teid,
+    .outgoing_qfi = qfi,
+    .pdusession_id = drb->drb_id,
+    .incoming_rb_id = drb->drb_id,
+    .dst_addr.length = 32
+  };
+  memcpy(&create_tunnel_req.dst_addr.buffer, &drb->up_ul_tnl[0].tl_address, sizeof(uint8_t) * 4);  // only IPv4 now
+  LOG_D(E1AP, "Incoming RB %ld / Outgoing RB %ld - UL TEID %d QFI %d\n", drb->drb_id, drb->drb_id, drb->up_ul_tnl[0].teid, qfi);
   // we use gtpv1u_create_ngu_tunnel because it returns the interface
   // address and port of the interface; apart from that, we also might call
   // newGtpuCreateTunnel() directly
-  return gtpv1u_create_ngu_tunnel(instance, &create_tunnel_req, create_tunnel_resp, callBack, callBackSDAP);
+  return gtpv1u_create_ngu_tunnel(instance, &create_tunnel_req, resp_f1, callBack, NULL);
 }
 
 bool DURecvCb(protocol_ctxt_t *ctxt_pP,
@@ -244,21 +243,12 @@ static int handle_ue_context_drbs_setup(NR_UE_info_t *UE,
     resp_drb->up_dl_tnl_length = drb->up_ul_tnl_length;
 
     if (f1inst >= 0) { // we actually use F1-U
-      int qfi = -1; // don't put PDU session marker in GTP
-      gtpv1u_gnb_create_tunnel_resp_t resp_f1 = {0};
-      int ret = drb_gtpu_create(f1inst,
-                                UE->rnti,
-                                drb->drb_id,
-                                drb->drb_id,
-                                qfi,
-                                drb->up_ul_tnl[0].tl_address,
-                                drb->up_ul_tnl[0].teid,
-                                DURecvCb,
-                                NULL,
-                                &resp_f1);
+      /* F1 GTP-U Tunnel Request for 1 DRB */
+      gtpv1u_gnb_create_tunnel_resp_t resp_f1 = { .num_tunnels = 1 };
+      int ret = drb_gtpu_create(f1inst, UE->rnti, drb, DURecvCb, &resp_f1);
       AssertFatal(ret >= 0, "Unable to create GTP Tunnel for F1-U\n");
       memcpy(&resp_drb->up_dl_tnl[0].tl_address, &resp_f1.gnb_addr.buffer, 4);
-      resp_drb->up_dl_tnl[0].teid = resp_f1.gnb_NGu_teid[0];
+      resp_drb->up_dl_tnl[0].teid = resp_f1.gnb_NGu_teid;
     }
 
     int ret = ASN_SEQUENCE_ADD(&cellGroupConfig->rlc_BearerToAddModList->list, rlc_BearerConfig);
