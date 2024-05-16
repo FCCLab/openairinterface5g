@@ -23,6 +23,7 @@
 
 #include "mac_rrc_dl.h"
 #include "nr_rrc_defs.h"
+#include "openair2/F1AP/lib/f1ap_rrc_message_transfer.h"
 
 static void f1_setup_response_f1ap(sctp_assoc_t assoc_id, const f1ap_setup_resp_t *resp)
 {
@@ -198,18 +199,7 @@ static void dl_rrc_message_transfer_f1ap(sctp_assoc_t assoc_id, const f1ap_dl_rr
   MessageDef *message_p = itti_alloc_new_message (TASK_RRC_GNB, 0, F1AP_DL_RRC_MESSAGE);
   message_p->ittiMsgHeader.originInstance = assoc_id;
   f1ap_dl_rrc_message_t *msg = &F1AP_DL_RRC_MESSAGE(message_p);
-  *msg = *dl_rrc;
-  if (dl_rrc->old_gNB_DU_ue_id) {
-    msg->old_gNB_DU_ue_id = malloc(sizeof(*msg->old_gNB_DU_ue_id));
-    AssertFatal(msg->old_gNB_DU_ue_id != NULL, "out of memory\n");
-    *msg->old_gNB_DU_ue_id = *dl_rrc->old_gNB_DU_ue_id;
-  }
-  if (dl_rrc->rrc_container) {
-    msg->rrc_container = malloc(dl_rrc->rrc_container_length);
-    AssertFatal(msg->rrc_container != NULL, "out of memory\n");
-    msg->rrc_container_length = dl_rrc->rrc_container_length;
-    memcpy(msg->rrc_container, dl_rrc->rrc_container, dl_rrc->rrc_container_length);
-  }
+  *msg = cp_dl_rrc_message_transfer(dl_rrc);
   itti_send_msg_to_task (TASK_CU_F1, 0, message_p);
 }
 

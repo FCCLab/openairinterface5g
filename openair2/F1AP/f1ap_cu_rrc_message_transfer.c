@@ -66,105 +66,27 @@ int CU_handle_INITIAL_UL_RRC_MESSAGE_TRANSFER(instance_t instance, sctp_assoc_t 
 /*
     DL RRC Message Transfer.
 */
-int CU_send_DL_RRC_MESSAGE_TRANSFER(sctp_assoc_t assoc_id, f1ap_dl_rrc_message_t *f1ap_dl_rrc)
+int CU_send_DL_RRC_MESSAGE_TRANSFER(sctp_assoc_t assoc_id, f1ap_dl_rrc_message_t *msg)
 {
-  LOG_D(F1AP, "CU send DL_RRC_MESSAGE_TRANSFER \n");
-  F1AP_F1AP_PDU_t                 pdu= {0};
-  F1AP_DLRRCMessageTransfer_t    *out;
-  uint8_t  *buffer=NULL;
-  uint32_t  len=0;
-  /* Create */
-  /* 0. Message Type */
-  pdu.present = F1AP_F1AP_PDU_PR_initiatingMessage;
-  asn1cCalloc(pdu.choice.initiatingMessage, tmp);
-  tmp->procedureCode = F1AP_ProcedureCode_id_DLRRCMessageTransfer;
-  tmp->criticality   = F1AP_Criticality_ignore;
-  tmp->value.present = F1AP_InitiatingMessage__value_PR_DLRRCMessageTransfer;
-  out = &tmp->value.choice.DLRRCMessageTransfer;
-  /* mandatory */
-  /* c1. GNB_CU_UE_F1AP_ID */
-  asn1cSequenceAdd(out->protocolIEs.list, F1AP_DLRRCMessageTransferIEs_t, ie1);
-  ie1->id                             = F1AP_ProtocolIE_ID_id_gNB_CU_UE_F1AP_ID;
-  ie1->criticality                    = F1AP_Criticality_reject;
-  ie1->value.present                  = F1AP_DLRRCMessageTransferIEs__value_PR_GNB_CU_UE_F1AP_ID;
-  DevAssert(f1ap_dl_rrc->gNB_CU_ue_id != 0);
-  ie1->value.choice.GNB_CU_UE_F1AP_ID = f1ap_dl_rrc->gNB_CU_ue_id;
-
-  /* mandatory */
-  /* c2. GNB_DU_UE_F1AP_ID */
-  asn1cSequenceAdd(out->protocolIEs.list, F1AP_DLRRCMessageTransferIEs_t, ie2);
-  ie2->id                             = F1AP_ProtocolIE_ID_id_gNB_DU_UE_F1AP_ID;
-  ie2->criticality                    = F1AP_Criticality_reject;
-  ie2->value.present                  = F1AP_DLRRCMessageTransferIEs__value_PR_GNB_DU_UE_F1AP_ID;
-  DevAssert(f1ap_dl_rrc->gNB_DU_ue_id != 0);
-  ie2->value.choice.GNB_DU_UE_F1AP_ID = f1ap_dl_rrc->gNB_DU_ue_id;
-
-  /* optional */
-  /* c3. oldgNB_DU_UE_F1AP_ID */
-  if (f1ap_dl_rrc->old_gNB_DU_ue_id != NULL) {
-    asn1cSequenceAdd(out->protocolIEs.list, F1AP_DLRRCMessageTransferIEs_t, ie3);
-    ie3->id                                = F1AP_ProtocolIE_ID_id_oldgNB_DU_UE_F1AP_ID;
-    ie3->criticality                       = F1AP_Criticality_reject;
-    ie3->value.present                     = F1AP_DLRRCMessageTransferIEs__value_PR_GNB_DU_UE_F1AP_ID_1;
-    ie3->value.choice.GNB_DU_UE_F1AP_ID_1 = *f1ap_dl_rrc->old_gNB_DU_ue_id;
-  }
-
-  /* mandatory */
-  /* c4. SRBID */
-  asn1cSequenceAdd(out->protocolIEs.list, F1AP_DLRRCMessageTransferIEs_t, ie4);
-  ie4->id                            = F1AP_ProtocolIE_ID_id_SRBID;
-  ie4->criticality                   = F1AP_Criticality_reject;
-  ie4->value.present                 = F1AP_DLRRCMessageTransferIEs__value_PR_SRBID;
-  ie4->value.choice.SRBID            = f1ap_dl_rrc->srb_id;
-
-  /* optional */
-  /* c5. ExecuteDuplication */
-  if (f1ap_dl_rrc->execute_duplication) {
-    asn1cSequenceAdd(out->protocolIEs.list, F1AP_DLRRCMessageTransferIEs_t, ie5);
-    ie5->id                            = F1AP_ProtocolIE_ID_id_ExecuteDuplication;
-    ie5->criticality                   = F1AP_Criticality_ignore;
-    ie5->value.present                 = F1AP_DLRRCMessageTransferIEs__value_PR_ExecuteDuplication;
-    ie5->value.choice.ExecuteDuplication = F1AP_ExecuteDuplication_true;
-  }
-
-  // issue in here
-  /* mandatory */
-  /* c6. RRCContainer */
-  asn1cSequenceAdd(out->protocolIEs.list, F1AP_DLRRCMessageTransferIEs_t, ie6);
-  ie6->id                            = F1AP_ProtocolIE_ID_id_RRCContainer;
-  ie6->criticality                   = F1AP_Criticality_reject;
-  ie6->value.present                 = F1AP_DLRRCMessageTransferIEs__value_PR_RRCContainer;
-  OCTET_STRING_fromBuf(&ie6->value.choice.RRCContainer,
-                       (const char *)f1ap_dl_rrc->rrc_container, f1ap_dl_rrc->rrc_container_length);
-
-  /* optional */
-  /* c7. RAT_FrequencyPriorityInformation */
-  /* TODO */
-  if (0) {
-    int endc=1;
-    asn1cSequenceAdd(out->protocolIEs.list, F1AP_DLRRCMessageTransferIEs_t, ie7);
-    ie7->id                            = F1AP_ProtocolIE_ID_id_RAT_FrequencyPriorityInformation;
-    ie7->criticality                   = F1AP_Criticality_reject;
-    ie7->value.present                 = F1AP_DLRRCMessageTransferIEs__value_PR_RAT_FrequencyPriorityInformation;
-
-    if (endc==1) {
-      ie7->value.choice.RAT_FrequencyPriorityInformation.present = F1AP_RAT_FrequencyPriorityInformation_PR_eNDC;
-      ie7->value.choice.RAT_FrequencyPriorityInformation.choice.eNDC = 123L;
-    } else {
-      ie7->value.choice.RAT_FrequencyPriorityInformation.present = F1AP_RAT_FrequencyPriorityInformation_PR_nGRAN;
-      ie7->value.choice.RAT_FrequencyPriorityInformation.choice.nGRAN = 11L;
-    }
-
-    //ie->value.choice.RAT_FrequencyPriorityInformation.present = F1AP_RAT_FrequencyPriorityInformation_PR_rAT_FrequencySelectionPriority;
-    //ie->value.choice.RAT_FrequencyPriorityInformation.choice.rAT_FrequencySelectionPriority = 123L;
-  }
-
-  /* encode */
-  if (f1ap_encode_pdu(&pdu, &buffer, &len) < 0) {
-    LOG_E(F1AP, "Failed to encode F1 DL RRC MESSAGE TRANSFER \n");
+  /* encode DL RRC Message Transfer */
+  F1AP_F1AP_PDU_t *pdu = encode_dl_rrc_message_transfer(msg);
+  if (pdu == NULL) {
+    LOG_E(F1AP, "Failed to encode F1 DL RRC MESSAGE TRANSFER: can't send message!\n");
+    ASN_STRUCT_FREE(asn_DEF_F1AP_F1AP_PDU, pdu);
     return -1;
   }
-
+  /* encode F1AP PDU */
+  uint8_t *buffer = NULL;
+  uint32_t len = 0;
+  if (f1ap_encode_pdu(pdu, &buffer, &len) < 0) {
+    LOG_E(F1AP, "Failed to encode F1 DL RRC MESSAGE TRANSFER \n");
+    ASN_STRUCT_FREE(asn_DEF_F1AP_F1AP_PDU, pdu);
+    return -1;
+  }
+  /* Free F1AP PDU */
+  ASN_STRUCT_FREE(asn_DEF_F1AP_F1AP_PDU, pdu);
+  /* Send to DU */
+  LOG_D(F1AP, "CU send DL_RRC_MESSAGE_TRANSFER \n");
   f1ap_itti_send_sctp_data_req(assoc_id, buffer, len);
   return 0;
 }

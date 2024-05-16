@@ -58,85 +58,17 @@
 /*  DL RRC Message Transfer */
 int DU_handle_DL_RRC_MESSAGE_TRANSFER(instance_t instance, sctp_assoc_t assoc_id, uint32_t stream, F1AP_F1AP_PDU_t *pdu)
 {
-  F1AP_DLRRCMessageTransfer_t    *container;
-  F1AP_DLRRCMessageTransferIEs_t *ie;
-  int             executeDuplication;
-  //uint64_t        subscriberProfileIDforRFP;
-  //uint64_t        rAT_FrequencySelectionPriority;
-  DevAssert(pdu != NULL);
-  container = &pdu->choice.initiatingMessage->value.choice.DLRRCMessageTransfer;
-  /* GNB_CU_UE_F1AP_ID */
-  F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_DLRRCMessageTransferIEs_t, ie, container,
-                             F1AP_ProtocolIE_ID_id_gNB_CU_UE_F1AP_ID, true);
-  uint32_t cu_ue_f1ap_id = ie->value.choice.GNB_CU_UE_F1AP_ID;
-  /* GNB_DU_UE_F1AP_ID */
-  F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_DLRRCMessageTransferIEs_t, ie, container,
-                             F1AP_ProtocolIE_ID_id_gNB_DU_UE_F1AP_ID, true);
-  uint32_t du_ue_f1ap_id = ie->value.choice.GNB_DU_UE_F1AP_ID;
 
-  /* optional */
-  /* oldgNB_DU_UE_F1AP_ID */
-  uint32_t *old_gNB_DU_ue_id = NULL;
-  uint32_t old_gNB_DU_ue_id_stack = 0;
-  F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_DLRRCMessageTransferIEs_t, ie, container,
-                             F1AP_ProtocolIE_ID_id_oldgNB_DU_UE_F1AP_ID, false);
-  if (ie) {
-    /* strange: it is not named OLD_GNB_DU_UE... */
-    old_gNB_DU_ue_id_stack = ie->value.choice.GNB_DU_UE_F1AP_ID_1;
-    old_gNB_DU_ue_id = &old_gNB_DU_ue_id_stack;
+  f1ap_dl_rrc_message_t msg;
+  if (!decode_dl_rrc_message_transfer(pdu, &msg)) {
+    LOG_E(F1AP, "cannot decode F1 DL RRC message Transfer\n");
+    free_dl_rrc_message_transfer(&msg);
+    return -1;
   }
 
-  /* mandatory */
-  /* SRBID */
-  F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_DLRRCMessageTransferIEs_t, ie, container,
-                             F1AP_ProtocolIE_ID_id_SRBID, true);
-  uint64_t  srb_id = ie->value.choice.SRBID;
-  LOG_D(F1AP, "srb_id %lu \n", srb_id);
-
-  /* optional */
-  /* ExecuteDuplication */
-  if (0) {
-    F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_DLRRCMessageTransferIEs_t, ie, container,
-                               F1AP_ProtocolIE_ID_id_ExecuteDuplication, true);
-    executeDuplication = ie->value.choice.ExecuteDuplication;
-    LOG_D(F1AP, "ExecuteDuplication %d \n", executeDuplication);
-  }
-
-  // issue in here
-  /* mandatory */
-  /* RRC Container */
-  F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_DLRRCMessageTransferIEs_t, ie, container,
-                             F1AP_ProtocolIE_ID_id_RRCContainer, true);
-  /* optional */
-  /* RAT_FrequencyPriorityInformation */
-  if (0) {
-    F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_DLRRCMessageTransferIEs_t, ie, container,
-                               F1AP_ProtocolIE_ID_id_RAT_FrequencyPriorityInformation, true);
-
-    switch(ie->value.choice.RAT_FrequencyPriorityInformation.present) {
-      case F1AP_RAT_FrequencyPriorityInformation_PR_eNDC:
-        //subscriberProfileIDforRFP = ie->value.choice.RAT_FrequencyPriorityInformation.choice.subscriberProfileIDforRFP;
-        break;
-
-      case F1AP_RAT_FrequencyPriorityInformation_PR_nGRAN:
-        //rAT_FrequencySelectionPriority = ie->value.choice.RAT_FrequencyPriorityInformation.choice.rAT_FrequencySelectionPriority;
-        break;
-
-      default:
-        LOG_W(F1AP, "unhandled IE RAT_FrequencyPriorityInformation.present\n");
-        break;
-    }
-  }
-
-  f1ap_dl_rrc_message_t dl_rrc = {
-    .gNB_CU_ue_id = cu_ue_f1ap_id,
-    .gNB_DU_ue_id = du_ue_f1ap_id,
-    .old_gNB_DU_ue_id = old_gNB_DU_ue_id,
-    .rrc_container_length = ie->value.choice.RRCContainer.size,
-    .rrc_container = ie->value.choice.RRCContainer.buf,
-    .srb_id = srb_id
-  };
-  dl_rrc_message_transfer(&dl_rrc);
+  dl_rrc_message_transfer(&msg);
+  /* Free DL RRC Message Transfer */
+  free_dl_rrc_message_transfer(&msg);
   return 0;
 }
 
