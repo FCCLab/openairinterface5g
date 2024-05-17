@@ -284,7 +284,7 @@ class OaiCiTest():
 		self.air_interface=''
 		self.ue_ids = []
 		self.nodes = []
-		self.svr_node = None
+		self.svr_node = ''
 		self.svr_id = None
 		self.cmd_prefix = '' # prefix before {lte,nr}-uesoftmodem
 
