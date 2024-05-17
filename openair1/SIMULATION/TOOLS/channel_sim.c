@@ -35,7 +35,7 @@
 
 #include "common/utils/LOG/log.h"
 #include "PHY_INTERFACE/phy_interface_extern.h"
-#include "UTIL/OPT/opt.h" // to test OPT
+#include "opt.h" // to test OPT
 #include "common/ran_context.h"
 
 #define RF

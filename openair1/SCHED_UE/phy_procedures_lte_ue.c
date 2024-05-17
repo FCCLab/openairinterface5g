@@ -53,7 +53,7 @@
 #include "common/utils/LOG/log.h"
 
 #include "common/utils/LOG/vcd_signal_dumper.h"
-#include "UTIL/OPT/opt.h"
+#include "opt.h"
 #include "intertask_interface.h"
 #include "PHY/defs_UE.h"
 

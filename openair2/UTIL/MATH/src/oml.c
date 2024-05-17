@@ -34,9 +34,9 @@
 #include <stdio.h>
 #include <math.h>
 #include <errno.h>
+#include "log.h"
 
 #include "oml.h"
-
 
 static int x, y, z;
 
@@ -45,15 +45,14 @@ void init_seeds(int seed)
 {
 
   set_taus_seed(seed);
-  LOG_I(OTG,"set taus seed to %d done \n", seed);
+  LOG_I(UTIL,"set taus seed to %d done \n", seed);
 
 }
 
 double uniform_rng()
 {
   double random;
-  random = (double)(taus(OTG)%0xffffffff)/((double)0xffffffff);
-  //LOG_D(OTG,"Uniform taus random number= %lf\n", random);
+  random = (double)(taus(UTIL)%0xffffffff)/((double)0xffffffff);
   return random;
 }
 
@@ -68,8 +67,6 @@ double uniform_dist(int min, int max)
 {
   double uniform_rn;
   uniform_rn = (max - min) * uniform_rng() + min;
-  //  LOG_T(OTG,"Uniform Random Nb = %lf, (min %d, max %d)\n", uniform_rn, min, max);
-  //printf("Uniform Random Nb = %lf, (min %d, max %d)\n", uniform_rn, min, max);
   return uniform_rn;
 }
 
@@ -90,7 +87,7 @@ double gaussian_dist(double mean, double std_dev)
     gaussian_rn_1 = (std_dev * (x_rand1 * w)) + mean;
   } while (gaussian_rn_1 <= 0);
 
-  LOG_T(OTG,"Gaussian Random Nb= %lf (mean %lf, deviation %lf)\n", gaussian_rn_1, mean, std_dev);
+  LOG_D(UTIL,"Gaussian Random Nb= %lf (mean %lf, deviation %lf)\n", gaussian_rn_1, mean, std_dev);
 
   return gaussian_rn_1;
 
@@ -108,7 +105,7 @@ double exponential_dist(double lambda)
   else
     exponential_rn = -log(uniform_rng()) / lambda;
 
-  LOG_T(OTG,"Exponential Random Nb = %lf (lambda %lf)\n", exponential_rn, lambda);
+  LOG_D(UTIL,"Exponential Random Nb = %lf (lambda %lf)\n", exponential_rn, lambda);
   return exponential_rn;
 }
 
@@ -128,7 +125,7 @@ double poisson_dist(double lambda)
   } while (p > L);
 
   poisson_rn = k - 1;
-  LOG_T(OTG,"Poisson Random Nb = %lf (lambda %lf)\n", poisson_rn, lambda);
+  LOG_D(UTIL,"Poisson Random Nb = %lf (lambda %lf)\n", poisson_rn, lambda);
   return poisson_rn;
 
 }
@@ -141,13 +138,13 @@ double weibull_dist(double scale, double shape)
   double weibull_rn;
 
   if ((scale<=0)||(shape<=0)) {
-    LOG_W(OTG,"Weibull :: scale=%.2f or shape%.2f <0 , adjust to new values: sale=3, shape=4 \n", scale,shape);
+    LOG_D(UTIL,"Weibull :: scale=%.2f or shape%.2f <0 , adjust to new values: sale=3, shape=4 \n", scale,shape);
     scale=3;
     shape=4;
   }
 
   weibull_rn=scale * pow(-log(1-uniform_rng()), 1/shape);
-  LOG_T(OTG,"Weibull Random Nb = %lf (scale=%.2f, shape=%.2f)\n", weibull_rn, scale,shape);
+  LOG_D(UTIL,"Weibull Random Nb = %lf (scale=%.2f, shape=%.2f)\n", weibull_rn, scale,shape);
   return weibull_rn;
 
 }
@@ -157,13 +154,13 @@ double pareto_dist(double scale, double shape)
   double pareto_rn;
 
   if ((scale<=0)||(shape<=0)) {
-    LOG_W(OTG,"Pareto :: scale=%.2f or shape%.2f <0 , adjust new values: sale=3, shape=4 \n", scale,shape);
+    LOG_D(UTIL,"Pareto :: scale=%.2f or shape%.2f <0 , adjust new values: sale=3, shape=4 \n", scale,shape);
     scale=3;
     shape=4;
   }
 
   pareto_rn=scale * pow(1/(1-uniform_rng()), 1/shape);
-  LOG_T(OTG,"Pareto Random Nb = %lf (scale=%.2f, shape=%.2f)\n", pareto_rn,scale,shape);
+  LOG_D(UTIL,"Pareto Random Nb = %lf (scale=%.2f, shape=%.2f)\n", pareto_rn,scale,shape);
   return pareto_rn;
 }
 
@@ -176,7 +173,7 @@ double gamma_dist(double scale, double shape)
   shape_int=ceil(shape);
 
   if ((scale<=0)||(shape_int<=0)) {
-    LOG_W(OTG,"Gamma :: scale=%.2f or shape%.2f <0 , adjust to new values: sale=0.5, shape=25 \n", scale,shape);
+    LOG_D(UTIL,"Gamma :: scale=%.2f or shape%.2f <0 , adjust to new values: sale=0.5, shape=25 \n", scale,shape);
     scale=0.5;
     shape=25;
   }
@@ -186,9 +183,8 @@ double gamma_dist(double scale, double shape)
   }
 
   gamma_rn= (-1/scale)*log(mult_var);
-  LOG_T(OTG,"Gamma Random Nb = %lf (scale=%.2f, shape=%.2f)\n", gamma_rn, scale, shape);
+  LOG_D(UTIL,"Gamma Random Nb = %lf (scale=%.2f, shape=%.2f)\n", gamma_rn, scale, shape);
   return gamma_rn;
-
 }
 
 double cauchy_dist(double scale, double shape )
@@ -196,7 +192,7 @@ double cauchy_dist(double scale, double shape )
   double cauchy_rn;
 
   if ((scale<=0)||(shape<=0)) {
-    LOG_W(OTG,"Cauchy :: scale=%.2f or shape%.2f <0 , new values: sale=2, shape=10 \n", scale,shape);
+    LOG_D(UTIL,"Cauchy :: scale=%.2f or shape%.2f <0 , new values: sale=2, shape=10 \n", scale,shape);
     scale=2;
     shape=10;
   }
@@ -206,14 +202,12 @@ double cauchy_dist(double scale, double shape )
 
   if (cauchy_rn<0) {
     cauchy_rn=fabs(cauchy_rn);
-    LOG_T(OTG,"Cauchy Random Nb = %lf <0 (scale=%.2f, shape=%.2f), we use absolute value\n", cauchy_rn, scale, shape);
+    LOG_D(UTIL,"Cauchy Random Nb = %lf <0 (scale=%.2f, shape=%.2f), we use absolute value\n", cauchy_rn, scale, shape);
   } else
-    LOG_T(OTG,"Cauchy Random Nb = %lf (scale=%.2f, shape=%.2f)\n", cauchy_rn, scale, shape);
+    LOG_D(UTIL,"Cauchy Random Nb = %lf (scale=%.2f, shape=%.2f)\n", cauchy_rn, scale, shape);
 
   return cauchy_rn;
-
 }
-
 
 double lognormal_dist(double mean, double std_dev)
 {
@@ -222,11 +216,8 @@ double lognormal_dist(double mean, double std_dev)
   return lognormal_rn;
 }
 
-
-
 double wichman_hill()   // not used
 {
-
   double temp, random;
   int modx = x % 177;
   int mody = y % 176;
@@ -255,5 +246,3 @@ double wichman_hill()   // not used
 
   return random;
 }
-
-

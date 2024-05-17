@@ -41,7 +41,7 @@
 #include "RRC/L2_INTERFACE/openair_rrc_L2_interface.h"
 #include "common/utils/LOG/log.h"
 #include "nfapi/oai_integration/vendor_ext.h"
-#include "UTIL/OPT/opt.h"
+#include "opt.h"
 #include "SIMULATION/TOOLS/sim.h" // for taus
 #include "PHY/LTE_TRANSPORT/transport_common_proto.h"
 #include "PHY/LTE_ESTIMATION/lte_estimation.h"

@@ -33,7 +33,7 @@
 #include "mac_extern.h"
 #include "SIMULATION/TOOLS/sim.h"
 #include "common/utils/LOG/log.h"
-#include "UTIL/OPT/opt.h"
+#include "opt.h"
 #include "common/ran_context.h"
 
 #define DEBUG_RAR

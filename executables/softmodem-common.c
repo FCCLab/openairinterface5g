@@ -32,7 +32,7 @@
 #include <time.h>
 #include <dlfcn.h>
 #include <sys/resource.h>
-#include "UTIL/OPT/opt.h"
+#include "opt.h"
 #include "common/config/config_userapi.h"
 #include "common/utils/load_module_shlib.h"
 #include "common/utils/telnetsrv/telnetsrv.h"

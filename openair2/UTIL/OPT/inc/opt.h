@@ -59,7 +59,7 @@ typedef uint16_t guint16;
 typedef uint32_t guint32;
 typedef guint8   gboolean;
 
-#include <openair2/UTIL/OPT/wireshark_headers.h>
+#include "wireshark_headers.h"
 
 #include "mac_pcap.h"
 

@@ -37,7 +37,6 @@
 
 #include <math.h>
 #include <stdlib.h>
-#include  "../OTG/otg.h"
 
 #define PI 3.14159265
 

@@ -25,7 +25,7 @@
 #include <openair1/PHY/TOOLS/phy_scope_interface.h>
 #include "common/utils/LOG/log.h"
 #include "common/utils/LOG/vcd_signal_dumper.h"
-#include "UTIL/OPT/opt.h"
+#include "opt.h"
 #include "intertask_interface.h"
 #include "T.h"
 #include "PHY/MODULATION/modulation_UE.h"

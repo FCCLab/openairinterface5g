@@ -1,3 +1,5 @@
 add_library(LOG log.c)
 target_include_directories(LOG PUBLIC .)
 target_link_libraries(LOG PRIVATE ${T_LIB})
+add_library(vcd_signal_dumper vcd_signal_dumper.c)
+target_include_directories(vcd_signal_dumper PUBLIC .)

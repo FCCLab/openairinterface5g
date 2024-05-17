@@ -36,7 +36,7 @@
 #include "NR_MAC_COMMON/nr_mac_extern.h"
 #include "common/utils/LOG/log.h"
 #include "common/utils/LOG/vcd_signal_dumper.h"
-#include "UTIL/OPT/opt.h"
+#include "opt.h"
 #include "common/utils/nr/nr_common.h"
 #include "openair1/PHY/defs_nr_common.h"
 
