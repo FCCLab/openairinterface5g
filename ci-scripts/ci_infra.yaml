@@ -228,13 +228,13 @@ lte_oai_ue_carabe:
   MTU: 1500
 
 rfsim5g_gnb_nos1:
-  Host: localhost
+  Host: "%%current_host%%"
   NetworkScript: docker exec rfsim5g-oai-gnb ip a show dev oaitun_enb1
   CmdPrefix: docker exec rfsim5g-oai-gnb
   IF: oaitun_enb1
 
 rfsim5g_ue:
-  Host: localhost
+  Host: "%%current_host%%"
   NetworkScript: docker exec rfsim5g-oai-nr-ue ip a show dev oaitun_ue1
   CmdPrefix: docker exec rfsim5g-oai-nr-ue
   IF: oaitun_ue1
@@ -243,7 +243,7 @@ rfsim5g_ue:
   MTU: 1500
 
 rfsim5g_ue2:
-  Host: localhost
+  Host: "%%current_host%%"
   NetworkScript: docker exec rfsim5g-oai-nr-ue2 ip a show dev oaitun_ue1
   CmdPrefix: docker exec rfsim5g-oai-nr-ue2
   IF: oaitun_ue1
@@ -252,7 +252,7 @@ rfsim5g_ue2:
   MTU: 1500
 
 rfsim5g_ue3:
-  Host: localhost
+  Host: "%%current_host%%"
   NetworkScript: docker exec rfsim5g-oai-nr-ue3 ip a show dev oaitun_ue1
   CmdPrefix: docker exec rfsim5g-oai-nr-ue3
   IF: oaitun_ue1
@@ -261,7 +261,7 @@ rfsim5g_ue3:
   MTU: 1500
 
 rfsim5g_ue4:
-  Host: localhost
+  Host: "%%current_host%%"
   NetworkScript: docker exec rfsim5g-oai-nr-ue4 ip a show dev oaitun_ue1
   CmdPrefix: docker exec rfsim5g-oai-nr-ue4
   IF: oaitun_ue1
@@ -270,7 +270,7 @@ rfsim5g_ue4:
   MTU: 1500
 
 rfsim5g_ue5:
-  Host: localhost
+  Host: "%%current_host%%"
   NetworkScript: docker exec rfsim5g-oai-nr-ue5 ip a show dev oaitun_ue1
   CmdPrefix: docker exec rfsim5g-oai-nr-ue5
   IF: oaitun_ue1
@@ -279,7 +279,7 @@ rfsim5g_ue5:
   MTU: 1500
 
 rfsim5g_ue6:
-  Host: localhost
+  Host: "%%current_host%%"
   NetworkScript: docker exec rfsim5g-oai-nr-ue6 ip a show dev oaitun_ue1
   CmdPrefix: docker exec rfsim5g-oai-nr-ue6
   IF: oaitun_ue1
@@ -288,7 +288,7 @@ rfsim5g_ue6:
   MTU: 1500
 
 rfsim5g_ue7:
-  Host: localhost
+  Host: "%%current_host%%"
   NetworkScript: docker exec rfsim5g-oai-nr-ue7 ip a show dev oaitun_ue1
   CmdPrefix: docker exec rfsim5g-oai-nr-ue7
   IF: oaitun_ue1
@@ -297,7 +297,7 @@ rfsim5g_ue7:
   MTU: 1500
 
 rfsim5g_ue8:
-  Host: localhost
+  Host: "%%current_host%%"
   NetworkScript: docker exec rfsim5g-oai-nr-ue8 ip a show dev oaitun_ue1
   CmdPrefix: docker exec rfsim5g-oai-nr-ue8
   IF: oaitun_ue1
@@ -306,7 +306,7 @@ rfsim5g_ue8:
   MTU: 1500
 
 rfsim5g_ue9:
-  Host: localhost
+  Host: "%%current_host%%"
   NetworkScript: docker exec rfsim5g-oai-nr-ue9 ip a show dev oaitun_ue1
   CmdPrefix: docker exec rfsim5g-oai-nr-ue9
   IF: oaitun_ue1
@@ -315,7 +315,7 @@ rfsim5g_ue9:
   MTU: 1500
 
 rfsim5g_ue10:
-  Host: localhost
+  Host: "%%current_host%%"
   NetworkScript: docker exec rfsim5g-oai-nr-ue10 ip a show dev oaitun_ue1
   CmdPrefix: docker exec rfsim5g-oai-nr-ue10
   IF: oaitun_ue1
@@ -324,12 +324,12 @@ rfsim5g_ue10:
   MTU: 1500
 
 rfsim5g_ext_dn:
-  Host: localhost
+  Host: "%%current_host%%"
   NetworkScript: docker exec rfsim5g-oai-ext-dn ip a show dev eth0
   CmdPrefix: docker exec rfsim5g-oai-ext-dn
 
 rfsim4g_ue:
-  Host: localhost
+  Host: "%%current_host%%"
   NetworkScript: docker exec rfsim4g-oai-lte-ue0 ip a show dev oaitun_ue1
   CmdPrefix: docker exec rfsim4g-oai-lte-ue0
   IF: oaitun_ue1
@@ -338,30 +338,30 @@ rfsim4g_ue:
   MTU: 1500
 
 rfsim4g_ext_dn:
-  Host: localhost
+  Host: "%%current_host%%"
   NetworkScript: docker exec rfsim4g-trf-gen ip a show dev eth0
   CmdPrefix: docker exec rfsim4g-trf-gen
 
 rfsim4g_enb_nos1:
-  Host: localhost
+  Host: "%%current_host%%"
   NetworkScript: docker exec rfsim4g-oai-enb ip a show dev oaitun_enb1
   CmdPrefix: docker exec rfsim4g-oai-enb
   IF: oaitun_enb1
 
 rfsim4g_enb_fembms:
-  Host: localhost
+  Host: "%%current_host%%"
   NetworkScript: docker exec rfsim4g-oai-enb ip a show dev oaitun_enm1
   CmdPrefix: docker exec rfsim4g-oai-enb
   IF: oaitun_enm1
 
 rfsim4g_ue_fembms:
-  Host: localhost
+  Host: "%%current_host%%"
   NetworkScript: docker exec rfsim4g-oai-lte-ue0 ip a show dev oaitun_uem1
   CmdPrefix: docker exec rfsim4g-oai-lte-ue0
   IF: oaitun_uem1
 
 l2sim5g_ue:
-  Host: localhost
+  Host: "%%current_host%%"
   AttachScript: docker start l2sim-oai-nr-ue0
   DetachScript: docker stop l2sim-oai-nr-ue0
   NetworkScript: docker exec l2sim-oai-nr-ue0 ip a show dev oaitun_ue1
@@ -370,12 +370,12 @@ l2sim5g_ue:
   MTU: 1500
 
 l2sim5g_ext_dn:
-  Host: localhost
+  Host: "%%current_host%%"
   NetworkScript: docker exec l2sim-oai-ext-dn ip a show dev eth0
   CmdPrefix: docker exec l2sim-oai-ext-dn
 
 l2sim4g_ue:
-  Host: localhost
+  Host: "%%current_host%%"
   AttachScript: docker start l2sim4g-oai-lte-ue1
   DetachScript: docker stop l2sim4g-oai-lte-ue1
   NetworkScript: docker exec l2sim4g-oai-lte-ue1 ip a show dev oaitun_ue1
@@ -384,6 +384,6 @@ l2sim4g_ue:
   MTU: 1500
 
 l2sim4g_ext_dn:
-  Host: localhost
+  Host: "%%current_host%%"
   NetworkScript: docker exec l2sim4g-trf-gen ip a show dev eth0
   CmdPrefix: docker exec l2sim4g-trf-gen

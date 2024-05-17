@@ -217,6 +217,8 @@ def GetParametersFromXML(action):
 
 	elif action == 'Initialize_UE' or action == 'Attach_UE' or action == 'Detach_UE' or action == 'Terminate_UE' or action == 'CheckStatusUE' or action == 'DataEnable_UE' or action == 'DataDisable_UE':
 		CiTestObj.ue_ids = test.findtext('id').split(' ')
+		CiTestObj.nodes = test.findtext('nodes').split(' ')
+		print('-----------------------------------set citestobj.nodes as ',test.findtext('nodes').split(' '), len(test.findtext('nodes').split(' ')))
 
 	elif action == 'Build_OAI_UE':
 		CiTestObj.Build_OAI_UE_args = test.findtext('Build_OAI_UE_args')
@@ -263,12 +265,17 @@ def GetParametersFromXML(action):
 		CiTestObj.ping_args = test.findtext('ping_args')
 		CiTestObj.ping_packetloss_threshold = test.findtext('ping_packetloss_threshold')
 		CiTestObj.ue_ids = test.findtext('id').split(' ')
+		CiTestObj.nodes = test.findtext('nodes').split(' ')
+		print('-----------------------------------set citestonj.nodes as ',test.findtext('nodes').split(' '), len(test.findtext('nodes').split(' ')))
 		ping_rttavg_threshold = test.findtext('ping_rttavg_threshold') or ''
 
 	elif action == 'Iperf':
 		CiTestObj.iperf_args = test.findtext('iperf_args')
 		CiTestObj.ue_ids = test.findtext('id').split(' ')
 		CiTestObj.svr_id = test.findtext('svr_id') or None
+		CiTestObj.nodes = test.findtext('nodes').split(' ')
+		CiTestObj.svr_node = test.findtext('svr_node') or None
+		print('-----------------------------------set citestonj.nodes as ',test.findtext('nodes').split(' '), len(test.findtext('nodes').split(' ')))
 		CiTestObj.iperf_packetloss_threshold = test.findtext('iperf_packetloss_threshold')
 		CiTestObj.iperf_bitrate_threshold = test.findtext('iperf_bitrate_threshold') or '90'
 		CiTestObj.iperf_profile = test.findtext('iperf_profile') or 'balanced'
