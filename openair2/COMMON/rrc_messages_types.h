@@ -88,6 +88,8 @@
 #define NR_NAS_CONN_RELEASE_IND(mSGpTR) (mSGpTR)->ittiMsg.nr_nas_conn_release_ind
 #define NAS_UPLINK_DATA_CNF(mSGpTR)     (mSGpTR)->ittiMsg.nas_ul_data_cnf
 #define NAS_DOWNLINK_DATA_IND(mSGpTR)   (mSGpTR)->ittiMsg.nas_dl_data_ind
+#define NAS_REGISTRATION_REQ(mSGpTR)    (mSGpTR)->ittiMsg.nas_registration_req
+#define NAS_REG_REQ_IND(mSGpTR)         (mSGpTR)->ittiMsg.nas_reg_req_ind
 
 #define RRC_SUBFRAME_PROCESS(mSGpTR)    (mSGpTR)->ittiMsg.rrc_subframe_process
 #define NRRRC_FRAME_PROCESS(mSGpTR)     (mSGpTR)->ittiMsg.nr_rrc_frame_process
@@ -446,6 +448,8 @@ typedef nas_establish_cnf_t     NasConnEstabCnf;
 typedef nas_release_ind_t       NasConnReleaseInd;
 typedef ul_info_transfer_cnf_t  NasUlDataCnf;
 typedef dl_info_transfer_ind_t  NasDlDataInd;
+typedef nas_registration_req_t  NasRegistrationReq;
+typedef nas_reg_req_ind_t       NasRegistrationReqInd;
 
 // eNB: realtime -> RRC messages
 typedef struct rrc_subframe_process_s {

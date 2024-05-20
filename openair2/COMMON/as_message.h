@@ -397,6 +397,16 @@ typedef struct nas_release_ind_s {
   release_cause_t cause;      /* Release cause            */
 } nas_release_ind_t;
 
+typedef struct nas_registration_req_s {
+  /* UE lower layer identifier */
+  uint32_t UEid;
+} nas_registration_req_t;
+
+typedef struct nas_reg_req_ind_s {
+  /* NAS message to transfer */
+  as_nas_info_t nasMsg;
+} nas_reg_req_ind_t;
+
 typedef struct nas_deregistration_req_s {
   release_cause_t cause;
 } nas_deregistration_req_t;
