@@ -2492,7 +2492,9 @@ if(ENABLE_TESTS)
   # meta-target: each test is supposed to add_dependencies(tests ${NEWTEST})
   # then, it is possible to build and execute all tests using "ninja tests && ctest"
   add_custom_target(tests)
+  find_package(GTest)
 endif()
+
 
 add_subdirectory(common)
 add_subdirectory(doc)
@@ -2500,3 +2502,4 @@ add_subdirectory(openair1)
 add_subdirectory(openair2)
 add_subdirectory(openair3)
 add_subdirectory(radio)
+add_subdirectory(third_party)
