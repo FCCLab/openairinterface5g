@@ -478,7 +478,8 @@ void generateRegistrationRequest(as_nas_info_t *initialNasMsg, nr_ue_nas_t *nas)
 
   initialNasMsg->length = mm_msg_encode(mm_msg, (uint8_t*)(initialNasMsg->data), size);
   registration_request_len = initialNasMsg->length;
-
+  /* set NAS 5GMM state */
+  nas->fiveGMM_state = FGS_REGISTERED_INITIATED;
 }
 
 void generateIdentityResponse(as_nas_info_t *initialNasMsg, uint8_t identitytype, uicc_t* uicc) {
@@ -717,6 +718,8 @@ static void generateRegistrationComplete(nr_ue_nas_t *nas, as_nas_info_t *initia
   for(int i = 0; i < 4; i++){
      initialNasMsg->data[2+i] = mac[i];
   }
+  /* Set NAS 5GMM state */
+  nas->fiveGMM_state = FGS_REGISTERED;
 }
 
 void decodeDownlinkNASTransport(as_nas_info_t *initialNasMsg, uint8_t * pdu_buffer){
@@ -776,6 +779,8 @@ static void generateDeregistrationRequest(nr_ue_nas_t *nas, as_nas_info_t *initi
 
   for(int i = 0; i < 4; i++)
     initialNasMsg->data[2 + i] = mac[i];
+  /* Set NAS 5GMM state */
+  nas->fiveGMM_state = FGS_DEREGISTERED_INITIATED;
 }
 
 static void generatePduSessionEstablishRequest(nr_ue_nas_t *nas, as_nas_info_t *initialNasMsg, nas_pdu_session_req_t *pdu_req)
@@ -1237,6 +1242,8 @@ void *nas_nrue(void *args_p)
             break;
           case FGS_DEREGISTRATION_ACCEPT:
             LOG_I(NAS, "received deregistration accept\n");
+            /* Set NAS 5GMM state */
+            nas->fiveGMM_state = FGS_DEREGISTERED;
             break;
           case FGS_PDU_SESSION_ESTABLISHMENT_ACC: {
             uint8_t offset = 0;
