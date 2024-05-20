@@ -231,6 +231,8 @@ typedef struct NR_UE_RRC_INST_s {
   Rrc_State_NR_t nrRrcState;
   /* 5G Mobility Management */
   rrc5GMMInfo_t rrc5GMMInfo;
+  /* Registration Request NAS message */
+  as_nas_info_t nasRegReqMsg;
 
   //Sidelink params
   NR_SL_PreconfigurationNR_r16_t *sl_preconfig;

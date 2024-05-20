@@ -398,6 +398,15 @@ static void trigger_stop(int sig)
   if (!oai_exit)
     itti_wait_tasks_unblock();
 }
+
+static void trigger_registration(uint8_t ue_id)
+{
+  instance_t instance = 0;
+  MessageDef *msg = itti_alloc_new_message(TASK_NAS_NRUE, 0, NAS_REGISTRATION_REQ);
+  NAS_REGISTRATION_REQ(msg).UEid = instance;
+  itti_send_msg_to_task(TASK_NAS_NRUE, instance, msg);
+}
+
 static void trigger_deregistration(int sig)
 {
   if (!stop_immediately) {
@@ -589,6 +598,8 @@ int main(int argc, char **argv)
     printf("cannot create ITTI tasks\n");
     exit(-1); // need a softer mode
   }
+  /* Trigger NAS Registration Request */
+  trigger_registration(ue_id);
 
   // Sleep a while before checking all parameters have been used
   // Some are used directly in external threads, asynchronously
