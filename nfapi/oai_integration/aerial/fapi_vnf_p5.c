@@ -54,31 +54,8 @@ void *aerial_vnf_nr_aerial_p7_start_thread(void *ptr)
 
 void *aerial_vnf_nr_p7_thread_start(void *ptr)
 {
-  // set_thread_priority(79);
-  int s;
-  /*cpu_set_t cpuset;
 
-  CPU_SET(8, &cpuset);
-  s = pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
-  if (s != 0)
-    printf("failed to set afinity\n");
-  */
-  set_priority(79);
-
-
-  // @Ruben, all of this code is useless, isn't it? ptAttr and thread_params are not used in the pthread_create below.
-  pthread_attr_t ptAttr;
-  if (pthread_attr_setschedpolicy(&ptAttr, SCHED_RR) != 0) {
-    printf("Failed to set pthread sched policy SCHED_RR\n");
-  }
-
-  pthread_attr_setinheritsched(&ptAttr, PTHREAD_EXPLICIT_SCHED);
-  struct sched_param thread_params;
-  thread_params.sched_priority = 20;
-
-  if (pthread_attr_setschedparam(&ptAttr, &thread_params) != 0) {
-    printf("failed to set sched param\n");
-  }
+  vnf_p7_info *p7_vnf = (vnf_p7_info *)ptr;
 
   init_queue(&gnb_rach_ind_queue);
   init_queue(&gnb_rx_ind_queue);
@@ -86,7 +63,6 @@ void *aerial_vnf_nr_p7_thread_start(void *ptr)
   init_queue(&gnb_uci_ind_queue);
   init_queue(&gnb_slot_ind_queue);
 
-  vnf_p7_info *p7_vnf = (vnf_p7_info *)ptr;
   p7_vnf->config->port = p7_vnf->local_port;
   p7_vnf->config->sync_indication = &aerial_phy_sync_indication;
   p7_vnf->config->slot_indication = &aerial_phy_slot_indication;
@@ -116,8 +92,38 @@ void *aerial_vnf_nr_p7_thread_start(void *ptr)
   p7_vnf->config->codec_config.deallocate = &aerial_vnf_deallocate;
   p7_vnf->config->allocate_p7_vendor_ext = &aerial_phy_allocate_p7_vendor_ext;
   p7_vnf->config->deallocate_p7_vendor_ext = &aerial_phy_deallocate_p7_vendor_ext;
+
+  // FK 20240521
+  // with Aerial, the P7 thread is not doing anything except, so we don't start it anymore.
+  /*
+  pthread_attr_t ptAttr;
+  if (pthread_attr_setschedpolicy(&ptAttr, SCHED_RR) != 0) {
+    printf("Failed to set pthread sched policy SCHED_RR\n");
+  }
+  if (pthread_attr_setinheritsched(&ptAttr, PTHREAD_EXPLICIT_SCHED) != 0) {
+    printf("Failed to set pthread inherit sched PTHREAD_EXPLICIT_SCHED");
+  }
+      
+  struct sched_param thread_params;
+  thread_params.sched_priority = 79;
+
+  if (pthread_attr_setschedparam(&ptAttr, &thread_params) != 0) {
+    printf("failed to set sched param\n");
+  }
+
   NFAPI_TRACE(NFAPI_TRACE_INFO, "[VNF] Creating VNF NFAPI P7 start thread %s\n", __FUNCTION__);
-  pthread_create(&vnf_aerial_p7_start_pthread, NULL, &aerial_vnf_nr_aerial_p7_start_thread, p7_vnf->config);
+  int ret;
+  ret = pthread_create(&vnf_aerial_p7_start_pthread, &ptAttr, &aerial_vnf_nr_aerial_p7_start_thread, p7_vnf->config);
+  AssertFatal(ret == 0, "Error in pthread_create(): ret: %d, errno: %d\n", ret, errno);
+
+  if (p7_vnf->thread_core!=-1) {
+    cpu_set_t cpuset;
+    CPU_SET(p7_vnf->thread_core, &cpuset);
+    int s = pthread_setaffinity_np(vnf_aerial_p7_start_pthread, sizeof(cpu_set_t), &cpuset);
+    if (s != 0)
+      printf("failed to set afinity\n");
+  }
+  */
   return 0;
 }
 

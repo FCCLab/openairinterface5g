@@ -582,8 +582,12 @@ int stick_this_thread_to_core(int core_id)
 void *epoll_recv_task(void *arg)
 {
   struct epoll_event ev, events[MAX_EVENTS];
+
   //stick_this_thread_to_core(10);
+  pthread_setname_np(pthread_self(), "VNF_nvIPC_AERIAL");
+
   LOG_D(NFAPI_VNF,"Aerial recv task start \n");
+
   int epoll_fd = epoll_create1(0);
   if (epoll_fd == -1) {
     LOG_E(NFAPI_VNF, "%s epoll_create failed\n", __func__);
