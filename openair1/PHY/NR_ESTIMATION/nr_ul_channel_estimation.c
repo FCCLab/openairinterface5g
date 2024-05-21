@@ -83,8 +83,7 @@ int inner_channel_estimation(puschAntennaProc_t *rdata) {
   int *max_ch = rdata->max_ch;
   c16_t *ul_ls_est = rdata->ul_ls_est;
   NR_gNB_PUSCH *pusch_vars = rdata->pusch_vars;
-//  delay_t *delay = rdata->delay;
-  delay_t *delay = &data->delay;
+  delay_t *delay = rdata->delay;
   uint64_t noise_amp2 = rdata->noise_amp2;
   int nest_count = rdata->nest_count;
   const int nushift = rdata->nushift;
