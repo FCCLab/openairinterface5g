@@ -34,6 +34,8 @@
 #include "f1ap_encoder.h"
 #include "f1ap_itti_messaging.h"
 #include "f1ap_cu_interface_management.h"
+#include "f1ap_default_values.h"
+#include "lib/f1ap_interface_management.h"
 
 int CU_send_RESET(sctp_assoc_t assoc_id, F1AP_Reset_t *Reset)
 {

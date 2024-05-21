@@ -19,23 +19,18 @@
  *      contact@openairinterface.org
  */
 
-#ifndef F1AP_LIB_INCLUDES_H_
-#define F1AP_LIB_INCLUDES_H_
+#ifndef F1AP_INTERFACE_MANAGEMENT_H_
+#define F1AP_INTERFACE_MANAGEMENT_H_
 
-#include "F1AP_F1AP-PDU.h"
-#include "F1AP_InitialULRRCMessageTransfer.h"
-#include "F1AP_InitiatingMessage.h"
-#include "F1AP_NRCellIdentity.h"
-#include "F1AP_ProtocolIE-Field.h"
-#include "F1AP_ServedPLMNs-Item.h"
-#include "F1AP_ProtocolExtensionContainer.h"
-#include "F1AP_ProtocolExtensionField.h"
-#include "F1AP_ProtocolIE-Field.h"
-#include "F1AP_SliceSupportItem.h"
-#include "F1AP_NR-Mode-Info.h"
-#include "F1AP_GNB-DU-System-Information.h"
-#include "F1AP_FDD-Info.h"
-#include "F1AP_TDD-Info.h"
-#include "F1AP_FreqBandNrItem.h"
+#include <stdbool.h>
+#include "f1ap_messages_types.h"
 
-#endif /* F1AP_LIB_INCLUDES_H_ */
+struct F1AP_F1AP_PDU;
+
+struct F1AP_F1AP_PDU *encode_f1ap_setup_request(const f1ap_setup_req_t *msg);
+bool decode_f1ap_setup_request(const struct F1AP_F1AP_PDU *pdu, f1ap_setup_req_t *out);
+f1ap_setup_req_t cp_f1ap_setup_request(const f1ap_setup_req_t *msg);
+bool eq_f1ap_setup_request(const f1ap_setup_req_t *a, const f1ap_setup_req_t *b);
+void free_f1ap_setup_request(f1ap_setup_req_t *msg);
+
+#endif /* F1AP_INTERFACE_MANAGEMENT_H_ */

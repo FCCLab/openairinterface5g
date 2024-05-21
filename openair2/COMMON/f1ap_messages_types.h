@@ -175,7 +175,7 @@ typedef struct served_cells_to_activate_s {
   f1ap_plmn_t plmn;
   // NR Global Cell Id
   uint64_t nr_cellid;
-  /// NRPCI
+  /// NRPCI [int 0..1007]
   uint16_t nrpci;
   /// num SI messages per DU cell
   uint8_t num_SI;

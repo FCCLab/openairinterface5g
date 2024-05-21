@@ -25,6 +25,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
+#include "openair3/UTILS/conversions.h"
 
 #define CHECK_F1AP_CONDITION(condition)                                       \
   do {                                                                        \
@@ -77,8 +78,23 @@
     }                                                                                                \
   } while (0)
 
+#define addnRCGI(nRCGi, servedCelL)                      \
+  MCC_MNC_TO_PLMNID((servedCelL)->plmn.mcc,              \
+                    (servedCelL)->plmn.mnc,              \
+                    (servedCelL)->plmn.mnc_digit_length, \
+                    &((nRCGi).pLMN_Identity));           \
+  NR_CELL_ID_TO_BIT_STRING((servedCelL)->nr_cellid, &((nRCGi).nRCellIdentity));
+
 struct f1ap_plmn_t;
 bool eq_f1ap_plmn(const struct f1ap_plmn_t *a, const struct f1ap_plmn_t *b);
+struct f1ap_served_cell_info_t;
+bool eq_f1ap_cell_info(const struct f1ap_served_cell_info_t *a, const struct f1ap_served_cell_info_t *b);
+struct f1ap_gnb_du_system_info_t;
+bool eq_f1ap_sys_info(const struct f1ap_gnb_du_system_info_t *a, const struct f1ap_gnb_du_system_info_t *b);
+struct f1ap_nr_frequency_info_t;
+bool eq_f1ap_freq_info(const struct f1ap_nr_frequency_info_t *a, const struct f1ap_nr_frequency_info_t *b);
+struct f1ap_transmission_bandwidth_t;
+bool eq_f1ap_tx_bandwidth(const struct f1ap_transmission_bandwidth_t *a, const struct f1ap_transmission_bandwidth_t *b);
 
 struct OCTET_STRING;
 uint8_t *cp_octet_string(const struct OCTET_STRING *os, int *len);
