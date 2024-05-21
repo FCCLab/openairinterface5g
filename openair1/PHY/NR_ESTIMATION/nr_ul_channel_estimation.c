@@ -83,7 +83,8 @@ int inner_channel_estimation(puschAntennaProc_t *rdata) {
   int *max_ch = rdata->max_ch;
   c16_t *ul_ls_est = rdata->ul_ls_est;
   NR_gNB_PUSCH *pusch_vars = rdata->pusch_vars;
-  delay_t *delay = rdata->delay;
+//  delay_t *delay = rdata->delay;
+  delay_t *delay = &data->delay;
   uint64_t noise_amp2 = rdata->noise_amp2;
   int nest_count = rdata->nest_count;
   const int nushift = rdata->nushift;
@@ -491,6 +492,11 @@ int nr_pusch_channel_estimation(PHY_VARS_gNB *gNB,
  delay_t *delay = &gNB->ulsch[ul_id].delay;
  memset(delay, 0, sizeof(*delay));
 
+ //
+ // max_ch array size of rx antennas
+ // noise_amp2 size of rx antennas
+
+
 //Initializing the structure before going through the loop
  puschAntennaProc_t *rdata = (puschAntennaProc_t *)malloc(
      sizeof(puschAntennaProc_t) + symbolSize * sizeof(c16_t)
@@ -507,7 +513,9 @@ int nr_pusch_channel_estimation(PHY_VARS_gNB *gNB,
    // Local init in the current loop
    rdata->aarx = aarx;
    rdata->nest_count = nest_count;
-   rdata->noise_amp2 = noise_amp2;
+   rdata->noise_amp2 = noise_amp2; // noise_amp2[aarx]
+   rdata->max_ch = max_ch; // max_ch[aarx]
+
    rdata->ul_ls_est = ul_ls_est;
    rdata->delay = delay;
 
@@ -525,7 +533,6 @@ int nr_pusch_channel_estimation(PHY_VARS_gNB *gNB,
    rdata->nb_rb_pusch = nb_rb_pusch;
    rdata->p = p;
    rdata->soffset = soffset;
-   rdata->max_ch = max_ch;
    rdata->pusch_vars = pusch_vars;
    rdata->nushift = nushift;
 
@@ -537,7 +544,6 @@ int nr_pusch_channel_estimation(PHY_VARS_gNB *gNB,
    noise_amp2 = rdata->noise_amp2;  // Placeholder for noise amplitude squared update
    delay->est_delay = rdata->delay->est_delay;  // Placeholder for estimated delay update
    nest_count = rdata->nest_count;  // Placeholder for nested count update
-   // ul_ls_est = rdata->ul_ls_est; // Is this needed?
  }
 
  // Free the allocated memory
