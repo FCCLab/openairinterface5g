@@ -402,9 +402,7 @@ static void inner_channel_estimation(void *arg) {
  delay->est_delay = rdata->delay->est_delay;  // Placeholder for estimated delay update
  nest_count = rdata->nest_count;  // Placeholder for nested count update
  rdata->ul_ls_est = ul_ls_est; // Placeholder for uplink least square estimation
-
- return 0;
-
+ 
 }
 
 int nr_pusch_channel_estimation(PHY_VARS_gNB *gNB,
@@ -502,9 +500,7 @@ int nr_pusch_channel_estimation(PHY_VARS_gNB *gNB,
  for (int aarx=0; aarx<gNB->frame_parms.nb_antennas_rx; aarx++) {
 
    notifiedFIFO_elt_t *req = newNotifiedFIFO_elt(sizeof(puschAntennaProc_t), aarx, &gNB->respPuschAarx, &inner_channel_estimation); // create a job for Tpool
-   puschSymbolProc_t *rdata = (puschSymbolProc_t*)NotifiedFifoData(req); // data for the job
-
-   puschAntennaProc_t *rdata = malloc(sizeof(puschAntennaProc_t));
+   puschAntennaProc_t *rdata = (puschAntennaProc_t*)NotifiedFifoData(req); // data for the job
 
    // Local init in the current loop
    rdata->aarx = aarx;
@@ -550,9 +546,6 @@ int nr_pusch_channel_estimation(PHY_VARS_gNB *gNB,
    gNB->nbAarx--;
    delNotifiedFIFO_elt(req);
  }
-
- // Free the allocated memory
- free(rdata);
 
 #ifdef DEBUG_CH
  fclose(debug_ch_est);
