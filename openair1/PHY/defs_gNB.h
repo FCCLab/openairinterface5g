@@ -707,6 +707,7 @@ typedef struct PHY_VARS_gNB_s {
   time_stats_t rx_dft_stats;
   time_stats_t ulsch_freq_offset_estimation_stats;
   */
+  notifiedFIFO_t respPuschAarx;
   notifiedFIFO_t respPuschSymb;
   notifiedFIFO_t respDecode;
   notifiedFIFO_t resp_L1;
@@ -717,6 +718,7 @@ typedef struct PHY_VARS_gNB_s {
   notifiedFIFO_t resp_RU_tx;
   tpool_t threadPool;
   int nbSymb;
+  int nbAarx;
   int num_pusch_symbols_per_thread;
   int dmrs_num_antennas_per_thread;
   pthread_t L1_rx_thread;

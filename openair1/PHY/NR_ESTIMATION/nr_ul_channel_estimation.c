@@ -65,7 +65,9 @@ __attribute__((always_inline)) inline c16_t c32x16cumulVectVectWithSteps(c16_t *
 }
 
 
-int inner_channel_estimation(puschAntennaProc_t *rdata) {
+static void inner_channel_estimation(void *arg) {
+  puschAntennaProc_t *rdata=(puschAntennaProc_t*)arg;
+
   PHY_VARS_gNB *gNB = rdata->gNB;
   int aarx = rdata->aarx;
   const int symbol_offset = rdata->symbol_offset;
@@ -484,6 +486,8 @@ int nr_pusch_channel_estimation(PHY_VARS_gNB *gNB,
 
 #endif
 
+ gNB->nbAarx = 0;
+
  int nest_count = 0;
  uint64_t noise_amp2 = 0;
  c16_t ul_ls_est[symbolSize] __attribute__((aligned(32)));
@@ -495,19 +499,12 @@ int nr_pusch_channel_estimation(PHY_VARS_gNB *gNB,
  // max_ch array size of rx antennas
  // noise_amp2 size of rx antennas
 
-
-//Initializing the structure before going through the loop
- puschAntennaProc_t *rdata = (puschAntennaProc_t *)malloc(
-     sizeof(puschAntennaProc_t) + symbolSize * sizeof(c16_t)
- );
-
- if (!rdata) {
-   perror("Failed to allocate memory");
-   return -1;
- }
-
  for (int aarx=0; aarx<gNB->frame_parms.nb_antennas_rx; aarx++) {
 
+   notifiedFIFO_elt_t *req = newNotifiedFIFO_elt(sizeof(puschAntennaProc_t), aarx, &gNB->respPuschAarx, &inner_channel_estimation); // create a job for Tpool
+   puschSymbolProc_t *rdata = (puschSymbolProc_t*)NotifiedFifoData(req); // data for the job
+
+   puschAntennaProc_t *rdata = malloc(sizeof(puschAntennaProc_t));
 
    // Local init in the current loop
    rdata->aarx = aarx;
@@ -517,7 +514,6 @@ int nr_pusch_channel_estimation(PHY_VARS_gNB *gNB,
 
    rdata->ul_ls_est = ul_ls_est;
    rdata->delay = delay;
-
 
    rdata->gNB = gNB;
    rdata->symbol_offset = symbol_offset;
@@ -536,13 +532,23 @@ int nr_pusch_channel_estimation(PHY_VARS_gNB *gNB,
    rdata->nushift = nushift;
 
    // Call the inner_channel_estimation function
-   inner_channel_estimation(rdata);
+   //   inner_channel_estimation(rdata);
+   pushTpool(&gNB->threadPool, req);
+   gNB->nbAarx++;
+
+   LOG_D(PHY,"Added Antenna (count %d) to process, in pipe\n",gNB->nbAarx);
 
    // value update of rdata to be passed to the next inner call
    max_ch = rdata->max_ch;  // Placeholder for max channel value update
    noise_amp2 = rdata->noise_amp2;  // Placeholder for noise amplitude squared update
    delay->est_delay = rdata->delay->est_delay;  // Placeholder for estimated delay update
    nest_count = rdata->nest_count;  // Placeholder for nested count update
+ } // Antenna Loop
+
+ while (gNB->nbAarx > 0) {
+   notifiedFIFO_elt_t *req = pullTpool(&gNB->respPuschAarx, &gNB->threadPool);
+   gNB->nbAarx--;
+   delNotifiedFIFO_elt(req);
  }
 
  // Free the allocated memory
