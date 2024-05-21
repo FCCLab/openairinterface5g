@@ -8,6 +8,7 @@
 #include "F1AP_F1AP-PDU.h"
 
 #include "f1ap_lib_extern.h"
+#include "lib/f1ap_interface_management.h"
 
 void exit_function(const char *file, const char *function, const int line, const char *s, const int assert)
 {
@@ -155,10 +156,88 @@ static void test_ul_rrc_message_transfer(void)
   free_ul_rrc_message_transfer(&cp);
 }
 
+/**
+ * @brief Test F1AP Setup Request Encoding/Decoding
+ */
+static void test_f1ap_setup_request(void)
+{
+  /* allocate memory */
+  /* gNB_DU_name */
+  uint8_t *gNB_DU_name = (uint8_t *)calloc(strlen("OAI DU") + 1, sizeof(uint8_t));
+  AssertFatal(gNB_DU_name != NULL, "out of memory\n");
+  strcpy((char *)gNB_DU_name, "OAI DU");
+  /* sys_info */
+  uint8_t *mib = calloc(3, sizeof(uint8_t));
+  uint8_t *sib1 = calloc(3, sizeof(uint8_t));
+  f1ap_gnb_du_system_info_t sys_info = {
+      .mib_length = 3,
+      .mib = mib,
+      .sib1_length = 3,
+      .sib1 = sib1,
+  };
+  /* measurement_timing_information */
+  int measurement_timing_config_len = strlen("0") + 1;
+  uint8_t *measurement_timing_information = (uint8_t *)calloc(measurement_timing_config_len, sizeof(uint8_t));
+  AssertFatal(measurement_timing_information != NULL, "out of memory\n");
+  strcpy((char *)measurement_timing_information, "0");
+  /* TAC */
+  uint32_t *tac = calloc(1, sizeof(uint32_t));
+  /* info */
+  f1ap_served_cell_info_t info = {
+      .mode = F1AP_MODE_TDD,
+      .tdd.freqinfo.arfcn = 640000,
+      .tdd.freqinfo.band = 78,
+      .tdd.tbw.nrb = 66,
+      .tdd.tbw.scs = 1,
+      .measurement_timing_config_len = measurement_timing_config_len,
+      .measurement_timing_config = measurement_timing_information,
+      .nr_cellid = 123456,
+      .plmn.mcc = 1,
+      .plmn.mnc = 1,
+      .plmn.mnc_digit_length = 3,
+      .num_ssi = 1,
+      .nssai[0].sst = 1,
+      .nssai[0].sd = 1,
+      .tac = tac,
+  };
+  /* create message */
+  f1ap_setup_req_t orig = {
+      .gNB_DU_id = 1,
+      .gNB_DU_name = (char *)gNB_DU_name,
+      .num_cells_available = 1,
+      .transaction_id = 2,
+      .rrc_ver[0] = 12,
+      .rrc_ver[1] = 34,
+      .rrc_ver[2] = 56,
+      .cell[0].info = info,
+  };
+  orig.cell[0].sys_info = calloc(1, sizeof(*orig.cell[0].sys_info));
+  *orig.cell[0].sys_info = sys_info;
+  F1AP_F1AP_PDU_t *f1enc = encode_f1ap_setup_request(&orig);
+  F1AP_F1AP_PDU_t *f1dec = f1ap_encode_decode(f1enc);
+  f1ap_msg_free(f1enc);
+
+  f1ap_setup_req_t decoded;
+  bool ret = decode_f1ap_setup_request(f1dec, &decoded);
+  AssertFatal(ret, "decode_f1ap_setup_request(): could not decode message\n");
+  f1ap_msg_free(f1dec);
+
+  ret = eq_f1ap_setup_request(&orig, &decoded);
+  AssertFatal(ret, "eq_f1ap_setup_request(): decoded message doesn't match\n");
+  free_f1ap_setup_request(&decoded);
+
+  f1ap_setup_req_t cp = cp_f1ap_setup_request(&orig);
+  ret = eq_f1ap_setup_request(&orig, &cp);
+  AssertFatal(ret, "eq_f1ap_setup_request(): copied message doesn't match\n");
+  free_f1ap_setup_request(&cp);
+  free_f1ap_setup_request(&orig);
+}
+
 int main()
 {
   test_initial_ul_rrc_message_transfer();
   test_dl_rrc_message_transfer();
   test_ul_rrc_message_transfer();
+  test_f1ap_setup_request();
   return 0;
 }
