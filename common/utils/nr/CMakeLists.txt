@@ -1,0 +1,2 @@
+add_library(nr_common nr_common.c)
+target_include_directories(nr_common PUBLIC .)
