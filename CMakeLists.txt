@@ -450,14 +450,11 @@ add_library(f1ap
             ${F1AP_DIR}/f1ap_cu_rrc_message_transfer.c
             ${F1AP_DIR}/f1ap_cu_task.c
             ${F1AP_DIR}/f1ap_cu_ue_context_management.c
-            ${F1AP_DIR}/f1ap_cu_warning_message_transmission.c
             ${F1AP_DIR}/f1ap_du_interface_management.c
             ${F1AP_DIR}/f1ap_du_paging.c
             ${F1AP_DIR}/f1ap_du_rrc_message_transfer.c
-            ${F1AP_DIR}/f1ap_du_system_information.c
             ${F1AP_DIR}/f1ap_du_task.c
             ${F1AP_DIR}/f1ap_du_ue_context_management.c
-            ${F1AP_DIR}/f1ap_du_warning_message_transmission.c
             ${F1AP_DIR}/f1ap_encoder.c
             ${F1AP_DIR}/f1ap_handlers.c
             ${F1AP_DIR}/f1ap_itti_messaging.c)
