@@ -607,26 +607,11 @@ typedef struct PHY_VARS_gNB_s {
   // PUCCH0 Look-up table for cyclic-shifts
   NR_gNB_PUCCH0_LUT_t pucch0_lut;
 
-  /// PBCH DMRS sequence
-  uint32_t nr_gold_pbch_dmrs[2][64][NR_PBCH_DMRS_LENGTH_DWORD];
-
   /// PBCH interleaver
   uint8_t nr_pbch_interleaver[NR_POLAR_PBCH_PAYLOAD_BITS];
 
-  /// PDCCH DMRS sequence
-  uint32_t ***nr_gold_pdcch_dmrs;
-
-  /// PDSCH DMRS sequence
-  uint32_t ****nr_gold_pdsch_dmrs;
-
-  /// PUSCH DMRS
-  uint32_t ****nr_gold_pusch_dmrs;
-
   // Mask of occupied RBs, per symbol and PRB
   uint32_t rb_mask_ul[14][9];
-
-  /// PRS sequence
-  uint32_t ****nr_gold_prs;
 
   /// PRACH root sequence
   c16_t X_u[64][839];

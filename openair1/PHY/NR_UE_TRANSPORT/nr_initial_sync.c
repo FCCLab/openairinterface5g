@@ -81,7 +81,7 @@ static bool nr_pbch_detection(const UE_nr_rxtx_proc_t *proc,
       // computing correlation between received DMRS symbols and transmitted sequence for current i_ssb and n_hf
       cd_t cumul = {0};
       for (int i = pbch_initial_symbol; i < pbch_initial_symbol + 3; i++) {
-        c32_t meas = nr_pbch_dmrs_correlation(ue, proc, i, i - pbch_initial_symbol, ue->nr_gold_pbch[hf][l], rxdataF);
+        c32_t meas = nr_pbch_dmrs_correlation(ue, proc, i, i - pbch_initial_symbol, nr_gold_pbch(ue, hf, l), rxdataF);
         csum(cumul, cumul, meas);
       }
       *current_ssb = (NR_UE_SSB){.i_ssb = l, .n_hf = hf, .metric = squaredMod(cumul)};
@@ -240,7 +240,6 @@ nr_initial_sync_t nr_initial_sync(UE_nr_rxtx_proc_t *proc, PHY_VARS_NR_UE *ue, i
     }
 
     if (ret.cell_detected) { // we got sss channel
-      nr_gold_pbch(ue);
       ret.cell_detected = nr_pbch_detection(proc, ue, 1, rxdataF); // start pbch detection at first symbol after pss
     }
 
@@ -259,20 +258,14 @@ nr_initial_sync_t nr_initial_sync(UE_nr_rxtx_proc_t *proc, PHY_VARS_NR_UE *ue, i
 
       // compute the scramblingID_pdcch and the gold pdcch
       ue->scramblingID_pdcch = fp->Nid_cell;
-      nr_gold_pdcch(ue, fp->Nid_cell);
-
       // compute the scrambling IDs for PDSCH DMRS
       for (int i = 0; i < NR_NB_NSCID; i++) {
         ue->scramblingID_dlsch[i] = fp->Nid_cell;
-        nr_gold_pdsch(ue, i, ue->scramblingID_dlsch[i]);
       }
-
-      nr_init_csi_rs(fp, ue->nr_csi_info->nr_gold_csi_rs, fp->Nid_cell);
 
       // initialize the pusch dmrs
       for (int i = 0; i < NR_NB_NSCID; i++) {
         ue->scramblingID_ulsch[i] = fp->Nid_cell;
-        nr_init_pusch_dmrs(ue, ue->scramblingID_ulsch[i], i);
       }
 
       // we also need to take into account the shift by samples_per_frame in case the if is true

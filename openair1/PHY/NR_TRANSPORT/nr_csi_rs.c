@@ -26,23 +26,6 @@
 
 //#define NR_CSIRS_DEBUG
 
-
-void nr_init_csi_rs(const NR_DL_FRAME_PARMS *fp, uint32_t ***csi_rs, uint32_t Nid) {
-  uint32_t x1 = 0, x2 = 0;
-  uint8_t reset;
-  int csi_dmrs_init_length =  ((fp->N_RB_DL<<4)>>5)+1;
-  for (uint8_t slot=0; slot<fp->slots_per_frame; slot++) {
-    for (uint8_t symb=0; symb<fp->symbols_per_slot; symb++) {
-      reset = 1;
-      x2 = ((1<<10) * (fp->symbols_per_slot*slot+symb+1) * ((Nid<<1)+1) + (Nid));
-      for (uint32_t n=0; n<csi_dmrs_init_length; n++) {
-        csi_rs[slot][symb][n] = lte_gold_generic(&x1, &x2, reset);
-        reset = 0;
-      }
-    }
-  }
-}
-
 void nr_generate_csi_rs(const NR_DL_FRAME_PARMS *frame_parms,
                         int32_t **dataF,
                         const int16_t amp,
@@ -75,8 +58,7 @@ void nr_generate_csi_rs(const NR_DL_FRAME_PARMS *frame_parms,
   LOG_I(NR_PHY, "csi_params->power_control_offset_ss = %i\n", csi_params->power_control_offset_ss);
 #endif
 
-  int dataF_offset = slot*frame_parms->samples_per_slot_wCP;
-  uint32_t **nr_gold_csi_rs = nr_csi_info->nr_gold_csi_rs[slot];
+  int dataF_offset = slot * frame_parms->samples_per_slot_wCP;
   //*8(max allocation per RB)*2(QPSK))
   int csi_rs_length =  frame_parms->N_RB_DL<<4;
   int16_t mod_csi[frame_parms->symbols_per_slot][csi_rs_length>>1] __attribute__((aligned(16)));
@@ -96,7 +78,6 @@ void nr_generate_csi_rs(const NR_DL_FRAME_PARMS *frame_parms,
   // if the scrambling id is not the one previously used to initialize we need to re-initialize the rs
   if (csi_params->scramb_id != nr_csi_info->csi_gold_init) {
     nr_csi_info->csi_gold_init = csi_params->scramb_id;
-    nr_init_csi_rs(frame_parms, nr_csi_info->nr_gold_csi_rs, csi_params->scramb_id);
   }
 
   switch (csi_params->row) {
@@ -580,14 +561,14 @@ void nr_generate_csi_rs(const NR_DL_FRAME_PARMS *frame_parms,
 
     for (lp=0; lp<=lprime; lp++){
       symb = csi_params->symb_l0;
-      nr_modulation(nr_gold_csi_rs[symb+lp], csi_length, DMRS_MOD_ORDER, mod_csi[symb+lp]);
+      nr_modulation(nr_init_csi_rs(frame_parms, slot, symb + lp, csi_params->scramb_id), csi_length, DMRS_MOD_ORDER, mod_csi[symb + lp]);
       if ((csi_params->row == 5) || (csi_params->row == 7) || (csi_params->row == 11) || (csi_params->row == 13) || (csi_params->row == 16))
-        nr_modulation(nr_gold_csi_rs[symb+1], csi_length, DMRS_MOD_ORDER, mod_csi[symb+1]);
+        nr_modulation(nr_init_csi_rs(frame_parms, slot, symb + 1, csi_params->scramb_id), csi_length, DMRS_MOD_ORDER, mod_csi[symb + 1]);
       if ((csi_params->row == 14) || (csi_params->row == 13) || (csi_params->row == 16) || (csi_params->row == 17)) {
         symb = csi_params->symb_l1;
-        nr_modulation(nr_gold_csi_rs[symb+lp], csi_length, DMRS_MOD_ORDER, mod_csi[symb+lp]);
+        nr_modulation(nr_init_csi_rs(frame_parms, slot, symb + lp, csi_params->scramb_id), csi_length, DMRS_MOD_ORDER, mod_csi[symb + lp]);
         if ((csi_params->row == 13) || (csi_params->row == 16))
-          nr_modulation(nr_gold_csi_rs[symb+1], csi_length, DMRS_MOD_ORDER, mod_csi[symb+1]);
+          nr_modulation(nr_init_csi_rs(frame_parms, slot, symb + 1, csi_params->scramb_id), csi_length, DMRS_MOD_ORDER, mod_csi[symb + 1]);
       }
     }
   }

@@ -27,27 +27,26 @@
 #include "PHY/defs_gNB.h"
 #include "PHY/LTE_REFSIG/lte_refsig.h"
 #include "PHY/sse_intrin.h"
+#include "nr_refsig_common.h"
 
 /*!\brief This function generates the NR Gold sequence (38-211, Sec 5.2.1) for the PBCH DMRS.
 @param PHY_VARS_gNB* gNB structure provides configuration, frame parameters and the pointers to the 32 bits sequence storage tables
  */
-void nr_init_pbch_dmrs(PHY_VARS_gNB* gNB);
-
+uint32_t *nr_init_pbch_dmrs(PHY_VARS_gNB *gNB, int n_hf, int ssb);
 /*
 This function generates NR Gold Sequence(ts 138.211) for the PRS.
 @param PHY_VARS_gNB* gNB structure provides configuration, frame parameters and the pointers to the 32 bits sequence storage tables
 */
-void nr_init_prs(PHY_VARS_gNB* gNB);
+uint32_t *nr_init_prs(PHY_VARS_gNB *gNB, int rsc_id, int slotNum, int symNum);
 
 /*!\brief This function generates the NR Gold sequence (38-211, Sec 5.2.1) for the PDCCH DMRS.
 @param PHY_VARS_gNB* gNB structure provides configuration, frame parameters and the pointers to the 32 bits sequence storage tables
 @param Nid is used for the initialization of x2, Physical cell Id by default or upper layer configured pdcch_scrambling_ID
  */
-void nr_init_pdcch_dmrs(PHY_VARS_gNB* gNB, uint32_t Nid);
-void nr_init_pdsch_dmrs(PHY_VARS_gNB* gNB, uint8_t nscid, uint32_t Nid);
-void nr_init_csi_rs(const NR_DL_FRAME_PARMS *fp, uint32_t ***csi_rs, uint32_t Nid);
-
-void nr_gold_pusch(PHY_VARS_gNB* gNB, int nscid, uint32_t nid);
+uint32_t *nr_init_pdcch_dmrs(PHY_VARS_gNB *gNB, int Nid, int slot, int symbol);
+uint32_t *nr_gold_pdsch_dmrs(PHY_VARS_gNB *gNB, uint nscid, int Nid, int slot, int symbol);
+uint32_t *nr_init_csi_rs(const NR_DL_FRAME_PARMS *fp, int slot, int symbol, uint32_t Nid);
+uint32_t *nr_gold_pusch(PHY_VARS_gNB *gNB, int nscid, int slot, int symbol);
 
 int nr_pusch_dmrs_delta(uint8_t dmrs_config_type, unsigned short p);
 

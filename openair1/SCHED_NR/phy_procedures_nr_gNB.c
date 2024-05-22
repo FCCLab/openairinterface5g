@@ -109,14 +109,14 @@ void nr_common_signal_procedures(PHY_VARS_gNB *gNB,int frame,int slot, nfapi_nr_
   nr_generate_sss(&txdataF[0][txdataF_offset], gNB->TX_AMP, ssb_start_symbol, cfg, fp);
 
   if (fp->Lmax == 4)
-    nr_generate_pbch_dmrs(gNB->nr_gold_pbch_dmrs[n_hf][ssb_index & 7],
+    nr_generate_pbch_dmrs(nr_init_pbch_dmrs(gNB, n_hf, ssb_index & 7),
                           &txdataF[0][txdataF_offset],
                           gNB->TX_AMP,
                           ssb_start_symbol,
                           cfg,
                           fp);
   else
-    nr_generate_pbch_dmrs(gNB->nr_gold_pbch_dmrs[0][ssb_index & 7],
+    nr_generate_pbch_dmrs(nr_init_pbch_dmrs(gNB, 0, ssb_index & 7),
                           &txdataF[0][txdataF_offset],
                           gNB->TX_AMP,
                           ssb_start_symbol,
@@ -186,7 +186,7 @@ void phy_procedures_gNB_TX(processingData_L1tx_t *msgTx,
       {
         slot_prs = (slot - i*prs_config->PRSResourceTimeGap + fp->slots_per_frame)%fp->slots_per_frame;
         LOG_D(PHY,"gNB_TX: frame %d, slot %d, slot_prs %d, PRS Resource ID %d\n",frame, slot, slot_prs, rsc_id);
-        nr_generate_prs(gNB->nr_gold_prs[rsc_id][slot_prs],&gNB->common_vars.txdataF[0][txdataF_offset], AMP, prs_config, cfg, fp);
+        nr_generate_prs(slot_prs, &gNB->common_vars.txdataF[0][txdataF_offset], AMP, prs_config, cfg, fp);
       }
     }
   }

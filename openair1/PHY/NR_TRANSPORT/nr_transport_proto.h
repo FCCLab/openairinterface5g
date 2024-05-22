@@ -40,7 +40,7 @@
 
 NR_gNB_PHY_STATS_t *get_phy_stats(PHY_VARS_gNB *gNB, uint16_t rnti);
 
-int nr_generate_prs(uint32_t **nr_gold_prs,
+int nr_generate_prs(int slot,
                     c16_t *txdataF,
                     int16_t amp,
                     prs_config_t *prs_cfg,

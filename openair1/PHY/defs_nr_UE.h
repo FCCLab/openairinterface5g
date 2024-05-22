@@ -401,32 +401,13 @@ typedef struct PHY_VARS_NR_UE_s {
   uint32_t dmrs_pbch_bitmap_nr[DMRS_PBCH_I_SSB][DMRS_PBCH_N_HF][DMRS_BITMAP_SIZE];
 
 #endif
-
-
-  /// PBCH DMRS sequence
-  uint32_t nr_gold_pbch[2][64][NR_PBCH_DMRS_LENGTH_DWORD];
-
-  /// PDSCH DMRS
-  uint32_t ****nr_gold_pdsch[NUMBER_OF_CONNECTED_eNB_MAX];
-
   // Scrambling IDs used in PDSCH DMRS
   uint16_t scramblingID_dlsch[2];
 
   // Scrambling IDs used in PUSCH DMRS
   uint16_t scramblingID_ulsch[2];
-
-  /// PDCCH DMRS
-  uint32_t ***nr_gold_pdcch[NUMBER_OF_CONNECTED_eNB_MAX];
-
   // Scrambling IDs used in PDCCH DMRS
   uint16_t scramblingID_pdcch;
-
-  /// PUSCH DMRS sequence
-  uint32_t ****nr_gold_pusch_dmrs;
-
-  // PRS sequence per gNB, per resource
-  uint32_t *****nr_gold_prs;
-
   c16_t X_u[64][839];
 
   // flag to activate PRB based averaging of channel estimates
