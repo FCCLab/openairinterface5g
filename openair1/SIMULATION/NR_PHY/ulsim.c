@@ -68,7 +68,7 @@
 #include <openair3/ocp-gtpu/gtp_itf.h>
 #include "executables/nr-uesoftmodem.h"
 //#define DEBUG_ULSIM
-#define MAX_UE_CONNECT 2
+#define MAX_UE_CONNECT 4
 
 const char *__asan_default_options()
 {
@@ -134,8 +134,7 @@ nrUE_params_t *get_nrUE_params(void) {
   return &nrUE_params;
 }
 // needed for some functions
-uint16_t n_rnti_ue1 = 0x1234;
-uint16_t n_rnti_ue2 = 0x3456;
+uint16_t n_rnti[MAX_UE_CONNECT] = {0x1234, 0x1235, 0x1236, 0x1237};
 openair0_config_t openair0_cfg[MAX_CARDS];
 
 channel_desc_t *UE2gNB[MAX_MOBILES_PER_GNB][NUMBER_OF_gNB_MAX];
@@ -217,12 +216,14 @@ int main(int argc, char *argv[])
   int ul_proc_error = 0; // uplink processing checking status flag
   
   // Multi-UE
+  int cnt;
   PHY_VARS_NR_UE** UE_list = (PHY_VARS_NR_UE**)malloc(MAX_UE_CONNECT * sizeof(PHY_VARS_NR_UE*));
   char *token;
   int number_of_UEs = 1;
   int start_rb = 0;
-  int nb_rb[MAX_UE_CONNECT] = {0, 0};
-  int Imcs[MAX_UE_CONNECT] = {9, 9};
+  int ue_start_rb = 0;
+  int nb_rb[MAX_UE_CONNECT] = {0};
+  int Imcs[MAX_UE_CONNECT] = {9};
 
   //logInit();
   randominit(0);
@@ -245,15 +246,12 @@ int main(int argc, char *argv[])
       break;
 
     case 'c':
+      cnt = 0;
       token = strtok(optarg, ",");
-      if (token != NULL) {
-        n_rnti_ue1 = atoi(token);
-        AssertFatal(n_rnti_ue1 > 0 && n_rnti_ue1<=65535,"Illegal n_rnti_ue1 %x\n",n_rnti_ue1);
+      while (token != NULL) {
+        n_rnti[cnt++] = atoi(token);
+        AssertFatal(n_rnti[cnt - 1] > 0 && n_rnti[cnt - 1] <= 65535, "Illegal n_rnti[%d] %x\n", cnt - 1, n_rnti[cnt - 1]);
         token = strtok(NULL, ",");
-        if (token != NULL) {
-          n_rnti_ue2 = atoi(token);
-          AssertFatal(n_rnti_ue2 > 0 && n_rnti_ue2<=65535,"Illegal n_rnti_ue2 %x\n",n_rnti_ue2);
-        }
       }
       break;
 
@@ -334,12 +332,11 @@ int main(int argc, char *argv[])
       break;
 
     case 'm':
+      cnt = 0;
       token = strtok(optarg, ",");
-      if (token != NULL) {
-        Imcs[0] = atoi(token);
+      while (token != NULL) {
+        Imcs[cnt++] = atoi(token);
         token = strtok(NULL, ",");
-        if (token != NULL)
-            Imcs[1] = atoi(token);
       }
       break;
 
@@ -364,12 +361,11 @@ int main(int argc, char *argv[])
       break;
 
     case 'r':
+      cnt = 0;
       token = strtok(optarg, ",");
-      if (token != NULL) {
-        nb_rb[0] = atoi(token);
+      while (token != NULL) {
+        nb_rb[cnt++] = atoi(token);
         token = strtok(NULL, ",");
-        if (token != NULL)
-            nb_rb[1] = atoi(token);
       }
       break;
 
@@ -954,8 +950,8 @@ int main(int argc, char *argv[])
   
     if (params_from_file) {
       fseek(input_fd,file_offset*((slot_length<<2)+4000+16),SEEK_SET);
-      read_errors+=fread((void*)&n_rnti_ue1,sizeof(int16_t),1,input_fd);
-      printf("rnti %x\n",n_rnti_ue1);
+      read_errors+=fread((void*)&n_rnti[0],sizeof(int16_t),1,input_fd);
+      printf("rnti %x\n",n_rnti[0]);
       read_errors+=fread((void*)&nb_rb[0],sizeof(int16_t),1,input_fd);
       printf("nb_rb[0] %d\n",nb_rb[0]);
       int16_t dummy;
@@ -1062,7 +1058,7 @@ int main(int argc, char *argv[])
         errors_decoding[UE_id] = 0;
       }
 
-      // MAX_UE_CONNECT 2
+      // MAX_UE_CONNECT
       // FIXME: Multi-UE, Here I only track the round of one of the UEs
       while (round < max_rounds && crc_status[0]) {
         nr_scheduled_response_t scheduled_response[MAX_UE_CONNECT] = {0};
@@ -1101,10 +1097,7 @@ int main(int argc, char *argv[])
           }
           pusch_pdu->pusch_data.tb_size = TBS[UE_id] >> 3;
           pusch_pdu->pdu_bit_map = pdu_bit_map[UE_id];
-          if (UE_id == 0)
-            pusch_pdu->rnti = n_rnti_ue1;
-          else if (UE_id == 1)
-            pusch_pdu->rnti = n_rnti_ue2;
+          pusch_pdu->rnti = n_rnti[UE_id];
           pusch_pdu->mcs_index = Imcs[UE_id];
           pusch_pdu->mcs_table = mcs_table;
           pusch_pdu->target_code_rate = code_rate[UE_id];
@@ -1123,7 +1116,10 @@ int main(int argc, char *argv[])
             pusch_pdu->rb_start = start_rb;
             pusch_pdu->rb_size = nb_rb[UE_id];
           } else {
-            pusch_pdu->rb_start = nb_rb[UE_id - 1];
+            ue_start_rb = start_rb;
+            for (int i = 0; i < UE_id; i++)
+              ue_start_rb += nb_rb[UE_id];
+            pusch_pdu->rb_start = ue_start_rb;
             pusch_pdu->rb_size = nb_rb[UE_id];
           }
           pusch_pdu->vrb_to_prb_mapping = 0;
@@ -1159,10 +1155,7 @@ int main(int argc, char *argv[])
             pdu_element1->pdu_size = sizeof(nfapi_nr_srs_pdu_t);
             nfapi_nr_srs_pdu_t *srs_pdu = &pdu_element1->srs_pdu;
             memset(srs_pdu, 0, sizeof(nfapi_nr_srs_pdu_t));
-            if (UE_id == 0)
-              srs_pdu->rnti = n_rnti_ue1;
-            else if (UE_id == 1)
-              srs_pdu->rnti = n_rnti_ue2;
+            srs_pdu->rnti = n_rnti[UE_id];
             srs_pdu->bwp_size = NRRIV2BW(ubwp->bwp_Common->genericParameters.locationAndBandwidth, 275);
             srs_pdu->bwp_start = NRRIV2PRBOFFSET(ubwp->bwp_Common->genericParameters.locationAndBandwidth, 275);
             srs_pdu->subcarrier_spacing = frame_parms->subcarrier_spacing;
@@ -1207,17 +1200,17 @@ int main(int argc, char *argv[])
           // Config UL TX PDU
           pusch_config_pdu->tx_request_body.pdu = ulsch_input_buffer[UE_id];
           pusch_config_pdu->tx_request_body.pdu_length = TBS[UE_id] / 8;
-          if (UE_id == 0)
-            pusch_config_pdu->rnti = n_rnti_ue1;
-          else if (UE_id == 1)
-            pusch_config_pdu->rnti = n_rnti_ue2;
+          pusch_config_pdu->rnti = n_rnti[UE_id];
           pusch_config_pdu->pdu_bit_map = pdu_bit_map[UE_id];
           pusch_config_pdu->qam_mod_order = mod_order[UE_id];
           if (UE_id == 0) {
             pusch_config_pdu->rb_start = start_rb;
             pusch_config_pdu->rb_size = nb_rb[UE_id];
           } else {
-            pusch_config_pdu->rb_start = nb_rb[UE_id - 1];
+            ue_start_rb = start_rb;
+            for (int i = 0; i < UE_id; i++)
+              ue_start_rb += nb_rb[UE_id];
+            pusch_config_pdu->rb_start = ue_start_rb;
             pusch_config_pdu->rb_size = nb_rb[UE_id];
           }
           pusch_config_pdu->nr_of_symbols = nb_symb_sch;
@@ -1255,10 +1248,7 @@ int main(int argc, char *argv[])
             ul_config1->pdu_type = FAPI_NR_UL_CONFIG_TYPE_SRS;
             fapi_nr_ul_config_srs_pdu *srs_config_pdu = &ul_config1->srs_config_pdu;
             memset(srs_config_pdu, 0, sizeof(fapi_nr_ul_config_srs_pdu));
-            if (UE_id == 0)
-              srs_config_pdu->rnti = n_rnti_ue1;
-            else if (UE_id == 1)
-              srs_config_pdu->rnti = n_rnti_ue2;
+            srs_config_pdu->rnti = n_rnti[UE_id];
             srs_config_pdu->bwp_size = NRRIV2BW(ubwp->bwp_Common->genericParameters.locationAndBandwidth, 275);
             srs_config_pdu->bwp_start = NRRIV2PRBOFFSET(ubwp->bwp_Common->genericParameters.locationAndBandwidth, 275);
             srs_config_pdu->subcarrier_spacing = frame_parms->subcarrier_spacing;
@@ -1759,30 +1749,36 @@ int main(int argc, char *argv[])
     }
   } // SNR loop
   printf("\n");
-  printf( "Num UE:\t%d\n"
-          "Num UE1 RB:\t%d\n"
-          "Num UE2 RB:\t%d\n"
-          "Num N_RB_DL:\t%d\n"
-          "Num symbols:\t%d\n"
-          "MCS UE1:\t%d\n"
-          "MCS UE2:\t%d\n"
-          "DMRS config type:\t%d\n"
-          "DMRS add pos:\t%d\n"
-          "PUSCH mapping type:\t%d\n"
-          "DMRS length:\t%d\n"
-          "DMRS CDM gr w/o data:\t%d\n",
-          number_of_UEs,
-          nb_rb[0],
-          nb_rb[1],
-          N_RB_DL,
-          nb_symb_sch,
-          Imcs[0],
-          Imcs[1],
-          dmrs_config_type,
-          add_pos,
-          mapping_type,
-          length_dmrs,
-          num_dmrs_cdm_grps_no_data);
+  printf(
+      "Num UE:\t%d\n",
+      number_of_UEs);
+  for (int UE_id = 0; UE_id < number_of_UEs; UE_id++) {
+    printf(
+        "Num UE%d RB:\t%d\n",
+        UE_id,
+        nb_rb[UE_id]);
+  }
+  for (int UE_id = 0; UE_id < number_of_UEs; UE_id++) {
+    printf(
+        "MCS UE%d:\t%d\n",
+        UE_id,
+        Imcs[UE_id]);
+  }
+  printf(
+      "Num N_RB_DL:\t%d\n"
+      "Num symbols:\t%d\n"
+      "DMRS config type:\t%d\n"
+      "DMRS add pos:\t%d\n"
+      "PUSCH mapping type:\t%d\n"
+      "DMRS length:\t%d\n"
+      "DMRS CDM gr w/o data:\t%d\n",
+      N_RB_DL,
+      nb_symb_sch,
+      dmrs_config_type,
+      add_pos,
+      mapping_type,
+      length_dmrs,
+      num_dmrs_cdm_grps_no_data);
 
   free_MIB_NR(mib);
   if (gNB->ldpc_offload_flag)
