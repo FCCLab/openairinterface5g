@@ -21,7 +21,7 @@
 #---------------------------------------------------------------------
 #
 # Dockerfile for the Open-Air-Interface BUILD service
-#   Valid for Ubuntu 20.04
+#   Valid for Ubuntu 22.04
 #
 #---------------------------------------------------------------------
 
@@ -31,7 +31,7 @@ FROM ran-build:latest AS ru-build
 
 
 #start from scratch for target executable
-FROM ubuntu:focal as oai-lte-ru
+FROM ubuntu:jammy as oai-lte-ru
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Europe/Paris
 
@@ -46,7 +46,6 @@ RUN apt-get update && \
         libconfig9 \
         net-tools \
         gdb \
-        python \
         python3 \
         python3-six \
         python3-requests \
@@ -74,13 +73,13 @@ COPY --from=ru-base /usr/local/lib/libuhd.so.4.4.0 /usr/local/lib
 COPY --from=ru-base /usr/local/lib/uhd/utils/uhd_images_downloader.py /opt/oai-lte-ru/bin
 
 COPY --from=ru-base \
-    /usr/lib/x86_64-linux-gnu/libboost_chrono.so.1.71.0 \
-    /usr/lib/x86_64-linux-gnu/libboost_date_time.so.1.71.0 \
-    /usr/lib/x86_64-linux-gnu/libboost_filesystem.so.1.71.0 \
-    /usr/lib/x86_64-linux-gnu/libboost_regex.so.1.71.0 \
-    /usr/lib/x86_64-linux-gnu/libboost_serialization.so.1.71.0 \
-    /usr/lib/x86_64-linux-gnu/libboost_thread.so.1.71.0 \
-    /usr/lib/x86_64-linux-gnu/libboost_system.so.1.71.0 \
+    /usr/lib/x86_64-linux-gnu/libboost_chrono.so.1.74.0 \
+    /usr/lib/x86_64-linux-gnu/libboost_date_time.so.1.74.0 \
+    /usr/lib/x86_64-linux-gnu/libboost_filesystem.so.1.74.0 \
+    /usr/lib/x86_64-linux-gnu/libboost_regex.so.1.74.0 \
+    /usr/lib/x86_64-linux-gnu/libboost_serialization.so.1.74.0 \
+    /usr/lib/x86_64-linux-gnu/libboost_thread.so.1.74.0 \
+    /usr/lib/x86_64-linux-gnu/libboost_system.so.1.74.0 \
     /usr/lib/x86_64-linux-gnu/
 
 RUN /bin/bash -c "ln -s /usr/local/lib/liboai_usrpdevif.so /usr/local/lib/liboai_device.so" && \

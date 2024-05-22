@@ -31,7 +31,7 @@ FROM ran-build:latest AS gnb-build
 
 
 #start from scratch for target executable
-FROM ubuntu:focal as oai-gnb
+FROM ubuntu:jammy as oai-gnb
 ARG BUILD_OPTION
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Europe/Paris
@@ -42,14 +42,14 @@ RUN apt-get update && \
         software-properties-common \
         procps \
         libsctp1 \
-        libboost-chrono1.71.0 \
-        libboost-date-time1.71.0 \
-        libboost-filesystem1.71.0 \
-        libboost-regex1.71.0 \
-        libboost-serialization1.71.0 \
-        libboost-thread1.71.0 \
-        libboost-system1.71.0 \
-        libboost-program-options1.71.0 \
+        libboost-chrono1.74.0 \
+        libboost-date-time1.74.0 \
+        libboost-filesystem1.74.0 \
+        libboost-regex1.74.0 \
+        libboost-serialization1.74.0 \
+        libboost-thread1.74.0 \
+        libboost-system1.74.0 \
+        libboost-program-options1.74.0 \
         tzdata \
         libblas3 \
         libatlas3-base \
@@ -61,7 +61,6 @@ RUN apt-get update && \
         iproute2 \
         iputils-ping \
         gdb \
-        python \
         python3 \
         python3-six \
         python3-requests \
