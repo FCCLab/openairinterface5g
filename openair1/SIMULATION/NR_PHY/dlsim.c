@@ -1310,6 +1310,9 @@ int main(int argc, char **argv)
   if (gNB->ldpc_offload_flag)
     free_LDPClib(&ldpc_interface_offload);
 
+  if (gNB->nr_ulsch_decoding_interface_flag)
+    free_nr_ulsch_decoding_interface(&nr_ulsch_decoding_interface);
+
   if (output_fd)
     fclose(output_fd);
 

@@ -36,10 +36,26 @@ typedef int32_t(nr_ulsch_decoding_shutdown_t)(void);
  */
 typedef int32_t(nr_ulsch_decoding_decoder_t)(PHY_VARS_gNB *gNB, NR_DL_FRAME_PARMS *frame_parms, int frame_rx, int slot_rx, uint32_t *G);
 
+typedef int32_t(nr_ulsch_decoding_encoder_t)
+  (PHY_VARS_gNB *gNB,
+   processingData_L1tx_t *msgTx,
+   int frame_tx,
+   uint8_t slot_tx,
+   NR_DL_FRAME_PARMS* frame_parms,
+   unsigned char ** output,
+   time_stats_t *tinput,
+   time_stats_t *tprep,
+   time_stats_t *tparity,
+   time_stats_t *toutput,
+   time_stats_t *dlsch_rate_matching_stats,
+   time_stats_t *dlsch_interleaving_stats,
+   time_stats_t *dlsch_segmentation_stats);
+
 typedef struct nr_ulsch_decoding_interface_s {
   nr_ulsch_decoding_init_t *nr_ulsch_decoding_init;
   nr_ulsch_decoding_shutdown_t *nr_ulsch_decoding_shutdown;
   nr_ulsch_decoding_decoder_t *nr_ulsch_decoding_decoder;
+  nr_ulsch_decoding_encoder_t *nr_ulsch_decoding_encoder;
 } nr_ulsch_decoding_interface_t;
 
 int load_nr_ulsch_decoding_interface(char *version, nr_ulsch_decoding_interface_t *interface);

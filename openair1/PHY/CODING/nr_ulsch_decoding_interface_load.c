@@ -56,7 +56,8 @@ int load_nr_ulsch_decoding_interface(char *version, nr_ulsch_decoding_interface_
   /* function description array, to be used when loading the encoding/decoding shared lib */
   loader_shlibfunc_t shlib_fdesc[] = {{.fname = "nr_ulsch_decoding_init"},
                                       {.fname = "nr_ulsch_decoding_shutdown"},
-                                      {.fname = "nr_ulsch_decoding_decoder"}};
+                                      {.fname = "nr_ulsch_decoding_decoder"},
+                                      {.fname = "nr_ulsch_decoding_encoder"}};
   int ret;
   ret = load_module_version_shlib(libname, version, shlib_fdesc, sizeofArray(shlib_fdesc), NULL);
   if(ret < 0){
@@ -66,6 +67,7 @@ int load_nr_ulsch_decoding_interface(char *version, nr_ulsch_decoding_interface_
   itf->nr_ulsch_decoding_init = (nr_ulsch_decoding_init_t *)shlib_fdesc[0].fptr;
   itf->nr_ulsch_decoding_shutdown = (nr_ulsch_decoding_shutdown_t *)shlib_fdesc[1].fptr;
   itf->nr_ulsch_decoding_decoder = (nr_ulsch_decoding_decoder_t *)shlib_fdesc[2].fptr;
+  itf->nr_ulsch_decoding_encoder = (nr_ulsch_decoding_encoder_t *)shlib_fdesc[3].fptr;
 
   AssertFatal(itf->nr_ulsch_decoding_init() == 0, "error starting LDPC library %s %s\n", libname, version);
 

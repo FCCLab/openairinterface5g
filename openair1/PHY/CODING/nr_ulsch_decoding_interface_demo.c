@@ -63,14 +63,10 @@
 #include "nfapi/open-nFAPI/nfapi/public_inc/nfapi_interface.h"
 #include "nfapi/open-nFAPI/nfapi/public_inc/nfapi_nr_interface.h"
 
-int32_t LDPCdecoder(t_nrLDPC_dec_params* p_decParams,
-                    uint8_t harq_pid,
-                    uint8_t ulsch_id,
-                    uint8_t C,
-                    int8_t* p_llr,
-                    int8_t* p_out,
-                    t_nrLDPC_time_stats* p_profiler,
-                    decode_abort_t* ab);
+#define DEMO_LDPCLIB_SUFFIX ""
+
+// Global var to limit the rework of the dirty legacy code
+ldpc_interface_t ldpc_interface_demo;
 
 static void nr_processULSegment_demo(void *arg)
 {
@@ -169,7 +165,7 @@ static void nr_processULSegment_demo(void *arg)
 
   ////////////////////////////////// pl =====> llrProcBuf //////////////////////////////////
   rdata->decodeIterations =
-      LDPCdecoder(p_decoderParms, 0, 0, 0, l, llrProcBuf, p_procTime, &ulsch_harq->abort_decode);
+      ldpc_interface_demo.LDPCdecoder(p_decoderParms, 0, 0, 0, l, llrProcBuf, p_procTime, &ulsch_harq->abort_decode);
 
   if (rdata->decodeIterations <= p_decoderParms->numMaxIter)
     memcpy(ulsch_harq->c[r],llrProcBuf,  Kr>>3);
@@ -326,11 +322,15 @@ int nr_ulsch_decoding_demo(PHY_VARS_gNB *phy_vars_gNB,
 
 int32_t nr_ulsch_decoding_init(void){
 
+  load_LDPClib(DEMO_LDPCLIB_SUFFIX, &ldpc_interface_demo);
+
   return 0;
 
 }
 
 int32_t nr_ulsch_decoding_shutdown(void){
+
+  free_LDPClib(&ldpc_interface_demo);
 
   return 0;
 

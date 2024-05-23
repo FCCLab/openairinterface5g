@@ -33,6 +33,7 @@
 #include "nr_dlsch.h"
 #include "nr_dci.h"
 #include "nr_sch_dmrs.h"
+#include "PHY/CODING/nr_ulsch_decoding_interface.h"
 #include "PHY/MODULATION/nr_modulation.h"
 #include "PHY/NR_REFSIG/dmrs_nr.h"
 #include "PHY/NR_REFSIG/ptrs_nr.h"
@@ -63,6 +64,9 @@ void nr_generate_pdsch(processingData_L1tx_t *msgTx, int frame, int slot)
   time_stats_t *dlsch_rate_matching_stats=&gNB->dlsch_rate_matching_stats;
   time_stats_t *dlsch_interleaving_stats=&gNB->dlsch_interleaving_stats;
   time_stats_t *dlsch_segmentation_stats=&gNB->dlsch_segmentation_stats;
+
+  unsigned char **output = calloc(msgTx->num_pdsch_slot, sizeof(unsigned char *));
+  int slot_encoding_done = 0;
 
   for (int dlsch_id=0; dlsch_id<msgTx->num_pdsch_slot; dlsch_id++) {
     NR_gNB_DLSCH_t *dlsch = msgTx->dlsch[dlsch_id];
@@ -104,18 +108,52 @@ void nr_generate_pdsch(processingData_L1tx_t *msgTx, int frame, int slot)
     }
     harq->unav_res = ptrsSymbPerSlot * n_ptrs;
 
+    if(slot_encoding_done)
+      goto after_encoding;
+
     /// CRC, coding, interleaving and rate matching
     AssertFatal(harq->pdu!=NULL,"harq->pdu is null\n");
-    unsigned char output[rel15->rbSize * NR_SYMBOLS_PER_SLOT * NR_NB_SC_PER_RB * Qm * rel15->nrOfLayers] __attribute__((aligned(64)));
-    bzero(output,rel15->rbSize * NR_SYMBOLS_PER_SLOT * NR_NB_SC_PER_RB * Qm * rel15->nrOfLayers);
-    start_meas(dlsch_encoding_stats);
+    int ret_memalign = posix_memalign((void **)&output[dlsch_id], 64, sizeof(unsigned char) * rel15->rbSize * NR_SYMBOLS_PER_SLOT * NR_NB_SC_PER_RB * Qm * rel15->nrOfLayers);
+    if(ret_memalign){
+      if(gNB->nr_ulsch_decoding_interface_flag)
+        for(int i = 0; i < dlsch_id; i++)
+          free(output[i]);
+      return;
+    }
+    bzero(output[dlsch_id],rel15->rbSize * NR_SYMBOLS_PER_SLOT * NR_NB_SC_PER_RB * Qm * rel15->nrOfLayers);
 
+    if(gNB->nr_ulsch_decoding_interface_flag){
+      if(dlsch_id == msgTx->num_pdsch_slot-1){
+        start_meas(dlsch_encoding_stats);
+        if (nr_ulsch_decoding_interface.nr_ulsch_decoding_encoder(gNB,
+                                                                  msgTx,
+                                                                  frame,
+                                                                  slot,
+                                                                  frame_parms,
+                                                                  output,
+                                                                  tinput,
+                                                                  tprep,
+                                                                  tparity,
+                                                                  toutput,
+                                                                  dlsch_rate_matching_stats,
+                                                                  dlsch_interleaving_stats,
+                                                                  dlsch_segmentation_stats) == -1) {
+          return;
+        }
+        stop_meas(dlsch_encoding_stats);
+        dlsch_id = -1;
+        slot_encoding_done = 1;
+      }
+      continue;
+    }
+
+    start_meas(dlsch_encoding_stats);
     if (nr_dlsch_encoding(gNB,
                           frame,
                           slot,
                           harq,
                           frame_parms,
-                          output,
+                          output[dlsch_id],
                           tinput,
                           tprep,
                           tparity,
@@ -125,6 +163,8 @@ void nr_generate_pdsch(processingData_L1tx_t *msgTx, int frame, int slot)
                           dlsch_segmentation_stats) == -1)
       return;
     stop_meas(dlsch_encoding_stats);
+
+after_encoding:
 #ifdef DEBUG_DLSCH
     printf("PDSCH encoding:\nPayload:\n");
     for (int i=0; i<harq->B>>7; i++) {
@@ -135,14 +175,14 @@ void nr_generate_pdsch(processingData_L1tx_t *msgTx, int frame, int slot)
     printf("\nEncoded payload:\n");
     for (int i=0; i<encoded_length>>3; i++) {
       for (int j=0; j<8; j++)
-	printf("%d", output[(i<<3)+j]);
+	printf("%d", output[dlsch_id][(i<<3)+j]);
       printf("\t");
     }
     printf("\n");
 #endif
 
     if (IS_SOFTMODEM_DLSIM)
-      memcpy(harq->f, output, encoded_length);
+      memcpy(harq->f, output[dlsch_id], encoded_length);
 
     c16_t mod_symbs[rel15->NrOfCodewords][encoded_length];
     for (int codeWord = 0; codeWord < rel15->NrOfCodewords; codeWord++) {
@@ -151,7 +191,9 @@ void nr_generate_pdsch(processingData_L1tx_t *msgTx, int frame, int slot)
       uint32_t scrambled_output[(encoded_length>>5)+4]; // modulator acces by 4 bytes in some cases
       memset(scrambled_output, 0, sizeof(scrambled_output));
       if ( encoded_length > rel15->rbSize * NR_SYMBOLS_PER_SLOT * NR_NB_SC_PER_RB * Qm * rel15->nrOfLayers) abort();
-      nr_pdsch_codeword_scrambling(output, encoded_length, codeWord, rel15->dataScramblingId, rel15->rnti, scrambled_output);
+      nr_pdsch_codeword_scrambling(output[dlsch_id], encoded_length, codeWord, rel15->dataScramblingId, rel15->rnti, scrambled_output);
+
+      free(output[dlsch_id]);
 
 #ifdef DEBUG_DLSCH
       printf("PDSCH scrambling:\n");
@@ -589,6 +631,9 @@ void nr_generate_pdsch(processingData_L1tx_t *msgTx, int frame, int slot)
       LOG_D(PHY,"beam index for PDSCH allocation already taken\n");
     }
   }// dlsch loop
+
+  free(output);
+
 }
 
 void dump_pdsch_stats(FILE *fd,PHY_VARS_gNB *gNB) {

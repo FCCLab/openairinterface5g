@@ -867,7 +867,7 @@ add_dependencies(ldpc_cl nrLDPC_decoder_kernels_CL)
 
 set(PHY_NR_ULSCH_DECODING_DEMO_SRC
   ${OPENAIR1_DIR}/PHY/CODING/nr_ulsch_decoding_interface_demo.c
-  ${PHY_LDPC_OPTIM8SEGMULTI_SRC}
+  ${OPENAIR1_DIR}/PHY/CODING/nr_dlsch_encoding_interface_demo.c
 )
 
 set(PHY_NR_CODINGIF
@@ -899,7 +899,6 @@ add_library(coding MODULE ${PHY_TURBOSRC} )
 add_library(dfts MODULE ${OPENAIR1_DIR}/PHY/TOOLS/oai_dfts.c ${OPENAIR1_DIR}/PHY/TOOLS/oai_dfts_neon.c)
 
 add_library(ldpc_slot_demo MODULE ${PHY_NR_ULSCH_DECODING_DEMO_SRC})
-target_link_libraries(ldpc_slot_demo PRIVATE ldpc_gen_HEADERS)
 
 set(PHY_SRC_COMMON
   ${OPENAIR1_DIR}/PHY/LTE_TRANSPORT/dci_tools_common.c
