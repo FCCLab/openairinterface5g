@@ -69,6 +69,23 @@ int CU_send_ERROR_INDICATION(sctp_assoc_t assoc_id, F1AP_ErrorIndication_t *Erro
   AssertFatal(1==0,"Not implemented yet\n");
 }
 
+void dump_setup_req(f1ap_setup_req_t *msg)
+{
+  LOG_D(F1AP, "out->transaction_id %lu \n", msg->transaction_id);
+  LOG_D(F1AP, "out->gNB_DU_id %lu \n", msg->gNB_DU_id);
+  LOG_D(F1AP, "out->gNB_DU_name %s \n", msg->gNB_DU_name);
+  LOG_D(F1AP, "out->num_cells_available %d \n", msg->num_cells_available);
+  for (int i = 0; i < msg->num_cells_available; i++) {
+    LOG_D(F1AP, "out->tac[%d] %d \n", i, *msg->cell[i].info.tac);
+    LOG_D(F1AP,
+          "Received nRCGI: MCC %d, MNC %d, CELL_ID %llu\n",
+          msg->cell[i].info.plmn.mcc,
+          msg->cell[i].info.plmn.mnc,
+          (long long unsigned int)msg->cell[i].info.nr_cellid);
+    LOG_D(F1AP, "out->nr_pci[%d] %d \n", i, msg->cell[i].info.nr_pci);
+  }
+}
+
 static uint8_t *cp_octet_string(const OCTET_STRING_t *os, int *len)
 {
   uint8_t *buf = calloc(os->size, sizeof(*buf));
@@ -104,168 +121,33 @@ static int read_slice_info(const F1AP_ServedPLMNs_Item_t *plmn, nssai_t *nssai, 
   return ssl->list.count;
 }
 
-/*
-    F1 Setup
-*/
+/**
+ * @brief F1AP Setup Request decoding (9.2.1.4 of 3GPP TS 38.473) and transfer to RRC
+ */
 int CU_handle_F1_SETUP_REQUEST(instance_t instance, sctp_assoc_t assoc_id, uint32_t stream, F1AP_F1AP_PDU_t *pdu)
 {
   LOG_D(F1AP, "CU_handle_F1_SETUP_REQUEST\n");
-  F1AP_F1SetupRequest_t              *container;
-  F1AP_F1SetupRequestIEs_t           *ie;
-  int i = 0;
   DevAssert(pdu != NULL);
-  container = &pdu->choice.initiatingMessage->value.choice.F1SetupRequest;
-
   /* F1 Setup Request == Non UE-related procedure -> stream 0 */
   if (stream != 0) {
     LOG_W(F1AP, "[SCTP %d] Received f1 setup request on stream != 0 (%d)\n",
           assoc_id, stream);
   }
-
+  f1ap_setup_req_t msg;
+  /* Decode */
+  if (!decode_f1ap_setup_request(pdu, &msg)) {
+    LOG_E(F1AP, "cannot decode F1AP Setup Request\n");
+    free_f1ap_setup_request(&msg);
+    return -1;
+  }
+  dump_setup_req(&msg);
+  /* Send to RRC (ITTI) */
   MessageDef *message_p = itti_alloc_new_message(TASK_CU_F1, 0, F1AP_SETUP_REQ);
   message_p->ittiMsgHeader.originInstance = assoc_id;
   f1ap_setup_req_t *req = &F1AP_SETUP_REQ(message_p);
-
-  /* Transaction ID*/
-  F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_F1SetupRequestIEs_t, ie, container, F1AP_ProtocolIE_ID_id_TransactionID, true);
-  req->transaction_id = ie->value.choice.TransactionID;
-  LOG_D(F1AP, "req->transaction_id %lu \n", req->transaction_id);
-
-  /* gNB_DU_id */
-  // this function exits if the ie is mandatory
-  F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_F1SetupRequestIEs_t, ie, container,
-                             F1AP_ProtocolIE_ID_id_gNB_DU_ID, true);
-  asn_INTEGER2ulong(&ie->value.choice.GNB_DU_ID, &req->gNB_DU_id);
-  LOG_D(F1AP, "req->gNB_DU_id %lu \n", req->gNB_DU_id);
-  /* gNB_DU_name */
-  F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_F1SetupRequestIEs_t, ie, container, F1AP_ProtocolIE_ID_id_gNB_DU_Name, false);
-  req->gNB_DU_name = NULL;
-  if (ie != NULL) {
-    req->gNB_DU_name = calloc(ie->value.choice.GNB_DU_Name.size + 1, sizeof(char));
-    memcpy(req->gNB_DU_name, ie->value.choice.GNB_DU_Name.buf, ie->value.choice.GNB_DU_Name.size);
-    LOG_D(F1AP, "req->gNB_DU_name %s \n", req->gNB_DU_name);
-  }
-  /* GNB_DU_Served_Cells_List */
-  F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_F1SetupRequestIEs_t, ie, container,
-                             F1AP_ProtocolIE_ID_id_gNB_DU_Served_Cells_List, true);
-  req->num_cells_available = ie->value.choice.GNB_DU_Served_Cells_List.list.count;
-  LOG_D(F1AP, "req->num_cells_available %d \n", req->num_cells_available);
-
-  for (i=0; i<req->num_cells_available; i++) {
-    F1AP_GNB_DU_Served_Cells_Item_t *served_cells_item = &(((F1AP_GNB_DU_Served_Cells_ItemIEs_t *)
-							    ie->value.choice.GNB_DU_Served_Cells_List.list.array[i])->
-							   value.choice.GNB_DU_Served_Cells_Item);
-    F1AP_Served_Cell_Information_t *servedCellInformation= &served_cells_item->served_Cell_Information;
-    /* tac */
-    if (servedCellInformation->fiveGS_TAC) {
-      req->cell[i].info.tac = malloc(sizeof(*req->cell[i].info.tac));
-      AssertFatal(req->cell[i].info.tac != NULL, "out of memory\n");
-      OCTET_STRING_TO_INT16(servedCellInformation->fiveGS_TAC, *req->cell[i].info.tac);
-      LOG_D(F1AP, "req->tac[%d] %d \n", i, *req->cell[i].info.tac);
-    }
-    
-    /* - nRCGI */
-    TBCD_TO_MCC_MNC(&(servedCellInformation->nRCGI.pLMN_Identity),
-                    req->cell[i].info.plmn.mcc,
-                    req->cell[i].info.plmn.mnc,
-                    req->cell[i].info.plmn.mnc_digit_length);
-    // NR cellID
-    BIT_STRING_TO_NR_CELL_IDENTITY(&servedCellInformation->nRCGI.nRCellIdentity,
-                                   req->cell[i].info.nr_cellid);
-    LOG_D(F1AP, "[SCTP %d] Received nRCGI: MCC %d, MNC %d, CELL_ID %llu\n", assoc_id,
-          req->cell[i].info.plmn.mcc,
-          req->cell[i].info.plmn.mnc,
-          (long long unsigned int)req->cell[i].info.nr_cellid);
-    /* - nRPCI */
-    req->cell[i].info.nr_pci = servedCellInformation->nRPCI;
-    LOG_D(F1AP, "req->nr_pci[%d] %d \n", i, req->cell[i].info.nr_pci);
-
-    AssertFatal(servedCellInformation->servedPLMNs.list.count == 1, "only one PLMN handled\n");
-    req->cell[i].info.num_ssi = read_slice_info(servedCellInformation->servedPLMNs.list.array[0], req->cell[i].info.nssai, 16);
-
-    // FDD Cells
-    if (servedCellInformation->nR_Mode_Info.present==F1AP_NR_Mode_Info_PR_fDD) {
-      req->cell[i].info.mode = F1AP_MODE_FDD;
-      f1ap_fdd_info_t *FDDs = &req->cell[i].info.fdd;
-      F1AP_FDD_Info_t * fDD_Info=servedCellInformation->nR_Mode_Info.choice.fDD;
-      FDDs->ul_freqinfo.arfcn = fDD_Info->uL_NRFreqInfo.nRARFCN;
-      AssertFatal(fDD_Info->uL_NRFreqInfo.freqBandListNr.list.count == 1, "cannot handle more than one frequency band\n");
-      for (int f=0; f < fDD_Info->uL_NRFreqInfo.freqBandListNr.list.count; f++) {
-        F1AP_FreqBandNrItem_t * FreqItem=fDD_Info->uL_NRFreqInfo.freqBandListNr.list.array[f];
-        FDDs->ul_freqinfo.band = FreqItem->freqBandIndicatorNr;
-        AssertFatal(FreqItem->supportedSULBandList.list.count == 0, "cannot handle SUL bands!\n");
-      }
-      FDDs->dl_freqinfo.arfcn = fDD_Info->dL_NRFreqInfo.nRARFCN;
-      int dlBands=fDD_Info->dL_NRFreqInfo.freqBandListNr.list.count;
-      AssertFatal(dlBands == 1, "cannot handled more than one frequency band\n");
-      for (int dlB=0; dlB < dlBands; dlB++) {
-	F1AP_FreqBandNrItem_t * FreqItem=fDD_Info->dL_NRFreqInfo.freqBandListNr.list.array[dlB];
-        FDDs->dl_freqinfo.band = FreqItem->freqBandIndicatorNr;
-        int num_available_supported_SULBands = FreqItem->supportedSULBandList.list.count;
-        AssertFatal(num_available_supported_SULBands == 0, "cannot handle SUL bands!\n");
-      }
-      FDDs->ul_tbw.scs = fDD_Info->uL_Transmission_Bandwidth.nRSCS;
-      FDDs->ul_tbw.nrb = nrb_lut[fDD_Info->uL_Transmission_Bandwidth.nRNRB];
-      FDDs->dl_tbw.scs = fDD_Info->dL_Transmission_Bandwidth.nRSCS;
-      FDDs->dl_tbw.nrb = nrb_lut[fDD_Info->dL_Transmission_Bandwidth.nRNRB];
-    } else if (servedCellInformation->nR_Mode_Info.present==F1AP_NR_Mode_Info_PR_tDD) {
-      req->cell[i].info.mode = F1AP_MODE_TDD;
-      f1ap_tdd_info_t *TDDs = &req->cell[i].info.tdd;
-      F1AP_TDD_Info_t *tDD_Info = servedCellInformation->nR_Mode_Info.choice.tDD;
-      TDDs->freqinfo.arfcn = tDD_Info->nRFreqInfo.nRARFCN;
-      AssertFatal(tDD_Info->nRFreqInfo.freqBandListNr.list.count == 1, "cannot handle more than one frequency band\n");
-      for (int f=0; f < tDD_Info->nRFreqInfo.freqBandListNr.list.count; f++) {
-        struct F1AP_FreqBandNrItem * FreqItem=tDD_Info->nRFreqInfo.freqBandListNr.list.array[f];
-        TDDs->freqinfo.band = FreqItem->freqBandIndicatorNr;
-        int num_available_supported_SULBands = FreqItem->supportedSULBandList.list.count;
-        AssertFatal(num_available_supported_SULBands == 0, "cannot hanlde SUL bands!\n");
-      }
-      TDDs->tbw.scs = tDD_Info->transmission_Bandwidth.nRSCS;
-      TDDs->tbw.nrb = nrb_lut[tDD_Info->transmission_Bandwidth.nRNRB];
-    } else {
-      AssertFatal(false, "unknown NR Mode info %d\n", servedCellInformation->nR_Mode_Info.present);
-    }
-
-    /* MeasurementConfig */
-    if (servedCellInformation->measurementTimingConfiguration.size > 0)
-      req->cell[i].info.measurement_timing_config =
-          cp_octet_string(&servedCellInformation->measurementTimingConfiguration, &req->cell[i].info.measurement_timing_config_len);
-
-    struct F1AP_GNB_DU_System_Information * DUsi=served_cells_item->gNB_DU_System_Information;
-    if (DUsi != NULL) {
-      // System Information
-      req->cell[i].sys_info = calloc(1, sizeof(*req->cell[i].sys_info));
-      AssertFatal(req->cell[i].sys_info != NULL, "out of memory\n");
-      f1ap_gnb_du_system_info_t *sys_info = req->cell[i].sys_info;
-      /* mib */
-      sys_info->mib = calloc(DUsi->mIB_message.size, sizeof(char));
-      memcpy(sys_info->mib, DUsi->mIB_message.buf, DUsi->mIB_message.size);
-      sys_info->mib_length = DUsi->mIB_message.size;
-      /* sib1 */
-      sys_info->sib1 = calloc(DUsi->sIB1_message.size, sizeof(char));
-      memcpy(sys_info->sib1, DUsi->sIB1_message.buf, DUsi->sIB1_message.size);
-      sys_info->sib1_length = DUsi->sIB1_message.size;
-    }
-  }
-
-   /* Handle RRC Version */
-  F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_F1SetupRequestIEs_t, ie, container,
-                             F1AP_ProtocolIE_ID_id_GNB_DU_RRC_Version, true);
-  // Latest RRC Version: "This IE is not used in this release."
-  // BIT_STRING_to_uint8(&ie->value.choice.RRC_Version.latest_RRC_Version);
-  if (ie->value.choice.RRC_Version.iE_Extensions) {
-    F1AP_ProtocolExtensionContainer_10696P228_t *ext =
-        (F1AP_ProtocolExtensionContainer_10696P228_t *)ie->value.choice.RRC_Version.iE_Extensions;
-    if (ext->list.count > 0) {
-      F1AP_RRC_Version_ExtIEs_t *rrcext = ext->list.array[0];
-      OCTET_STRING_t *os = &rrcext->extensionValue.choice.OCTET_STRING_SIZE_3_;
-      DevAssert(os->size == 3);
-      for (int i = 0; i < 3; ++i)
-        req->rrc_ver[i] = os->buf[i];
-    }
-  }
+  *req = msg; /* "move" message into ITTI, RRC thread will free it */
+  free_f1ap_setup_request(&msg);
   itti_send_msg_to_task(TASK_RRC_GNB, GNB_MODULE_ID_TO_INSTANCE(instance), message_p);
-  
   return 0;
 }
 

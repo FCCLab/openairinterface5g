@@ -24,53 +24,16 @@
 
 #include "mac_rrc_ul.h"
 #include "f1ap_lib_extern.h"
+#include "lib/f1ap_interface_management.h"
 
 static void f1_setup_request_direct(const f1ap_setup_req_t *req)
 {
   MessageDef *msg = itti_alloc_new_message(TASK_MAC_GNB, 0, F1AP_SETUP_REQ);
   msg->ittiMsgHeader.originInstance = -1; // means monolithic
-  f1ap_setup_req_t *f1ap_msg = &F1AP_SETUP_REQ(msg);
-  f1ap_msg->gNB_DU_id = req->gNB_DU_id;
-  f1ap_msg->gNB_DU_name = strdup(req->gNB_DU_name);
-  f1ap_msg->num_cells_available = req->num_cells_available;
-  for (int n = 0; n < req->num_cells_available; ++n) {
-    f1ap_msg->cell[n].info = req->cell[n].info; // copy most fields
-    if (req->cell[n].info.tac) {
-      f1ap_msg->cell[n].info.tac = malloc(sizeof(*f1ap_msg->cell[n].info.tac));
-      AssertFatal(f1ap_msg->cell[n].info.tac != NULL, "out of memory\n");
-      *f1ap_msg->cell[n].info.tac = *req->cell[n].info.tac;
-    }
-    if (req->cell[n].info.measurement_timing_config_len > 0) {
-      f1ap_msg->cell[n].info.measurement_timing_config = calloc(req->cell[n].info.measurement_timing_config_len, sizeof(uint8_t));
-      AssertFatal(f1ap_msg->cell[n].info.measurement_timing_config != NULL, "out of memory\n");
-      memcpy(f1ap_msg->cell[n].info.measurement_timing_config,
-             req->cell[n].info.measurement_timing_config,
-             req->cell[n].info.measurement_timing_config_len);
-      f1ap_msg->cell[n].info.measurement_timing_config_len = req->cell[n].info.measurement_timing_config_len;
-    }
-
-    if (req->cell[n].sys_info) {
-      f1ap_gnb_du_system_info_t *orig_sys_info = req->cell[n].sys_info;
-      f1ap_gnb_du_system_info_t *copy_sys_info = calloc(1, sizeof(*copy_sys_info));
-      AssertFatal(copy_sys_info, "out of memory\n");
-      f1ap_msg->cell[n].sys_info = copy_sys_info;
-
-      copy_sys_info->mib = calloc(orig_sys_info->mib_length, sizeof(uint8_t));
-      AssertFatal(copy_sys_info->mib, "out of memory\n");
-      memcpy(copy_sys_info->mib, orig_sys_info->mib, orig_sys_info->mib_length);
-      copy_sys_info->mib_length = orig_sys_info->mib_length;
-
-      if (orig_sys_info->sib1_length > 0) {
-        copy_sys_info->sib1 = calloc(orig_sys_info->sib1_length, sizeof(uint8_t));
-        AssertFatal(copy_sys_info->sib1, "out of memory\n");
-        memcpy(copy_sys_info->sib1, orig_sys_info->sib1, orig_sys_info->sib1_length);
-        copy_sys_info->sib1_length = orig_sys_info->sib1_length;
-      }
-    }
-  }
-  memcpy(f1ap_msg->rrc_ver, req->rrc_ver, sizeof(req->rrc_ver));
-
+  f1ap_setup_req_t cp = cp_f1ap_setup_request(req);
+  F1AP_SETUP_REQ(msg) = cp;
   itti_send_msg_to_task(TASK_RRC_GNB, 0, msg);
+  free_f1ap_setup_request(&cp);
 }
 
 static void gnb_du_configuration_update_direct(const f1ap_gnb_du_configuration_update_t *upd)

@@ -100,6 +100,8 @@ void du_task_handle_sctp_association_resp(instance_t instance, sctp_new_associat
   f1ap_du_data->du.assoc_id = sctp_new_association_resp->assoc_id;
   f1ap_du_data->sctp_in_streams  = sctp_new_association_resp->in_streams;
   f1ap_du_data->sctp_out_streams = sctp_new_association_resp->out_streams;
+  /* next transaction ID */
+  f1ap_du_data->setupReq.transaction_id = F1AP_get_next_transaction_identifier(0, 0);
   /* setup parameters for F1U and start the server */
   DU_send_F1_SETUP_REQUEST(f1ap_du_data->du.assoc_id, &f1ap_du_data->setupReq);
 }

@@ -34,6 +34,7 @@
 #include "f1ap_encoder.h"
 #include "f1ap_itti_messaging.h"
 #include "f1ap_du_interface_management.h"
+#include "lib/f1ap_interface_management.h"
 #include "openair2/LAYER2/NR_MAC_gNB/mac_rrc_dl_handler.h"
 #include "assertions.h"
 
@@ -220,108 +221,24 @@ static F1AP_GNB_DU_System_Information_t *encode_system_info(const f1ap_gnb_du_sy
   return enc_sys_info;
 }
 
-// SETUP REQUEST
+/**
+ * @brief F1AP Setup Request
+ */
 int DU_send_F1_SETUP_REQUEST(sctp_assoc_t assoc_id, const f1ap_setup_req_t *setup_req)
 {
-  F1AP_F1AP_PDU_t       pdu= {0};
+  F1AP_F1AP_PDU_t *pdu = encode_f1ap_setup_request(setup_req);
   uint8_t  *buffer;
   uint32_t  len;
-  /* Create */
-  /* 0. pdu Type */
-  pdu.present = F1AP_F1AP_PDU_PR_initiatingMessage;
-  asn1cCalloc(pdu.choice.initiatingMessage, initMsg);
-  initMsg->procedureCode = F1AP_ProcedureCode_id_F1Setup;
-  initMsg->criticality   = F1AP_Criticality_reject;
-  initMsg->value.present = F1AP_InitiatingMessage__value_PR_F1SetupRequest;
-  F1AP_F1SetupRequest_t *f1Setup = &initMsg->value.choice.F1SetupRequest;
-  /* mandatory */
-  /* c1. Transaction ID (integer value) */
-  asn1cSequenceAdd(f1Setup->protocolIEs.list, F1AP_F1SetupRequestIEs_t, ieC1);
-  ieC1->id                        = F1AP_ProtocolIE_ID_id_TransactionID;
-  ieC1->criticality               = F1AP_Criticality_reject;
-  ieC1->value.present             = F1AP_F1SetupRequestIEs__value_PR_TransactionID;
-  ieC1->value.choice.TransactionID = F1AP_get_next_transaction_identifier(0, 0);
-  /* mandatory */
-  /* c2. GNB_DU_ID (integer value) */
-  asn1cSequenceAdd(f1Setup->protocolIEs.list, F1AP_F1SetupRequestIEs_t, ieC2);
-  ieC2->id                        = F1AP_ProtocolIE_ID_id_gNB_DU_ID;
-  ieC2->criticality               = F1AP_Criticality_reject;
-  ieC2->value.present             = F1AP_F1SetupRequestIEs__value_PR_GNB_DU_ID;
-  asn_int642INTEGER(&ieC2->value.choice.GNB_DU_ID, setup_req->gNB_DU_id);
-
-  /* optional */
-  /* c3. GNB_DU_Name */
-  if (setup_req->gNB_DU_name != NULL) {
-    asn1cSequenceAdd(f1Setup->protocolIEs.list, F1AP_F1SetupRequestIEs_t, ieC3);
-    ieC3->id                        = F1AP_ProtocolIE_ID_id_gNB_DU_Name;
-    ieC3->criticality               = F1AP_Criticality_ignore;
-    ieC3->value.present             = F1AP_F1SetupRequestIEs__value_PR_GNB_DU_Name;
-    char *gNB_DU_name=setup_req->gNB_DU_name;
-    OCTET_STRING_fromBuf(&ieC3->value.choice.GNB_DU_Name, gNB_DU_name, strlen(gNB_DU_name));
-  }
-
-  /* mandatory */
-  /* c4. served cells list */
-  asn1cSequenceAdd(f1Setup->protocolIEs.list, F1AP_F1SetupRequestIEs_t, ieCells);
-  ieCells->id                        = F1AP_ProtocolIE_ID_id_gNB_DU_Served_Cells_List;
-  ieCells->criticality               = F1AP_Criticality_reject;
-  ieCells->value.present             = F1AP_F1SetupRequestIEs__value_PR_GNB_DU_Served_Cells_List;
-  int num_cells_available = setup_req->num_cells_available;
-  LOG_D(F1AP, "num_cells_available = %d \n", num_cells_available);
-
-  for (int i=0; i<num_cells_available; i++) {
-    /* mandatory */
-    /* 4.1 served cells item */
-    const f1ap_served_cell_info_t *cell = &setup_req->cell[i].info;
-    const f1ap_gnb_du_system_info_t *sys_info = setup_req->cell[i].sys_info;
-    asn1cSequenceAdd(ieCells->value.choice.GNB_DU_Served_Cells_List.list,
-                     F1AP_GNB_DU_Served_Cells_ItemIEs_t, duServedCell);
-    duServedCell->id = F1AP_ProtocolIE_ID_id_GNB_DU_Served_Cells_Item;
-    duServedCell->criticality = F1AP_Criticality_reject;
-    duServedCell->value.present = F1AP_GNB_DU_Served_Cells_ItemIEs__value_PR_GNB_DU_Served_Cells_Item;
-    F1AP_GNB_DU_Served_Cells_Item_t *scell_item = &duServedCell->value.choice.GNB_DU_Served_Cells_Item;
-    scell_item->served_Cell_Information = encode_served_cell_info(cell);
-    scell_item->gNB_DU_System_Information = encode_system_info(sys_info);
-  }
-
-  /* mandatory */
-  /* c5. RRC VERSION */
-  asn1cSequenceAdd(f1Setup->protocolIEs.list, F1AP_F1SetupRequestIEs_t, ie2);
-  ie2->id = F1AP_ProtocolIE_ID_id_GNB_DU_RRC_Version;
-  ie2->criticality = F1AP_Criticality_reject;
-  ie2->value.present = F1AP_F1SetupRequestIEs__value_PR_RRC_Version;
-  // RRC Version: "This IE is not used in this release."
-  // we put one bit for each byte in rrc_ver that is != 0
-  uint8_t bits = 0;
-  for (int i = 0; i < 3; ++i)
-    bits |= (setup_req->rrc_ver[i] != 0) << i;
-  BIT_STRING_t *bs = &ie2->value.choice.RRC_Version.latest_RRC_Version;
-  bs->buf = calloc(1, sizeof(char));
-  AssertFatal(bs->buf != NULL, "out of memory\n");
-  bs->buf[0] = bits;
-  bs->size = 1;
-  bs->bits_unused = 5;
-
-  F1AP_ProtocolExtensionContainer_10696P228_t *p = calloc(1, sizeof(F1AP_ProtocolExtensionContainer_10696P228_t));
-  asn1cSequenceAdd(p->list, F1AP_RRC_Version_ExtIEs_t, rrcv_ext);
-  rrcv_ext->id = F1AP_ProtocolIE_ID_id_latest_RRC_Version_Enhanced;
-  rrcv_ext->criticality = F1AP_Criticality_ignore;
-  rrcv_ext->extensionValue.present = F1AP_RRC_Version_ExtIEs__extensionValue_PR_OCTET_STRING_SIZE_3_;
-  OCTET_STRING_t *os = &rrcv_ext->extensionValue.choice.OCTET_STRING_SIZE_3_;
-  os->size = 3;
-  os->buf = malloc(3 * sizeof(*os->buf));
-  AssertFatal(os->buf != NULL, "out of memory\n");
-  for (int i = 0; i < 3; ++i)
-    os->buf[i] = setup_req->rrc_ver[i];
-  ie2->value.choice.RRC_Version.iE_Extensions = (struct F1AP_ProtocolExtensionContainer*)p;
-  
   /* encode */
-  if (f1ap_encode_pdu(&pdu, &buffer, &len) < 0) {
+  if (f1ap_encode_pdu(pdu, &buffer, &len) < 0) {
     LOG_E(F1AP, "Failed to encode F1 setup request\n");
+    /* free PDU */
+    ASN_STRUCT_FREE(asn_DEF_F1AP_F1AP_PDU, &pdu);
     return -1;
   }
-
-  ASN_STRUCT_RESET(asn_DEF_F1AP_F1AP_PDU, &pdu);
+  /* free PDU */
+  ASN_STRUCT_FREE(asn_DEF_F1AP_F1AP_PDU, &pdu);
+  /* Send to ITTI */
   f1ap_itti_send_sctp_data_req(assoc_id, buffer, len);
   return 0;
 }
