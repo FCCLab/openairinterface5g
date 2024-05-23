@@ -394,7 +394,7 @@ static void sctp_handle_new_association_req(const instance_t instance,
   struct addrinfo *serv;
 
   int status = getaddrinfo(local, NULL, &hints, &serv);
-  AssertFatal(status == 0, "getaddrinfo() failed: %s\n", gai_strerror(status));
+  AssertFatal(status == 0, "getaddrinfo(%s) failed: %s\n", local, gai_strerror(status));
 
   int sd;
   struct addrinfo *p = NULL;
