@@ -136,10 +136,12 @@ int phy_init_nr_gNB(PHY_VARS_gNB *gNB)
 
   gNB->nr_ulsch_decoding_interface_flag = 0;
   int ret_loader = load_nr_ulsch_decoding_interface(NULL, &nr_ulsch_decoding_interface);
-  if(ret_loader >= 0)
+  if (ret_loader >= 0) {
     gNB->nr_ulsch_decoding_interface_flag = 1;
-
-  load_LDPClib(NULL, &ldpc_interface);
+    load_LDPClib("", &ldpc_interface);
+  } else {
+    load_LDPClib(NULL, &ldpc_interface);
+  }
 
   pthread_mutex_init(&gNB->UL_INFO.crc_rx_mutex, NULL);
 
