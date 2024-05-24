@@ -670,6 +670,11 @@ static int ngap_gNB_handle_error_indication(sctp_assoc_t assoc_id, uint32_t stre
   return 0;
 }
 
+/**
+ * @brief Handle Initial Context Setup Request message sent by the AMF to request the setup of a UE context
+ *        Direction: AMF → NG-RAN node
+ * @ref   3GPP TS 38.413, caluse 9.2.2.1
+ */
 static int ngap_gNB_handle_initial_context_request(sctp_assoc_t assoc_id, uint32_t stream, NGAP_NGAP_PDU_t *pdu)
 {
   int i;
@@ -722,10 +727,12 @@ static int ngap_gNB_handle_initial_context_request(sctp_assoc_t assoc_id, uint32
   memset(msg, 0, sizeof(*msg));
   msg->gNB_ue_ngap_id = ue_desc_p->gNB_ue_ngap_id;
   msg->amf_ue_ngap_id = ue_desc_p->amf_ue_ngap_id;
-  /* id-UEAggregateMaximumBitRate */
+
+  /*
+   * id-UEAggregateMaximumBitRate: Applicable for Non-GBR QoS flows
+   */
   NGAP_FIND_PROTOCOLIE_BY_ID(NGAP_InitialContextSetupRequestIEs_t, ie, container,
                              NGAP_ProtocolIE_ID_id_UEAggregateMaximumBitRate, false);
-
   if (ie != NULL) { /* checked by macro but cppcheck doesn't see it */
     asn_INTEGER2ulong(&(ie->value.choice.UEAggregateMaximumBitRate.uEAggregateMaximumBitRateUL),
                       &(msg->ue_ambr.br_ul));
@@ -735,71 +742,78 @@ static int ngap_gNB_handle_initial_context_request(sctp_assoc_t assoc_id, uint32
     NGAP_WARN("could not find NGAP_ProtocolIE_ID_id_UEAggregateMaximumBitRate\n");
   }
 
-
-  /* id-GUAMI */
+  /*
+   * id-GUAMI: IE containing the AMF identity.
+   */
   NGAP_FIND_PROTOCOLIE_BY_ID(NGAP_InitialContextSetupRequestIEs_t, ie, container,
                              NGAP_ProtocolIE_ID_id_GUAMI, true);
+  /* PLMN */
+  TBCD_TO_MCC_MNC(&ie->value.choice.GUAMI.pLMNIdentity, msg->guami.mcc, msg->guami.mnc, msg->guami.mnc_len);
+  /* AMF IDs */
+  OCTET_STRING_TO_INT8(&ie->value.choice.GUAMI.aMFRegionID, msg->guami.amf_region_id);
+  OCTET_STRING_TO_INT16(&ie->value.choice.GUAMI.aMFSetID, msg->guami.amf_set_id);
+  OCTET_STRING_TO_INT8(&ie->value.choice.GUAMI.aMFPointer, msg->guami.amf_pointer);
+  NGAP_INFO("[SCTP %u] Received Initial Context Setup Request from %s with GUAMI %03d/%02d:0x%02x/0x%04x/0x%02x\n",
+            assoc_id,
+            amf_desc_p->amf_name,
+            msg->guami.mcc,
+            msg->guami.mnc,
+            msg->guami.amf_region_id,
+            msg->guami.amf_set_id,
+            msg->guami.amf_pointer);
 
-    TBCD_TO_MCC_MNC(&ie->value.choice.GUAMI.pLMNIdentity, msg->guami.mcc,
-                    msg->guami.mnc, msg->guami.mnc_len);
-    
-    OCTET_STRING_TO_INT8(&ie->value.choice.GUAMI.aMFRegionID, msg->guami.amf_region_id);
-    OCTET_STRING_TO_INT16(&ie->value.choice.GUAMI.aMFSetID, msg->guami.amf_set_id);
-    OCTET_STRING_TO_INT8(&ie->value.choice.GUAMI.aMFPointer, msg->guami.amf_pointer);
-
-    NGAP_FIND_PROTOCOLIE_BY_ID(NGAP_InitialContextSetupRequestIEs_t, ie, container, NGAP_ProtocolIE_ID_id_PDUSessionResourceSetupListCxtReq, false);
-    if (ie != NULL) {
-      msg->nb_of_pdusessions = ie->value.choice.PDUSessionResourceSetupListCxtReq.list.count;
-
-      for (i = 0; i < ie->value.choice.PDUSessionResourceSetupListCxtReq.list.count; i++) {
-        NGAP_PDUSessionResourceSetupItemCxtReq_t *item_p = ie->value.choice.PDUSessionResourceSetupListCxtReq.list.array[i];
-        msg->pdusession_param[i].pdusession_id = item_p->pDUSessionID;
-
-        OCTET_STRING_TO_INT8(&item_p->s_NSSAI.sST, msg->pdusession_param[i].nssai.sst);
-        if (item_p->s_NSSAI.sD != NULL) {
-          uint8_t *sd_p = (uint8_t *)&msg->pdusession_param[i].nssai.sd;
-          sd_p[0] = item_p->s_NSSAI.sD->buf[0];
-          sd_p[1] = item_p->s_NSSAI.sD->buf[1];
-          sd_p[2] = item_p->s_NSSAI.sD->buf[2];
-        } else {
-          msg->pdusession_param[i].nssai.sd = 0xffffff;
-        }
-
-        if (item_p->nAS_PDU) {
-          allocCopy(&msg->pdusession_param[i].nas_pdu, *item_p->nAS_PDU);
-        }
-        allocCopy(&msg->pdusession_param[i].pdusessionTransfer, item_p->pDUSessionResourceSetupRequestTransfer);
+  /* PDU Session Resource Setup Request List */
+  NGAP_FIND_PROTOCOLIE_BY_ID(NGAP_InitialContextSetupRequestIEs_t,
+                             ie,
+                             container,
+                             NGAP_ProtocolIE_ID_id_PDUSessionResourceSetupListCxtReq,
+                             false);
+  if (ie != NULL) {
+    msg->nb_of_pdusessions = ie->value.choice.PDUSessionResourceSetupListCxtReq.list.count;
+    for (i = 0; i < ie->value.choice.PDUSessionResourceSetupListCxtReq.list.count; i++) {
+      /* PDU Session ID (mandatory) */
+      NGAP_PDUSessionResourceSetupItemCxtReq_t *item_p = ie->value.choice.PDUSessionResourceSetupListCxtReq.list.array[i];
+      msg->pdusession_param[i].pdusession_id = item_p->pDUSessionID;
+      /* S-NSSAI (mandatory) */
+      OCTET_STRING_TO_INT8(&item_p->s_NSSAI.sST, msg->pdusession_param[i].nssai.sst);
+      if (item_p->s_NSSAI.sD != NULL) {
+        uint8_t *sd_p = (uint8_t *)&msg->pdusession_param[i].nssai.sd;
+        sd_p[0] = item_p->s_NSSAI.sD->buf[0];
+        sd_p[1] = item_p->s_NSSAI.sD->buf[1];
+        sd_p[2] = item_p->s_NSSAI.sD->buf[2];
+      } else {
+        msg->pdusession_param[i].nssai.sd = 0xffffff;
       }
+      /* PDU Session ID (optional) */
+      if (item_p->nAS_PDU) {
+        allocCopy(&msg->pdusession_param[i].nas_pdu, *item_p->nAS_PDU);
+      }
+      /* PDU Session Resource Setup Request Transfer (mandatory) */
+      allocCopy(&msg->pdusession_param[i].pdusessionTransfer, item_p->pDUSessionResourceSetupRequestTransfer);
     }
+  }
 
-  /* id-AllowedNSSAI */
+  /* id-AllowedNSSAI (mandatory) */
   NGAP_FIND_PROTOCOLIE_BY_ID(NGAP_InitialContextSetupRequestIEs_t, ie, container,
                                NGAP_ProtocolIE_ID_id_AllowedNSSAI, true);
-  
-  //if (ie != NULL) { /* checked by macro but cppcheck doesn't see it */
-    NGAP_AllowedNSSAI_Item_t *allow_nssai_item_p = NULL;
-
-    //NGAP_DEBUG("AllowedNSSAI.list.count %d\n", ie->value.choice.AllowedNSSAI.list.count);
-    //DevAssert(ie->value.choice.AllowedNSSAI.list.count > 0);
-    //DevAssert(ie->value.choice.AllowedNSSAI.list.count <= NGAP_maxnoofAllowedS_NSSAIs);
-
-    AssertFatal(ie, "AllowedNSSAI not present, forging 2 NSSAI\n");
-
-    NGAP_DEBUG("AllowedNSSAI.list.count %d\n", ie->value.choice.AllowedNSSAI.list.count);
-    msg->nb_allowed_nssais = ie->value.choice.AllowedNSSAI.list.count;
-    
-    for(i = 0; i < ie->value.choice.AllowedNSSAI.list.count; i++) {
-      allow_nssai_item_p = ie->value.choice.AllowedNSSAI.list.array[i];
-
-      OCTET_STRING_TO_INT8(&allow_nssai_item_p->s_NSSAI.sST, msg->allowed_nssai[i].sst);
-
-      if(allow_nssai_item_p->s_NSSAI.sD != NULL) {
-        msg->allowed_nssai[i].sd = 0;
-        BUFFER_TO_INT24((uint8_t *)allow_nssai_item_p->s_NSSAI.sD->buf, msg->allowed_nssai[i].sd);
-      } else {
-        msg->allowed_nssai[i].sd = 0xffffff;
-      }
+  NGAP_AllowedNSSAI_Item_t *allow_nssai_item_p = NULL;
+  AssertFatal(ie, "AllowedNSSAI not present, forging 2 NSSAI\n");
+  msg->nb_allowed_nssais = ie->value.choice.AllowedNSSAI.list.count;
+  for (i = 0; i < ie->value.choice.AllowedNSSAI.list.count; i++) {
+    allow_nssai_item_p = ie->value.choice.AllowedNSSAI.list.array[i];
+    OCTET_STRING_TO_INT8(&allow_nssai_item_p->s_NSSAI.sST, msg->allowed_nssai[i].sst);
+    if (allow_nssai_item_p->s_NSSAI.sD != NULL) {
+      msg->allowed_nssai[i].sd = 0;
+      BUFFER_TO_INT24((uint8_t *)allow_nssai_item_p->s_NSSAI.sD->buf, msg->allowed_nssai[i].sd);
+    } else {
+      msg->allowed_nssai[i].sd = 0xffffff;
     }
+    NGAP_DEBUG("Allowed NSSAI %d of %d: SD %d SST %d \n",
+               i,
+               msg->nb_allowed_nssais,
+               msg->allowed_nssai[i].sd,
+               msg->allowed_nssai[i].sst);
+  }
 
   /* id-UESecurityCapabilities */
   NGAP_FIND_PROTOCOLIE_BY_ID(NGAP_InitialContextSetupRequestIEs_t, ie, container,

@@ -44,6 +44,7 @@
 #include "NR_UL-DCCH-Message.h"
 #include "uper_encoder.h"
 #include "uper_decoder.h"
+#include "NR_InitialUE-Identity.h"
 
 #include "rrc_defs.h"
 #include "rrc_proto.h"
@@ -265,7 +266,7 @@ void process_nsa_message(NR_UE_RRC_INST_t *rrc, nsa_message_t nsa_message_type, 
       ASN_STRUCT_FREE(asn_DEF_NR_RRCReconfiguration, RRCReconfiguration);
     }
     break;
-    
+
     case nr_RadioBearerConfigX_r15: {
       NR_RadioBearerConfig_t *RadioBearerConfig=NULL;
       asn_dec_rval_t dec_rval = uper_decode_complete(NULL,
@@ -290,7 +291,7 @@ void process_nsa_message(NR_UE_RRC_INST_t *rrc, nsa_message_t nsa_message_type, 
       ASN_STRUCT_FREE(asn_DEF_NR_RadioBearerConfig, RadioBearerConfig);
     }
     break;
-    
+
     default:
       AssertFatal(1==0,"Unknown message %d\n",nsa_message_type);
       break;
@@ -463,7 +464,7 @@ static void nr_rrc_ue_decode_NR_BCCH_BCH_Message(NR_UE_RRC_INST_t *rrc,
   }
   if (LOG_DEBUGFLAG(DEBUG_ASN1))
     xer_fprint(stdout, &asn_DEF_NR_BCCH_BCH_Message, (void *)bcch_message);
-  
+
   // Actions following cell selection while T311 is running
   NR_UE_Timers_Constants_t *timers = &rrc->timers_and_constants;
   if (is_nr_timer_active(timers->T311)) {
@@ -680,9 +681,10 @@ static void nr_rrc_ue_prepare_RRCSetupRequest(NR_UE_RRC_INST_t *rrc)
     rv[i] = taus() & 0xff;
 #endif
   }
-
   uint8_t buf[1024];
-  int len = do_RRCSetupRequest(buf, sizeof(buf), rv);
+  int len = do_RRCSetupRequest(buf, sizeof(buf), rv, rrc->rrc5GMMInfo.ue_identity_type, rrc->rrc5GMMInfo.fiveG_S_TMSI_part1);
+  /* RRCSetupComplete will set the ng-5G-S-TMSI-Value to ng-5G-S-TMSI-Part2 */
+  rrc->rrc5GMMInfo.ue_identity_type = NR_RRCSetupComplete_IEs__ng_5G_S_TMSI_Value_PR_ng_5G_S_TMSI_Part2;
 
   nr_rlc_srb_recv_sdu(rrc->ue_id, 0, buf, len);
 }
@@ -891,26 +893,34 @@ static void nr_rrc_ue_process_masterCellGroup(NR_UE_RRC_INST_t *rrc,
 static void rrc_ue_generate_RRCSetupComplete(const NR_UE_RRC_INST_t *rrc, const uint8_t Transaction_id)
 {
   uint8_t buffer[100];
-  uint8_t size;
   const char *nas_msg;
-  int   nas_msg_length;
+  uint8_t size;
+  int nas_msg_length;
 
   if (get_softmodem_params()->sa) {
-    as_nas_info_t initialNasMsg;
-    nr_ue_nas_t *nas = get_ue_nas_info(rrc->ue_id);
-    generateRegistrationRequest(&initialNasMsg, nas);
-    nas_msg = (char*)initialNasMsg.data;
-    nas_msg_length = initialNasMsg.length;
+    if (rrc->nasRegReqMsg.data) {
+      nas_msg = (char *)rrc->nasRegReqMsg.data;
+      nas_msg_length = rrc->nasRegReqMsg.length;
+    } else {
+      LOG_E(NR_RRC, "Failed to complete RRCSetup. NAS Registration Request message not found. \n");
+      return;
+    }
   } else {
     nas_msg = nr_nas_attach_req_imsi_dummy_NSA_case;
     nas_msg_length = sizeof(nr_nas_attach_req_imsi_dummy_NSA_case);
   }
 
-  size = do_RRCSetupComplete(buffer, sizeof(buffer), Transaction_id, rrc->selected_plmn_identity, nas_msg_length, nas_msg);
+  size = do_RRCSetupComplete(buffer,
+                             sizeof(buffer),
+                             Transaction_id,
+                             rrc->selected_plmn_identity,
+                             rrc->rrc5GMMInfo.ue_identity_type,
+                             rrc->rrc5GMMInfo.fiveG_S_TMSI_part2,
+                             nas_msg_length,
+                             nas_msg);
   LOG_I(NR_RRC, "[UE %ld][RAPROC] Logical Channel UL-DCCH (SRB1), Generating RRCSetupComplete (bytes%d)\n", rrc->ue_id, size);
   int srb_id = 1; // RRC setup complete on SRB1
   LOG_D(NR_RRC, "[RRC_UE %ld] PDCP_DATA_REQ/%d Bytes RRCSetupComplete ---> %d\n", rrc->ue_id, size, srb_id);
-
   nr_pdcp_data_req_srb(rrc->ue_id, srb_id, 0, size, buffer, deliver_pdu_srb_rlc, NULL);
 }
 
@@ -1697,6 +1707,21 @@ void nr_rrc_handle_ra_indication(NR_UE_RRC_INST_t *rrc, bool ra_succeeded)
   }
 }
 
+/**
+ * @brief Process 5G-S-TMSI (48 bits) and extract part 1 and part 2
+ */
+void process_fiveG_STMSI(NR_UE_RRC_INST_t *rrc, uint64_t fiveG_STMSI)
+{
+  /* ng-5G-S-TMSI-Part1: the rightmost 39 bits of 5G-S-TMSI
+   * BIT STRING (SIZE (39)) - 3GPP TS 38.331 */
+  rrc->rrc5GMMInfo.fiveG_S_TMSI_part1 = fiveG_STMSI & ((1ULL << 39) - 1);
+  /* ng-5G-S-TMSI-Part2: The leftmost 9 bits of 5G-S-TMSI. */
+  rrc->rrc5GMMInfo.fiveG_S_TMSI_part2 = (fiveG_STMSI >> 39) & ((1ULL << 9) - 1);
+  /* Set UE identity to 5G-S-TMSI part 1 */
+  rrc->rrc5GMMInfo.ue_identity_type = NR_InitialUE_Identity_PR_ng_5G_S_TMSI_Part1;
+}
+
+
 void *rrc_nrue_task(void *args_p)
 {
   itti_mark_task_ready(TASK_RRC_NRUE);
@@ -1764,7 +1789,7 @@ void *rrc_nrue(void *notUsed)
   case NR_RRC_MAC_SBCCH_DATA_IND:
     LOG_D(NR_RRC, "[UE %ld] Received %s: gNB %d\n", instance, ITTI_MSG_NAME(msg_p), NR_RRC_MAC_SBCCH_DATA_IND(msg_p).gnb_index);
     NRRrcMacSBcchDataInd *sbcch = &NR_RRC_MAC_SBCCH_DATA_IND(msg_p);
-    
+
     nr_rrc_ue_decode_NR_SBCCH_SL_BCH_Message(rrc, sbcch->gnb_index,sbcch->frame, sbcch->slot, sbcch->sdu,
                                              sbcch->sdu_size, sbcch->rx_slss_id);
     break;
@@ -1811,6 +1836,19 @@ void *rrc_nrue(void *notUsed)
     break;
   }
 
+  case NAS_5GMM_IND:
+    Nas5GMMInd *req = &NAS_5GMM_IND(msg_p);
+    process_fiveG_STMSI(rrc, req->fiveG_STMSI);
+    LOG_I(NR_RRC, "5G-S-TMSI: %lu, 5G-S-TMSI-Part1 %ld\n", req->fiveG_STMSI, rrc->rrc5GMMInfo.fiveG_S_TMSI_part1);
+    break;
+
+  case NAS_REG_REQ_IND:
+    LOG_D(NR_RRC, "Received Registration Request indication from NAS\n");
+    NasRegistrationReqInd *ind = &NAS_REG_REQ_IND(msg_p);
+    rrc->nasRegReqMsg.length = ind->nasMsg.length;
+    rrc->nasRegReqMsg.data = calloc(ind->nasMsg.length, sizeof(*ind->nasMsg.data));
+    memcpy(rrc->nasRegReqMsg.data, ind->nasMsg.data, rrc->nasRegReqMsg.length);
+    break;
   default:
     LOG_E(NR_RRC, "[UE %ld] Received unexpected message %s\n", rrc->ue_id, ITTI_MSG_NAME(msg_p));
     break;

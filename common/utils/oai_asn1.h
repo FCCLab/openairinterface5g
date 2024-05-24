@@ -202,9 +202,12 @@ static inline uint64_t BIT_STRING_to_uint64(const BIT_STRING_t *asn) {
   int shift;
 
   DevCheck ((asn->size > 0) && (asn->size <= 8), asn->size, 0, 0);
-
   shift = ((asn->size - 1) * 8) - asn->bits_unused;
   for (index = 0; index < (asn->size - 1); index++) {
+#ifdef DEBUG_BITSTRING
+    printf("asn->buf[%ld]: 0x%02x\n", index, asn->buf[index]);
+    fflush(stdout);
+#endif
     result |= ((uint64_t)asn->buf[index]) << shift;
     shift -= 8;
   }

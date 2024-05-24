@@ -95,7 +95,7 @@ int ngap_gNB_handle_nas_first_req(instance_t instance, ngap_nas_first_req_t *UEf
     amf_desc_p = ngap_gNB_nnsf_select_amf_by_guami(instance_p, UEfirstReq->establishment_cause, UEfirstReq->ue_identity.guami);
 
     if (amf_desc_p) {
-      NGAP_INFO("UE %d: Chose AMF '%s' (assoc_id %d) through GUAMI MCC %d MNC %d AMFRI %d AMFSI %d AMFPT %d\n",
+      NGAP_INFO("UE %d: Chose AMF '%s' (assoc_id %d) through GUAMI MCC %03d MNC %02d AMFRI %02x AMFSI %04x AMFPT %02x\n",
                 UEfirstReq->gNB_ue_ngap_id,
                 amf_desc_p->amf_name,
                 amf_desc_p->assoc_id,
@@ -115,7 +115,7 @@ int ngap_gNB_handle_nas_first_req(instance_t instance, ngap_nas_first_req_t *UEf
 
       if (amf_desc_p) {
         NGAP_INFO(
-            "UE %d: Chose AMF '%s' (assoc_id %d) through S-TMSI AMFSI %d and selected PLMN Identity index %d MCC %d MNC %d\n",
+            "UE %d: Chose AMF '%s' (assoc_id %d) through S-TMSI AMFSI %d and selected PLMN Identity index %d MCC %03d MNC %02d\n",
             UEfirstReq->gNB_ue_ngap_id,
             amf_desc_p->amf_name,
             amf_desc_p->assoc_id,
@@ -134,7 +134,7 @@ int ngap_gNB_handle_nas_first_req(instance_t instance, ngap_nas_first_req_t *UEf
     amf_desc_p = ngap_gNB_nnsf_select_amf_by_plmn_id(instance_p, UEfirstReq->establishment_cause, UEfirstReq->selected_plmn_identity);
 
     if (amf_desc_p) {
-      NGAP_INFO("UE %d: Chose AMF '%s' (assoc_id %d) through selected PLMN Identity index %d MCC %d MNC %d\n",
+      NGAP_INFO("UE %d: Chose AMF '%s' (assoc_id %d) through selected PLMN Identity index %d MCC %03d MNC %02d\n",
                 UEfirstReq->gNB_ue_ngap_id,
                 amf_desc_p->amf_name,
                 amf_desc_p->assoc_id,
@@ -240,7 +240,6 @@ int ngap_gNB_handle_nas_first_req(instance_t instance, ngap_nas_first_req_t *UEf
 
   /* optional */
   if (UEfirstReq->ue_identity.presenceMask & NGAP_UE_IDENTITIES_FiveG_s_tmsi) {
-    NGAP_DEBUG("FIVEG_S_TMSI_PRESENT\n");
     asn1cSequenceAdd(out->protocolIEs.list, NGAP_InitialUEMessage_IEs_t, ie);
     ie->id = NGAP_ProtocolIE_ID_id_FiveG_S_TMSI;
     ie->criticality = NGAP_Criticality_reject;
@@ -248,6 +247,13 @@ int ngap_gNB_handle_nas_first_req(instance_t instance, ngap_nas_first_req_t *UEf
     AMF_SETID_TO_BIT_STRING(UEfirstReq->ue_identity.s_tmsi.amf_set_id, &ie->value.choice.FiveG_S_TMSI.aMFSetID);
     AMF_POINTER_TO_BIT_STRING(UEfirstReq->ue_identity.s_tmsi.amf_pointer, &ie->value.choice.FiveG_S_TMSI.aMFPointer);
     M_TMSI_TO_OCTET_STRING(UEfirstReq->ue_identity.s_tmsi.m_tmsi, &ie->value.choice.FiveG_S_TMSI.fiveG_TMSI);
+    NGAP_DEBUG("FIVEG_S_TMSI_PRESENT: AMF Set ID: 0x%04x (%d) - AMF Pointer: 0x%02x (%d) - 5G-TMSI: 0x%X (%d)\n",
+               UEfirstReq->ue_identity.s_tmsi.amf_set_id,
+               UEfirstReq->ue_identity.s_tmsi.amf_set_id,
+               UEfirstReq->ue_identity.s_tmsi.amf_pointer,
+               UEfirstReq->ue_identity.s_tmsi.amf_pointer,
+               UEfirstReq->ue_identity.s_tmsi.m_tmsi,
+               UEfirstReq->ue_identity.s_tmsi.m_tmsi);
   }
 
   /* optional */

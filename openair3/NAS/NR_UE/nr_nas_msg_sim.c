@@ -422,7 +422,7 @@ nr_ue_nas_t *get_ue_nas_info(module_id_t module_id)
   return &nr_ue_nas;
 }
 
-void generateRegistrationRequest(as_nas_info_t *initialNasMsg, nr_ue_nas_t *nas)
+static void generateRegistrationRequest(as_nas_info_t *initialNasMsg, nr_ue_nas_t *nas)
 {
   int size = sizeof(mm_msg_header_t);
   fgs_nas_message_t nas_msg={0};
@@ -478,7 +478,8 @@ void generateRegistrationRequest(as_nas_info_t *initialNasMsg, nr_ue_nas_t *nas)
 
   initialNasMsg->length = mm_msg_encode(mm_msg, (uint8_t*)(initialNasMsg->data), size);
   registration_request_len = initialNasMsg->length;
-
+  /* set NAS 5GMM state */
+  nas->fiveGMM_state = FGS_REGISTERED_INITIATED;
 }
 
 void generateIdentityResponse(as_nas_info_t *initialNasMsg, uint8_t identitytype, uicc_t* uicc) {
@@ -717,6 +718,8 @@ static void generateRegistrationComplete(nr_ue_nas_t *nas, as_nas_info_t *initia
   for(int i = 0; i < 4; i++){
      initialNasMsg->data[2+i] = mac[i];
   }
+  /* Set NAS 5GMM state */
+  nas->fiveGMM_state = FGS_REGISTERED;
 }
 
 void decodeDownlinkNASTransport(as_nas_info_t *initialNasMsg, uint8_t * pdu_buffer){
@@ -776,6 +779,8 @@ static void generateDeregistrationRequest(nr_ue_nas_t *nas, as_nas_info_t *initi
 
   for(int i = 0; i < 4; i++)
     initialNasMsg->data[2 + i] = mac[i];
+  /* Set NAS 5GMM state */
+  nas->fiveGMM_state = FGS_DEREGISTERED_INITIATED;
 }
 
 static void generatePduSessionEstablishRequest(nr_ue_nas_t *nas, as_nas_info_t *initialNasMsg, nas_pdu_session_req_t *pdu_req)
@@ -916,6 +921,24 @@ static void send_nas_detach_req(instance_t instance, bool wait_release)
   itti_send_msg_to_task(TASK_RRC_NRUE, instance, msg);
 }
 
+static void send_nas_5gmm_ind(instance_t instance, const Guti5GSMobileIdentity_t *guti)
+{
+  MessageDef *msg = itti_alloc_new_message(TASK_NAS_NRUE, 0, NAS_5GMM_IND);
+  nas_5gmm_ind_t *ind = &NAS_5GMM_IND(msg);
+  LOG_I(NR_RRC, "5G-GUTI: AMF pointer %u, AMF Set ID %u, 5G-TMSI %u \n", guti->amfpointer, guti->amfsetid, guti->tmsi);
+  ind->fiveG_STMSI = ((uint64_t)guti->amfsetid << 38) | ((uint64_t)guti->amfpointer << 32) | guti->tmsi;
+  itti_send_msg_to_task(TASK_RRC_NRUE, instance, msg);
+}
+
+static void send_nas_req_req_ind(instance_t instance, as_nas_info_t *initialNasMsg)
+{
+  MessageDef *msg = itti_alloc_new_message(TASK_NAS_NRUE, 0, NAS_REG_REQ_IND);
+  NasRegistrationReqInd *ind = &NAS_REG_REQ_IND(msg);
+  ind->nasMsg.data = (uint8_t *)initialNasMsg->data;
+  ind->nasMsg.length = initialNasMsg->length;
+  itti_send_msg_to_task(TASK_RRC_NRUE, instance, msg);
+}
+
 static void parse_allowed_nssai(nr_nas_msg_snssai_t nssaiList[8], const uint8_t *buf, const uint32_t len)
 {
   int nssai_cnt = 0;
@@ -1047,6 +1070,9 @@ static void handle_registration_accept(instance_t instance,
   decodeRegistrationAccept(pdu_buffer, msg_length, nas);
   get_allowed_nssai(nas_allowed_nssai, pdu_buffer, msg_length);
 
+  if(nas->guti)
+    send_nas_5gmm_ind(instance, nas->guti);
+
   as_nas_info_t initialNasMsg = {0};
   generateRegistrationComplete(nas, &initialNasMsg, NULL);
   if (initialNasMsg.length > 0) {
@@ -1174,6 +1200,18 @@ void *nas_nrue(void *args_p)
 
         break;
 
+      case NAS_REGISTRATION_REQ: {
+        nas_registration_req_t *req = &NAS_REGISTRATION_REQ(msg_p);
+        nr_ue_nas_t *nas = get_ue_nas_info(req->UEid);
+        if (nas->fiveGMM_state == FGS_DEREGISTERED) {
+          LOG_I(NAS, "Generate Registration Request\n");
+          as_nas_info_t initialNasMsg;
+          generateRegistrationRequest(&initialNasMsg, nas);
+          send_nas_req_req_ind(instance, &initialNasMsg);
+        }
+        break;
+      }
+
       case NAS_DEREGISTRATION_REQ: {
         LOG_I(NAS, "[UE %ld] Received %s\n", instance, ITTI_MSG_NAME(msg_p));
         nr_ue_nas_t *nas = get_ue_nas_info(0);
@@ -1225,6 +1263,8 @@ void *nas_nrue(void *args_p)
             break;
           case FGS_DEREGISTRATION_ACCEPT:
             LOG_I(NAS, "received deregistration accept\n");
+            /* Set NAS 5GMM state */
+            nas->fiveGMM_state = FGS_DEREGISTERED;
             break;
           case FGS_PDU_SESSION_ESTABLISHMENT_ACC: {
             uint8_t offset = 0;
