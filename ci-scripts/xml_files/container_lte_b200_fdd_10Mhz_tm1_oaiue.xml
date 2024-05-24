@@ -29,8 +29,10 @@
 100001
 111110
 111111
+800813
 030111
 000001
+800814
 030311
 000002
 040511 040613 040616 040651
@@ -78,7 +80,12 @@
         <node>carabe</node>
         <command>sudo cpupower idle-set -E</command>
     </testCase>
-
+    <testCase id="800813">
+        <class>Create_Workspace</class>
+        <desc>Creating new Workspace for server 0</desc>
+        <eNB_instance>0</eNB_instance>
+        <eNB_serverId>0</eNB_serverId>
+    </testCase>
     <testCase id="030111">
         <class>Deploy_Object</class>
         <desc>Deploy eNB (FDD/Band7/10MHz/B200) in a container</desc>
@@ -86,7 +93,12 @@
         <eNB_instance>0</eNB_instance>
         <eNB_serverId>0</eNB_serverId>
     </testCase>
-
+    <testCase id="800814">
+        <class>Create_Workspace</class>
+        <desc>Creating new Workspace for server 1</desc>
+        <eNB_instance>1</eNB_instance>
+        <eNB_serverId>1</eNB_serverId>
+    </testCase>
     <testCase id="030311">
         <class>Deploy_Object</class>
         <desc>Deploy LTE-UE (FDD/Band7/10MHz/B200) in a container</desc>

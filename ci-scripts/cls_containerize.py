@@ -61,6 +61,8 @@ import cls_oaicitest
 IMAGES = ['oai-enb', 'oai-lte-ru', 'oai-lte-ue', 'oai-gnb', 'oai-nr-cuup', 'oai-gnb-aw2s', 'oai-nr-ue', 'oai-gnb-asan', 'oai-nr-ue-asan', 'oai-nr-cuup-asan', 'oai-gnb-aerial']
 
 def CreateWorkspace(sshSession, sourcePath, ranRepository, ranCommitID, ranTargetBranch, ranAllowMerge):
+	print('-------------------------------------------------- Skipping Old Create Workspace')
+	return
 	if ranCommitID == '':
 		logging.error('need ranCommitID in CreateWorkspace()')
 		sys.exit('Insufficient Parameter in CreateWorkspace()')
@@ -855,6 +857,70 @@ class Containerize():
 		myCmd.close()
 		HTML.CreateHtmlTestRow('N/A', 'OK', CONST.ALL_PROCESSES_OK)
 		return True
+
+	def Create_Workspace(self):
+		print('-------------------------------new Create Workspace Function')
+		print("running on server id",self.eNB_serverId)
+		if self.eNB_serverId[self.eNB_instance] == '0':
+			lIpAddr = self.eNBIPAddress
+			lUserName = self.eNBUserName
+			lPassWord = self.eNBPassword
+			lSourcePath = self.eNBSourceCodePath
+		elif self.eNB_serverId[self.eNB_instance] == '1':
+			lIpAddr = self.eNB1IPAddress
+			lUserName = self.eNB1UserName
+			lPassWord = self.eNB1Password
+			lSourcePath = self.eNB1SourceCodePath
+		elif self.eNB_serverId[self.eNB_instance] == '2':
+			lIpAddr = self.eNB2IPAddress
+			lUserName = self.eNB2UserName
+			lPassWord = self.eNB2Password
+			lSourcePath = self.eNB2SourceCodePath
+		if lIpAddr == '' or lUserName == '' or lPassWord == '' or lSourcePath == '':
+			HELP.GenericHelp(CONST.Version)
+			sys.exit('Insufficient Parameter')
+
+		sshSession = SSH.SSHConnection()
+		sshSession.open(lIpAddr, lUserName, lPassWord)
+		ranCommitID = self.ranCommitID
+		ranRepository = self.ranRepository
+		sourcePath = lSourcePath
+		ranTargetBranch = self.ranTargetBranch
+		ranAllowMerge = self.ranAllowMerge
+
+		if ranCommitID == '':
+			logging.error('need ranCommitID in CreateWorkspace()')
+			sys.exit('Insufficient Parameter in CreateWorkspace()')
+
+		sshSession.command(f'rm -rf {sourcePath}', '\$', 10)
+		sshSession.command('mkdir -p ' + sourcePath, '\$', 5)
+		sshSession.command('cd ' + sourcePath, '\$', 5)
+		# Recent version of git (>2.20?) should handle missing .git extension # without problems
+		if ranTargetBranch == 'null':
+			ranTargetBranch = 'develop'
+		baseBranch = re.sub('origin/', '', ranTargetBranch)
+		sshSession.command(f'git clone --filter=blob:none -n -b {baseBranch} {ranRepository} .', '\$', 60)
+		if sshSession.getBefore().count('error') > 0 or sshSession.getBefore().count('error') > 0:
+			sys.exit('error during clone')
+		sshSession.command('git config user.email "jenkins@openairinterface.org"', '\$', 5)
+		sshSession.command('git config user.name "OAI Jenkins"', '\$', 5)
+
+		sshSession.command('mkdir -p cmake_targets/log', '\$', 5)
+		# if the commit ID is provided use it to point to it
+		sshSession.command(f'git checkout -f {ranCommitID}', '\$', 30)
+		if sshSession.getBefore().count(f'HEAD is now at {ranCommitID[:6]}') != 1:
+			sshSession.command('git log --oneline | head -n5', '\$', 5)
+			logging.warning(f'problems during checkout, is at: {sshSession.getBefore()}')
+		else:
+			logging.debug('successful checkout')
+		# if the branch is not develop, then it is a merge request and we need to do
+		# the potential merge. Note that merge conflicts should already been checked earlier
+		if ranAllowMerge:
+			if ranTargetBranch == '':
+				ranTargetBranch = 'develop'
+			logging.debug(f'Merging with the target branch: {ranTargetBranch}')
+			sshSession.command(f'git merge --ff origin/{ranTargetBranch} -m "Temporary merge for CI"', '\$', 30)
+		print('---------------------------------------End of Function new Create_Workspace')
 
 	def DeployObject(self, HTML, EPC):
 		if self.eNB_serverId[self.eNB_instance] == '0':
