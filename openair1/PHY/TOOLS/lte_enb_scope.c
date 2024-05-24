@@ -31,7 +31,7 @@
  */
 
 #include "executables/lte-softmodem.h"
-#include "UTIL/OPT/opt.h"
+#include "opt.h"
 #include "common/config/config_userapi.h"
 #include "PHY/TOOLS/lte_phy_scope.h"
 #include "executables/stats.h"

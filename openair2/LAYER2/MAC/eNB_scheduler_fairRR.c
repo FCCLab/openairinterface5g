@@ -43,7 +43,7 @@
 #include "common/utils/LOG/log.h"
 #include "nfapi/oai_integration/vendor_ext.h"
 #include "common/utils/LOG/vcd_signal_dumper.h"
-#include "UTIL/OPT/opt.h"
+#include "opt.h"
 #include "RRC/L2_INTERFACE/openair_rrc_L2_interface.h"
 #include "rlc.h"
 #include "common/utils/lte/prach_utils.h"

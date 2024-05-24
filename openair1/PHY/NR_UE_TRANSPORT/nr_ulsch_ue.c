@@ -47,7 +47,7 @@
 #include "executables/nr-softmodem.h"
 #include "executables/softmodem-common.h"
 #include "PHY/NR_REFSIG/ul_ref_seq_nr.h"
-#include <openair2/UTIL/OPT/opt.h>
+#include <opt.h>
 
 //#define DEBUG_PUSCH_MAPPING
 //#define DEBUG_MAC_PDU

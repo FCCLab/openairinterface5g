@@ -1,2 +1,2 @@
-add_subdirectory(ALG_DS)
-
+add_subdirectory(MATH)
+add_subdirectory(OPT)

@@ -72,7 +72,7 @@ fifo_dump_emos_UE emos_dump_UE;
 #endif
 
 #include "common/utils/LOG/vcd_signal_dumper.h"
-#include "UTIL/OPT/opt.h"
+#include "opt.h"
 #include "intertask_interface.h"
 #include "T.h"
 

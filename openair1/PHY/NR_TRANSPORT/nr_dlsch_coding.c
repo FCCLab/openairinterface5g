@@ -43,7 +43,7 @@
 #include "common/utils/LOG/log.h"
 #include "common/utils/nr/nr_common.h"
 #include <syscall.h>
-#include <openair2/UTIL/OPT/opt.h>
+#include <opt.h>
 
 //#define DEBUG_DLSCH_CODING
 //#define DEBUG_DLSCH_FREE 1

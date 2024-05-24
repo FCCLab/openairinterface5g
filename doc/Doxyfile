@@ -1759,10 +1759,10 @@ INPUT                  = \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair2/NR_UE_PHY_INTERFACE/NR_Packet_Drop.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair2/NR_UE_PHY_INTERFACE/NR_IF_Module.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair2/NR_UE_PHY_INTERFACE/NR_IF_Module.c \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair2/UTIL/OPT/wireshark_headers.h \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair2/UTIL/OPT/opt.h \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair2/UTIL/OPT/probe.c \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair2/UTIL/OPT/mac_pcap.h \
+@CMAKE_CURRENT_SOURCE_DIR@/../openair2/UTIL/OPT/inc/wireshark_headers.h \
+@CMAKE_CURRENT_SOURCE_DIR@/../openair2/UTIL/OPT/inc/opt.h \
+@CMAKE_CURRENT_SOURCE_DIR@/../openair2/UTIL/OPT/src/probe.c \
+@CMAKE_CURRENT_SOURCE_DIR@/../openair2/UTIL/OPT/inc/mac_pcap.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair2/UTIL/OTG/otg_defs.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair2/UTIL/OTG/otg_tx.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair2/UTIL/OTG/otg_rx.h \

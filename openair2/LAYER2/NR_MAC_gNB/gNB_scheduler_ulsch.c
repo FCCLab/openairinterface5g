@@ -33,7 +33,7 @@
 #include "executables/softmodem-common.h"
 #include "common/utils/nr/nr_common.h"
 #include "utils.h"
-#include <openair2/UTIL/OPT/opt.h>
+#include <openair2/opt.h>
 #include "LAYER2/NR_MAC_COMMON/nr_mac_extern.h"
 #include "LAYER2/nr_rlc/nr_rlc_oai_api.h"
 #include "LAYER2/RLC/rlc.h"

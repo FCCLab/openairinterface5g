@@ -37,7 +37,7 @@
 #include "common/utils/LOG/log.h"
 #include "nfapi/oai_integration/vendor_ext.h"
 #include "common/utils/LOG/vcd_signal_dumper.h"
-#include "UTIL/OPT/opt.h"
+#include "opt.h"
 #include "PHY/LTE_TRANSPORT/transport_common_proto.h"
 #include "PHY/defs_eNB.h"
 
