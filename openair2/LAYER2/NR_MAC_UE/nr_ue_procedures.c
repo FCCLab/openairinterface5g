@@ -181,6 +181,8 @@ int get_rnti_type(const NR_UE_MAC_INST_t *mac, const uint16_t rnti)
 
   if (rnti == ra->ra_rnti) {
     rnti_type = TYPE_RA_RNTI_;
+  } else if (rnti == ra->MsgB_rnti && (ra->ra_state == nrRA_WAIT_MSGB || ra->ra_state == nrRA_WAIT_CONTENTION_RESOLUTION)) {
+    rnti_type = TYPE_MSGB_RNTI_;
   } else if (rnti == ra->t_crnti && (ra->ra_state == nrRA_WAIT_RAR || ra->ra_state == nrRA_WAIT_CONTENTION_RESOLUTION)) {
     rnti_type = TYPE_TC_RNTI_;
   } else if (rnti == mac->crnti) {
@@ -432,7 +434,15 @@ static int nr_ue_process_dci_ul_00(NR_UE_MAC_INST_t *mac,
   if (!pdu)
     return -1;
 
-  int ret = nr_config_pusch_pdu(mac, &tda_info, &pdu->pusch_config_pdu, dci, NULL, dci_ind->rnti, dci_ind->ss_type, NR_UL_DCI_FORMAT_0_0);
+  int ret = nr_config_pusch_pdu(mac,
+                                &tda_info,
+                                &pdu->pusch_config_pdu,
+                                dci,
+                                NULL,
+                                NULL,
+                                dci_ind->rnti,
+                                dci_ind->ss_type,
+                                NR_UL_DCI_FORMAT_0_0);
   if (ret != 0)
     remove_ul_config_last_item(pdu);
   release_ul_config(pdu, false);
@@ -504,7 +514,15 @@ static int nr_ue_process_dci_ul_01(NR_UE_MAC_INST_t *mac,
   fapi_nr_ul_config_request_pdu_t *pdu = lockGet_ul_config(mac, frame_tx, slot_tx, FAPI_NR_UL_CONFIG_TYPE_PUSCH);
   if (!pdu)
     return -1;
-  int ret = nr_config_pusch_pdu(mac, &tda_info, &pdu->pusch_config_pdu, dci, NULL, dci_ind->rnti, dci_ind->ss_type, NR_UL_DCI_FORMAT_0_1);
+  int ret = nr_config_pusch_pdu(mac,
+                                &tda_info,
+                                &pdu->pusch_config_pdu,
+                                dci,
+                                NULL,
+                                NULL,
+                                dci_ind->rnti,
+                                dci_ind->ss_type,
+                                NR_UL_DCI_FORMAT_0_1);
   if (ret != 0)
     remove_ul_config_last_item(pdu);
   release_ul_config(pdu, false);
@@ -786,7 +804,6 @@ static int nr_ue_process_dci_dl_10(NR_UE_MAC_INST_t *mac,
           dci->pucch_resource_indicator);
     return -1;
   }
-
   if (dci_ind->rnti != mac->ra.ra_rnti && dci_ind->rnti != SI_RNTI)
     AssertFatal(1 + dci->pdsch_to_harq_feedback_timing_indicator.val > DURATION_RX_TO_TX,
                 "PDSCH to HARQ feedback time (%d) needs to be higher than DURATION_RX_TO_TX (%d).\n",
@@ -3292,6 +3309,7 @@ static nr_dci_format_t nr_extract_dci_00_10(NR_UE_MAC_INST_t *mac,
       dci_pdu_rel15->format_indicator = format_indicator;
       break;
     case TYPE_TC_RNTI_ :
+    case TYPE_MSGB_RNTI_:
       // Identifier for DCI formats
       EXTRACT_DCI_ITEM(format_indicator, 1);
       if (format_indicator == 1) {
@@ -3415,6 +3433,91 @@ void nr_ue_process_mac_pdu(NR_UE_MAC_INST_t *mac, nr_downlink_indication_t *dl_i
         pdu_id,
         pdu_len,
         dl_info->rx_ind->number_pdus);
+
+  if (ra->ra_type == RA_2_STEP && ra->ra_state == nrRA_WAIT_MSGB) {
+    // TS 38.321 - Figure 6.1.5a-1: BI MAC subheader
+    // TS 38.321 - Figure 6.1.5a-3: SuccessRAR MAC subheader
+    int n = 0;
+    uint8_t E = 1;
+    uint8_t cont_res_id[6];
+    while (n < pdu_len && E) {
+      E = (pduP[n] >> 7) & 0x1;
+      uint8_t SUCESS_RAR_header_T1 = (pduP[n] >> 6) & 0x1;
+      if (SUCESS_RAR_header_T1 == 0) { // T2 exist
+        int SUCESS_RAR_header_T2 = (pduP[n] >> 5) & 0x1;
+        if (SUCESS_RAR_header_T2 == 0) { // BI
+          ra->RA_backoff_indicator = pduP[n] & 0x0F;
+          n++;
+        } else { // S
+          n++;
+          // 3GPP TS 38.321 - Figure 6.2.3a-2: successRAR
+          cont_res_id[0] = pduP[n];
+          n++;
+          for (int i = 0; i < 6; ++i)
+            cont_res_id[i] = pduP[n + i];
+          // Oct 7
+          n += 6;
+          ra->MsgB_R = 0;
+          ra->MsgB_CH_ACESS_CPEXT = (pduP[n] >> 5) & 0x3;
+          ra->MsgB_TPC = (pduP[n] >> 3) & 3;
+          ra->MsgB_HARQ_FTI = (int8_t)pduP[n] & 0x7;
+          // Oct 8
+          n++;
+          ra->PUCCH_RI = ((int8_t)pduP[n] >> 4) & 0x0F;
+          // Oct 8 and Oct 9
+          ra->timing_advance_command = ((uint16_t)(pduP[n] & 0xf) << 8) | pduP[n + 1];
+          n += 2;
+          // Oct 10 and Oct 11
+          ra->t_crnti = ((uint16_t)pduP[n] << 8) | pduP[n + 1];
+          n += 2;
+
+          LOG_D(NR_MAC,
+                "successRAR: Contention Resolution ID 0x%02x%02x%02x%02x%02x%02x R 0x%01x CH_ACESS_CPEXT 0x%02x TPC 0x%02x "
+                "HARQ_FTI 0x%03x PUCCH_RI 0x%04x TA 0x%012x CRNTI 0x%04x\n",
+                cont_res_id[0],
+                cont_res_id[1],
+                cont_res_id[2],
+                cont_res_id[3],
+                cont_res_id[4],
+                cont_res_id[5],
+                ra->MsgB_R,
+                ra->MsgB_CH_ACESS_CPEXT,
+                ra->MsgB_TPC,
+                ra->MsgB_HARQ_FTI,
+                ra->PUCCH_RI,
+                ra->timing_advance_command,
+                ra->t_crnti);
+
+          bool ra_success = true;
+          if (!IS_SOFTMODEM_IQPLAYER) { // Control is bypassed when replaying IQs (BMC)
+            for (int i = 0; i < 6; i++) {
+              LOG_D(NR_MAC, "%d: %02x : %02x\n", i, cont_res_id[i], ra->cont_res_id[i]);
+              if (cont_res_id[i] != ra->cont_res_id[i]) {
+                ra_success = false;
+                break;
+              }
+            }
+          }
+          if ((ra->RA_active == 1) && ra_success) {
+            nr_ra_succeeded(mac, gNB_index, frameP, slot);
+          } else if (!ra_success) {
+            // TODO: Handle failure of RA procedure @ MAC layer
+            //  nr_ra_failed(module_idP, CC_id, prach_resources, frameP, slot); // prach_resources is a PHY structure
+            nr_ra_failed(mac, CC_id, &ra->prach_resources, frameP, slot);
+            ra->ra_state = nrRA_UE_IDLE;
+            ra->RA_active = 0;
+          }
+        }
+      } else { // RAPID
+        int RAPID = pduP[n] & 0x3F;
+        n++;
+        LOG_D(MAC, "RAPID = %d\n", RAPID);
+        AssertFatal(false, "FallbackRAR not implemented\n");
+      }
+    }
+    pduP += n;
+    pdu_len -= n;
+  }
 
   while (!done && pdu_len > 0){
     uint16_t mac_len = 0x0000;
@@ -3557,14 +3660,14 @@ void nr_ue_process_mac_pdu(NR_UE_MAC_INST_t *mac, nr_downlink_indication_t *dl_i
                 pduP[6]);
 
           bool ra_success = true;
-	  if (!IS_SOFTMODEM_IQPLAYER) { // Control is bypassed when replaying IQs (BMC)
-	    for(int i = 0; i < mac_len; i++) {
-	      if(ra->cont_res_id[i] != pduP[i + 1]) {
-		ra_success = false;
-		break;
-	      }
-	    }
-	  }
+          if (!IS_SOFTMODEM_IQPLAYER) { // Control is bypassed when replaying IQs (BMC)
+            for (int i = 0; i < mac_len; i++) {
+              if (ra->cont_res_id[i] != pduP[i + 1]) {
+                ra_success = false;
+                break;
+              }
+            }
+          }
 
           if (ra->RA_active && ra_success) {
             nr_ra_succeeded(mac, gNB_index, frameP, slot);
@@ -4025,6 +4128,7 @@ static void nr_ue_process_rar(NR_UE_MAC_INST_t *mac, nr_downlink_indication_t *d
                                     &pdu->pusch_config_pdu,
                                     NULL,
                                     &rar_grant,
+                                    NULL,
                                     rnti,
                                     NR_SearchSpace__searchSpaceType_PR_common,
                                     NR_DCI_NONE);

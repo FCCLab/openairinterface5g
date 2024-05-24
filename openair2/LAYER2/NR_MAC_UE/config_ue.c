@@ -1395,6 +1395,12 @@ static void configure_common_BWP_ul(NR_UE_MAC_INST_t *mac, int bwp_id, NR_BWP_Up
                                  NR_RACH_ConfigCommon_t,
                                  asn_DEF_NR_RACH_ConfigCommon);
     }
+    if (ul_common->ext1 && ul_common->ext1->msgA_ConfigCommon_r16) {
+      HANDLE_SETUPRELEASE_DIRECT(bwp->msgA_ConfigCommon_r16,
+                                 ul_common->ext1->msgA_ConfigCommon_r16,
+                                 NR_MsgA_ConfigCommon_r16_t,
+                                 asn_DEF_NR_MsgA_ConfigCommon_r16);
+    }
     if (ul_common->pucch_ConfigCommon)
       HANDLE_SETUPRELEASE_DIRECT(bwp->pucch_ConfigCommon,
                                  ul_common->pucch_ConfigCommon,

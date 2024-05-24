@@ -650,6 +650,7 @@ NR_tda_info_t get_dl_tda_info(const NR_UE_DL_BWP_t *dl_BWP,
     case TYPE_CS_RNTI_:
     case TYPE_MCS_C_RNTI_:
     case TYPE_RA_RNTI_:
+    case TYPE_MSGB_RNTI_:
     case TYPE_TC_RNTI_:
       if(tdalist)
         tda_info = set_tda_info_from_list(tdalist, tda_index);
@@ -5233,4 +5234,13 @@ rnti_t nr_get_ra_rnti(uint8_t s_id, uint8_t t_id, uint8_t f_id, uint8_t ul_carri
   LOG_D(MAC, "f_id %d t_id %d s_id %d ul_carrier_id %d Computed RA_RNTI is 0x%04X\n", f_id, t_id, s_id, ul_carrier_id, ra_rnti);
 
   return ra_rnti;
+}
+
+rnti_t nr_get_MsgB_rnti(uint8_t s_id, uint8_t t_id, uint8_t f_id, uint8_t ul_carrier_id)
+{
+  // 3GPP TS 38.321 Section 5.1.3a
+  rnti_t MsgB_rnti = 1 + s_id + 14 * t_id + 1120 * f_id + 8960 * ul_carrier_id + 17920;
+  LOG_D(MAC, "f_id %d t_id %d s_id %d ul_carrier_id %d Computed MsgB_RNTI is 0x%04X\n", f_id, t_id, s_id, ul_carrier_id, MsgB_rnti);
+
+  return MsgB_rnti;
 }

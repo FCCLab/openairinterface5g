@@ -266,6 +266,14 @@ void config_dci_pdu(NR_UE_MAC_INST_t *mac,
       rel15->rnti = mac->ra.ra_rnti;
       rel15->SubcarrierSpacing = current_DL_BWP->scs;
       break;
+    case TYPE_MSGB_RNTI_:
+      // we use the initial DL BWP
+      sps = current_DL_BWP->cyclicprefix == NULL ? 14 : 12;
+      monitoringSymbolsWithinSlot =
+          (ss->monitoringSymbolsWithinSlot->buf[0] << (sps - 8)) | (ss->monitoringSymbolsWithinSlot->buf[1] >> (16 - sps));
+      rel15->rnti = mac->ra.MsgB_rnti;
+      rel15->SubcarrierSpacing = current_DL_BWP->scs;
+      break;
     case TYPE_P_RNTI_:
       break;
     case TYPE_CS_RNTI_:
@@ -523,7 +531,12 @@ void ue_dci_configuration(NR_UE_MAC_INST_t *mac, fapi_nr_dl_config_request_t *dl
   if (mac->state == UE_PERFORMING_RA && mac->ra.ra_state >= nrRA_WAIT_RAR) {
     // if RA is ongoing use RA search space
     if (is_ss_monitor_occasion(frame, slot, slots_per_frame, pdcch_config->ra_SS)) {
-      int rnti_type = mac->ra.ra_state == nrRA_WAIT_RAR ? TYPE_RA_RNTI_ : TYPE_TC_RNTI_;
+      nr_rnti_type_t rnti_type = 0;
+      if (mac->ra.ra_type == RA_4_STEP) {
+        rnti_type = mac->ra.ra_state == nrRA_WAIT_RAR ? TYPE_RA_RNTI_ : TYPE_TC_RNTI_;
+      } else {
+        rnti_type = TYPE_MSGB_RNTI_;
+      }
       config_dci_pdu(mac, dl_config, rnti_type, slot, pdcch_config->ra_SS);
     }
   } else if (mac->state == UE_CONNECTED) {

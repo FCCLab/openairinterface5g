@@ -315,7 +315,7 @@ void free_rach_structures(NR_UE_MAC_INST_t *nr_mac, int bwp_id);
 void schedule_RA_after_SR_failure(NR_UE_MAC_INST_t *mac);
 void nr_Msg1_transmitted(NR_UE_MAC_INST_t *mac);
 void nr_Msg3_transmitted(NR_UE_MAC_INST_t *mac, uint8_t CC_id, frame_t frameP, slot_t slotP, uint8_t gNB_id);
-void nr_get_msg3_payload(NR_UE_MAC_INST_t *mac, uint8_t *buf, int TBS_max);
+void nr_get_Msg3_MsgA_PUSCH_payload(NR_UE_MAC_INST_t *mac, uint8_t *buf, int TBS_max);
 
 int8_t nr_ue_process_dci_freq_dom_resource_assignment(nfapi_nr_ue_pusch_pdu_t *pusch_config_pdu,
                                                       fapi_nr_dl_config_dlsch_pdu_rel15_t *dlsch_config_pdu,
@@ -368,7 +368,8 @@ int nr_config_pusch_pdu(NR_UE_MAC_INST_t *mac,
                         nfapi_nr_ue_pusch_pdu_t *pusch_config_pdu,
                         dci_pdu_rel15_t *dci,
                         RAR_grant_t *rar_grant,
-                        uint16_t rnti,
+                        MsgA_PUSCH_resource_t *msgA_pusch_resource,
+                        rnti_t rnti,
                         int ss_type,
                         const nr_dci_format_t dci_format);
 

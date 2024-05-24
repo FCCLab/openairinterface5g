@@ -94,10 +94,15 @@ Furthermore, the gNB and UE support
 - MAC <-> PHY data interface using FAPI P7 interface for BCH PDU, DCI PDU, PDSCH PDU
 - Scheduler procedures for SIB1
 - Scheduler procedures for RA
-  - Contention Free RA procedure
-  - Contention Based RA procedure
-    - Msg3 can transfer uplink CCCH, DTCH or DCCH messages
-    - CBRA can be performed using MAC CE or C-RNTI
+    - 4-Step RA
+        - Contention Free RA procedure
+        - Contention Based RA procedure
+            - Msg3 can transfer uplink CCCH, DTCH or DCCH messages
+            - CBRA can be performed using MAC CE for C-RNTI
+    - 2-Step RA
+        - Contention Based RA procedure
+            - MsgA can transfer uplink CCCH, DTCH or DCCH messages
+            - CBRA can be performed using MAC CE for C-RNTI
 - Scheduler procedures for CSI-RS
 - MAC downlink scheduler
   - phy-test scheduler (fixed allocation and usable also without UE)
@@ -296,9 +301,14 @@ Furthermore, the gNB and UE support
 * Random access procedure (needs improvement, there is still not a clear separation between MAC and PHY)
    - Mapping SSBs to multiple ROs
    - Scheduling of PRACH
-   - Processing of RAR
-   - Transmission and re-transmission of Msg3
-   - Msg4 and contention resolution
+  - 4-Step RA
+      - Processing of RAR
+      - Transmission and re-transmission of Msg3
+      - Msg4 and contention resolution
+  - 2-Step RA
+      - Transmission of MsgA-PUSCH
+      - Reception of MsgB
+      - Processing of SuccessRAR
 * DCI processing
    - format 10 (RA-RNTI, C-RNTI, SI-RNTI, TC-RNTI)
    - format 00 (C-RNTI, TC-RNTI)

@@ -317,6 +317,8 @@ uint16_t compute_PDU_length(uint32_t num_TLV, uint16_t total_length);
 
 rnti_t nr_get_ra_rnti(uint8_t s_id, uint8_t t_id, uint8_t f_id, uint8_t ul_carrier_id);
 
+rnti_t nr_get_MsgB_rnti(uint8_t s_id, uint8_t t_id, uint8_t f_id, uint8_t ul_carrier_id);
+
 bool supported_bw_comparison(int bw_mhz, NR_SupportedBandwidth_t *supported_BW, long *support_90mhz);
 
 #endif

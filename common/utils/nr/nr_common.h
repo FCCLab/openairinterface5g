@@ -52,6 +52,7 @@
   R(TYPE_P_RNTI_) /* Paging RNTI */                                \
   R(TYPE_SI_RNTI_) /* System information RNTI */                   \
   R(TYPE_RA_RNTI_) /* Random Access RNTI */                        \
+  R(TYPE_MSGB_RNTI_) /* Random Access MsgB RNTI */                 \
   R(TYPE_SP_CSI_RNTI_) /* Semipersistent CSI reporting on PUSCH */ \
   R(TYPE_SFI_RNTI_) /* Slot Format Indication on the given cell */ \
   R(TYPE_INT_RNTI_) /* Indication pre-emption in DL */            \

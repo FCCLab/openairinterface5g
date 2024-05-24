@@ -186,11 +186,6 @@ typedef enum {
   RE_ESTABLISHMENT
 } NR_UE_MAC_reset_cause_t;
 
-typedef enum {
-  RA_2STEP = 0,
-  RA_4STEP
-} nr_ra_type_e;
-
 typedef struct {
   // after multiplexing buffer remain for each lcid
   int32_t LCID_buffer_remain;
@@ -258,13 +253,14 @@ typedef enum {
   nrRA_UE_IDLE = 0,
   nrRA_GENERATE_PREAMBLE = 1,
   nrRA_WAIT_RAR = 2,
-  nrRA_WAIT_CONTENTION_RESOLUTION = 3,
-  nrRA_SUCCEEDED = 4,
-  nrRA_FAILED = 5
+  nrRA_WAIT_MSGB = 3,
+  nrRA_WAIT_CONTENTION_RESOLUTION = 4,
+  nrRA_SUCCEEDED = 5,
+  nrRA_FAILED = 6,
 } nrRA_UE_state_t;
 
 static const char *const nrra_ue_text[] =
-    {"UE_IDLE", "GENERATE_PREAMBLE", "WAIT_RAR", "WAIT_CONTENTION_RESOLUTION", "RA_SUCCEEDED", "RA_FAILED"};
+    {"UE_IDLE", "GENERATE_PREAMBLE", "WAIT_RAR", "WAIT_MSGB", "WAIT_CONTENTION_RESOLUTION", "RA_SUCCEEDED", "RA_FAILED"};
 
 typedef struct {
   /// PRACH format retrieved from prach_ConfigIndex
@@ -286,7 +282,7 @@ typedef struct {
   ///
   uint8_t RA_SCALING_FACTOR_BI;
   /// Indicating whether it is 2-step or 4-step RA
-  nr_ra_type_e RA_TYPE;
+  nr_ra_type_t RA_TYPE;
   /// UE configured maximum output power
   int RA_PCMAX;
 } NR_PRACH_RESOURCES_t;
@@ -299,10 +295,21 @@ typedef struct {
   nrRA_UE_state_t ra_state;
   /// RA contention type
   uint8_t cfra;
+  /// RA type
+  nr_ra_type_t ra_type;
   /// RA rx frame offset: compensate RA rx offset introduced by OAI gNB.
   uint8_t RA_offset;
+  /// MsgB SuccessRAR MAC subheader
+  int8_t MsgB_R;
+  int8_t MsgB_CH_ACESS_CPEXT;
+  uint8_t MsgB_TPC;
+  int8_t MsgB_HARQ_FTI;
+  uint16_t timing_advance_command;
+  int8_t PUCCH_RI;
   /// RA-rnti
   uint16_t ra_rnti;
+  /// MsgB RNTI
+  uint16_t MsgB_rnti;
   /// Temporary CRNTI
   uint16_t t_crnti;
   /// number of attempt for rach
@@ -382,6 +389,22 @@ typedef struct {
   uint8_t Msg3_t_alloc;
   uint16_t Msg3_f_alloc;
 } RAR_grant_t;
+
+typedef struct {
+  uint16_t target_code_rate;
+  uint8_t mod_order;
+  uint8_t freq_hopping;
+  uint8_t mcs;
+  uint8_t n_PRBs;
+  uint8_t dmrs_ports;
+  uint8_t start_symbol_index;
+  uint8_t nr_of_symbols;
+  uint8_t nrOfLayers;
+  uint8_t cdmgrpsnodata;
+  uint8_t dmrs_re_per_rb;
+  uint8_t ra_rnti;
+  uint8_t transform_precoding;
+} MsgA_PUSCH_resource_t;
 
 typedef struct {
   NR_PUCCH_Resource_t *pucch_resource;

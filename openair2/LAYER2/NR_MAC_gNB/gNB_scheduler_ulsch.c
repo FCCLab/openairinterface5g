@@ -522,7 +522,7 @@ void handle_nr_ul_harq(const int CC_idP,
       }
     }
     NR_SCHED_UNLOCK(&nrmac->sched_lock);
-    LOG_E(NR_MAC, "no RA proc for RNTI 0x%04x in Msg3/PUSCH\n", crc_pdu->rnti);
+    LOG_D(NR_MAC, "no RA proc for RNTI 0x%04x in Msg3/MsgA-PUSCH\n", crc_pdu->rnti);
     return;
   }
   NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
@@ -700,7 +700,7 @@ static void _nr_rx_sdu(const module_id_t gnb_mod_idP,
     }
 
     if(no_sig) {
-      LOG_W(NR_MAC, "No signal\n");
+      LOG_D(NR_MAC, "No signal\n");
     }
 
     T(T_GNB_MAC_UL_PDU_WITH_DATA, T_INT(gnb_mod_idP), T_INT(CC_idP),
@@ -712,7 +712,7 @@ static void _nr_rx_sdu(const module_id_t gnb_mod_idP,
      * it. */
     for (int i = 0; i < NR_NB_RA_PROC_MAX; ++i) {
       NR_RA_t *ra = &gNB_mac->common_channels[CC_idP].ra[i];
-      if (ra->ra_state != nrRA_WAIT_Msg3)
+      if (ra->ra_type == RA_4_STEP && ra->ra_state != nrRA_WAIT_Msg3)
         continue;
 
       if (no_sig) {
@@ -720,22 +720,29 @@ static void _nr_rx_sdu(const module_id_t gnb_mod_idP,
         nr_clear_ra_proc(ra);
         continue;
       }
-
-      // random access pusch with TC-RNTI
-      if (ra->rnti != current_rnti) {
-        LOG_D(NR_MAC, "expected TC_RNTI %04x to match current RNTI %04x\n", ra->rnti, current_rnti);
-
-        if ((frameP == ra->Msg3_frame) && (slotP == ra->Msg3_slot)) {
-          LOG_W(NR_MAC,
-                "Random Access %i failed at state %s (TC_RNTI %04x RNTI %04x)\n",
-                i,
-                nrra_text[ra->ra_state],
-                ra->rnti,
-                current_rnti);
-          nr_clear_ra_proc(ra);
+      if (ra->ra_type == RA_2_STEP) {
+        // random access pusch with RA-RNTI
+        if (ra->RA_rnti != current_rnti) {
+          LOG_E(NR_MAC, "expected TC_RNTI %04x to match current RNTI %04x\n", ra->RA_rnti, current_rnti);
+          continue;
         }
+      } else {
+        // random access pusch with TC-RNTI
+        if (ra->rnti != current_rnti) {
+          LOG_D(NR_MAC, "expected TC_RNTI %04x to match current RNTI %04x\n", ra->rnti, current_rnti);
 
-        continue;
+          if ((frameP == ra->Msg3_frame) && (slotP == ra->Msg3_slot)) {
+            LOG_W(NR_MAC,
+                  "Random Access %i failed at state %s (TC_RNTI %04x RNTI %04x)\n",
+                  i,
+                  nrra_text[ra->ra_state],
+                  ra->rnti,
+                  current_rnti);
+            nr_clear_ra_proc(ra);
+          }
+
+          continue;
+        }
       }
 
       UE = UE ? UE : add_new_nr_ue(gNB_mac, ra->rnti, ra->CellGroup);
@@ -782,8 +789,13 @@ static void _nr_rx_sdu(const module_id_t gnb_mod_idP,
         process_CellGroup(ra->CellGroup, UE);
 
       } else {
-        LOG_A(NR_MAC, "[RAPROC] RA-Msg3 received (sdu_lenP %d)\n", sdu_lenP);
-        LOG_D(NR_MAC, "[RAPROC] Received Msg3:\n");
+        LOG_A(NR_MAC,
+              "[RAPROC][%d.%d] RA %s received (sdu_lenP %d)\n",
+              frameP,
+              slotP,
+              ra->ra_type == RA_2_STEP ? "MsgA-PUSCH" : "Msg3",
+              sdu_lenP);
+        LOG_D(NR_MAC, "[RAPROC] Received %s:\n", ra->ra_type == RA_2_STEP ? "MsgA-PUSCH" : "Msg3");
         for (int k = 0; k < sdu_lenP; k++) {
           LOG_D(NR_MAC, "(%i): 0x%x\n", k, sduP[k]);
         }
@@ -815,7 +827,7 @@ static void _nr_rx_sdu(const module_id_t gnb_mod_idP,
 
           // The UE identified by C-RNTI still exists at the gNB
           // Reset Msg4_ACKed to not schedule ULSCH and DLSCH before RRC Reconfiguration
-          UE->Msg4_ACKed = false;
+          UE->Msg4_MsgB_ACKed = false;
           nr_mac_reset_ul_failure(&UE->UE_sched_ctrl);
           // Reset HARQ processes
           reset_dl_harq_list(&UE->UE_sched_ctrl);
@@ -842,9 +854,15 @@ static void _nr_rx_sdu(const module_id_t gnb_mod_idP,
         // the function is only called to decode the contention resolution sub-header
         nr_process_mac_pdu(gnb_mod_idP, UE, CC_idP, frameP, slotP, sduP, sdu_lenP, -1);
 
-        LOG_I(NR_MAC, "Activating scheduling RA-Msg4 for TC_RNTI 0x%04x (state %s)\n", ra->rnti, nrra_text[ra->ra_state]);
-        ra->ra_state = nrRA_Msg4;
-        return;
+        if (ra->ra_type == RA_2_STEP) {
+          LOG_I(NR_MAC, "Activating scheduling RA-MsgB for TC_RNTI 0x%04x (state %s)\n", ra->rnti, nrra_text[ra->ra_state]);
+          ra->ra_state = nrRA_MsgB;
+          return;
+        } else {
+          LOG_I(NR_MAC, "Activating scheduling RA-Msg4 for TC_RNTI 0x%04x (state %s)\n", ra->rnti, nrra_text[ra->ra_state]);
+          ra->ra_state = nrRA_Msg4;
+          return;
+        }
       }
     }
   } else {
@@ -869,7 +887,7 @@ static void _nr_rx_sdu(const module_id_t gnb_mod_idP,
         return;
       }
 
-      LOG_D(NR_MAC, "Random Access %i Msg3 CRC did not pass)\n", i);
+      LOG_D(NR_MAC, "Random Access %i Msg3 CRC did not pass\n", i);
 
       ra->msg3_round++;
       ra->ra_state = nrRA_Msg3_retransmission;
@@ -1677,7 +1695,7 @@ static void pf_ul(module_id_t module_id,
   UE_iterator(UE_list, UE) {
 
     NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
-    if (UE->Msg4_ACKed != true || sched_ctrl->ul_failure)
+    if (UE->Msg4_MsgB_ACKed != true || sched_ctrl->ul_failure)
       continue;
 
     LOG_D(NR_MAC,"pf_ul: preparing UL scheduling for UE %04x\n",UE->rnti);

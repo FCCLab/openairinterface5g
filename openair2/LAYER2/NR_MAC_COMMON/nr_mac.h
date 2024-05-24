@@ -243,6 +243,12 @@ typedef struct {
   uint8_t E: 1;
 } __attribute__ ((__packed__)) NR_RA_HEADER_RAPID;
 
+typedef struct {
+  uint8_t RAPID: 6;
+  uint8_t T1: 1;
+  uint8_t E: 1;
+} __attribute__((__packed__)) NR_RA_HEADER_RAPID_MSGB;
+
 /*!\brief RAR MAC subheader with Backoff Indicator */
 typedef struct {
   uint8_t BI: 4;
@@ -251,7 +257,23 @@ typedef struct {
   uint8_t E: 1;
 } __attribute__ ((__packed__)) NR_RA_HEADER_BI;
 
-// TS 38.321 ch. 6.2.3
+typedef struct {
+  uint8_t BI: 4;
+  uint8_t R: 1;
+  uint8_t T2: 1;
+  uint8_t T1: 1;
+  uint8_t E: 1;
+} __attribute__((__packed__)) NR_RA_HEADER_BI_MSGB;
+
+typedef struct {
+  uint8_t R: 4;
+  uint8_t S: 1;
+  uint8_t T2: 1;
+  uint8_t T1: 1;
+  uint8_t E: 1;
+} __attribute__((__packed__)) NR_RA_HEADER_SUCESS_RAR_MSGB;
+
+// TS 38.321 Sec. 6.2.3
 typedef struct {
   uint8_t TA1: 7;         // octet 1 [6:0]
   uint8_t R: 1;           // octet 1 [7]
@@ -263,6 +285,38 @@ typedef struct {
   uint8_t TCRNTI_1: 8;    // octet 6 [7:0]
   uint8_t TCRNTI_2: 8;    // octet 7 [7:0]
 } __attribute__ ((__packed__)) NR_MAC_RAR;
+
+// TS 38.321 Sec. 6.2.3
+typedef struct {
+  uint8_t TA1: 7; // octet 1 [6:0]
+  uint8_t R: 1; // octet 1 [7]
+  uint8_t UL_GRANT_1: 3; // octet 2 [2:0]
+  uint8_t TA2: 5; // octet 2 [7:3]
+  uint8_t UL_GRANT_2: 8; // octet 3 [7:0]
+  uint8_t UL_GRANT_3: 8; // octet 4 [7:0]
+  uint8_t UL_GRANT_4: 8; // octet 5 [7:0]
+  uint8_t TCRNTI_1: 8; // octet 6 [7:0]
+  uint8_t TCRNTI_2: 8; // octet 7 [7:0]
+} __attribute__((__packed__)) NR_MAC_RAR_MSGB;
+
+// TS 38.321 Sec. 6.2.3
+typedef struct {
+  uint8_t CONT_RES_1: 8; // octet 1 [7:0]
+  uint8_t CONT_RES_2: 8; // octet 2 [7:0]
+  uint8_t CONT_RES_3: 8; // octet 3 [7:0]
+  uint8_t CONT_RES_4: 8; // octet 4 [7:0]
+  uint8_t CONT_RES_5: 8; // octet 5 [7:0]
+  uint8_t CONT_RES_6: 8; // octet 6 [7:0]
+  uint8_t HARQ_FTI: 3; // octet 7 [2:0]
+  uint8_t TPC: 2; // octet 7 [4:3]
+  uint8_t CH_ACESS_CPEXT: 2; // octet 7 [6:5]
+  uint8_t R: 1; // octet 7 [7]
+  uint8_t TA1: 4; // octet 8 [3:0]
+  uint8_t PUCCH_RI: 4; // octet 8 [7:4]
+  uint8_t TA2: 8; // octet 9 [7:0]
+  uint8_t CRNTI_1: 8; // octet 10 [7:0]
+  uint8_t CRNTI_2: 8; // octet 11 [7:0]
+} __attribute__((__packed__)) NR_MAC_SUCESS_RAR;
 
 // DCI pdu structures. Used by both gNB and UE.
 typedef struct {
@@ -558,6 +612,7 @@ typedef struct NR_UE_UL_BWP {
   uint16_t BWPSize;
   uint16_t BWPStart;
   NR_RACH_ConfigCommon_t *rach_ConfigCommon;
+  NR_MsgA_ConfigCommon_r16_t *msgA_ConfigCommon_r16;
   NR_PUSCH_TimeDomainResourceAllocationList_t *tdaList_Common;
   NR_ConfiguredGrantConfig_t *configuredGrantConfig;
   NR_PUSCH_Config_t *pusch_Config;
@@ -613,6 +668,11 @@ typedef struct NR_tda_info {
   int nrOfSymbols;
   long k2;
 } NR_tda_info_t;
+
+typedef enum {
+  RA_4_STEP = 0,
+  RA_2_STEP = 1,
+} nr_ra_type_t;
 
 #endif /*__LAYER2_MAC_H__ */
 
