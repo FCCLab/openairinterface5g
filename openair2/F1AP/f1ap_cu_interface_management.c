@@ -151,134 +151,24 @@ int CU_handle_F1_SETUP_REQUEST(instance_t instance, sctp_assoc_t assoc_id, uint3
   return 0;
 }
 
+/**
+ * @brief F1AP Setup Response encoding (9.2.1.5 of 3GPP TS 38.473) and message transfer
+ */
 int CU_send_F1_SETUP_RESPONSE(sctp_assoc_t assoc_id, f1ap_setup_resp_t *f1ap_setup_resp)
 {
-  F1AP_F1AP_PDU_t           pdu= {0};
   uint8_t  *buffer=NULL;
-  uint32_t  len=0;
-  /* Create */
-  /* 0. Message Type */
-  pdu.present = F1AP_F1AP_PDU_PR_successfulOutcome;
-  asn1cCalloc(pdu.choice.successfulOutcome, tmp);
-  tmp->procedureCode = F1AP_ProcedureCode_id_F1Setup;
-  tmp->criticality   = F1AP_Criticality_reject;
-  tmp->value.present = F1AP_SuccessfulOutcome__value_PR_F1SetupResponse;
-  F1AP_F1SetupResponse_t    *out = &pdu.choice.successfulOutcome->value.choice.F1SetupResponse;
-  /* mandatory */
-  /* c1. Transaction ID (integer value)*/
-  asn1cSequenceAdd(out->protocolIEs.list, F1AP_F1SetupResponseIEs_t, ie1);
-  ie1->id                        = F1AP_ProtocolIE_ID_id_TransactionID;
-  ie1->criticality               = F1AP_Criticality_reject;
-  ie1->value.present             = F1AP_F1SetupResponseIEs__value_PR_TransactionID;
-  ie1->value.choice.TransactionID = f1ap_setup_resp->transaction_id;
+  uint32_t len = 0;
 
-  /* optional */
-  /* c2. GNB_CU_Name */
-  if (f1ap_setup_resp->gNB_CU_name != NULL) {
-    asn1cSequenceAdd(out->protocolIEs.list, F1AP_F1SetupResponseIEs_t, ie2);
-    ie2->id                        = F1AP_ProtocolIE_ID_id_gNB_CU_Name;
-    ie2->criticality               = F1AP_Criticality_ignore;
-    ie2->value.present             = F1AP_F1SetupResponseIEs__value_PR_GNB_CU_Name;
-    OCTET_STRING_fromBuf(&ie2->value.choice.GNB_CU_Name, f1ap_setup_resp->gNB_CU_name,
-                         strlen(f1ap_setup_resp->gNB_CU_name));
-  }
-
-  /* mandatory */
-  /* c3. cells to be Activated list */
-  int num_cells_to_activate = f1ap_setup_resp->num_cells_to_activate;
-  LOG_D(F1AP, "num_cells_to_activate = %d \n", num_cells_to_activate);
-
-  if (num_cells_to_activate >0) {
-    asn1cSequenceAdd(out->protocolIEs.list, F1AP_F1SetupResponseIEs_t, ie3);
-    ie3->id                        = F1AP_ProtocolIE_ID_id_Cells_to_be_Activated_List;
-    ie3->criticality               = F1AP_Criticality_reject;
-    ie3->value.present             = F1AP_F1SetupResponseIEs__value_PR_Cells_to_be_Activated_List;
-
-    for (int i=0; i<num_cells_to_activate;  i++) {
-      asn1cSequenceAdd(ie3->value.choice.Cells_to_be_Activated_List.list,
-                       F1AP_Cells_to_be_Activated_List_ItemIEs_t, cells_to_be_activated_ies);
-      cells_to_be_activated_ies->id = F1AP_ProtocolIE_ID_id_Cells_to_be_Activated_List_Item;
-      cells_to_be_activated_ies->criticality = F1AP_Criticality_reject;
-      cells_to_be_activated_ies->value.present = F1AP_Cells_to_be_Activated_List_ItemIEs__value_PR_Cells_to_be_Activated_List_Item;
-      /* 3.1 cells to be Activated list item */
-      F1AP_Cells_to_be_Activated_List_Item_t *cells_to_be_activated_item=
-        &cells_to_be_activated_ies->value.choice.Cells_to_be_Activated_List_Item;
-      /* - nRCGI */
-      addnRCGI(cells_to_be_activated_item->nRCGI, f1ap_setup_resp->cells_to_activate+i);
-
-      /* optional */
-      /* - nRPCI */
-      if (1) {
-        cells_to_be_activated_item->nRPCI = (F1AP_NRPCI_t *)calloc(1, sizeof(F1AP_NRPCI_t));
-        *cells_to_be_activated_item->nRPCI = f1ap_setup_resp->cells_to_activate[i].nrpci;  // int 0..1007
-      }
-
-      /* optional */
-      /* - gNB-CU System Information */
-      if (f1ap_setup_resp->cells_to_activate[i].num_SI > 0) {
-        /* 3.1.2 gNB-CUSystem Information */
-        F1AP_ProtocolExtensionContainer_10696P112_t *p = calloc(1, sizeof(* p));
-        cells_to_be_activated_item->iE_Extensions = (struct F1AP_ProtocolExtensionContainer *) p;
-        asn1cSequenceAdd(p->list, F1AP_Cells_to_be_Activated_List_ItemExtIEs_t, cells_to_be_activated_itemExtIEs);
-        cells_to_be_activated_itemExtIEs->id                     = F1AP_ProtocolIE_ID_id_gNB_CUSystemInformation;
-        cells_to_be_activated_itemExtIEs->criticality            = F1AP_Criticality_reject;
-        cells_to_be_activated_itemExtIEs->extensionValue.present = F1AP_Cells_to_be_Activated_List_ItemExtIEs__extensionValue_PR_GNB_CUSystemInformation;
-        F1AP_GNB_CUSystemInformation_t *gNB_CUSystemInformation =
-          &cells_to_be_activated_itemExtIEs->extensionValue.choice.GNB_CUSystemInformation;
-
-        // for (int sIBtype=2;sIBtype<33;sIBtype++) { //21 ? 33 ?
-        for (int sIBtype=2; sIBtype<21; sIBtype++) {
-          if (f1ap_setup_resp->cells_to_activate[i].SI_container[sIBtype]!=NULL) {
-            AssertFatal(sIBtype < 6 || sIBtype == 9, "Illegal SI type %d\n",sIBtype);
-            asn1cSequenceAdd(gNB_CUSystemInformation->sibtypetobeupdatedlist.list, F1AP_SibtypetobeupdatedListItem_t, sib_item);
-            sib_item->sIBtype = sIBtype;
-            OCTET_STRING_fromBuf(&sib_item->sIBmessage,
-                                 (const char *)f1ap_setup_resp->cells_to_activate[i].SI_container[sIBtype],
-                                 f1ap_setup_resp->cells_to_activate[i].SI_container_length[sIBtype]);
-            LOG_D(F1AP, "f1ap_setup_resp->SI_container_length[%d][%d] = %d \n", i,sIBtype,f1ap_setup_resp->cells_to_activate[i].SI_container_length[sIBtype]);
-          }
-        }
-      }
-    }
-  }
-
-  /* c5. RRC VERSION */
-  asn1cSequenceAdd(out->protocolIEs.list, F1AP_F1SetupResponseIEs_t, ie4);
-  ie4->id = F1AP_ProtocolIE_ID_id_GNB_CU_RRC_Version;
-  ie4->criticality = F1AP_Criticality_reject;
-  ie4->value.present = F1AP_F1SetupResponseIEs__value_PR_RRC_Version;
-  // RRC Version: "This IE is not used in this release."
-  // we put one bit for each byte in rrc_ver that is != 0
-  uint8_t bits = 0;
-  for (int i = 0; i < 3; ++i)
-    bits |= (f1ap_setup_resp->rrc_ver[i] != 0) << i;
-  BIT_STRING_t *bs = &ie4->value.choice.RRC_Version.latest_RRC_Version;
-  bs->buf = calloc(1, sizeof(char));
-  AssertFatal(bs->buf != NULL, "out of memory\n");
-  bs->buf[0] = bits;
-  bs->size = 1;
-  bs->bits_unused = 5;
-
-  F1AP_ProtocolExtensionContainer_10696P228_t *p = (F1AP_ProtocolExtensionContainer_10696P228_t*)calloc(1, sizeof(F1AP_ProtocolExtensionContainer_10696P228_t));    
-  asn1cSequenceAdd(p->list, F1AP_RRC_Version_ExtIEs_t, rrcv_ext);
-  rrcv_ext->id = F1AP_ProtocolIE_ID_id_latest_RRC_Version_Enhanced;
-  rrcv_ext->criticality = F1AP_Criticality_ignore;
-  rrcv_ext->extensionValue.present = F1AP_RRC_Version_ExtIEs__extensionValue_PR_OCTET_STRING_SIZE_3_;
-  OCTET_STRING_t *os = &rrcv_ext->extensionValue.choice.OCTET_STRING_SIZE_3_;
-  os->size = 3;
-  os->buf = malloc(3 * sizeof(*os->buf));
-  AssertFatal(os->buf != NULL, "out of memory\n");
-  for (int i = 0; i < 3; ++i)
-    os->buf[i] = f1ap_setup_resp->rrc_ver[i];
-  ie4->value.choice.RRC_Version.iE_Extensions = (struct F1AP_ProtocolExtensionContainer *)p;
+  /* Encode F1 Setup Response */
+  F1AP_F1AP_PDU_t *pdu = encode_f1ap_setup_response(f1ap_setup_resp);
 
   /* encode */
-  if (f1ap_encode_pdu(&pdu, &buffer, &len) < 0) {
+  if (f1ap_encode_pdu(pdu, &buffer, &len) < 0) {
     LOG_E(F1AP, "Failed to encode F1 setup response\n");
+    ASN_STRUCT_FREE(asn_DEF_F1AP_F1AP_PDU, &pdu);
     return -1;
   }
-
-  ASN_STRUCT_RESET(asn_DEF_F1AP_F1AP_PDU, &pdu);
+  ASN_STRUCT_FREE(asn_DEF_F1AP_F1AP_PDU, &pdu);
   f1ap_itti_send_sctp_data_req(assoc_id, buffer, len);
   return 0;
 }
