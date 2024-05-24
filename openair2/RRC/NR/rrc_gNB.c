@@ -1654,6 +1654,24 @@ static void handle_rrcReconfigurationComplete(const protocol_ctxt_t *const ctxt_
       LOG_I(RRC, "UE %d: transaction %d still ongoing for action %d\n", UE->rrc_ue_id, i, UE->xids[i]);
     }
   }
+
+  if (UE->StatusRrc == NR_RRC_HO_EXECUTION) {
+    gNB_RRC_INST *rrc = RC.nrrrc[ctxt_pP->module_id];
+    f1_ue_data_t ue_data = cu_get_f1_ue_data(UE->rrc_ue_id);
+    RETURN_IF_INVALID_ASSOC_ID(ue_data);
+    f1ap_ue_context_release_cmd_t ue_context_release_cmd = {
+        .gNB_CU_ue_id = UE->rrc_ue_id,
+        .gNB_DU_ue_id = UE->handover_info.source_rnti,
+        .cause = F1AP_CAUSE_RADIO_NETWORK,
+        .cause_value = 10, // 10 = F1AP_CauseRadioNetwork_normal_release
+        .srb_id = DCCH,
+    };
+    rrc->mac_rrc.ue_context_release_command(UE->handover_info.source_assoc_id, &ue_context_release_cmd);
+
+    UE->rnti = UE->handover_info.target_rnti;
+    UE->StatusRrc = NR_RRC_CONNECTED;
+    memset(&UE->handover_info, 0, sizeof(UE->handover_info));
+  }
 }
 //-----------------------------------------------------------------------------
 int rrc_gNB_decode_dcch(const protocol_ctxt_t *const ctxt_pP,
@@ -2031,7 +2049,8 @@ static void rrc_CU_process_ue_context_release_complete(MessageDef *msg_p)
     return;
   }
 
-  rrc_remove_ue(RC.nrrrc[0], ue_context_p);
+  if (complete->gNB_DU_ue_id == ue_context_p->ue_context.rnti)
+    rrc_remove_ue(RC.nrrrc[0], ue_context_p);
 }
 
 static void rrc_CU_process_ue_context_modification_response(MessageDef *msg_p, instance_t instance)
