@@ -33,4 +33,11 @@ f1ap_setup_req_t cp_f1ap_setup_request(const f1ap_setup_req_t *msg);
 bool eq_f1ap_setup_request(const f1ap_setup_req_t *a, const f1ap_setup_req_t *b);
 void free_f1ap_setup_request(f1ap_setup_req_t *msg);
 
+/* F1 Setup Response */
+struct F1AP_F1AP_PDU *encode_f1ap_setup_response(const f1ap_setup_resp_t *msg);
+bool decode_f1ap_setup_response(const struct F1AP_F1AP_PDU *pdu, f1ap_setup_resp_t *out);
+void free_f1ap_setup_response(f1ap_setup_resp_t *msg);
+f1ap_setup_resp_t cp_f1ap_setup_response(const f1ap_setup_resp_t *msg);
+bool eq_f1ap_setup_response(const f1ap_setup_resp_t *a, const f1ap_setup_resp_t *b);
+
 #endif /* F1AP_INTERFACE_MANAGEMENT_H_ */

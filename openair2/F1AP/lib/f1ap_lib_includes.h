@@ -37,5 +37,7 @@
 #include "F1AP_FDD-Info.h"
 #include "F1AP_TDD-Info.h"
 #include "F1AP_FreqBandNrItem.h"
+#include "F1AP_SuccessfulOutcome.h"
+#include "F1AP_SibtypetobeupdatedListItem.h"
 
 #endif /* F1AP_LIB_INCLUDES_H_ */
