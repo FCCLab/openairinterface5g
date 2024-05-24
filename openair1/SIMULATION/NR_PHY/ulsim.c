@@ -156,7 +156,7 @@ int main(int argc, char *argv[])
   FILE *output_fd = NULL;
   double ***s_re,***s_im,***r_re,***r_im;
   //uint8_t write_output_file = 0;
-  int trial, n_trials = 1, n_false_positive = 0, delay = 0;
+  int trial, n_trials = 1, n_false_positive[MAX_UE_CONNECT], delay = 0;
   double maxDoppler = 0.0;
   uint8_t n_tx = 1, n_rx = 1;
   channel_desc_t *UE2gNB;
@@ -231,7 +231,9 @@ int main(int argc, char *argv[])
   /* initialize the sin-cos table */
   InitSinLUT();
 
-  while ((c = getopt(argc, argv, "a:b:c:d:ef:g:h:i:k:m:n:op:q:r:s:t:u:v:w:x:y:z:C:F:G:H:I:M:N:PR:S:T:U:L:ZW:E:X:")) != -1) {
+  while ((c = getopt(argc, argv, "--:a:b:c:d:ef:g:h:i:k:m:n:op:q:r:s:t:u:v:w:x:y:z:C:F:G:H:I:M:N:PR:S:T:U:L:ZW:E:X:")) != -1) {
+    if (c == 1 || c == '-')
+      continue;
     printf("handling optarg %c\n",c);
     switch (c) {
 
@@ -1013,7 +1015,9 @@ int main(int argc, char *argv[])
 
     varArray_t *table_rx=initVarArray(1000,sizeof(double));
     int error_flag[MAX_UE_CONNECT] = {0};
-    n_false_positive = 0;
+    for (int UE_id = 0; UE_id < number_of_UEs; UE_id++) {
+      n_false_positive[UE_id] = 0;
+    }
     effRate = 0;
     effTP = 0;
     roundStats = 0;
@@ -1631,7 +1635,7 @@ int main(int argc, char *argv[])
             }
         }
         if (errors_decoding[UE_id] > 0 && error_flag[UE_id] == 0) {
-          n_false_positive++;
+          n_false_positive[UE_id]++;
           if (n_trials == 1)
             printf(
                 "\x1B[31m"
@@ -1662,8 +1666,8 @@ int main(int argc, char *argv[])
       printf("SNR %f: n_errors[%d] (%d/%d", SNR, UE_id, n_errors[UE_id][0], round_trials[UE_id][0]);
       for (int r = 1; r < max_rounds; r++)
         printf(",%d/%d", n_errors[UE_id][r], round_trials[UE_id][r]);
-      printf(") (negative CRC), false_positive %d/%d, errors_scrambling[%d] (%u/%u",
-            n_false_positive, n_trials, UE_id, errors_scrambling[UE_id][0], available_bits[UE_id] * round_trials[UE_id][0]);
+      printf(") (negative CRC), false_positive[%d] %d/%d, errors_scrambling[%d] (%u/%u",
+            UE_id, n_false_positive[UE_id], n_trials, UE_id, errors_scrambling[UE_id][0], available_bits[UE_id] * round_trials[UE_id][0]);
       for (int r = 1; r < max_rounds; r++)
         printf(",%u/%u", errors_scrambling[UE_id][r], available_bits[UE_id] * round_trials[UE_id][r]);
       printf(")\n");
@@ -1693,7 +1697,7 @@ int main(int argc, char *argv[])
     // writing to csv file
     if (filename_csv) { // means we are asked to print stats to CSV
       for (int UE_id = 0; UE_id < number_of_UEs; UE_id++) {
-        fprintf(csv_file,"%f,%d/%d,",SNR,n_false_positive,n_trials);
+        fprintf(csv_file,"%f,%d/%d,",SNR,n_false_positive[UE_id],n_trials);
         for (int r = 0; r < max_rounds; r++)
           fprintf(csv_file,"%d/%d,%u/%u,%f,%e,",n_errors[UE_id][r], round_trials[UE_id][r], errors_scrambling[UE_id][r], available_bits[UE_id] * round_trials[UE_id][r],blerStats[UE_id][r],berStats[UE_id][r]);
         fprintf(csv_file,"%.2f,%.4f,%.2f,%u,(%i,%i,%f)\n", roundStats, effRate, effTP, TBS[UE_id],min_pusch_delay >> 1, max_pusch_delay >> 1, (double)sum_pusch_delay[UE_id] / (2 * delay_pusch_est_count[UE_id]));
