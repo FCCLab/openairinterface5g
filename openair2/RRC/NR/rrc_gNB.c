@@ -2067,6 +2067,15 @@ static void rrc_CU_process_ue_context_modification_response(MessageDef *msg_p, i
 
     rrc_gNB_generate_dedicatedRRCReconfiguration(&ctxt, ue_context_p);
   }
+
+  // Update with new RNTI, and update secondary UE association
+  if (UE->StatusRrc == NR_RRC_HO_EXECUTION) {
+    f1_ue_data_t ue_data = cu_get_f1_ue_data(UE->rrc_ue_id);
+    ue_data.secondary_ue = UE->handover_info.target_rnti;
+    ue_data.du_assoc_id = UE->handover_info.target_assoc_id;
+    cu_remove_f1_ue_data(UE->rrc_ue_id);
+    cu_add_f1_ue_data(UE->rrc_ue_id, &ue_data);
+  }
 }
 
 static void rrc_CU_process_ue_modification_required(MessageDef *msg_p)

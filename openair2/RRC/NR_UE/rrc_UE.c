@@ -843,6 +843,15 @@ void nr_rrc_cellgroup_configuration(NR_UE_RRC_INST_t *rrc, NR_CellGroupConfig_t 
         if (get_DRB_status(rrc, i) == RB_SUSPENDED)
           set_DRB_status(rrc, i, RB_ESTABLISHED);
       }
+      if (cellGroupConfig->rlc_BearerToAddModList != NULL) {
+        for (int i = 0; i < cellGroupConfig->rlc_BearerToAddModList->list.count; i++) {
+          NR_RLC_BearerConfig_t *rlc_bearer = cellGroupConfig->rlc_BearerToAddModList->list.array[i];
+          NR_LogicalChannelIdentity_t lcid = rlc_bearer->logicalChannelIdentity;
+          if (rrc->active_RLC_entity[lcid]) {
+            nr_rlc_reestablish_entity(rrc->ue_id, lcid);
+          }
+        }
+      }
       // TODO reset MAC
     }
     nr_rrc_handle_SetupRelease_RLF_TimersAndConstants(rrc, spCellConfig->rlf_TimersAndConstants);
