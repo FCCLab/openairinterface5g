@@ -9,7 +9,7 @@ services:
         devices:
             - /dev/vfio:/dev/vfio/
         volumes:
-            - ../../../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band77.273prb.fhi72.4x4-vvdn.conf:/tmp/gnb.conf
+            - ../../../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band77.273prb.fhi72.4x4-vvdn.conf:/opt/oai-gnb/etc/gnb.conf
             - /dev/hugepages:/dev/hugepages
         cpuset: "0,1,2,8,9,10,13,14,15,16,17,18"
         networks:
