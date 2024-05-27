@@ -51,39 +51,6 @@ int to_NRNRB(int nrb) {
   AssertFatal(1==0,"nrb %d is not in the list of possible NRNRB\n",nrb);
 }
 
-int DU_handle_RESET(instance_t instance, sctp_assoc_t assoc_id, uint32_t stream, F1AP_F1AP_PDU_t *pdu)
-{
-  AssertFatal(1==0,"Not implemented yet\n");
-}
-
-int DU_send_RESET_ACKKNOWLEDGE(sctp_assoc_t assoc_id, F1AP_ResetAcknowledge_t *ResetAcknowledge) {
-  AssertFatal(1==0,"Not implemented yet\n");
-}
-
-int DU_send_RESET(sctp_assoc_t assoc_id, F1AP_Reset_t *Reset)
-{
-  AssertFatal(1==0,"Not implemented yet\n");
-}
-
-int DU_handle_RESET_ACKNOWLEDGE(instance_t instance, sctp_assoc_t assoc_id, uint32_t stream, F1AP_F1AP_PDU_t *pdu)
-{
-  AssertFatal(1==0,"Not implemented yet\n");
-}
-
-/*
-    Error Indication
-*/
-
-int DU_send_ERROR_INDICATION(sctp_assoc_t assoc_id, F1AP_F1AP_PDU_t *pdu_p)
-{
-  AssertFatal(1==0,"Not implemented yet\n");
-}
-
-int DU_handle_ERROR_INDICATION(instance_t instance, sctp_assoc_t assoc_id, uint32_t stream, F1AP_F1AP_PDU_t *pdu)
-{
-  AssertFatal(1==0,"Not implemented yet\n");
-}
-
 static F1AP_Served_Cell_Information_t encode_served_cell_info(const f1ap_served_cell_info_t *c)
 {
   /* 4.1.1 served cell Information */
@@ -412,19 +379,6 @@ int DU_send_gNB_DU_CONFIGURATION_UPDATE(sctp_assoc_t assoc_id, const f1ap_gnb_du
   return 0;
 }
 
-int DU_handle_gNB_DU_CONFIGURATION_FAILURE(instance_t instance, sctp_assoc_t assoc_id, uint32_t stream, F1AP_F1AP_PDU_t *pdu)
-{
-  AssertFatal(1==0,"Not implemented yet\n");
-}
-
-int DU_handle_gNB_DU_CONFIGURATION_UPDATE_ACKNOWLEDGE(instance_t instance,
-                                                      sctp_assoc_t assoc_id,
-                                                      uint32_t stream,
-                                                      F1AP_F1AP_PDU_t *pdu)
-{
-  AssertFatal(1==0,"Not implemented yet\n");
-}
-
 int DU_handle_gNB_CU_CONFIGURATION_UPDATE(instance_t instance, sctp_assoc_t assoc_id, uint32_t stream, F1AP_F1AP_PDU_t *pdu)
 {
   LOG_D(F1AP, "DU_handle_gNB_CU_CONFIGURATION_UPDATE\n");
@@ -623,18 +577,4 @@ int DU_send_gNB_CU_CONFIGURATION_UPDATE_ACKNOWLEDGE(
   ASN_STRUCT_RESET(asn_DEF_F1AP_F1AP_PDU, &pdu);
   f1ap_itti_send_sctp_data_req(assoc_id, buffer, len);
   return 0;
-}
-
-int DU_send_gNB_DU_RESOURCE_COORDINATION_REQUEST(sctp_assoc_t assoc_id,
-                                                 F1AP_GNBDUResourceCoordinationRequest_t *GNBDUResourceCoordinationRequest)
-{
-  AssertFatal(0, "Not implemented yet\n");
-}
-
-int DU_handle_gNB_DU_RESOURCE_COORDINATION_RESPONSE(instance_t instance,
-                                                    sctp_assoc_t assoc_id,
-                                                    uint32_t stream,
-                                                    F1AP_F1AP_PDU_t *pdu)
-{
-  AssertFatal(0, "Not implemented yet\n");
 }

@@ -46,9 +46,7 @@ static const f1ap_message_processing_t f1ap_messages_processing[][3] = {
     {CU_handle_F1_SETUP_REQUEST, DU_handle_F1_SETUP_RESPONSE, DU_handle_F1_SETUP_FAILURE}, /* F1Setup */
     {0, 0, 0}, /* ErrorIndication */
     {CU_handle_gNB_DU_CONFIGURATION_UPDATE, 0, 0}, /* gNBDUConfigurationUpdate */
-    {DU_handle_gNB_CU_CONFIGURATION_UPDATE,
-     CU_handle_gNB_CU_CONFIGURATION_UPDATE_ACKNOWLEDGE,
-     CU_handle_gNB_CU_CONFIGURATION_UPDATE_FAILURE}, /* gNBCUConfigurationUpdate */
+    {DU_handle_gNB_CU_CONFIGURATION_UPDATE, CU_handle_gNB_CU_CONFIGURATION_UPDATE_ACKNOWLEDGE, 0}, /* gNBCUConfigurationUpdate */
     {DU_handle_UE_CONTEXT_SETUP_REQUEST, CU_handle_UE_CONTEXT_SETUP_RESPONSE, 0}, /* UEContextSetup */
     {DU_handle_UE_CONTEXT_RELEASE_COMMAND, CU_handle_UE_CONTEXT_RELEASE_COMPLETE, 0}, /* UEContextRelease */
     {DU_handle_UE_CONTEXT_MODIFICATION_REQUEST, CU_handle_UE_CONTEXT_MODIFICATION_RESPONSE, 0}, /* UEContextModification */

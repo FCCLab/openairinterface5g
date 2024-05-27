@@ -37,38 +37,6 @@
 #include "f1ap_default_values.h"
 #include "lib/f1ap_interface_management.h"
 
-int CU_send_RESET(sctp_assoc_t assoc_id, F1AP_Reset_t *Reset)
-{
-  AssertFatal(1==0,"Not implemented yet\n");
-}
-
-int CU_handle_RESET_ACKKNOWLEDGE(instance_t instance, sctp_assoc_t assoc_id, uint32_t stream, F1AP_F1AP_PDU_t *pdu)
-{
-  AssertFatal(1==0,"Not implemented yet\n");
-}
-
-int CU_handle_RESET(instance_t instance, sctp_assoc_t assoc_id, uint32_t stream, F1AP_F1AP_PDU_t *pdu)
-{
-  AssertFatal(1==0,"Not implemented yet\n");
-}
-
-int CU_send_RESET_ACKNOWLEDGE(sctp_assoc_t assoc_id, F1AP_ResetAcknowledge_t *ResetAcknowledge)
-{
-  AssertFatal(1==0,"Not implemented yet\n");
-}
-
-/*
-    Error Indication
-*/
-int CU_handle_ERROR_INDICATION(instance_t instance, sctp_assoc_t assoc_id, uint32_t stream, F1AP_F1AP_PDU_t *pdu)
-{
-  AssertFatal(1==0,"Not implemented yet\n");
-}
-
-int CU_send_ERROR_INDICATION(sctp_assoc_t assoc_id, F1AP_ErrorIndication_t *ErrorIndication) {
-  AssertFatal(1==0,"Not implemented yet\n");
-}
-
 void dump_setup_req(f1ap_setup_req_t *msg)
 {
   LOG_D(F1AP, "out->transaction_id %lu \n", msg->transaction_id);
@@ -564,12 +532,6 @@ int CU_handle_gNB_DU_CONFIGURATION_UPDATE(instance_t instance, sctp_assoc_t asso
   return 0;
 }
 
-int CU_send_gNB_DU_CONFIGURATION_FAILURE(sctp_assoc_t assoc_id,
-                                         f1ap_gnb_du_configuration_update_failure_t *GNBDUConfigurationUpdateFailure)
-{
-  AssertFatal(1==0,"Not implemented yet\n");
-}
-
 int CU_send_gNB_DU_CONFIGURATION_UPDATE_ACKNOWLEDGE(
     sctp_assoc_t assoc_id,
     f1ap_gnb_du_configuration_update_acknowledge_t *GNBDUConfigurationUpdateAcknowledge)
@@ -705,11 +667,6 @@ int CU_send_gNB_CU_CONFIGURATION_UPDATE(sctp_assoc_t assoc_id, f1ap_gnb_cu_confi
   return 0;
 }
 
-int CU_handle_gNB_CU_CONFIGURATION_UPDATE_FAILURE(instance_t instance, sctp_assoc_t assoc_id, uint32_t stream, F1AP_F1AP_PDU_t *pdu)
-{
-  AssertFatal(1==0,"Not implemented yet\n");
-}
-
 int CU_handle_gNB_CU_CONFIGURATION_UPDATE_ACKNOWLEDGE(instance_t instance,
                                                       sctp_assoc_t assoc_id,
                                                       uint32_t stream,
@@ -717,17 +674,4 @@ int CU_handle_gNB_CU_CONFIGURATION_UPDATE_ACKNOWLEDGE(instance_t instance,
 {
   LOG_I(F1AP,"Cell Configuration ok (assoc_id %d)\n",assoc_id);
   return(0);
-}
-
-int CU_handle_gNB_DU_RESOURCE_COORDINATION_REQUEST(instance_t instance,
-                                                   sctp_assoc_t assoc_id,
-                                                   uint32_t stream,
-                                                   F1AP_F1AP_PDU_t *pdu)
-{
-  AssertFatal(0, "Not implemented yet\n");
-}
-
-int CU_send_gNB_DU_RESOURCE_COORDINATION_RESPONSE(sctp_assoc_t assoc_id,
-    F1AP_GNBDUResourceCoordinationResponse_t *GNBDUResourceCoordinationResponse) {
-  AssertFatal(0, "Not implemented yet\n");
 }
