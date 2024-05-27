@@ -1122,7 +1122,7 @@ int main(int argc, char *argv[])
           } else {
             ue_start_rb = start_rb;
             for (int i = 0; i < UE_id; i++)
-              ue_start_rb += nb_rb[UE_id];
+              ue_start_rb += nb_rb[i];
             pusch_pdu->rb_start = ue_start_rb;
             pusch_pdu->rb_size = nb_rb[UE_id];
           }
@@ -1213,7 +1213,7 @@ int main(int argc, char *argv[])
           } else {
             ue_start_rb = start_rb;
             for (int i = 0; i < UE_id; i++)
-              ue_start_rb += nb_rb[UE_id];
+              ue_start_rb += nb_rb[i];
             pusch_config_pdu->rb_start = ue_start_rb;
             pusch_config_pdu->rb_size = nb_rb[UE_id];
           }
