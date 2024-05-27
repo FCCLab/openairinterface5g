@@ -233,11 +233,72 @@ static void test_f1ap_setup_request(void)
   free_f1ap_setup_request(&orig);
 }
 
+/**
+ * @brief Test F1AP Setup Response Encoding/Decoding
+ */
+static void test_f1ap_setup_response(void)
+{
+  /* allocate memory */
+  /* gNB_CU_name */
+  char *cu_name = "OAI-CU";
+  int len = strlen(cu_name) + 1;
+  uint8_t *gNB_CU_name = (uint8_t *)calloc(len, sizeof(uint8_t));
+  AssertFatal(gNB_CU_name != NULL, "out of memory\n");
+  strcpy((char *)gNB_CU_name, cu_name);
+  /* create message */
+  f1ap_setup_resp_t orig = {
+      .gNB_CU_name = (char *)gNB_CU_name,
+      .transaction_id = 2,
+      .rrc_ver[0] = 12,
+      .rrc_ver[1] = 34,
+      .rrc_ver[2] = 56,
+      .num_cells_to_activate = 0,
+      .cells_to_activate[0].nr_cellid = 123456,
+      .cells_to_activate[0].nrpci = 1,
+      .cells_to_activate[0].plmn.mcc = 12,
+      .cells_to_activate[0].plmn.mnc = 123,
+      .cells_to_activate[0].plmn.mnc_digit_length = 3,
+  };
+  /* Cells to activate */
+  if (orig.num_cells_to_activate) {
+    /* SI_container */
+    char *s = "test";
+    int SI_container_length = strlen(s) + 1;
+    char *SI_container = malloc(SI_container_length);
+    AssertFatal(SI_container != NULL, "out of memory\n");
+    strcpy((char *)SI_container, s);
+    /* complete original message */
+    orig.cells_to_activate[0].num_SI = 1,
+    orig.cells_to_activate[0].SI_container[0] = (uint8_t *)SI_container;
+    orig.cells_to_activate[0].SI_container_length[0] = SI_container_length;
+    orig.cells_to_activate[0].SI_type[0] = 2;
+  }
+  F1AP_F1AP_PDU_t *f1enc = encode_f1ap_setup_response(&orig);
+  F1AP_F1AP_PDU_t *f1dec = f1ap_encode_decode(f1enc);
+  f1ap_msg_free(f1enc);
+
+  f1ap_setup_resp_t decoded;
+  bool ret = decode_f1ap_setup_response(f1dec, &decoded);
+  AssertFatal(ret, "decode_f1ap_setup_response(): could not decode message\n");
+  f1ap_msg_free(f1dec);
+
+  ret = eq_f1ap_setup_response(&orig, &decoded);
+  AssertFatal(ret, "eq_f1ap_setup_response(): decoded message doesn't match\n");
+  free_f1ap_setup_response(&decoded);
+
+  f1ap_setup_resp_t cp = cp_f1ap_setup_response(&orig);
+  ret = eq_f1ap_setup_response(&orig, &cp);
+  AssertFatal(ret, "eq_f1ap_setup_response(): copied message doesn't match\n");
+  free_f1ap_setup_response(&cp);
+  free_f1ap_setup_response(&orig);
+}
+
 int main()
 {
   test_initial_ul_rrc_message_transfer();
   test_dl_rrc_message_transfer();
   test_ul_rrc_message_transfer();
   test_f1ap_setup_request();
+  test_f1ap_setup_response();
   return 0;
 }
