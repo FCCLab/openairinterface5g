@@ -416,7 +416,6 @@ void derive_ue_keys(uint8_t *buf, nr_ue_nas_t *nas) {
 
 nr_ue_nas_t *get_ue_nas_info(module_id_t module_id)
 {
-  DevAssert(module_id == 0);
   if (!nr_ue_nas.uicc)
     nr_ue_nas.uicc = checkUicc(0);
   return &nr_ue_nas;
