@@ -40,4 +40,10 @@ void free_f1ap_setup_response(f1ap_setup_resp_t *msg);
 f1ap_setup_resp_t cp_f1ap_setup_response(const f1ap_setup_resp_t *msg);
 bool eq_f1ap_setup_response(const f1ap_setup_resp_t *a, const f1ap_setup_resp_t *b);
 
+/* F1 Setup Failure */
+struct F1AP_F1AP_PDU *encode_f1ap_setup_failure(const f1ap_setup_failure_t *msg);
+bool decode_f1ap_setup_failure(const struct F1AP_F1AP_PDU *pdu, f1ap_setup_failure_t *out);
+bool eq_f1ap_setup_failure(const f1ap_setup_failure_t *a, const f1ap_setup_failure_t *b);
+f1ap_setup_failure_t cp_f1ap_setup_failure(const f1ap_setup_failure_t *msg);
+
 #endif /* F1AP_INTERFACE_MANAGEMENT_H_ */
