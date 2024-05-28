@@ -120,6 +120,7 @@ void rrc_gNB_process_f1_setup_req(f1ap_setup_req_t *req, sctp_assoc_t assoc_id)
   if (req->num_cells_available != 1) {
     LOG_E(NR_RRC, "can only handle on DU cell, but gNB_DU %ld has %d\n", req->gNB_DU_id, req->num_cells_available);
     f1ap_setup_failure_t fail = {.cause = F1AP_CauseRadioNetwork_gNB_CU_Cell_Capacity_Exceeded};
+    fail.transaction_id = F1AP_get_next_transaction_identifier(0, 0);
     rrc->mac_rrc.f1_setup_failure(assoc_id, &fail);
     return;
   }
@@ -132,6 +133,7 @@ void rrc_gNB_process_f1_setup_req(f1ap_setup_req_t *req, sctp_assoc_t assoc_id)
           cell_info->plmn.mcc,
           cell_info->plmn.mnc);
     f1ap_setup_failure_t fail = {.cause = F1AP_CauseRadioNetwork_plmn_not_served_by_the_gNB_CU};
+    fail.transaction_id = F1AP_get_next_transaction_identifier(0, 0);
     rrc->mac_rrc.f1_setup_failure(assoc_id, &fail);
     return;
   }
@@ -144,6 +146,7 @@ void rrc_gNB_process_f1_setup_req(f1ap_setup_req_t *req, sctp_assoc_t assoc_id)
             it->assoc_id,
             it->setup_req->gNB_DU_id);
       f1ap_setup_failure_t fail = {.cause = F1AP_CauseMisc_unspecified};
+      fail.transaction_id = F1AP_get_next_transaction_identifier(0, 0);
       rrc->mac_rrc.f1_setup_failure(assoc_id, &fail);
       return;
     }
@@ -161,6 +164,7 @@ void rrc_gNB_process_f1_setup_req(f1ap_setup_req_t *req, sctp_assoc_t assoc_id)
             new_info->nr_cellid,
             new_info->nr_pci);
       f1ap_setup_failure_t fail = {.cause = F1AP_CauseMisc_unspecified};
+      fail.transaction_id = F1AP_get_next_transaction_identifier(0, 0);
       rrc->mac_rrc.f1_setup_failure(assoc_id, &fail);
       return;
     }
@@ -179,6 +183,7 @@ void rrc_gNB_process_f1_setup_req(f1ap_setup_req_t *req, sctp_assoc_t assoc_id)
     if (!extract_sys_info(sys_info, &mib, &sib1)) {
       LOG_W(RRC, "rejecting DU ID %ld\n", req->gNB_DU_id);
       f1ap_setup_failure_t fail = {.cause = F1AP_CauseProtocol_semantic_error};
+      fail.transaction_id = F1AP_get_next_transaction_identifier(0, 0);
       rrc->mac_rrc.f1_setup_failure(assoc_id, &fail);
       ASN_STRUCT_FREE(asn_DEF_NR_MeasurementTimingConfiguration, mtc);
       return;

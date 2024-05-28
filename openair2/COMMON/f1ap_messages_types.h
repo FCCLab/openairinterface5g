@@ -220,7 +220,9 @@ typedef struct f1ap_gnb_cu_configuration_update_s {
 typedef struct f1ap_setup_failure_s {
   uint16_t cause;
   uint16_t time_to_wait;
-  uint16_t criticality_diagnostics; 
+  uint16_t criticality_diagnostics;
+  /// Transaction ID (M)
+  uint64_t transaction_id;
 } f1ap_setup_failure_t;
 
 typedef struct f1ap_gnb_cu_configuration_update_acknowledge_s {
