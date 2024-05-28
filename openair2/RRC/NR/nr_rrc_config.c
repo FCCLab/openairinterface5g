@@ -2209,7 +2209,10 @@ NR_BCCH_DL_SCH_Message_t *get_SIB1_NR(const NR_ServingCellConfigCommon_t *scc, c
     AssertFatal(ServCellCom->tdd_UL_DL_ConfigurationCommon != NULL, "out of memory\n");
     ServCellCom->tdd_UL_DL_ConfigurationCommon->referenceSubcarrierSpacing = scc->tdd_UL_DL_ConfigurationCommon->referenceSubcarrierSpacing;
     ServCellCom->tdd_UL_DL_ConfigurationCommon->pattern1 = scc->tdd_UL_DL_ConfigurationCommon->pattern1;
-    ServCellCom->tdd_UL_DL_ConfigurationCommon->pattern2 = scc->tdd_UL_DL_ConfigurationCommon->pattern2;
+    if (scc->tdd_UL_DL_ConfigurationCommon->pattern2) {
+      ServCellCom->tdd_UL_DL_ConfigurationCommon->pattern2 = CALLOC(1, sizeof(struct NR_TDD_UL_DL_Pattern));
+      *ServCellCom->tdd_UL_DL_ConfigurationCommon->pattern2 = *scc->tdd_UL_DL_ConfigurationCommon->pattern2;
+    }
   }
   ServCellCom->ss_PBCH_BlockPower = scc->ss_PBCH_BlockPower;
 

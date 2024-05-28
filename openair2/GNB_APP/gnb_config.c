@@ -186,12 +186,17 @@ void prepare_scc(NR_ServingCellConfigCommon_t *scc) {
   scc->n_TimingAdvanceOffset = CALLOC(1, sizeof(long));
   scc->ssb_PositionsInBurst                      = CALLOC(1,sizeof(struct NR_ServingCellConfigCommon__ssb_PositionsInBurst));
   scc->ssb_periodicityServingCell                = CALLOC(1,sizeof(long));
-  //  scc->rateMatchPatternToAddModList              = CALLOC(1,sizeof(struct NR_ServingCellConfigCommon__rateMatchPatternToAddModList));
-  //  scc->rateMatchPatternToReleaseList             = CALLOC(1,sizeof(struct NR_ServingCellConfigCommon__rateMatchPatternToReleaseList));
+  //  scc->rateMatchPatternToAddModList             = CALLOC(1,sizeof(struct
+  //  NR_ServingCellConfigCommon__rateMatchPatternToAddModList)); scc->rateMatchPatternToReleaseList             =
+  //  CALLOC(1,sizeof(struct NR_ServingCellConfigCommon__rateMatchPatternToReleaseList));
   scc->ssbSubcarrierSpacing                      = CALLOC(1,sizeof(NR_SubcarrierSpacing_t));
   scc->tdd_UL_DL_ConfigurationCommon             = CALLOC(1,sizeof(struct NR_TDD_UL_DL_ConfigCommon));
   scc->tdd_UL_DL_ConfigurationCommon->pattern2   = CALLOC(1,sizeof(struct NR_TDD_UL_DL_Pattern));
-  
+  scc->tdd_UL_DL_ConfigurationCommon->pattern1.ext1 = CALLOC(1, sizeof(struct NR_TDD_UL_DL_Pattern__ext1));
+  scc->tdd_UL_DL_ConfigurationCommon->pattern1.ext1->dl_UL_TransmissionPeriodicity_v1530 = CALLOC(1, sizeof(long));
+  scc->tdd_UL_DL_ConfigurationCommon->pattern2->ext1 = CALLOC(1, sizeof(struct NR_TDD_UL_DL_Pattern__ext1));
+  scc->tdd_UL_DL_ConfigurationCommon->pattern2->ext1->dl_UL_TransmissionPeriodicity_v1530 = CALLOC(1, sizeof(long));
+
   scc->downlinkConfigCommon->frequencyInfoDL->absoluteFrequencySSB     = CALLOC(1,sizeof(NR_ARFCN_ValueNR_t));
   
   dl_frequencyBandList              = CALLOC(1,sizeof(NR_FreqBandIndicatorNR_t));
@@ -378,6 +383,39 @@ void fill_scc_sim(NR_ServingCellConfigCommon_t *scc,uint64_t *ssb_bitmap,int N_R
  *scc->uplinkConfigCommon->initialUplinkBWP->rach_ConfigCommon->choice.setup->msg1_SubcarrierSpacing=-1;
 }
 
+static void fix_tdd_pattern(NR_ServingCellConfigCommon_t *scc)
+{
+  /* The pattern1 extension is not configured so free the ext1 and dl_UL_TransmissionPeriodicity_v1530
+   *  as these shall not be encoded with default values in SIB1
+   */
+  if (scc->tdd_UL_DL_ConfigurationCommon->pattern1.ext1 != NULL) {
+    if ((*scc->tdd_UL_DL_ConfigurationCommon->pattern1.ext1->dl_UL_TransmissionPeriodicity_v1530) > 1) {
+      free(scc->tdd_UL_DL_ConfigurationCommon->pattern1.ext1->dl_UL_TransmissionPeriodicity_v1530);
+      scc->tdd_UL_DL_ConfigurationCommon->pattern1.ext1->dl_UL_TransmissionPeriodicity_v1530 = NULL;
+      free(scc->tdd_UL_DL_ConfigurationCommon->pattern1.ext1);
+      scc->tdd_UL_DL_ConfigurationCommon->pattern1.ext1 = NULL;
+    }
+  }
+
+  if (scc->tdd_UL_DL_ConfigurationCommon->pattern2 != NULL) {
+    /* The pattern2 extension is not configured so free the ext1 and dl_UL_TransmissionPeriodicity_v1530
+     *  as these shall not be encoded with default values in SIB1
+     */
+    if (scc->tdd_UL_DL_ConfigurationCommon->pattern2->ext1 != NULL
+        && (*scc->tdd_UL_DL_ConfigurationCommon->pattern2->ext1->dl_UL_TransmissionPeriodicity_v1530) > 1) {
+      free(scc->tdd_UL_DL_ConfigurationCommon->pattern2->ext1->dl_UL_TransmissionPeriodicity_v1530);
+      scc->tdd_UL_DL_ConfigurationCommon->pattern2->ext1->dl_UL_TransmissionPeriodicity_v1530 = NULL;
+      free(scc->tdd_UL_DL_ConfigurationCommon->pattern2->ext1);
+      scc->tdd_UL_DL_ConfigurationCommon->pattern2->ext1 = NULL;
+
+      /* The pattern2 is not configured free the memory these shall not be encoded with default values in SIB1 */
+      if (scc->tdd_UL_DL_ConfigurationCommon->pattern2->dl_UL_TransmissionPeriodicity > 320) {
+        free(scc->tdd_UL_DL_ConfigurationCommon->pattern2);
+        scc->tdd_UL_DL_ConfigurationCommon->pattern2 = NULL;
+      }
+    }
+  }
+}
 
 void fix_scc(NR_ServingCellConfigCommon_t *scc,uint64_t ssbmap) {
 
@@ -452,11 +490,7 @@ void fix_scc(NR_ServingCellConfigCommon_t *scc,uint64_t ssbmap) {
     ASN_STRUCT_FREE(asn_DEF_NR_TDD_UL_DL_ConfigCommon, scc->tdd_UL_DL_ConfigurationCommon);
     scc->tdd_UL_DL_ConfigurationCommon = NULL;
   } else { // TDD
-    if (scc->tdd_UL_DL_ConfigurationCommon->pattern2->dl_UL_TransmissionPeriodicity > 320 ) {
-      free(scc->tdd_UL_DL_ConfigurationCommon->pattern2);
-      scc->tdd_UL_DL_ConfigurationCommon->pattern2 = NULL;
-    }
-
+    fix_tdd_pattern(scc);
   }
 
   if ((int)*scc->uplinkConfigCommon->initialUplinkBWP->rach_ConfigCommon->choice.setup->msg1_SubcarrierSpacing == -1) {
@@ -2015,6 +2049,7 @@ int RCconfig_NR_X2(MessageDef *msg_p, uint32_t i) {
   memset((void*)scc,0,sizeof(NR_ServingCellConfigCommon_t));
   prepare_scc(scc);
   paramdef_t SCCsParams[] = SCCPARAMS_DESC(scc);
+
   paramlist_def_t SCCsParamList = {GNB_CONFIG_STRING_SERVINGCELLCONFIGCOMMON, NULL, 0};
 
   AssertFatal(i < GNBSParams[GNB_ACTIVE_GNBS_IDX].numelt,

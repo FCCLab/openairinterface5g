@@ -722,6 +722,13 @@ typedef struct f1_config_t {
   uint32_t gnb_id; // associated gNB's ID, not used in DU itself
 } f1_config_t;
 
+enum slot_type { TDD_NR_DOWNLINK_SLOT, TDD_NR_UPLINK_SLOT, TDD_NR_MIXED_SLOT };
+typedef struct tdd_bitmap {
+  enum slot_type slot_type;
+  uint8_t num_dl_symbols;
+  uint8_t num_ul_symbols;
+} tdd_bitmap_t;
+
 /*! \brief top level eNB MAC structure */
 typedef struct gNB_MAC_INST_s {
   /// Ethernet parameters for northbound midhaul interface
@@ -811,6 +818,7 @@ typedef struct gNB_MAC_INST_s {
   uint64_t dlsch_slot_bitmap[3];
   /// bitmap of ULSCH slots, can hold up to 160 slots
   uint64_t ulsch_slot_bitmap[3];
+  tdd_bitmap_t tdd_slot_bitmap[64];
 
   /// maximum number of slots before a UE will be scheduled ULSCH automatically
   uint32_t ulsch_max_frame_inactivity;

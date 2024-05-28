@@ -332,6 +332,186 @@ void process_CellGroup(NR_CellGroupConfig_t *CellGroup, NR_UE_info_t *UE)
    }
    process_rlcBearerConfig(CellGroup->rlc_BearerToAddModList, CellGroup->rlc_BearerToReleaseList, &UE->UE_sched_ctrl);
 }
+static int8_t set_tdd_bmap_period(NR_TDD_UL_DL_Pattern_t pattern, tdd_bitmap_t *tdd_bmap, int8_t curr_total_slot)
+{
+  int8_t n_dl_slot, n_ul_slot, n_dl_symbols, n_ul_symbols, total_slot = 0;
+
+  n_dl_slot = pattern.nrofDownlinkSlots;
+  n_ul_slot = pattern.nrofUplinkSlots;
+  n_dl_symbols = pattern.nrofDownlinkSymbols;
+  n_ul_symbols = pattern.nrofUplinkSymbols;
+
+  LOG_I(NR_MAC,
+        "Setting TDD configuration period sum of both patterns dl_slot %d  ul_slot%d dl_sym %d ul_sym %d\n",
+        n_dl_slot,
+        n_ul_slot,
+        n_dl_symbols,
+        n_ul_symbols);
+
+  total_slot = !(n_ul_symbols + n_dl_symbols) ? n_dl_slot + n_ul_slot : n_dl_slot + n_ul_slot + 1;
+
+  for (int i = 0; i < total_slot; i++) {
+    if (i < n_dl_slot)
+      tdd_bmap[i + curr_total_slot].slot_type = TDD_NR_DOWNLINK_SLOT;
+    else if ((i == n_dl_slot) && (n_ul_symbols + n_dl_symbols)) {
+      tdd_bmap[i + curr_total_slot].slot_type = TDD_NR_MIXED_SLOT;
+      tdd_bmap[i + curr_total_slot].num_dl_symbols = n_dl_symbols;
+      tdd_bmap[i + curr_total_slot].num_ul_symbols = n_ul_symbols;
+    } else if (n_ul_slot)
+      tdd_bmap[i + curr_total_slot].slot_type = TDD_NR_UPLINK_SLOT;
+  }
+
+  LOG_I(NR_MAC, "Setting TDD configuration total slot %d and curr_slot %d\n", total_slot, curr_total_slot);
+
+  return total_slot;
+}
+static int get_tdd_period(NR_TDD_UL_DL_ConfigCommon_t *tdd, nfapi_nr_config_request_scf_t *cfg, tdd_bitmap_t *tdd_bmap)
+{
+  int num_of_patterns = 1;
+  float tdd_ms_period_pattern[] = {0.5, 0.625, 1.0, 1.25, 2.0, 2.5, 5.0, 10.0, 20.0};
+  float tdd_ms_period_ext[] = {3.0, 4.0};
+  float pattern1_ms = 0.0, pattern2_ms = 0.0;
+  int8_t total_slot_pattern1 = 0;
+  NR_TDD_UL_DL_Pattern_t pattern = tdd->pattern1;
+
+  if (pattern.ext1 == NULL) {
+    LOG_D(NR_MAC, "Setting TDD configuration period to dl_UL_TransmissionPeriodicity %ld\n", pattern.dl_UL_TransmissionPeriodicity);
+    pattern1_ms = tdd_ms_period_pattern[pattern.dl_UL_TransmissionPeriodicity];
+  } else {
+    AssertFatal(pattern.ext1->dl_UL_TransmissionPeriodicity_v1530 != NULL,
+                "In %s: scc->tdd_UL_DL_ConfigurationCommon->pattern1.ext1->dl_UL_TransmissionPeriodicity_v1530 is null\n",
+                __FUNCTION__);
+    LOG_D(NR_MAC,
+          "Setting TDD configuration period to dl_UL_TransmissionPeriodicity_v1530 %ld\n",
+          *pattern.ext1->dl_UL_TransmissionPeriodicity_v1530);
+    pattern1_ms = tdd_ms_period_ext[*pattern.ext1->dl_UL_TransmissionPeriodicity_v1530];
+  }
+
+  total_slot_pattern1 = set_tdd_bmap_period(pattern, tdd_bmap, 0);
+
+  if (tdd->pattern2) {
+    num_of_patterns++;
+    pattern = *tdd->pattern2;
+    if (pattern.ext1 == NULL) {
+      LOG_D(NR_MAC,
+            "Setting TDD Pattern2 configuration period to dl_UL_TransmissionPeriodicity %ld\n",
+            pattern.dl_UL_TransmissionPeriodicity);
+      pattern2_ms = tdd_ms_period_pattern[pattern.dl_UL_TransmissionPeriodicity];
+
+    } else {
+      AssertFatal(pattern.ext1->dl_UL_TransmissionPeriodicity_v1530 != NULL,
+                  "In %s: scc->tdd_UL_DL_ConfigurationCommon->pattern1.ext1->dl_UL_TransmissionPeriodicity_v1530 is null\n",
+                  __FUNCTION__);
+      LOG_D(NR_MAC,
+            "Setting TDD Pattern2 configuration period to dl_UL_TransmissionPeriodicity_v1530 %p\n",
+            pattern.ext1->dl_UL_TransmissionPeriodicity_v1530);
+      pattern2_ms = tdd_ms_period_ext[*pattern.ext1->dl_UL_TransmissionPeriodicity_v1530];
+    }
+    set_tdd_bmap_period((pattern), tdd_bmap, total_slot_pattern1);
+  }
+  bool found_match = false;
+  for (int i = 0; i <= 8; i++) {
+    if ((pattern1_ms + pattern2_ms) == tdd_ms_period_pattern[i]) {
+      LOG_I(NR_MAC,
+            "Setting TDD configuration period value in cfg->tdd_table.tdd_period based on the sum of dl_UL_TransmissionPeriodicity "
+            "from Pattern1 (%f ms) and Pattern2 (%f ms): Total = %f ms\n",
+            pattern1_ms,
+            pattern2_ms,
+            pattern1_ms + pattern2_ms);
+      cfg->tdd_table.tdd_period.value = i;
+      found_match = true;
+      break;
+    }
+  }
+  // Assert if no match was found
+  AssertFatal(found_match, "The sum of pattern1_ms and pattern2_ms does not match any value in tdd_ms_period_pattern");
+
+  LOG_I(NR_MAC, "Setting TDD configuration period sum of both patterns  %d\n", cfg->tdd_table.tdd_period.value);
+  return num_of_patterns;
+}
+
+static int set_multi_tdd_config_nr(nfapi_nr_config_request_scf_t *cfg, int mu, tdd_bitmap_t *tdd_bmap)
+{
+  int slot_number = 0;
+  int nb_slots_to_set = TDD_CONFIG_NB_FRAMES * (1 << mu) * NR_NUMBER_OF_SUBFRAMES_PER_FRAME;
+  int nb_periods_per_frame = get_nb_periods_per_frame(cfg->tdd_table.tdd_period.value);
+  int slot_index = 0;
+
+  int nb_slots_per_period = ((1 << mu) * NR_NUMBER_OF_SUBFRAMES_PER_FRAME) / nb_periods_per_frame;
+
+  cfg->tdd_table.max_tdd_periodicity_list =
+      (nfapi_nr_max_tdd_periodicity_t *)malloc(nb_slots_to_set * sizeof(nfapi_nr_max_tdd_periodicity_t));
+
+  for (int memory_alloc = 0; memory_alloc < nb_slots_to_set; memory_alloc++)
+    cfg->tdd_table.max_tdd_periodicity_list[memory_alloc].max_num_of_symbol_per_slot_list =
+        (nfapi_nr_max_num_of_symbol_per_slot_t *)malloc(NR_NUMBER_OF_SYMBOLS_PER_SLOT
+                                                        * sizeof(nfapi_nr_max_num_of_symbol_per_slot_t));
+
+  while (slot_number != nb_slots_to_set) {
+    slot_index = slot_number % nb_slots_per_period;
+    if (tdd_bmap[slot_index].slot_type == TDD_NR_DOWNLINK_SLOT) {
+      for (int number_of_symbol = 0; number_of_symbol < NR_NUMBER_OF_SYMBOLS_PER_SLOT; number_of_symbol++) {
+        cfg->tdd_table.max_tdd_periodicity_list[slot_index].max_num_of_symbol_per_slot_list[number_of_symbol].slot_config.value = 0;
+        LOG_D(NR_MAC,
+              "Setting TDD configuration slot_number %d is DL_Slot %d slot_index %d DL_symbol \n",
+              slot_number,
+              slot_index,
+              number_of_symbol);
+      }
+      LOG_I(NR_MAC, "Setting TDD configuration slot_number %d is DL_Slot %d slot_index \n", slot_number, slot_index);
+      slot_number++;
+    }
+
+    if (tdd_bmap[slot_index].slot_type == TDD_NR_MIXED_SLOT) {
+      for (int number_of_symbol = 0; number_of_symbol < tdd_bmap[slot_index].num_dl_symbols; number_of_symbol++) {
+        cfg->tdd_table.max_tdd_periodicity_list[slot_index].max_num_of_symbol_per_slot_list[number_of_symbol].slot_config.value = 0;
+        LOG_D(NR_MAC,
+              "Setting TDD configuration slot_number %d is Mixed Slot %d slot_index %d dl_symbol \n",
+              slot_number,
+              slot_index,
+              number_of_symbol);
+      }
+
+      for (int number_of_symbol = tdd_bmap[slot_index].num_dl_symbols;
+           number_of_symbol < NR_NUMBER_OF_SYMBOLS_PER_SLOT - tdd_bmap[slot_index].num_ul_symbols;
+           number_of_symbol++) {
+        cfg->tdd_table.max_tdd_periodicity_list[slot_index].max_num_of_symbol_per_slot_list[number_of_symbol].slot_config.value = 2;
+        LOG_D(NR_MAC,
+              "Setting TDD configuration slot_number %d is Mixed Slot %d slot_index %d gap_symbol \n",
+              slot_number,
+              slot_index,
+              number_of_symbol);
+      }
+
+      for (int number_of_symbol = NR_NUMBER_OF_SYMBOLS_PER_SLOT - tdd_bmap[slot_index].num_ul_symbols;
+           number_of_symbol < NR_NUMBER_OF_SYMBOLS_PER_SLOT;
+           number_of_symbol++) {
+        cfg->tdd_table.max_tdd_periodicity_list[slot_index].max_num_of_symbol_per_slot_list[number_of_symbol].slot_config.value = 1;
+        LOG_D(NR_MAC,
+              "Setting TDD configuration slot_number %d is Mixed Slot %d slot_index %d ul_symbol \n",
+              slot_number,
+              slot_index,
+              number_of_symbol);
+      }
+      LOG_D(NR_MAC, "Setting TDD configuration slot_number %d is MIXED %d slot_index \n", slot_number, slot_index);
+      slot_number++;
+    }
+
+    if (tdd_bmap[slot_index].slot_type == TDD_NR_UPLINK_SLOT) {
+      for (int number_of_symbol = 0; number_of_symbol < NR_NUMBER_OF_SYMBOLS_PER_SLOT; number_of_symbol++) {
+        cfg->tdd_table.max_tdd_periodicity_list[slot_index].max_num_of_symbol_per_slot_list[number_of_symbol].slot_config.value = 1;
+        LOG_D(NR_MAC,
+              "Setting TDD configuration slot_number %d is UL Slot %d slot_index %d ul_symbol \n",
+              slot_number,
+              slot_index,
+              number_of_symbol);
+      }
+      LOG_D(NR_MAC, "Setting TDD configuration slot_number %d is UL_Slot %d slot_index \n", slot_number, slot_index);
+      slot_number++;
+    }
+  }
+  return (nb_periods_per_frame);
+}
 
 static void config_common(gNB_MAC_INST *nrmac, nr_pdsch_AntennaPorts_t pdsch_AntennaPorts, int pusch_AntennaPorts, NR_ServingCellConfigCommon_t *scc)
 {
@@ -627,23 +807,24 @@ static void config_common(gNB_MAC_INST *nrmac, nr_pdsch_AntennaPorts_t pdsch_Ant
   if (cfg->cell_config.frame_duplex_type.value == TDD) {
     cfg->tdd_table.tdd_period.tl.tag = NFAPI_NR_CONFIG_TDD_PERIOD_TAG;
     cfg->num_tlv++;
-    if (scc->tdd_UL_DL_ConfigurationCommon->pattern1.ext1 == NULL) {
-      cfg->tdd_table.tdd_period.value = scc->tdd_UL_DL_ConfigurationCommon->pattern1.dl_UL_TransmissionPeriodicity;
-    } else {
-      AssertFatal(scc->tdd_UL_DL_ConfigurationCommon->pattern1.ext1->dl_UL_TransmissionPeriodicity_v1530 != NULL,
-                  "In %s: scc->tdd_UL_DL_ConfigurationCommon->pattern1.ext1->dl_UL_TransmissionPeriodicity_v1530 is null\n",
-                  __FUNCTION__);
-      cfg->tdd_table.tdd_period.value = *scc->tdd_UL_DL_ConfigurationCommon->pattern1.ext1->dl_UL_TransmissionPeriodicity_v1530;
-    }
-    LOG_I(NR_MAC, "Setting TDD configuration period to %d\n", cfg->tdd_table.tdd_period.value);
-    int periods_per_frame = set_tdd_config_nr(cfg,
-                                              frequencyInfoUL->scs_SpecificCarrierList.list.array[0]->subcarrierSpacing,
-                                              scc->tdd_UL_DL_ConfigurationCommon->pattern1.nrofDownlinkSlots,
-                                              scc->tdd_UL_DL_ConfigurationCommon->pattern1.nrofDownlinkSymbols,
-                                              scc->tdd_UL_DL_ConfigurationCommon->pattern1.nrofUplinkSlots,
-                                              scc->tdd_UL_DL_ConfigurationCommon->pattern1.nrofUplinkSymbols);
+  
+    int num_tdd_patterns = get_tdd_period(scc->tdd_UL_DL_ConfigurationCommon, cfg, nrmac->tdd_slot_bitmap);
+    int periods_per_frame = 0;
 
-    AssertFatal(periods_per_frame > 0, "TDD configuration cannot be configured\n");
+    LOG_I(NR_MAC, "Setting TDD configuration period to %d\n", cfg->tdd_table.tdd_period.value);
+    if (num_tdd_patterns == 1) {
+      periods_per_frame = set_tdd_config_nr(cfg,
+                                            frequencyInfoUL->scs_SpecificCarrierList.list.array[0]->subcarrierSpacing,
+                                            scc->tdd_UL_DL_ConfigurationCommon->pattern1.nrofDownlinkSlots,
+                                            scc->tdd_UL_DL_ConfigurationCommon->pattern1.nrofDownlinkSymbols,
+                                            scc->tdd_UL_DL_ConfigurationCommon->pattern1.nrofUplinkSlots,
+                                            scc->tdd_UL_DL_ConfigurationCommon->pattern1.nrofUplinkSymbols);
+    } else {
+      periods_per_frame = set_multi_tdd_config_nr(cfg,
+                                                frequencyInfoUL->scs_SpecificCarrierList.list.array[0]->subcarrierSpacing,
+                                                nrmac->tdd_slot_bitmap);
+    }
+
     if (frequency_range == FR2) {
       LOG_I(NR_MAC, "Configuring TDD beam association to default\n");
       nrmac->tdd_beam_association = malloc16(periods_per_frame * sizeof(int16_t));
@@ -747,6 +928,9 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const f1ap_plmn_t *plmn, uint64_
   NR_BCCH_DL_SCH_Message_t *sib1 = get_SIB1_NR(scc, plmn, cellID, tac);
   cc->sib1 = sib1;
   cc->sib1_bcch_length = encode_SIB1_NR(sib1, cc->sib1_bcch_pdu, sizeof(cc->sib1_bcch_pdu));
+  LOG_E(NR_MAC, "----------------- ASN1 ENCODER PRINT START ----------------- \n");
+  xer_fprint(stdout, &asn_DEF_NR_BCCH_DL_SCH_Message, sib1);
+  LOG_E(NR_MAC, "----------------- ASN1 ENCODER PRINT END----------------- \n");
   AssertFatal(cc->sib1_bcch_length > 0, "could not encode SIB1\n");
 }
 
