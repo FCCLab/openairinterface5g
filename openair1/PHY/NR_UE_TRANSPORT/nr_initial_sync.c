@@ -81,7 +81,12 @@ static bool nr_pbch_detection(const UE_nr_rxtx_proc_t *proc,
       // computing correlation between received DMRS symbols and transmitted sequence for current i_ssb and n_hf
       cd_t cumul = {0};
       for (int i = pbch_initial_symbol; i < pbch_initial_symbol + 3; i++) {
-        c32_t meas = nr_pbch_dmrs_correlation(ue, proc, i, i - pbch_initial_symbol, nr_gold_pbch(ue, hf, l), rxdataF);
+        c32_t meas = nr_pbch_dmrs_correlation(ue,
+                                              proc,
+                                              i,
+                                              i - pbch_initial_symbol,
+                                              nr_gold_pbch(frame_parms->Lmax, frame_parms->Nid_cell, hf, l),
+                                              rxdataF);
         csum(cumul, cumul, meas);
       }
       *current_ssb = (NR_UE_SSB){.i_ssb = l, .n_hf = hf, .metric = squaredMod(cumul)};

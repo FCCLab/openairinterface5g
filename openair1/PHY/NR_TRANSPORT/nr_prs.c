@@ -42,7 +42,7 @@ int nr_generate_prs(int slot,
     k = (prs_cfg->REOffset+k_prime) % prs_cfg->CombSize + prs_cfg->RBOffset*12 + frame_parms->first_carrier_offset;
     
     // QPSK modulation
-    uint32_t *gold = init_nr_gold_prs(prs_cfg->NPRSID, slot, l);
+    uint32_t *gold = nr_gold_prs(prs_cfg->NPRSID, slot, l);
     for (int m = 0; m < (12/prs_cfg->CombSize) * prs_cfg->NumRB; m++) {
       idx = (((gold[(m << 1) >> 5]) >> ((m << 1) & 0x1f)) & 3);
       mod_prs[m<<1] = nr_qpsk_mod_table[idx<<1];

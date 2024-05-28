@@ -25,7 +25,6 @@
 #define __NR_REFSIG_DEFS__H__
 
 #include "PHY/defs_nr_UE.h"
-#include "PHY/LTE_REFSIG/lte_refsig.h"
 #include "nr_refsig_common.h"
 
 /*!\brief This function generates the NR Gold sequence (38-211, Sec 5.2.1) for the PBCH DMRS.
@@ -52,12 +51,6 @@ int nr_pdsch_dmrs_rx(PHY_VARS_NR_UE *ue,
                      unsigned short nb_pdsch_rb,
                      uint8_t config_type);
 
-uint32_t *nr_gold_pbch(PHY_VARS_NR_UE *ue, int, int);
-
-uint32_t *nr_gold_pdcch(PHY_VARS_NR_UE *ue, unsigned short n_idDMRS, int ns, int l);
-
-uint32_t *nr_gold_pdsch(PHY_VARS_NR_UE *ue, int nscid, int slot, int symbol);
-uint32_t *nr_init_pusch_dmrs(PHY_VARS_NR_UE *ue, uint, uint, int slot, int symbol);
 void sl_generate_pss(SL_NR_UE_INIT_PARAMS_t *sl_init_params, uint8_t n_sl_id2, uint16_t scaling);
 void sl_generate_pss_ifft_samples(sl_nr_ue_phy_params_t *sl_ue_params, SL_NR_UE_INIT_PARAMS_t *sl_init_params);
 void sl_generate_sss(SL_NR_UE_INIT_PARAMS_t *sl_init_params, uint16_t slss_id, uint16_t scaling);

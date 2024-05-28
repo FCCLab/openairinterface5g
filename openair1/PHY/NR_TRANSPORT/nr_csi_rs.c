@@ -561,14 +561,26 @@ void nr_generate_csi_rs(const NR_DL_FRAME_PARMS *frame_parms,
 
     for (lp=0; lp<=lprime; lp++){
       symb = csi_params->symb_l0;
-      nr_modulation(nr_init_csi_rs(frame_parms, slot, symb + lp, csi_params->scramb_id), csi_length, DMRS_MOD_ORDER, mod_csi[symb + lp]);
+      nr_modulation(nr_gold_csi_rs(frame_parms, slot, symb + lp, csi_params->scramb_id),
+                    csi_length,
+                    DMRS_MOD_ORDER,
+                    mod_csi[symb + lp]);
       if ((csi_params->row == 5) || (csi_params->row == 7) || (csi_params->row == 11) || (csi_params->row == 13) || (csi_params->row == 16))
-        nr_modulation(nr_init_csi_rs(frame_parms, slot, symb + 1, csi_params->scramb_id), csi_length, DMRS_MOD_ORDER, mod_csi[symb + 1]);
+        nr_modulation(nr_gold_csi_rs(frame_parms, slot, symb + 1, csi_params->scramb_id),
+                      csi_length,
+                      DMRS_MOD_ORDER,
+                      mod_csi[symb + 1]);
       if ((csi_params->row == 14) || (csi_params->row == 13) || (csi_params->row == 16) || (csi_params->row == 17)) {
         symb = csi_params->symb_l1;
-        nr_modulation(nr_init_csi_rs(frame_parms, slot, symb + lp, csi_params->scramb_id), csi_length, DMRS_MOD_ORDER, mod_csi[symb + lp]);
+        nr_modulation(nr_gold_csi_rs(frame_parms, slot, symb + lp, csi_params->scramb_id),
+                      csi_length,
+                      DMRS_MOD_ORDER,
+                      mod_csi[symb + lp]);
         if ((csi_params->row == 13) || (csi_params->row == 16))
-          nr_modulation(nr_init_csi_rs(frame_parms, slot, symb + 1, csi_params->scramb_id), csi_length, DMRS_MOD_ORDER, mod_csi[symb + 1]);
+          nr_modulation(nr_gold_csi_rs(frame_parms, slot, symb + 1, csi_params->scramb_id),
+                        csi_length,
+                        DMRS_MOD_ORDER,
+                        mod_csi[symb + 1]);
       }
     }
   }

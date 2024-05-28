@@ -24,8 +24,13 @@
 #ifndef __NR_REFSIG_COMMON_H__
 #define __NR_REFSIG_COMMON_H__
 
+#include "openair1/PHY/LTE_TRANSPORT/transport_proto.h"
 uint32_t* gold_cache(uint32_t key, int length);
-uint32_t *nr_init_csi_rs(const NR_DL_FRAME_PARMS *fp, int slot, int symb, uint32_t Nid);
-uint32_t *init_nr_gold_prs(int nid, int slot, int symbol);
+uint32_t *nr_gold_pbch(int Lmax, int Nid, int n_hf, int ssb);
+uint32_t *nr_gold_pdcch(int N_RB_DL, int symbols_per_slot, unsigned short n_idDMRS, int ns, int l);
+uint32_t *nr_gold_pdsch(int N_RB_DL, int symbols_per_slot, int nid, int nscid, int slot, int symbol);
+uint32_t *nr_gold_pusch(int N_RB_UL, int symbols_per_slot, int Nid, int nscid, int ns, int l);
+uint32_t *nr_gold_csi_rs(const NR_DL_FRAME_PARMS *fp, int slot, int symb, uint32_t Nid);
+uint32_t *nr_gold_prs(int nid, int slot, int symbol);
 
 #endif

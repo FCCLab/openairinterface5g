@@ -108,20 +108,13 @@ void nr_common_signal_procedures(PHY_VARS_gNB *gNB,int frame,int slot, nfapi_nr_
   nr_generate_pss(&txdataF[0][txdataF_offset], gNB->TX_AMP, ssb_start_symbol, cfg, fp);
   nr_generate_sss(&txdataF[0][txdataF_offset], gNB->TX_AMP, ssb_start_symbol, cfg, fp);
 
-  if (fp->Lmax == 4)
-    nr_generate_pbch_dmrs(nr_init_pbch_dmrs(gNB, n_hf, ssb_index & 7),
-                          &txdataF[0][txdataF_offset],
-                          gNB->TX_AMP,
-                          ssb_start_symbol,
-                          cfg,
-                          fp);
-  else
-    nr_generate_pbch_dmrs(nr_init_pbch_dmrs(gNB, 0, ssb_index & 7),
-                          &txdataF[0][txdataF_offset],
-                          gNB->TX_AMP,
-                          ssb_start_symbol,
-                          cfg,
-                          fp);
+  int hf = fp->Lmax == 4 ? n_hf : 0;
+  nr_generate_pbch_dmrs(nr_gold_pbch(fp->Lmax, gNB->gNB_config.cell_config.phy_cell_id.value, hf, ssb_index & 7),
+                        &txdataF[0][txdataF_offset],
+                        gNB->TX_AMP,
+                        ssb_start_symbol,
+                        cfg,
+                        fp);
 
 #if T_TRACER
   if (T_ACTIVE(T_GNB_PHY_MIB)) {

@@ -375,7 +375,12 @@ void nr_ue_ulsch_procedures(PHY_VARS_NR_UE *UE,
           // TODO: performance improvement, we can skip the modulation of DMRS symbols outside the bandwidth part
           // Perform this on gold sequence, not required when SC FDMA operation is done,
           LOG_D(PHY,"DMRS in symbol %d\n",l);
-          nr_modulation(nr_init_pusch_dmrs(UE, pusch_pdu->scid, pusch_pdu->ul_dmrs_scrambling_id, slot, l),
+          nr_modulation(nr_gold_pusch(frame_parms->N_RB_UL,
+                                      frame_parms->symbols_per_slot,
+                                      pusch_pdu->scid,
+                                      pusch_pdu->ul_dmrs_scrambling_id,
+                                      slot,
+                                      l),
                         n_dmrs * 2,
                         DMRS_MOD_ORDER,
                         (int16_t *)mod_dmrs); // currently only codeword 0 is modulated. Qm = 2 as DMRS is QPSK modulated
@@ -388,7 +393,12 @@ void nr_ue_ulsch_procedures(PHY_VARS_NR_UE *UE,
 
         if(is_ptrs_symbol(l, ulsch_ue->ptrs_symbols)) {
           is_ptrs_sym = 1;
-          nr_modulation(nr_init_pusch_dmrs(UE, pusch_pdu->scid, pusch_pdu->ul_dmrs_scrambling_id, slot, l),
+          nr_modulation(nr_gold_pusch(frame_parms->N_RB_UL,
+                                      frame_parms->symbols_per_slot,
+                                      pusch_pdu->scid,
+                                      pusch_pdu->ul_dmrs_scrambling_id,
+                                      slot,
+                                      l),
                         nb_rb,
                         DMRS_MOD_ORDER,
                         (int16_t *)mod_ptrs);
