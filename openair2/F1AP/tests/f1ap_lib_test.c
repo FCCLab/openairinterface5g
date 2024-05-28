@@ -293,6 +293,33 @@ static void test_f1ap_setup_response(void)
   free_f1ap_setup_response(&orig);
 }
 
+/**
+ * @brief Test F1AP Setup Failure Encoding/Decoding
+ */
+static void test_f1ap_setup_failure(void)
+{
+  /* create message */
+  f1ap_setup_failure_t orig = {
+      .transaction_id = 2,
+      .cause = 4,
+  };
+  F1AP_F1AP_PDU_t *f1enc = encode_f1ap_setup_failure(&orig);
+  F1AP_F1AP_PDU_t *f1dec = f1ap_encode_decode(f1enc);
+  f1ap_msg_free(f1enc);
+
+  f1ap_setup_failure_t decoded;
+  bool ret = decode_f1ap_setup_failure(f1dec, &decoded);
+  AssertFatal(ret, "decode_f1ap_setup_failure(): could not decode message\n");
+  f1ap_msg_free(f1dec);
+
+  ret = eq_f1ap_setup_failure(&orig, &decoded);
+  AssertFatal(ret, "eq_f1ap_setup_failure(): decoded message doesn't match\n");
+
+  f1ap_setup_failure_t cp = cp_f1ap_setup_failure(&orig);
+  ret = eq_f1ap_setup_failure(&orig, &cp);
+  AssertFatal(ret, "eq_f1ap_setup_failure(): copied message doesn't match\n");
+}
+
 int main()
 {
   test_initial_ul_rrc_message_transfer();
@@ -300,5 +327,6 @@ int main()
   test_ul_rrc_message_transfer();
   test_f1ap_setup_request();
   test_f1ap_setup_response();
+  test_f1ap_setup_failure();
   return 0;
 }
