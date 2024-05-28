@@ -320,6 +320,81 @@ static void test_f1ap_setup_failure(void)
   AssertFatal(ret, "eq_f1ap_setup_failure(): copied message doesn't match\n");
 }
 
+/**
+ * @brief Test F1 gNB-DU Configuration Update
+ */
+static void test_f1ap_du_configuration_update(void)
+{
+  /* sys_info */
+  uint8_t *mib = calloc(3, sizeof(uint8_t));
+  uint8_t *sib1 = calloc(3, sizeof(uint8_t));
+  f1ap_gnb_du_system_info_t sys_info = {
+      .mib_length = 3,
+      .mib = mib,
+      .sib1_length = 3,
+      .sib1 = sib1,
+  };
+  /* measurement_timing_information modify */
+  char *s = "1";
+  int measurement_timing_config_len = strlen(s) + 1;
+  uint8_t *measurement_timing_config_mod = (uint8_t *)calloc(measurement_timing_config_len, sizeof(uint8_t));
+  AssertFatal(measurement_timing_config_mod != NULL, "out of memory\n");
+  strcpy((char *)measurement_timing_config_mod, s);
+  /* TAC modify */
+  uint32_t *tac = calloc(1, sizeof(uint32_t));
+  AssertFatal(tac != NULL, "out of memory\n");
+  *tac = 456;
+  /* info modify */
+  f1ap_served_cell_info_t info = {
+      .mode = F1AP_MODE_TDD,
+      .tdd.freqinfo.arfcn = 640000,
+      .tdd.freqinfo.band = 78,
+      .tdd.tbw.nrb = 66,
+      .tdd.tbw.scs = 1,
+      .measurement_timing_config_len = measurement_timing_config_len,
+      .measurement_timing_config = measurement_timing_config_mod,
+      .nr_cellid = 123456,
+      .plmn.mcc = 1,
+      .plmn.mnc = 1,
+      .plmn.mnc_digit_length = 3,
+      .tac = tac,
+  };
+  /* create message */
+  f1ap_gnb_du_configuration_update_t orig = {
+      .gNB_DU_ID = 1,
+      .transaction_id = 2,
+      .num_cells_to_modify = 1,
+      .cell_to_modify[0].info = info,
+      .num_cells_to_delete = 0,
+      .cell_to_delete[0].nr_cellid = 1234UL,
+      .cell_to_delete[0].plmn.mcc = 1,
+      .cell_to_delete[0].plmn.mnc = 1,
+      .cell_to_delete[0].plmn.mnc_digit_length = 3,
+  };
+  orig.cell_to_modify[0].sys_info = calloc(1, sizeof(*orig.cell_to_modify[0].sys_info));
+  AssertFatal(orig.cell_to_modify[0].sys_info != NULL, "out of memory\n");
+  *orig.cell_to_modify[0].sys_info = sys_info;
+
+  F1AP_F1AP_PDU_t *f1enc = encode_f1ap_du_configuration_update(&orig);
+  F1AP_F1AP_PDU_t *f1dec = f1ap_encode_decode(f1enc);
+  f1ap_msg_free(f1enc);
+
+  f1ap_gnb_du_configuration_update_t decoded;
+  bool ret = decode_f1ap_du_configuration_update(f1dec, &decoded);
+  AssertFatal(ret, "decode_f1ap_setup_request(): could not decode message\n");
+  f1ap_msg_free(f1dec);
+
+  ret = eq_f1ap_du_configuration_update(&orig, &decoded);
+  AssertFatal(ret, "eq_f1ap_setup_request(): decoded message doesn't match\n");
+  free_f1ap_du_configuration_update(&decoded);
+
+  f1ap_gnb_du_configuration_update_t cp = cp_f1ap_du_configuration_update(&orig);
+  ret = eq_f1ap_du_configuration_update(&orig, &cp);
+  AssertFatal(ret, "eq_f1ap_setup_request(): copied message doesn't match\n");
+  free_f1ap_du_configuration_update(&cp);
+  free_f1ap_du_configuration_update(&orig);
+}
+
 int main()
 {
   test_initial_ul_rrc_message_transfer();
@@ -328,5 +403,6 @@ int main()
   test_f1ap_setup_request();
   test_f1ap_setup_response();
   test_f1ap_setup_failure();
+  test_f1ap_du_configuration_update();
   return 0;
 }
