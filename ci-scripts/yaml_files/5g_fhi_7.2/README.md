@@ -24,11 +24,11 @@ If you wish to make your own image after modification or from a specific branch 
 ```bash
 cd ../../../
 docker build -f docker/Dockerfile.base.ubuntu22 -t ran:base:latest .
-docker build -f docker/Dockerfile.fhi72.build.ubuntu22 -t ran:build:latest .
-docker build -f docker/Dockerfile.fhi72.gNB.ubuntu22 -t oai-gnb-7.2:<your-image-tag> .
+docker build -f docker/Dockerfile.build.fhi72.ubuntu22 -t ran:build:latest .
+docker build -f docker/Dockerfile.gNB.fhi72.ubuntu22 -t oai-gnb-fhi72:<your-image-tag> .
 ```
 
-The new image will be `oai-gnb-7.2:<your-image-tag>`. You will have to replace this new image with `docker.io/oaisoftwarealliance/oai-gnb-7.2:develop`. 
+The new image will be `oai-gnb-fhi72:<your-image-tag>`. You will have to replace this new image with `docker.io/oaisoftwarealliance/oai-gnb-7.2:develop`. 
 
 ## Configure Networking 
 
