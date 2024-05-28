@@ -1201,7 +1201,7 @@ bool decode_f1ap_du_configuration_update(const F1AP_F1AP_PDU_t *pdu, f1ap_gnb_du
       if (servedCellInformation->fiveGS_TAC) {
         out->cell_to_modify[i].info.tac = malloc(sizeof(*out->cell_to_modify[i].info.tac));
         AssertFatal(out->cell_to_modify[i].info.tac != NULL, "out of memory\n");
-        OCTET_STRING_TO_INT16(servedCellInformation->fiveGS_TAC, *out->cell_to_modify[i].info.tac);
+        OCTET_STRING_TO_INT24(servedCellInformation->fiveGS_TAC, *out->cell_to_modify[i].info.tac);
       }
 
       /* - nRCGI */
@@ -1390,18 +1390,38 @@ f1ap_gnb_du_configuration_update_t cp_f1ap_du_configuration_update(const f1ap_gn
   cp.transaction_id = msg->transaction_id;
   /* to add */
   cp.num_cells_to_add = msg->num_cells_to_add;
-  for (int i = 0; i < cp.num_cells_to_add; i++) {
-    cp.cell_to_add[i] = msg->cell_to_add[i];
-  }
   /* to delete */
   cp.num_cells_to_delete = msg->num_cells_to_delete;
   for (int i = 0; i < cp.num_cells_to_delete; i++) {
-    cp.cell_to_delete[i] = msg->cell_to_delete[i];
+    cp.cell_to_delete[i].nr_cellid = msg->cell_to_delete[i].nr_cellid;
+    cp.cell_to_delete[i].plmn = msg->cell_to_delete[i].plmn;
   }
   /* to modify */
   cp.num_cells_to_modify = msg->num_cells_to_modify;
   for (int i = 0; i < cp.num_cells_to_modify; i++) {
-    cp.cell_to_modify[i] = msg->cell_to_modify[i];
+    cp.cell_to_modify[i].info = msg->cell_to_modify[i].info;
+    if (cp.cell_to_modify[i].info.measurement_timing_config_len > 0) {
+      cp.cell_to_modify[i].info.measurement_timing_config_len = msg->cell_to_modify[i].info.measurement_timing_config_len;
+      cp.cell_to_modify[i].info.measurement_timing_config = malloc(sizeof(*cp.cell_to_modify[i].info.measurement_timing_config));
+      *cp.cell_to_modify[i].info.measurement_timing_config = *msg->cell_to_modify[i].info.measurement_timing_config;
+    }
+    /* TAC */
+    cp.cell_to_modify[i].info.tac = calloc(1, sizeof(uint32_t));
+    AssertFatal(cp.cell_to_modify[i].info.tac != NULL, "out of memory\n");
+    *cp.cell_to_modify[i].info.tac = *msg->cell_to_modify[i].info.tac;
+    /* System information */
+    cp.cell_to_modify[i].sys_info = malloc(sizeof(*cp.cell_to_modify[i].sys_info));
+    AssertFatal(cp.cell_to_modify[i].sys_info != NULL, "out of memory\n");
+    if (msg->cell_to_modify[i].sys_info->mib_length > 0) {
+      cp.cell_to_modify[i].sys_info->mib_length = msg->cell_to_modify[i].sys_info->mib_length;
+      cp.cell_to_modify[i].sys_info->mib = malloc(sizeof(*cp.cell_to_modify[i].sys_info->mib));
+      *cp.cell_to_modify[i].sys_info->mib = *msg->cell_to_modify[i].sys_info->mib;
+    }
+    if (msg->cell_to_modify[i].sys_info->sib1_length > 0) {
+      cp.cell_to_modify[i].sys_info->sib1_length = msg->cell_to_modify[i].sys_info->sib1_length;
+      cp.cell_to_modify[i].sys_info->sib1 = malloc(sizeof(*cp.cell_to_modify[i].sys_info->sib1));
+      *cp.cell_to_modify[i].sys_info->sib1 = *msg->cell_to_modify[i].sys_info->sib1;
+    }
   }
   return cp;
 }

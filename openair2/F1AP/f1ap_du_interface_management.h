@@ -45,7 +45,7 @@ int DU_handle_F1_SETUP_FAILURE(instance_t instance, sctp_assoc_t assoc_id, uint3
 /*
  * gNB-DU Configuration Update
  */
-int DU_send_gNB_DU_CONFIGURATION_UPDATE(sctp_assoc_t assoc_id, const f1ap_gnb_du_configuration_update_t *upd);
+int DU_send_gNB_DU_CONFIGURATION_UPDATE(sctp_assoc_t assoc_id, f1ap_gnb_du_configuration_update_t *msg);
 
 /*
  * gNB-CU Configuration Update

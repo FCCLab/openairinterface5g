@@ -54,41 +54,6 @@ void dump_setup_req(f1ap_setup_req_t *msg)
   }
 }
 
-static uint8_t *cp_octet_string(const OCTET_STRING_t *os, int *len)
-{
-  uint8_t *buf = calloc(os->size, sizeof(*buf));
-  AssertFatal(buf != NULL, "out of memory\n");
-  memcpy(buf, os->buf, os->size);
-  *len = os->size;
-  return buf;
-}
-
-static int read_slice_info(const F1AP_ServedPLMNs_Item_t *plmn, nssai_t *nssai, int max_nssai)
-{
-  if (plmn->iE_Extensions == NULL)
-    return 0;
-
-  const F1AP_ProtocolExtensionContainer_10696P34_t *p = (F1AP_ProtocolExtensionContainer_10696P34_t *)plmn->iE_Extensions;
-  if (p->list.count == 0)
-    return 0;
-
-  const F1AP_ServedPLMNs_ItemExtIEs_t *splmn = p->list.array[0];
-  DevAssert(splmn->id == F1AP_ProtocolIE_ID_id_TAISliceSupportList);
-  DevAssert(splmn->extensionValue.present == F1AP_ServedPLMNs_ItemExtIEs__extensionValue_PR_SliceSupportList);
-  const F1AP_SliceSupportList_t *ssl = &splmn->extensionValue.choice.SliceSupportList;
-  AssertFatal(ssl->list.count <= max_nssai, "cannot handle more than 16 slices\n");
-  for (int s = 0; s < ssl->list.count; ++s) {
-    const F1AP_SliceSupportItem_t *sl = ssl->list.array[s];
-    nssai_t *n = &nssai[s];
-    OCTET_STRING_TO_INT8(&sl->sNSSAI.sST, n->sst);
-    n->sd = 0xffffff;
-    if (sl->sNSSAI.sD != NULL)
-      OCTET_STRING_TO_INT24(sl->sNSSAI.sD, n->sd);
-  }
-
-  return ssl->list.count;
-}
-
 /**
  * @brief F1AP Setup Request decoding (9.2.1.4 of 3GPP TS 38.473) and transfer to RRC
  */
@@ -161,324 +126,67 @@ int CU_send_F1_SETUP_FAILURE(sctp_assoc_t assoc_id, const f1ap_setup_failure_t *
   return 0;
 }
 
-/*
-    gNB-DU Configuration Update
-*/
+static void dump_f1ap_du_configuration_update(f1ap_gnb_du_configuration_update_t *out)
+{
+  LOG_D(F1AP, "F1 gNB-DU Configuration Update: out->transaction_id %lu \n", out->transaction_id);
+  /* to add */
+  LOG_D(F1AP, "F1 gNB-DU Configuration Update: out->num_cells_to_add %d \n", out->num_cells_to_add);
+  for (int i = 0; i < out->num_cells_to_add; i++) {
+    LOG_D(F1AP, "out->tac[%d] %d \n", i, *out->cell_to_add[i].info.tac);
+    LOG_D(F1AP,
+          "F1 gNB-DU Configuration Update: nRCGI to add = MCC %d, MNC %d, CELL_ID %llu\n",
+          out->cell_to_add[i].info.plmn.mcc,
+          out->cell_to_add[i].info.plmn.mnc,
+          (long long unsigned int)out->cell_to_add[i].info.nr_cellid);
+    LOG_D(F1AP, "F1 gNB-DU Configuration Update: out->nr_pci[%d] %d \n", i, out->cell_to_add[i].info.nr_pci);
+  }
+  /* to modify */
+  LOG_D(F1AP, "F1 gNB-DU Configuration Update: out->num_cells_to_modify %d \n", out->num_cells_to_modify);
+  for (int i = 0; i < out->num_cells_to_modify; i++) {
+    LOG_D(F1AP, "out->tac[%d] %d \n", i, *out->cell_to_modify[i].info.tac);
+    LOG_D(F1AP,
+          "F1 gNB-DU Configuration Update: nRCGI to modify = MCC %d, MNC %d, CELL_ID %llu\n",
+          out->cell_to_modify[i].info.plmn.mcc,
+          out->cell_to_modify[i].info.plmn.mnc,
+          (long long unsigned int)out->cell_to_modify[i].info.nr_cellid);
+    LOG_D(F1AP, "out->nr_pci[%d] %d \n", i, out->cell_to_modify[i].info.nr_pci);
+  }
+  /* to delete */
+  LOG_D(F1AP, "F1 gNB-DU Configuration Update: out->num_cells_to_delete %d \n", out->num_cells_to_delete);
+  for (int i = 0; i < out->num_cells_to_delete; i++) {
+    LOG_D(F1AP,
+          "F1 gNB-DU Configuration Update: nRCGI to delete = MCC %d, MNC %d, CELL_ID %llu\n",
+          out->cell_to_delete[i].plmn.mcc,
+          out->cell_to_delete[i].plmn.mnc,
+          (long long unsigned int)out->cell_to_delete[i].nr_cellid);
+  }
+}
 
+/**
+ * @brief Decode and send F1 gNB-DU Configuration Update message to RRC
+ */
 int CU_handle_gNB_DU_CONFIGURATION_UPDATE(instance_t instance, sctp_assoc_t assoc_id, uint32_t stream, F1AP_F1AP_PDU_t *pdu)
 {
-  LOG_D(F1AP, "CU_handle_gNB_DU_CONFIGURATION_UPDATE\n");
-  F1AP_GNBDUConfigurationUpdate_t *container;
-  F1AP_GNBDUConfigurationUpdateIEs_t *ie;
-  int i = 0;
+  LOG_D(F1AP, "[SCTP %d] CU_handle_gNB_DU_CONFIGURATION_UPDATE\n", assoc_id);
   DevAssert(pdu != NULL);
-  container = &pdu->choice.initiatingMessage->value.choice.GNBDUConfigurationUpdate;
-
   /* gNB DU Configuration Update == Non UE-related procedure -> stream 0 */
   if (stream != 0) {
     LOG_W(F1AP, "[SCTP %d] Received f1 setup request on stream != 0 (%d)\n", assoc_id, stream);
   }
-
+  /* Decode */
+  f1ap_gnb_du_configuration_update_t msg;
+  if (!decode_f1ap_du_configuration_update(pdu, &msg)) {
+    LOG_E(F1AP, "cannot decode F1AP gNB-DU Configuration Update\n");
+    free_f1ap_du_configuration_update(&msg);
+    return -1;
+  }
+  dump_f1ap_du_configuration_update(&msg);
+  /* Send to RRC */
   MessageDef *message_p = itti_alloc_new_message(TASK_CU_F1, 0, F1AP_GNB_DU_CONFIGURATION_UPDATE);
   message_p->ittiMsgHeader.originInstance = assoc_id;
-  f1ap_gnb_du_configuration_update_t *req = &F1AP_GNB_DU_CONFIGURATION_UPDATE(message_p);
-
-  /* 3GPP TS 38.473 Transaction ID*/
-  F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_GNBDUConfigurationUpdateIEs_t, ie, container, F1AP_ProtocolIE_ID_id_TransactionID, true);
-  req->transaction_id = ie->value.choice.TransactionID;
-  LOG_D(F1AP, "req->transaction_id %lu \n", req->transaction_id);
-
-  /* 3GPP TS 38.473 Served Cells To Add List */
-  F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_GNBDUConfigurationUpdateIEs_t,
-                             ie,
-                             container,
-                             F1AP_ProtocolIE_ID_id_Served_Cells_To_Add_List,
-                             false);
-
-  if (ie != NULL) {
-    req->num_cells_to_add = ie->value.choice.Served_Cells_To_Add_List.list.count;
-    LOG_D(F1AP, "req->num_cells_to_add %d \n", req->num_cells_to_add);
-
-    for (i = 0; i < req->num_cells_to_add; i++) {
-      F1AP_Served_Cells_To_Add_Item_t *served_cells_item =
-          &((F1AP_Served_Cells_To_Add_ItemIEs_t *)ie->value.choice.Served_Cells_To_Add_List.list.array[i])
-               ->value.choice.Served_Cells_To_Add_Item;
-      F1AP_Served_Cell_Information_t *servedCellInformation = &served_cells_item->served_Cell_Information;
-      /* tac */
-      if (servedCellInformation->fiveGS_TAC) {
-        req->cell_to_add[i].info.tac = malloc(sizeof(*req->cell_to_add[i].info.tac));
-        AssertFatal(req->cell_to_add[i].info.tac != NULL, "out of memory\n");
-        OCTET_STRING_TO_INT24(servedCellInformation->fiveGS_TAC, *req->cell_to_add[i].info.tac);
-        LOG_D(F1AP, "req->tac[%d] %d \n", i, *req->cell_to_add[i].info.tac);
-      }
-
-      /* - nRCGI */
-      TBCD_TO_MCC_MNC(&(servedCellInformation->nRCGI.pLMN_Identity),
-                      req->cell_to_add[i].info.plmn.mcc,
-                      req->cell_to_add[i].info.plmn.mnc,
-                      req->cell_to_add[i].info.plmn.mnc_digit_length);
-      // NR cellID
-      BIT_STRING_TO_NR_CELL_IDENTITY(&servedCellInformation->nRCGI.nRCellIdentity, req->cell_to_add[i].info.nr_cellid);
-      LOG_D(F1AP,
-            "[SCTP %d] Received nRCGI: MCC %d, MNC %d, CELL_ID %llu\n",
-            assoc_id,
-            req->cell_to_add[i].info.plmn.mcc,
-            req->cell_to_add[i].info.plmn.mnc,
-            (long long unsigned int)req->cell_to_add[i].info.nr_cellid);
-
-      /* - nRPCI */
-      req->cell_to_add[i].info.nr_pci = servedCellInformation->nRPCI;
-      LOG_D(F1AP, "req->nr_pci[%d] %d \n", i, req->cell_to_add[i].info.nr_pci);
-
-      AssertFatal(servedCellInformation->servedPLMNs.list.count == 1, "only one PLMN handled\n");
-      req->cell_to_add[i].info.num_ssi =
-          read_slice_info(servedCellInformation->servedPLMNs.list.array[0], req->cell_to_add[i].info.nssai, 16);
-
-      // FDD Cells
-      if (servedCellInformation->nR_Mode_Info.present == F1AP_NR_Mode_Info_PR_fDD) {
-        req->cell_to_add[i].info.mode = F1AP_MODE_FDD;
-        f1ap_fdd_info_t *FDDs = &req->cell_to_add[i].info.fdd;
-        F1AP_FDD_Info_t *fDD_Info = servedCellInformation->nR_Mode_Info.choice.fDD;
-        FDDs->ul_freqinfo.arfcn = fDD_Info->uL_NRFreqInfo.nRARFCN;
-        AssertFatal(fDD_Info->uL_NRFreqInfo.freqBandListNr.list.count == 1, "cannot handle more than one frequency band\n");
-        for (int f = 0; f < fDD_Info->uL_NRFreqInfo.freqBandListNr.list.count; f++) {
-          F1AP_FreqBandNrItem_t *FreqItem = fDD_Info->uL_NRFreqInfo.freqBandListNr.list.array[f];
-          FDDs->ul_freqinfo.band = FreqItem->freqBandIndicatorNr;
-          AssertFatal(FreqItem->supportedSULBandList.list.count == 0, "cannot handle SUL bands!\n");
-        }
-        FDDs->dl_freqinfo.arfcn = fDD_Info->dL_NRFreqInfo.nRARFCN;
-        int dlBands = fDD_Info->dL_NRFreqInfo.freqBandListNr.list.count;
-        AssertFatal(dlBands == 0, "cannot handled more than one frequency band\n");
-        for (int dlB = 0; dlB < dlBands; dlB++) {
-          F1AP_FreqBandNrItem_t *FreqItem = fDD_Info->dL_NRFreqInfo.freqBandListNr.list.array[dlB];
-          FDDs->dl_freqinfo.band = FreqItem->freqBandIndicatorNr;
-          int num_available_supported_SULBands = FreqItem->supportedSULBandList.list.count;
-          AssertFatal(num_available_supported_SULBands == 0, "cannot handle SUL bands!\n");
-        }
-        FDDs->ul_tbw.scs = fDD_Info->uL_Transmission_Bandwidth.nRSCS;
-        FDDs->ul_tbw.nrb = nrb_lut[fDD_Info->uL_Transmission_Bandwidth.nRNRB];
-        FDDs->dl_tbw.scs = fDD_Info->dL_Transmission_Bandwidth.nRSCS;
-        FDDs->dl_tbw.nrb = nrb_lut[fDD_Info->dL_Transmission_Bandwidth.nRNRB];
-      } else if (servedCellInformation->nR_Mode_Info.present == F1AP_NR_Mode_Info_PR_tDD) {
-        req->cell_to_add[i].info.mode = F1AP_MODE_TDD;
-        f1ap_tdd_info_t *TDDs = &req->cell_to_add[i].info.tdd;
-        F1AP_TDD_Info_t *tDD_Info = servedCellInformation->nR_Mode_Info.choice.tDD;
-        TDDs->freqinfo.arfcn = tDD_Info->nRFreqInfo.nRARFCN;
-        AssertFatal(tDD_Info->nRFreqInfo.freqBandListNr.list.count == 1, "cannot handle more than one frequency band\n");
-        for (int f = 0; f < tDD_Info->nRFreqInfo.freqBandListNr.list.count; f++) {
-          struct F1AP_FreqBandNrItem *FreqItem = tDD_Info->nRFreqInfo.freqBandListNr.list.array[f];
-          TDDs->freqinfo.band = FreqItem->freqBandIndicatorNr;
-          int num_available_supported_SULBands = FreqItem->supportedSULBandList.list.count;
-          AssertFatal(num_available_supported_SULBands == 0, "cannot hanlde SUL bands!\n");
-        }
-        TDDs->tbw.scs = tDD_Info->transmission_Bandwidth.nRSCS;
-        TDDs->tbw.nrb = nrb_lut[tDD_Info->transmission_Bandwidth.nRNRB];
-      } else {
-        AssertFatal(false, "unknown NR Mode info %d\n", servedCellInformation->nR_Mode_Info.present);
-      }
-
-      /* MeasurementConfig */
-      if (servedCellInformation->measurementTimingConfiguration.size > 0)
-        req->cell_to_add[i].info.measurement_timing_config =
-            cp_octet_string(&servedCellInformation->measurementTimingConfiguration,
-                            &req->cell_to_add[i].info.measurement_timing_config_len);
-
-      struct F1AP_GNB_DU_System_Information *DUsi = served_cells_item->gNB_DU_System_Information;
-      // System Information
-      req->cell_to_add[i].sys_info = calloc(1, sizeof(*req->cell_to_add[i].sys_info));
-      AssertFatal(req->cell_to_add[i].sys_info != NULL, "out of memory\n");
-      f1ap_gnb_du_system_info_t *sys_info = req->cell_to_add[i].sys_info;
-      /* mib */
-      sys_info->mib = calloc(DUsi->mIB_message.size, sizeof(char));
-      memcpy(sys_info->mib, DUsi->mIB_message.buf, DUsi->mIB_message.size);
-      sys_info->mib_length = DUsi->mIB_message.size;
-      /* sib1 */
-      sys_info->sib1 = calloc(DUsi->sIB1_message.size, sizeof(char));
-      memcpy(sys_info->sib1, DUsi->sIB1_message.buf, DUsi->sIB1_message.size);
-      sys_info->sib1_length = DUsi->sIB1_message.size;
-    }
-  } else {
-    req->num_cells_to_add = 0;
-  }
-  /* 3GPP TS 38.473 Served Cells To Modify List */
-  F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_GNBDUConfigurationUpdateIEs_t,
-                             ie,
-                             container,
-                             F1AP_ProtocolIE_ID_id_Served_Cells_To_Modify_List,
-                             false);
-
-  if (ie) {
-    req->num_cells_to_modify = ie->value.choice.Served_Cells_To_Modify_List.list.count;
-    LOG_D(F1AP, "req->num_cells_to_modify %d \n", req->num_cells_to_modify);
-
-    for (i = 0; i < req->num_cells_to_modify; i++) {
-      F1AP_Served_Cells_To_Modify_Item_t *served_cells_item =
-          &((F1AP_Served_Cells_To_Modify_ItemIEs_t *)ie->value.choice.Served_Cells_To_Modify_List.list.array[i])
-               ->value.choice.Served_Cells_To_Modify_Item;
-
-      /* OLD NRCGI */
-      TBCD_TO_MCC_MNC(&(served_cells_item->oldNRCGI.pLMN_Identity),
-                      req->cell_to_modify[i].old_plmn.mcc,
-                      req->cell_to_modify[i].old_plmn.mnc,
-                      req->cell_to_modify[i].old_plmn.mnc_digit_length);
-
-      BIT_STRING_TO_NR_CELL_IDENTITY(&served_cells_item->oldNRCGI.nRCellIdentity, req->cell_to_modify[i].old_nr_cellid);
-
-      F1AP_Served_Cell_Information_t *servedCellInformation = &served_cells_item->served_Cell_Information;
-      /* SERVED CELL INFORMATION*/
-      /* tac */
-      if (servedCellInformation->fiveGS_TAC) {
-        req->cell_to_modify[i].info.tac = malloc(sizeof(*req->cell_to_modify[i].info.tac));
-        AssertFatal(req->cell_to_modify[i].info.tac != NULL, "out of memory\n");
-        OCTET_STRING_TO_INT16(servedCellInformation->fiveGS_TAC, *req->cell_to_modify[i].info.tac);
-        LOG_D(F1AP, "req->tac[%d] %d \n", i, *req->cell_to_modify[i].info.tac);
-      }
-
-      /* - nRCGI */
-      TBCD_TO_MCC_MNC(&(servedCellInformation->nRCGI.pLMN_Identity),
-                      req->cell_to_modify[i].info.plmn.mcc,
-                      req->cell_to_modify[i].info.plmn.mnc,
-                      req->cell_to_modify[i].info.plmn.mnc_digit_length);
-      // NR cellID
-      BIT_STRING_TO_NR_CELL_IDENTITY(&servedCellInformation->nRCGI.nRCellIdentity, req->cell_to_modify[i].info.nr_cellid);
-      LOG_D(F1AP,
-            "[SCTP %d] Received nRCGI: MCC %d, MNC %d, CELL_ID %llu\n",
-            assoc_id,
-            req->cell_to_modify[i].info.plmn.mcc,
-            req->cell_to_modify[i].info.plmn.mnc,
-            (long long unsigned int)req->cell_to_modify[i].info.nr_cellid);
-
-      /* - nRPCI */
-      req->cell_to_modify[i].info.nr_pci = servedCellInformation->nRPCI;
-      LOG_D(F1AP, "req->nr_pci[%d] %d \n", i, req->cell_to_modify[i].info.nr_pci);
-
-      // FDD Cells
-      if (servedCellInformation->nR_Mode_Info.present == F1AP_NR_Mode_Info_PR_fDD) {
-        req->cell_to_modify[i].info.mode = F1AP_MODE_FDD;
-        f1ap_fdd_info_t *FDDs = &req->cell_to_modify[i].info.fdd;
-        F1AP_FDD_Info_t *fDD_Info = servedCellInformation->nR_Mode_Info.choice.fDD;
-        FDDs->ul_freqinfo.arfcn = fDD_Info->uL_NRFreqInfo.nRARFCN;
-        AssertFatal(fDD_Info->uL_NRFreqInfo.freqBandListNr.list.count == 1, "cannot handle more than one frequency band\n");
-        for (int f = 0; f < fDD_Info->uL_NRFreqInfo.freqBandListNr.list.count; f++) {
-          F1AP_FreqBandNrItem_t *FreqItem = fDD_Info->uL_NRFreqInfo.freqBandListNr.list.array[f];
-          FDDs->ul_freqinfo.band = FreqItem->freqBandIndicatorNr;
-          AssertFatal(FreqItem->supportedSULBandList.list.count == 0, "cannot handle SUL bands!\n");
-        }
-        FDDs->dl_freqinfo.arfcn = fDD_Info->dL_NRFreqInfo.nRARFCN;
-        int dlBands = fDD_Info->dL_NRFreqInfo.freqBandListNr.list.count;
-        AssertFatal(dlBands == 0, "cannot handled more than one frequency band\n");
-        for (int dlB = 0; dlB < dlBands; dlB++) {
-          F1AP_FreqBandNrItem_t *FreqItem = fDD_Info->dL_NRFreqInfo.freqBandListNr.list.array[dlB];
-          FDDs->dl_freqinfo.band = FreqItem->freqBandIndicatorNr;
-          int num_available_supported_SULBands = FreqItem->supportedSULBandList.list.count;
-          AssertFatal(num_available_supported_SULBands == 0, "cannot handle SUL bands!\n");
-        }
-        FDDs->ul_tbw.scs = fDD_Info->uL_Transmission_Bandwidth.nRSCS;
-        FDDs->ul_tbw.nrb = nrb_lut[fDD_Info->uL_Transmission_Bandwidth.nRNRB];
-        FDDs->dl_tbw.scs = fDD_Info->dL_Transmission_Bandwidth.nRSCS;
-        FDDs->dl_tbw.nrb = nrb_lut[fDD_Info->dL_Transmission_Bandwidth.nRNRB];
-      } else if (servedCellInformation->nR_Mode_Info.present == F1AP_NR_Mode_Info_PR_tDD) {
-        req->cell_to_modify[i].info.mode = F1AP_MODE_TDD;
-        f1ap_tdd_info_t *TDDs = &req->cell_to_modify[i].info.tdd;
-        F1AP_TDD_Info_t *tDD_Info = servedCellInformation->nR_Mode_Info.choice.tDD;
-        TDDs->freqinfo.arfcn = tDD_Info->nRFreqInfo.nRARFCN;
-        AssertFatal(tDD_Info->nRFreqInfo.freqBandListNr.list.count == 1, "cannot handle more than one frequency band\n");
-        for (int f = 0; f < tDD_Info->nRFreqInfo.freqBandListNr.list.count; f++) {
-          struct F1AP_FreqBandNrItem *FreqItem = tDD_Info->nRFreqInfo.freqBandListNr.list.array[f];
-          TDDs->freqinfo.band = FreqItem->freqBandIndicatorNr;
-          int num_available_supported_SULBands = FreqItem->supportedSULBandList.list.count;
-          AssertFatal(num_available_supported_SULBands == 0, "cannot hanlde SUL bands!\n");
-        }
-        TDDs->tbw.scs = tDD_Info->transmission_Bandwidth.nRSCS;
-        TDDs->tbw.nrb = nrb_lut[tDD_Info->transmission_Bandwidth.nRNRB];
-      } else {
-        AssertFatal(false, "unknown NR Mode info %d\n", servedCellInformation->nR_Mode_Info.present);
-      }
-
-      /* MeasurementConfig */
-      if (servedCellInformation->measurementTimingConfiguration.size > 0)
-        req->cell_to_modify[i].info.measurement_timing_config =
-            cp_octet_string(&servedCellInformation->measurementTimingConfiguration,
-                            &req->cell_to_modify[i].info.measurement_timing_config_len);
-
-      /*gNB DU SYSTEM INFORMATION */
-      struct F1AP_GNB_DU_System_Information *DUsi = served_cells_item->gNB_DU_System_Information;
-      if (DUsi != NULL) {
-        // System Information
-        req->cell_to_modify[i].sys_info = calloc(1, sizeof(*req->cell_to_modify[i].sys_info));
-        AssertFatal(req->cell_to_modify[i].sys_info != NULL, "out of memory\n");
-        f1ap_gnb_du_system_info_t *sys_info = req->cell_to_modify[i].sys_info;
-        /* mib */
-        sys_info->mib = calloc(DUsi->mIB_message.size, sizeof(char));
-        AssertFatal(req->cell_to_modify[i].sys_info->mib != NULL, "out of memory\n");
-        memcpy(sys_info->mib, DUsi->mIB_message.buf, DUsi->mIB_message.size);
-        sys_info->mib_length = DUsi->mIB_message.size;
-
-        /* sib1 */
-        sys_info->sib1 = calloc(DUsi->sIB1_message.size, sizeof(char));
-        AssertFatal(req->cell_to_modify[i].sys_info->sib1 != NULL, "out of memory\n");
-        memcpy(sys_info->sib1, DUsi->sIB1_message.buf, DUsi->sIB1_message.size);
-        sys_info->sib1_length = DUsi->sIB1_message.size;
-      }
-    }
-  } else {
-    req->num_cells_to_modify = 0;
-  }
-
-  /* 3GPP TS 38.473 Served Cells To Delete List */
-  F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_GNBDUConfigurationUpdateIEs_t,
-                             ie,
-                             container,
-                             F1AP_ProtocolIE_ID_id_Served_Cells_To_Delete_List,
-                             false);
-  if (ie) {
-    req->num_cells_to_delete = ie->value.choice.Served_Cells_To_Delete_List.list.count;
-    LOG_D(F1AP, "req->num_cells_to_delete %d \n", req->num_cells_to_delete);
-
-    for (i = 0; i < req->num_cells_to_delete; i++) {
-      F1AP_Served_Cells_To_Delete_Item_t *served_cells_item =
-          &((F1AP_Served_Cells_To_Delete_ItemIEs_t *)ie->value.choice.Served_Cells_To_Delete_List.list.array[i])
-               ->value.choice.Served_Cells_To_Delete_Item;
-      /* - Old nRCGI */
-      TBCD_TO_MCC_MNC(&(served_cells_item->oldNRCGI.pLMN_Identity),
-                      req->cell_to_delete[i].plmn.mcc,
-                      req->cell_to_delete[i].plmn.mnc,
-                      req->cell_to_delete[i].plmn.mnc_digit_length);
-      // NR cellID
-      BIT_STRING_TO_NR_CELL_IDENTITY(&served_cells_item->oldNRCGI.nRCellIdentity, req->cell_to_delete[i].nr_cellid);
-      LOG_D(F1AP,
-            "[SCTP %d] Received nRCGI to delete: MCC %d, MNC %d, CELL_ID %llu\n",
-            assoc_id,
-            req->cell_to_delete[i].plmn.mcc,
-            req->cell_to_delete[i].plmn.mnc,
-            (long long unsigned int)req->cell_to_delete[i].nr_cellid);
-    }
-  } else {
-    req->num_cells_to_delete = 0;
-  }
-
-  /* 3GPP TS 38.473 Cells Status List */
-  F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_GNBDUConfigurationUpdateIEs_t, ie, container, F1AP_ProtocolIE_ID_id_Cells_Status_List, false);
-
-  /* 3GPP TS 38.473 Dedicated SI Delivery Needed UE List */
-  F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_GNBDUConfigurationUpdateIEs_t,
-                             ie,
-                             container,
-                             F1AP_ProtocolIE_ID_id_Dedicated_SIDelivery_NeededUE_List,
-                             false);
-
-  /* 3GPP TS 38.473 gNB-DU ID */
-  F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_GNBDUConfigurationUpdateIEs_t, ie, container, F1AP_ProtocolIE_ID_id_gNB_DU_ID, false);
-  if (ie != NULL)
-    asn_INTEGER2ulong(&ie->value.choice.GNB_DU_ID, req->gNB_DU_ID);
-
-  /* 3GPP TS 38.473 gNB-DU TNL Association To Remove List */
-  F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_GNBDUConfigurationUpdateIEs_t,
-                             ie,
-                             container,
-                             F1AP_ProtocolIE_ID_id_GNB_DU_TNL_Association_To_Remove_List,
-                             false);
-
+  f1ap_gnb_du_configuration_update_t *req = &F1AP_GNB_DU_CONFIGURATION_UPDATE(message_p); // RRC thread will free it
+  *req = msg; // copy F1 message to ITTI
+  free_f1ap_du_configuration_update(&msg);
   LOG_D(F1AP, "Sending F1AP_GNB_DU_CONFIGURATION_UPDATE ITTI message \n");
   itti_send_msg_to_task(TASK_RRC_GNB, GNB_MODULE_ID_TO_INSTANCE(instance), message_p);
   return 0;
