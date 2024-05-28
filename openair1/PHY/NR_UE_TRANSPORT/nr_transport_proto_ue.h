@@ -98,12 +98,12 @@ int32_t nr_dlsch_qpsk_qpsk_llr(NR_DL_FRAME_PARMS *frame_parms,
     @param nb_rb number of RBs for this allocation
 */
 int32_t nr_dlsch_qpsk_llr(NR_DL_FRAME_PARMS *frame_parms,
-                   int32_t *rxdataF_comp,
-                   int16_t *dlsch_llr,
-                   uint8_t symbol,
-                   uint32_t len,
-                   uint8_t first_symbol_flag,
-                   uint16_t nb_rb);
+                          c16_t *rxdataF_comp,
+                          int16_t *dlsch_llr,
+                          uint8_t symbol,
+                          uint32_t len,
+                          uint8_t first_symbol_flag,
+                          uint16_t nb_rb);
 
 /**
    \brief This function generates log-likelihood ratios (decoder input) for single-stream 16QAM received waveforms
@@ -119,13 +119,13 @@ int32_t nr_dlsch_qpsk_llr(NR_DL_FRAME_PARMS *frame_parms,
 */
 
 void nr_dlsch_16qam_llr(NR_DL_FRAME_PARMS *frame_parms,
-                     int32_t *rxdataF_comp,
-                     int16_t *dlsch_llr,
-                     int32_t *dl_ch_mag,
-                     uint8_t symbol,
-                     uint32_t len,
-                     uint8_t first_symbol_flag,
-                     uint16_t nb_rb);
+                        c16_t *rxdataF_comp,
+                        int16_t *dlsch_llr,
+                        c16_t *dl_ch_mag,
+                        uint8_t symbol,
+                        uint32_t len,
+                        uint8_t first_symbol_flag,
+                        uint16_t nb_rb);
 /**
    \brief This function generates log-likelihood ratios (decoder input) for single-stream 16QAM received waveforms
    @param frame_parms Frame descriptor structure
@@ -142,25 +142,25 @@ void nr_dlsch_16qam_llr(NR_DL_FRAME_PARMS *frame_parms,
 */
 
 void nr_dlsch_64qam_llr(NR_DL_FRAME_PARMS *frame_parms,
-                     int32_t *rxdataF_comp,
-                     int16_t *dlsch_llr,
-                     int32_t *dl_ch_mag,
-                     int32_t *dl_ch_magb,
-                     uint8_t symbol,
-                     uint32_t len,
-                     uint8_t first_symbol_flag,
-                     uint16_t nb_rb);
+                        c16_t *rxdataF_comp,
+                        int16_t *dlsch_llr,
+                        c16_t *dl_ch_mag,
+                        c16_t *dl_ch_magb,
+                        uint8_t symbol,
+                        uint32_t len,
+                        uint8_t first_symbol_flag,
+                        uint16_t nb_rb);
 
 void nr_dlsch_256qam_llr(NR_DL_FRAME_PARMS *frame_parms,
-                     int32_t *rxdataF_comp,
-                     int16_t *dlsch_llr,
-                     int32_t *dl_ch_mag,
-                     int32_t *dl_ch_magb,
-                     int32_t *dl_ch_magr,
-                     uint8_t symbol,
-                     uint32_t len,
-                     uint8_t first_symbol_flag,
-                     uint16_t nb_rb);
+                         c16_t *rxdataF_comp,
+                         int16_t *dlsch_llr,
+                         c16_t *dl_ch_mag,
+                         c16_t *dl_ch_magb,
+                         c16_t *dl_ch_magr,
+                         uint8_t symbol,
+                         uint32_t len,
+                         uint8_t first_symbol_flag,
+                         uint16_t nb_rb);
 
 void nr_dlsch_deinterleaving(uint8_t symbol,
                              uint8_t start_symbol,
@@ -169,11 +169,7 @@ void nr_dlsch_deinterleaving(uint8_t symbol,
                              uint16_t *llr_deint,
                              uint16_t nb_rb_pdsch);
 
-void nr_conjch0_mult_ch1(int *ch0,
-                         int *ch1,
-                         int32_t *ch0conj_ch1,
-                         unsigned short nb_rb,
-                         unsigned char output_shift0);
+void nr_conjch0_mult_ch1(c16_t *ch0, c16_t *ch1, c16_t *ch0conj_ch1, unsigned short nb_rb, unsigned char output_shift0);
 
 /** \brief This is the top-level entry point for DLSCH decoding in UE.  It should be replicated on several
     threads (on multi-core machines) corresponding to different HARQ processes. The routine first
@@ -401,7 +397,7 @@ int nr_rx_pdsch(PHY_VARS_NR_UE *ue,
                 bool first_symbol_flag,
                 unsigned char harq_pid,
                 uint32_t pdsch_est_size,
-                int32_t dl_ch_estimates[][pdsch_est_size],
+                c16_t dl_ch_estimates[][pdsch_est_size],
                 int16_t *llr[2],
                 uint32_t dl_valid_re[NR_SYMBOLS_PER_SLOT],
                 c16_t rxdataF[][ue->frame_parms.samples_per_slot_wCP],
@@ -409,7 +405,7 @@ int nr_rx_pdsch(PHY_VARS_NR_UE *ue,
                 int32_t *log2_maxh,
                 int rx_size_symbol,
                 int nbRx,
-                int32_t rxdataF_comp[][nbRx][rx_size_symbol * NR_SYMBOLS_PER_SLOT],
+                c16_t rxdataF_comp[][nbRx][rx_size_symbol * NR_SYMBOLS_PER_SLOT],
                 c16_t ptrs_phase_per_slot[][NR_SYMBOLS_PER_SLOT],
                 int32_t ptrs_re_per_slot[][NR_SYMBOLS_PER_SLOT],
                 int G,

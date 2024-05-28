@@ -44,7 +44,7 @@ void nr_init_csi_rs(const NR_DL_FRAME_PARMS *fp, uint32_t ***csi_rs, uint32_t Ni
 }
 
 void nr_generate_csi_rs(const NR_DL_FRAME_PARMS *frame_parms,
-                        int32_t **dataF,
+                        c16_t **dataF,
                         const int16_t amp,
                         nr_csi_info_t *nr_csi_info,
                         const nfapi_nr_dl_tti_csi_rs_pdu_rel15_t *csi_params,
@@ -56,8 +56,8 @@ void nr_generate_csi_rs(const NR_DL_FRAME_PARMS *frame_parms,
                         uint8_t *N_ports,
                         uint8_t *j_cdm,
                         uint8_t *k_overline,
-                        uint8_t *l_overline) {
-
+                        uint8_t *l_overline)
+{
 #ifdef NR_CSIRS_DEBUG
   LOG_I(NR_PHY, "csi_params->subcarrier_spacing = %i\n", csi_params->subcarrier_spacing);
   LOG_I(NR_PHY, "csi_params->cyclic_prefix = %i\n", csi_params->cyclic_prefix);
