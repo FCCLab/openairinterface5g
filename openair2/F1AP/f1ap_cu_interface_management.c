@@ -141,70 +141,22 @@ int CU_send_F1_SETUP_RESPONSE(sctp_assoc_t assoc_id, f1ap_setup_resp_t *f1ap_set
   return 0;
 }
 
+/**
+ * @brief F1 Setup Failure encoding and transmission
+ */
 int CU_send_F1_SETUP_FAILURE(sctp_assoc_t assoc_id, const f1ap_setup_failure_t *fail)
 {
   LOG_D(F1AP, "CU_send_F1_SETUP_FAILURE\n");
-  F1AP_F1AP_PDU_t           pdu= {0};
-  uint8_t  *buffer=NULL;
-  uint32_t  len=0;
-  /* Create */
-  /* 0. Message Type */
-  asn1cCalloc(pdu.choice.unsuccessfulOutcome, UnsuccessfulOutcome);
-  pdu.present = F1AP_F1AP_PDU_PR_unsuccessfulOutcome;
-  UnsuccessfulOutcome->procedureCode = F1AP_ProcedureCode_id_F1Setup;
-  UnsuccessfulOutcome->criticality   = F1AP_Criticality_reject;
-  UnsuccessfulOutcome->value.present = F1AP_UnsuccessfulOutcome__value_PR_F1SetupFailure;
-  F1AP_F1SetupFailure_t *out = &pdu.choice.unsuccessfulOutcome->value.choice.F1SetupFailure;
-  /* mandatory */
-  /* c1. Transaction ID (integer value)*/
-  asn1cSequenceAdd(out->protocolIEs.list, F1AP_F1SetupFailureIEs_t, ie1);
-  ie1->id                        = F1AP_ProtocolIE_ID_id_TransactionID;
-  ie1->criticality               = F1AP_Criticality_reject;
-  ie1->value.present             = F1AP_F1SetupFailureIEs__value_PR_TransactionID;
-  ie1->value.choice.TransactionID = F1AP_get_next_transaction_identifier(0, 0);
-  /* mandatory */
-  /* c2. Cause */
-  asn1cSequenceAdd(out->protocolIEs.list, F1AP_F1SetupFailureIEs_t, ie2);
-  ie2->id                        = F1AP_ProtocolIE_ID_id_Cause;
-  ie2->criticality               = F1AP_Criticality_ignore;
-  ie2->value.present             = F1AP_F1SetupFailureIEs__value_PR_Cause;
-  ie2->value.choice.Cause.present = F1AP_Cause_PR_radioNetwork;
-  ie2->value.choice.Cause.choice.radioNetwork = F1AP_CauseRadioNetwork_unspecified;
-
-  /* optional */
-  /* c3. TimeToWait */
-  if (0) {
-    asn1cSequenceAdd(out->protocolIEs.list, F1AP_F1SetupFailureIEs_t, ie3);
-    ie3->id                        = F1AP_ProtocolIE_ID_id_TimeToWait;
-    ie3->criticality               = F1AP_Criticality_ignore;
-    ie3->value.present             = F1AP_F1SetupFailureIEs__value_PR_TimeToWait;
-    ie3->value.choice.TimeToWait = F1AP_TimeToWait_v10s;
-  }
-
-  /* optional */
-  /* c4. CriticalityDiagnostics*/
-  if (0) {
-    asn1cSequenceAdd(out->protocolIEs.list, F1AP_F1SetupFailureIEs_t, ie4);
-    ie4->id                        = F1AP_ProtocolIE_ID_id_CriticalityDiagnostics;
-    ie4->criticality               = F1AP_Criticality_ignore;
-    ie4->value.present             = F1AP_F1SetupFailureIEs__value_PR_CriticalityDiagnostics;
-    asn1cCallocOne(ie4->value.choice.CriticalityDiagnostics.procedureCode,
-                   F1AP_ProcedureCode_id_UEContextSetup);
-    asn1cCallocOne(ie4->value.choice.CriticalityDiagnostics.triggeringMessage,
-                   F1AP_TriggeringMessage_initiating_message);
-    asn1cCallocOne(ie4->value.choice.CriticalityDiagnostics.procedureCriticality,
-                   F1AP_Criticality_reject);
-    asn1cCallocOne(ie4->value.choice.CriticalityDiagnostics.transactionID,
-                   0);
-  }
-
-  /* encode */
-  if (f1ap_encode_pdu(&pdu, &buffer, &len) < 0) {
+  uint8_t *buffer = NULL;
+  uint32_t len = 0;
+  /* Encode F1 Setup Failure */
+  F1AP_F1AP_PDU_t *pdu = encode_f1ap_setup_failure(fail);
+  if (f1ap_encode_pdu(pdu, &buffer, &len) < 0) {
     LOG_E(F1AP, "Failed to encode F1 setup failure\n");
+    ASN_STRUCT_FREE(asn_DEF_F1AP_F1AP_PDU, &pdu);
     return -1;
   }
-
-  ASN_STRUCT_RESET(asn_DEF_F1AP_F1AP_PDU, &pdu);
+  ASN_STRUCT_FREE(asn_DEF_F1AP_F1AP_PDU, &pdu);
   f1ap_itti_send_sctp_data_req(assoc_id, buffer, len);
   return 0;
 }

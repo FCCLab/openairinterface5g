@@ -243,25 +243,16 @@ int DU_handle_F1_SETUP_RESPONSE(instance_t instance, sctp_assoc_t assoc_id, uint
   return 0;
 }
 
-// SETUP FAILURE
+/**
+ * @brief F1 Setup Failure handler (DU)
+ */
 int DU_handle_F1_SETUP_FAILURE(instance_t instance, sctp_assoc_t assoc_id, uint32_t stream, F1AP_F1AP_PDU_t *pdu)
 {
-  F1AP_F1SetupFailure_t    *out;
-  F1AP_F1SetupFailureIEs_t *ie;
-  f1ap_setup_failure_t fail = {0};
-  out = &pdu->choice.unsuccessfulOutcome->value.choice.F1SetupFailure;
-  /* Transaction ID */
-  F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_F1SetupFailureIEs_t, ie, out, F1AP_ProtocolIE_ID_id_TransactionID, true);
-  /* Cause */
-  F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_F1SetupFailureIEs_t, ie, out,
-                             F1AP_ProtocolIE_ID_id_Cause, true);
-
-  if(0) {
-    /* TimeToWait */
-    F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_F1SetupFailureIEs_t, ie, out,
-                               F1AP_ProtocolIE_ID_id_TimeToWait, true);
+  f1ap_setup_failure_t fail;
+  if (!decode_f1ap_setup_failure(pdu, &fail)) {
+    LOG_E(F1AP, "Failed to decode F1AP Setup Failure\n");
+    return -1;
   }
-
   f1_setup_failure(&fail);
   return 0;
 }
