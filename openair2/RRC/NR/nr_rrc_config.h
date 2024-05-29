@@ -34,9 +34,9 @@
 #include "nr_rrc_defs.h"
 #include "openair2/RRC/NR/MESSAGES/asn1_msg.h"
 
-// forward declaration of MAC configuration parameters, definition is included in C file
-struct nr_mac_config_t;
-typedef struct nr_mac_config_t nr_mac_config_t;
+// forward declaration of MAC structure, definition is included in C file
+struct gNB_MAC_INST_s;
+typedef struct gNB_MAC_INST_s gNB_MAC_INST;
 
 void nr_rrc_config_dl_tda(struct NR_PDSCH_TimeDomainResourceAllocationList *pdsch_TimeDomainAllocationList,
                           frame_type_t frame_type,
@@ -70,11 +70,11 @@ int encode_SIB1_NR(NR_BCCH_DL_SCH_Message_t *sib1, uint8_t *buffer, int max_buff
 NR_CellGroupConfig_t *get_initial_cellGroupConfig(int uid,
                                                   const NR_ServingCellConfigCommon_t *scc,
                                                   const NR_ServingCellConfig_t *servingcellconfigdedicated,
-                                                  const nr_mac_config_t *configuration);
+                                                  const gNB_MAC_INST *mac);
 void update_cellGroupConfig(NR_CellGroupConfig_t *cellGroupConfig,
                             const int uid,
                             NR_UE_NR_Capability_t *uecap,
-                            const nr_mac_config_t *configuration,
+                            const gNB_MAC_INST *mac,
                             const NR_ServingCellConfigCommon_t *scc);
 void free_cellGroupConfig(NR_CellGroupConfig_t *cellGroupConfig);
 int encode_cellGroupConfig(NR_CellGroupConfig_t *cellGroupConfig, uint8_t *buffer, int max_buffer_size);
@@ -88,7 +88,7 @@ NR_CellGroupConfig_t *get_default_secondaryCellGroup(const NR_ServingCellConfigC
                                                      const NR_UE_NR_Capability_t *uecap,
                                                      int scg_id,
                                                      int servCellIndex,
-                                                     const nr_mac_config_t *configuration,
+                                                     const gNB_MAC_INST *mac,
                                                      int uid);
 
 #endif

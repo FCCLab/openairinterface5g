@@ -405,7 +405,7 @@ void ue_context_setup_request(const f1ap_ue_context_setup_t *req)
   if (ue_cap != NULL) {
     // store the new UE capabilities, and update the cellGroupConfig
     NR_ServingCellConfigCommon_t *scc = mac->common_channels[0].ServingCellConfigCommon;
-    update_cellGroupConfig(new_CellGroup, UE->uid, UE->capability, &mac->radio_config, scc);
+    update_cellGroupConfig(new_CellGroup, UE->uid, UE->capability, mac, scc);
   }
 
   resp.du_to_cu_rrc_information = calloc(1, sizeof(du_to_cu_rrc_information_t));
@@ -499,7 +499,7 @@ void ue_context_modification_request(const f1ap_ue_context_modif_req_t *req)
     UE->capability = ue_cap;
     LOG_I(NR_MAC, "UE %04x: received capabilities, updating CellGroupConfig\n", UE->rnti);
     NR_ServingCellConfigCommon_t *scc = mac->common_channels[0].ServingCellConfigCommon;
-    update_cellGroupConfig(new_CellGroup, UE->uid, UE->capability, &mac->radio_config, scc);
+    update_cellGroupConfig(new_CellGroup, UE->uid, UE->capability, mac, scc);
   }
 
   if (req->srbs_to_be_setup_length > 0 || req->drbs_to_be_setup_length > 0 || req->drbs_to_be_released_length > 0

@@ -142,6 +142,12 @@ typedef struct nr_mac_config_t {
   //int pucch_TargetSNRx10;
 } nr_mac_config_t;
 
+typedef struct nr_mac_timers {
+  int sr_ProhibitTimer;
+  int sr_TransMax;
+  int sr_ProhibitTimer_v1700;
+} nr_mac_timers_t;
+
 typedef struct NR_preamble_ue {
   uint8_t num_preambles;
   uint8_t *preamble_list;
@@ -836,6 +842,7 @@ typedef struct gNB_MAC_INST_s {
   nr_pp_impl_ul pre_processor_ul;
 
   nr_mac_config_t radio_config;
+  nr_mac_timers_t timer_config;
 
   NR_UE_sched_ctrl_t *sched_ctrlCommon;
   uint16_t cset0_bwp_start;

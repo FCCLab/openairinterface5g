@@ -42,7 +42,8 @@ int get_NTN_Koffset(const NR_ServingCellConfigCommon_t *scc);
 void mac_top_init_gNB(ngran_node_t node_type,
                       NR_ServingCellConfigCommon_t *scc,
                       NR_ServingCellConfig_t *scd,
-                      const nr_mac_config_t *conf);
+                      const nr_mac_config_t *conf,
+                      const nr_mac_timers_t *timer_config);
 void nr_mac_send_f1_setup_req(void);
 
 void nr_mac_config_scc(gNB_MAC_INST *nrmac, NR_ServingCellConfigCommon_t *scc, const nr_mac_config_t *mac_config);

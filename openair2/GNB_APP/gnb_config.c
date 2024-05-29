@@ -1321,6 +1321,21 @@ void RCconfig_nr_macrlc(configmodule_interface_t *cfg)
         config.force_256qam_off ? "force off" : "may be on",
         config.use_deltaMCS ? "on" : "off");
 
+  paramdef_t Timers_Params[] = GNB_TIMERS_PARAMS_DESC;
+  char aprefix[MAX_OPTNAME_SIZE * 2 + 8];
+  sprintf(aprefix, "%s.[0].%s", GNB_CONFIG_STRING_GNB_LIST, GNB_CONFIG_STRING_TIMERS_CONFIG);
+  config_get(config_get_if(), Timers_Params, sizeofArray(Timers_Params), aprefix);
+
+  nr_mac_timers_t timer_config = {0};
+  timer_config.sr_ProhibitTimer = *Timers_Params[GNB_TIMERS_SR_PROHIBIT_TIMER_IDX].iptr;
+  timer_config.sr_TransMax = *Timers_Params[GNB_TIMERS_SR_TRANS_MAX_IDX].iptr;
+  timer_config.sr_ProhibitTimer_v1700 = *Timers_Params[GNB_TIMERS_SR_PROHIBIT_TIMER_V1700_IDX].iptr;
+  LOG_I(GNB_APP,
+        "sr_ProhibitTimer %d, sr_TransMax %d, sr_ProhibitTimer_v1700 %d\n",
+        timer_config.sr_ProhibitTimer,
+        timer_config.sr_TransMax,
+        timer_config.sr_ProhibitTimer_v1700);
+
   NR_ServingCellConfigCommon_t *scc = get_scc_config(cfg, config.minRXTXTIME);
   //xer_fprint(stdout, &asn_DEF_NR_ServingCellConfigCommon, scc);
   NR_ServingCellConfig_t *scd = get_scd_config(cfg);
@@ -1328,7 +1343,7 @@ void RCconfig_nr_macrlc(configmodule_interface_t *cfg)
   if (MacRLC_ParamList.numelt > 0) {
     RC.nb_nr_macrlc_inst = MacRLC_ParamList.numelt;
     ngran_node_t node_type = get_node_type();
-    mac_top_init_gNB(node_type, scc, scd, &config);
+    mac_top_init_gNB(node_type, scc, scd, &config, &timer_config);
     RC.nb_nr_mac_CC = (int *)malloc(RC.nb_nr_macrlc_inst * sizeof(int));
 
     for (j = 0; j < RC.nb_nr_macrlc_inst; j++) {
