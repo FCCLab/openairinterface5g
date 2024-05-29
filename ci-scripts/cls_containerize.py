@@ -880,8 +880,9 @@ class Containerize():
 			HELP.GenericHelp(CONST.Version)
 			sys.exit('Insufficient Parameter')
 
-		sshSession = SSH.SSHConnection()
-		sshSession.open(lIpAddr, lUserName, lPassWord)
+		# sshSession = SSH.SSHConnection()
+		# sshSession.open(lIpAddr, lUserName, lPassWord)
+		sshSession = cls_cmd.getConnection(lIpAddr)
 		ranCommitID = self.ranCommitID
 		ranRepository = self.ranRepository
 		sourcePath = lSourcePath
@@ -894,7 +895,9 @@ class Containerize():
 
 		sshSession.command(f'rm -rf {sourcePath}', '\$', 10)
 		sshSession.command('mkdir -p ' + sourcePath, '\$', 5)
-		sshSession.command('cd ' + sourcePath, '\$', 5)
+		print("------------------------------PRINTING PWD",sshSession.command('pwd','\$',2), sshSession.getBefore())
+		sshSession.cd(sourcePath)
+		print(sshSession.command('pwd','\$',2),sshSession.getBefore())
 		# Recent version of git (>2.20?) should handle missing .git extension # without problems
 		if ranTargetBranch == 'null':
 			ranTargetBranch = 'develop'
@@ -944,28 +947,27 @@ class Containerize():
 		logging.debug('\u001B[1m Deploying OAI Object on server: ' + lIpAddr + '\u001B[0m')
 		self.deployKind[self.eNB_instance] = True
 
-		mySSH = SSH.SSHConnection()
-		mySSH.open(lIpAddr, lUserName, lPassWord)
-
+		mySSH = cls_cmd.getConnection(lIpAddr)
 		CreateWorkspace(mySSH, lSourcePath, self.ranRepository, self.ranCommitID, self.ranTargetBranch, self.ranAllowMerge)
 
-		mySSH.command('cd ' + lSourcePath + '/' + self.yamlPath[self.eNB_instance], '\$', 5)
-		mySSH.command('cp docker-compose.y*ml ci-docker-compose.yml', '\$', 5)
+		mySSH.cd(lSourcePath + '/' + self.yamlPath[self.eNB_instance])
+		mySSH.run('cp docker-compose.y*ml docker-compose-ci.yml', 5)
 		for image in IMAGES:
 			imageTag = ImageTagToUse(image, self.ranCommitID, self.ranBranch, self.ranAllowMerge)
-			mySSH.command(f'sed -i -e "s#image: {image}:latest#image: oai-ci/{imageTag}#" ci-docker-compose.yml', '\$', 2)
+			mySSH.run(f'sed -i -e "s@oaisoftwarealliance/{image}:develop@oai-ci/{imageTag}@" docker-compose-ci.yml',silent=True)
+			mySSH.run(f'sed -i -e "s@{image}:latest@oai-ci/{imageTag}@" docker-compose-ci.yml',silent=True) # temporary solution for not using the new branch
+
 
 		# Currently support only one
 		svcName = self.services[self.eNB_instance]
 		if svcName == '':
-			logging.warning('no service name given: starting all services in ci-docker-compose.yml!')
-
-		mySSH.command(f'docker compose --file ci-docker-compose.yml up -d -- {svcName}', '\$', 30)
+			logging.warning('no service name given: starting all services in docker-compose-ci.yml!')
+		mySSH.run(f'docker compose --file docker-compose-ci.yml up -d -- {svcName}', 30)
 
 		# Checking Status
 		grep = ''
 		if svcName != '': grep = f' | grep -A3 --color=never {svcName}'
-		mySSH.command(f'docker compose --file ci-docker-compose.yml config {grep}', '\$', 5)
+		mySSH.run(f'docker compose --file docker-compose-ci.yml config {grep}', 5)
 		result = re.search('container_name: (?P<container_name>[a-zA-Z0-9\-\_]+)', mySSH.getBefore())
 		unhealthyNb = 0
 		healthyNb = 0
@@ -978,7 +980,7 @@ class Containerize():
 			time.sleep(5)
 			cnt = 0
 			while (cnt < 3):
-				mySSH.command('docker inspect --format="{{.State.Health.Status}}" ' + containerName, '\$', 5)
+				mySSH.run('docker inspect --format="{{.State.Health.Status}}" ' + containerName, 5)
 				unhealthyNb = mySSH.getBefore().count('unhealthy')
 				healthyNb = mySSH.getBefore().count('healthy') - unhealthyNb
 				startingNb = mySSH.getBefore().count('starting')
@@ -988,13 +990,13 @@ class Containerize():
 					time.sleep(10)
 					cnt += 1
 
-			mySSH.command('docker inspect --format="ImageUsed: {{.Config.Image}}" ' + containerName, '\$', 5)
+			mySSH.run('docker inspect --format="ImageUsed: {{.Config.Image}}" ' + containerName, 5)
 			for stdoutLine in mySSH.getBefore().split('\n'):
 				if stdoutLine.count('ImageUsed: oai-ci'):
 					usedImage = stdoutLine.replace('ImageUsed: oai-ci', 'oai-ci').strip()
 					logging.debug('Used image is ' + usedImage)
 			if usedImage != '':
-				mySSH.command('docker image inspect --format "* Size     = {{.Size}} bytes\n* Creation = {{.Created}}\n* Id       = {{.Id}}" ' + usedImage, '\$', 5, silent=True)
+				mySSH.run('docker image inspect --format "* Size     = {{.Size}} bytes\n* Creation = {{.Created}}\n* Id       = {{.Id}}" ' + usedImage, 5, silent=True)
 				for stdoutLine in mySSH.getBefore().split('\n'):
 					if re.search('Size     = [0-9]', stdoutLine) is not None:
 						imageInfo += stdoutLine.strip() + '\n'
@@ -1013,7 +1015,7 @@ class Containerize():
 		if healthyNb == 1:
 			cnt = 0
 			while (cnt < 20):
-				mySSH.command('docker logs ' + containerName + ' | egrep --text --color=never -i "wait|sync|Starting|ready"', '\$', 30)
+				mySSH.run('docker logs ' + containerName + ' | egrep --text --color=never -i "wait|sync|Starting|ready"', 30)
 				result = re.search('got sync|Starting E1AP at CU UP|Starting F1AP at CU|Got sync|Waiting for RUs to be configured|cuPHYController initialized|Received CONFIG.response, gNB is ready', mySSH.getBefore())
 				if result is None:
 					time.sleep(6)
@@ -1026,8 +1028,9 @@ class Containerize():
 			# containers are unhealthy, so we won't start. However, logs are stored at the end
 			# in UndeployObject so we here store the logs of the unhealthy container to report it
 			logfilename = f'{lSourcePath}/cmake_targets/log/{self.eNB_logFile[self.eNB_instance]}'
-			mySSH.command(f'docker logs {containerName} > {logfilename}', '\$', 30)
-			mySSH.copyin(lIpAddr, lUserName, lPassWord, logfilename, '.')
+			mySSH.run(f'docker logs {containerName} > {logfilename}', 30)
+			mySSH.copyin(logfilename, '.',True)
+
 		mySSH.close()
 
 		message = ''
@@ -1073,10 +1076,10 @@ class Containerize():
 		svcName = self.services[self.eNB_instance]
 		forceDown = False
 		if svcName != '':
-			logging.warning(f'service name given, but will stop all services in ci-docker-compose.yml!')
+			logging.warning(f'service name given, but will stop all services in docker-compose-ci.yml!')
 			svcName = ''
 
-		ret = mySSH.run(f'docker compose -f {yamlDir}/ci-docker-compose.yml config --services')
+		ret = mySSH.run(f'docker compose -f {yamlDir}/docker-compose-ci.yml config --services')
 		if ret.returncode != 0:
 			HTML.CreateHtmlTestRow(RAN.runtime_stats, 'KO', "cannot enumerate running services")
 			self.exitStatus = 1
@@ -1086,14 +1089,14 @@ class Containerize():
 		services = []
 		for s in allServices:
 			# outputs the hash if the container is running
-			ret = mySSH.run(f'docker compose -f {yamlDir}/ci-docker-compose.yml ps --all --quiet -- {s}')
+			ret = mySSH.run(f'docker compose -f {yamlDir}/docker-compose-ci.yml ps --all --quiet -- {s}')
 			c = ret.stdout
 			logging.debug(f'running service {s} with container id {c}')
 			if ret.stdout != "" and ret.returncode == 0: # something is running for that service
 				services.append((s, c))
 		logging.info(f'stopping services {[s for s, _ in services]}')
 
-		mySSH.run(f'docker compose -f {yamlDir}/ci-docker-compose.yml stop -t3')
+		mySSH.run(f'docker compose -f {yamlDir}/docker-compose-ci.yml stop -t3')
 		copyin_res = True
 		for service_name, container_id in services:
 			# head -n -1 suppresses the final "X exited with status code Y"
@@ -1101,7 +1104,7 @@ class Containerize():
 			mySSH.run(f'docker logs {container_id} &> {lSourcePath}/cmake_targets/log/{filename}')
 			copyin_res = mySSH.copyin(f'{lSourcePath}/cmake_targets/log/{filename}', f'{filename}') and copyin_res
 
-		mySSH.run(f'docker compose -f {yamlDir}/ci-docker-compose.yml down -v')
+		mySSH.run(f'docker compose -f {yamlDir}/docker-compose-ci.yml down -v')
 
 		# Analyzing log file!
 		if not copyin_res:
