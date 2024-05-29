@@ -59,7 +59,7 @@ RUN apt-get update && \
         python3 \
         python3-six \
         python3-requests \
-        libpython3.8 \
+        libpython3.10 \
         libusb-1.0-0 \
         iputils-ping \
         iproute2 \
