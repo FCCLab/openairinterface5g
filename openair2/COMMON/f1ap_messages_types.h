@@ -209,18 +209,8 @@ typedef struct f1ap_setup_resp_s {
 } f1ap_setup_resp_t;
 
 typedef struct f1ap_gnb_cu_configuration_update_s {
-  /* Connexion id used between SCTP/F1AP */
-  uint16_t cnx_id;
-
-  /* SCTP association id */
-  sctp_assoc_t assoc_id;
-
-  /* Number of SCTP streams used for a mme association */
-  uint16_t sctp_in_streams;
-  uint16_t sctp_out_streams;
-
-  /// string holding gNB_CU_name
-  char     *gNB_CU_name;
+  /// Transaction ID
+  uint64_t transaction_id;
   /// number of DU cells to activate
   uint16_t num_cells_to_activate; //0< num_cells_to_activate/mod <= 512;
   served_cells_to_activate_t cells_to_activate[F1AP_MAX_NB_CELLS];
