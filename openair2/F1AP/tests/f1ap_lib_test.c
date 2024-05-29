@@ -394,6 +394,35 @@ static void test_f1ap_du_configuration_update(void)
   free_f1ap_du_configuration_update(&orig);
 }
 
+/**
+ * @brief Test F1 gNB-CU Configuration Update
+ */
+static void test_f1ap_cu_configuration_update(void)
+{
+  /* create message */
+  f1ap_gnb_cu_configuration_update_t orig = {
+      .transaction_id = 2,
+  };
+  F1AP_F1AP_PDU_t *f1enc = encode_f1ap_cu_configuration_update(&orig);
+  F1AP_F1AP_PDU_t *f1dec = f1ap_encode_decode(f1enc);
+  f1ap_msg_free(f1enc);
+
+  f1ap_gnb_cu_configuration_update_t decoded;
+  bool ret = decode_f1ap_cu_configuration_update(f1dec, &decoded);
+  AssertFatal(ret, "decode_f1ap_setup_request(): could not decode message\n");
+  f1ap_msg_free(f1dec);
+
+  ret = eq_f1ap_cu_configuration_update(&orig, &decoded);
+  AssertFatal(ret, "eq_f1ap_setup_request(): decoded message doesn't match\n");
+  free_f1ap_cu_configuration_update(&decoded);
+
+  f1ap_gnb_cu_configuration_update_t cp = cp_f1ap_cu_configuration_update(&orig);
+  ret = eq_f1ap_cu_configuration_update(&orig, &cp);
+  AssertFatal(ret, "eq_f1ap_setup_request(): copied message doesn't match\n");
+  free_f1ap_cu_configuration_update(&cp);
+  free_f1ap_cu_configuration_update(&orig);
+}
+
 int main()
 {
   test_initial_ul_rrc_message_transfer();
@@ -403,5 +432,6 @@ int main()
   test_f1ap_setup_response();
   test_f1ap_setup_failure();
   test_f1ap_du_configuration_update();
+  test_f1ap_cu_configuration_update();
   return 0;
 }
