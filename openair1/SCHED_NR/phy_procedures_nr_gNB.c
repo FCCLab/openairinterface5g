@@ -567,9 +567,15 @@ void fill_ul_rb_mask(PHY_VARS_gNB *gNB, int frame_rx, int slot_rx) {
           (pucch->slot == slot_rx) ) {
         nfapi_nr_pucch_pdu_t  *pucch_pdu = &pucch->pucch_pdu;
         LOG_D(PHY,"%d.%d pucch %d : start_symbol %d, nb_symbols %d, prb_size %d\n",frame_rx,slot_rx,i,pucch_pdu->start_symbol_index,pucch_pdu->nr_of_symbols,pucch_pdu->prb_size);
+        int max_tdd_periodicity_num =
+            get_nb_max_tdd_periodicity(gNB->gNB_config.ssb_config.scs_common.value, gNB->gNB_config.tdd_table.tdd_period.value);
         for (int symbol=pucch_pdu->start_symbol_index ; symbol<(pucch_pdu->start_symbol_index+pucch_pdu->nr_of_symbols);symbol++) {
-          if(gNB->frame_parms.frame_type == FDD ||
-              (gNB->frame_parms.frame_type == TDD && gNB->gNB_config.tdd_table.max_tdd_periodicity_list[slot_rx].max_num_of_symbol_per_slot_list[symbol].slot_config.value==1)) {
+          if (gNB->frame_parms.frame_type == FDD
+              || (gNB->frame_parms.frame_type == TDD
+                  && gNB->gNB_config.tdd_table.max_tdd_periodicity_list[slot_rx % max_tdd_periodicity_num]
+                             .max_num_of_symbol_per_slot_list[symbol]
+                             .slot_config.value
+                         == 1)) {
             for (rb=0; rb<pucch_pdu->prb_size; rb++) {
               rb2 = rb + pucch_pdu->bwp_start +
                     ((symbol < pucch_pdu->start_symbol_index+(pucch_pdu->nr_of_symbols>>1)) || (pucch_pdu->freq_hop_flag == 0) ?
@@ -589,10 +595,13 @@ void fill_ul_rb_mask(PHY_VARS_gNB *gNB, int frame_rx, int slot_rx) {
     if ((ulsch->active == true) && (ulsch->frame == frame_rx) && (ulsch->slot == slot_rx) && (ulsch->handled == 0)) {
       uint8_t symbol_start = ulsch_harq->ulsch_pdu.start_symbol_index;
       uint8_t symbol_end = symbol_start + ulsch_harq->ulsch_pdu.nr_of_symbols;
+      int max_tdd_periodicity_num =
+          get_nb_max_tdd_periodicity(gNB->gNB_config.ssb_config.scs_common.value, gNB->gNB_config.tdd_table.tdd_period.value);
+
       for (int symbol = symbol_start; symbol < symbol_end; symbol++) {
         if (gNB->frame_parms.frame_type == FDD
             || (gNB->frame_parms.frame_type == TDD
-                && gNB->gNB_config.tdd_table.max_tdd_periodicity_list[slot_rx]
+                && gNB->gNB_config.tdd_table.max_tdd_periodicity_list[slot_rx%max_tdd_periodicity_num]
                            .max_num_of_symbol_per_slot_list[symbol]
                            .slot_config.value
                        == 1)) {
@@ -720,11 +729,11 @@ int phy_procedures_gNB_uespec_RX(PHY_VARS_gNB *gNB, int frame_rx, int slot_rx)
   LOG_D(PHY,"phy_procedures_gNB_uespec_RX frame %d, slot %d\n",frame_rx,slot_rx);
 
   fill_ul_rb_mask(gNB, frame_rx, slot_rx);
-
+  int max_tdd_periodicity_num = get_nb_max_tdd_periodicity(gNB->gNB_config.ssb_config.scs_common.value,gNB->gNB_config.tdd_table.tdd_period.value);
   int first_symb=0,num_symb=0;
   if (gNB->frame_parms.frame_type == TDD)
     for(int symbol_count=0; symbol_count<NR_NUMBER_OF_SYMBOLS_PER_SLOT; symbol_count++) {
-      if (gNB->gNB_config.tdd_table.max_tdd_periodicity_list[slot_rx].max_num_of_symbol_per_slot_list[symbol_count].slot_config.value==1) {
+      if (gNB->gNB_config.tdd_table.max_tdd_periodicity_list[slot_rx%max_tdd_periodicity_num].max_num_of_symbol_per_slot_list[symbol_count].slot_config.value==1) {
 	      if (num_symb==0) first_symb=symbol_count;
 	      num_symb++;
       }
