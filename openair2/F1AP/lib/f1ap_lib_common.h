@@ -26,6 +26,38 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#define CHECK_F1AP_CONDITION(condition)                                       \
+  do {                                                                        \
+    if (!(condition)) {                                                       \
+      fprintf(stderr, "Invalid message: condition %s failed!\n", #condition); \
+      return NULL;                                                            \
+    }                                                                         \
+  } while (0)
+
+#define CHECK_IE_CONDITION(condition)                                    \
+  do {                                                                   \
+    if (!(condition)) {                                                  \
+      fprintf(stderr, "Invalid IE: condition %s failed!\n", #condition); \
+      return false;                                                      \
+    }                                                                    \
+  } while (0)
+
+#define CHECK_CRITICALITY_REJECT(criticality)                                                           \
+  do {                                                                                                  \
+    if (criticality != F1AP_Criticality_reject) {                                                       \
+      fprintf(stderr, "Invalid criticality, expected F1AP_Criticality_reject, got %ld\n", criticality); \
+      return false;                                                                                     \
+    }                                                                                                   \
+  } while (0)
+
+#define CHECK_AND_RETURN_FALSE(condition, fmt, ...) \
+  do { \
+    if (!(condition)) { \
+      fprintf(stderr, "Condition failed %s:line %d: " fmt "\n", __func__, __LINE__, ##__VA_ARGS__); \
+      return false; \
+    } \
+  } while (0)
+
 /* macro to look up IE. If mandatory and not found, macro will print
  * descriptive debug message to stderr and force exit in calling function */
 #define F1AP_LIB_FIND_IE(IE_TYPE, ie, container, IE_ID, mandatory)                                   \
