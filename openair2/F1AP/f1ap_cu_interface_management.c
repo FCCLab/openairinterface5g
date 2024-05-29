@@ -232,100 +232,25 @@ int CU_send_gNB_DU_CONFIGURATION_UPDATE_ACKNOWLEDGE(
   return 0;
 }
 
-/*
-    gNB-CU Configuration Update
-*/
-
-int CU_send_gNB_CU_CONFIGURATION_UPDATE(sctp_assoc_t assoc_id, f1ap_gnb_cu_configuration_update_t *f1ap_gnb_cu_configuration_update)
+/**
+ * @brief F1 gNB-CU Configuration Update message encoding and transfer
+ */
+int CU_send_gNB_CU_CONFIGURATION_UPDATE(sctp_assoc_t assoc_id, f1ap_gnb_cu_configuration_update_t *msg)
 {
-  F1AP_F1AP_PDU_t                    pdu= {0};
+  /* complete F1AP message */
+  msg->transaction_id = F1AP_get_next_transaction_identifier(0, 0); // note: has to be done in the caller
   uint8_t  *buffer;
   uint32_t  len;
-  /* Create */
-  /* 0. Message Type */
-  pdu.present = F1AP_F1AP_PDU_PR_initiatingMessage;
-  asn1cCalloc(pdu.choice.initiatingMessage, initMsg);
-  initMsg->procedureCode = F1AP_ProcedureCode_id_gNBCUConfigurationUpdate;
-  initMsg->criticality   = F1AP_Criticality_reject;
-  initMsg->value.present = F1AP_InitiatingMessage__value_PR_GNBCUConfigurationUpdate;
-  F1AP_GNBCUConfigurationUpdate_t *cfgUpdate = &pdu.choice.initiatingMessage->value.choice.GNBCUConfigurationUpdate;
-  /* mandatory */
-  /* c1. Transaction ID (integer value) */
-  asn1cSequenceAdd(cfgUpdate->protocolIEs.list, F1AP_GNBCUConfigurationUpdateIEs_t, ieC1);
-  ieC1->id                        = F1AP_ProtocolIE_ID_id_TransactionID;
-  ieC1->criticality               = F1AP_Criticality_reject;
-  ieC1->value.present             = F1AP_GNBCUConfigurationUpdateIEs__value_PR_TransactionID;
-  ieC1->value.choice.TransactionID = F1AP_get_next_transaction_identifier(0, 0);
-
-  // mandatory
-  // c2. Cells_to_be_Activated_List
-  if (f1ap_gnb_cu_configuration_update->num_cells_to_activate > 0) {
-    asn1cSequenceAdd(cfgUpdate->protocolIEs.list, F1AP_GNBCUConfigurationUpdateIEs_t, ieC3);
-    ieC3->id                        = F1AP_ProtocolIE_ID_id_Cells_to_be_Activated_List;
-    ieC3->criticality               = F1AP_Criticality_reject;
-    ieC3->value.present             = F1AP_GNBCUConfigurationUpdateIEs__value_PR_Cells_to_be_Activated_List;
-
-    for (int i=0; i<f1ap_gnb_cu_configuration_update->num_cells_to_activate; i++) {
-      asn1cSequenceAdd(ieC3->value.choice.Cells_to_be_Activated_List.list,F1AP_Cells_to_be_Activated_List_ItemIEs_t,
-                       cells_to_be_activated_ies);
-      cells_to_be_activated_ies->id = F1AP_ProtocolIE_ID_id_Cells_to_be_Activated_List_Item;
-      cells_to_be_activated_ies->criticality = F1AP_Criticality_reject;
-      cells_to_be_activated_ies->value.present = F1AP_Cells_to_be_Activated_List_ItemIEs__value_PR_Cells_to_be_Activated_List_Item;
-      // 2.1 cells to be Activated list item
-      F1AP_Cells_to_be_Activated_List_Item_t *cells_to_be_activated_list_item=
-        &cells_to_be_activated_ies->value.choice.Cells_to_be_Activated_List_Item;
-      // - nRCGI
-      addnRCGI(cells_to_be_activated_list_item->nRCGI, f1ap_gnb_cu_configuration_update->cells_to_activate+i);
-      // optional
-      // -nRPCI
-      asn1cCalloc(cells_to_be_activated_list_item->nRPCI, tmp);
-      *tmp = f1ap_gnb_cu_configuration_update->cells_to_activate[i].nrpci;  // int 0..1007
-      // optional
-      // 3.1.2 gNB-CUSystem Information
-      F1AP_ProtocolExtensionContainer_10696P112_t *p = calloc(1,sizeof(*p));
-      cells_to_be_activated_list_item->iE_Extensions = (struct F1AP_ProtocolExtensionContainer *) p;
-      //F1AP_ProtocolExtensionContainer_154P112_t
-      asn1cSequenceAdd(p->list, F1AP_Cells_to_be_Activated_List_ItemExtIEs_t,  cells_to_be_activated_itemExtIEs);
-      cells_to_be_activated_itemExtIEs->id                     = F1AP_ProtocolIE_ID_id_gNB_CUSystemInformation;
-      cells_to_be_activated_itemExtIEs->criticality            = F1AP_Criticality_reject;
-      cells_to_be_activated_itemExtIEs->extensionValue.present = F1AP_Cells_to_be_Activated_List_ItemExtIEs__extensionValue_PR_GNB_CUSystemInformation;
-
-      if (f1ap_gnb_cu_configuration_update->cells_to_activate[i].num_SI > 0) {
-        F1AP_GNB_CUSystemInformation_t *gNB_CUSystemInformation =
-          &cells_to_be_activated_itemExtIEs->extensionValue.choice.GNB_CUSystemInformation;
-        //LOG_I(F1AP, "%s() SI %d size %d: ", __func__, i, f1ap_setup_resp->SI_container_length[i][0]);
-        //for (int n = 0; n < f1ap_setup_resp->SI_container_length[i][0]; n++)
-        //  printf("%02x ", f1ap_setup_resp->SI_container[i][0][n]);
-        //printf("\n");
-
-        // for (int sIBtype=2;sIBtype<33;sIBtype++) { //21 ? 33 ?
-        for (int j = 0; j < sizeofArray(f1ap_gnb_cu_configuration_update->cells_to_activate[i].SI_msg); j++) {
-          if (f1ap_gnb_cu_configuration_update->cells_to_activate[i].SI_msg[j].SI_container != NULL) {
-            asn1cSequenceAdd(gNB_CUSystemInformation->sibtypetobeupdatedlist.list, F1AP_SibtypetobeupdatedListItem_t, sib_item);
-            sib_item->sIBtype = f1ap_gnb_cu_configuration_update->cells_to_activate[i].SI_msg[j].SI_type;
-            AssertFatal(sib_item->sIBtype < 6 || sib_item->sIBtype == 9, "Illegal SI type %ld\n", sib_item->sIBtype);
-            OCTET_STRING_fromBuf(&sib_item->sIBmessage,
-                                 (const char *)f1ap_gnb_cu_configuration_update->cells_to_activate[i].SI_msg[j].SI_container,
-                                 f1ap_gnb_cu_configuration_update->cells_to_activate[i].SI_msg[j].SI_container_length);
-            LOG_D(F1AP,
-                  "f1ap_setup_resp->SI_container_length[%d][sIBtype %ld] = %d \n",
-                  i,
-                  sib_item->sIBtype,
-                  f1ap_gnb_cu_configuration_update->cells_to_activate[i].SI_msg[j].SI_container_length);
-          }
-        }
-      }
-    }
-  }
-
-  /* encode */
-  if (f1ap_encode_pdu(&pdu, &buffer, &len) < 0) {
-    LOG_E(F1AP, "Failed to encode F1 gNB-CU CONFIGURATION UPDATE\n");
+  /* Encode F1 gNB-CU Configuration Update message */
+  F1AP_F1AP_PDU_t *pdu = encode_f1ap_cu_configuration_update(msg);
+  /* Encode F1AP PDU */
+  if (f1ap_encode_pdu(pdu, &buffer, &len) < 0) {
+    ASN_STRUCT_FREE(asn_DEF_F1AP_F1AP_PDU, &pdu);
+    LOG_E(F1AP, "Failed to encode F1 gNB-CU Configuration Update\n");
     return -1;
   }
-
   LOG_DUMPMSG(F1AP, LOG_DUMP_CHAR, buffer, len, "F1AP gNB-CU CONFIGURATION UPDATE : ");
-  ASN_STRUCT_RESET(asn_DEF_F1AP_F1AP_PDU, &pdu);
+  ASN_STRUCT_FREE(asn_DEF_F1AP_F1AP_PDU, &pdu);
   f1ap_itti_send_sctp_data_req(assoc_id, buffer, len);
   return 0;
 }
