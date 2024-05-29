@@ -769,12 +769,16 @@ void tx_rf(RU_t *ru,int frame,int slot, uint64_t timestamp) {
   radio_tx_gpio_flag_t flags_gpio = 0;
 
   if (cfg->cell_config.frame_duplex_type.value == TDD && !get_softmodem_params()->continuous_tx) {
-    int slot_type = nr_slot_select(cfg,frame,slot%fp->slots_per_frame);
+    int max_tdd_periodicity_num = get_nb_max_tdd_periodicity(cfg->ssb_config.scs_common.value, cfg->tdd_table.tdd_period.value);
+    int slot_type = nr_slot_select(cfg, frame, slot);
     if(slot_type == NR_MIXED_SLOT) {
       int txsymb = 0;
 
       for(int symbol_count = 0; symbol_count<NR_NUMBER_OF_SYMBOLS_PER_SLOT; symbol_count++) {
-        if (cfg->tdd_table.max_tdd_periodicity_list[slot].max_num_of_symbol_per_slot_list[symbol_count].slot_config.value == 0)
+        if (cfg->tdd_table.max_tdd_periodicity_list[slot % max_tdd_periodicity_num]
+                .max_num_of_symbol_per_slot_list[symbol_count]
+                .slot_config.value
+            == 0)
           txsymb++;
       }
 
@@ -931,7 +935,7 @@ static void fill_split7_2_config(split7_config_t *split7, const nfapi_nr_config_
     split7->n_tdd_period = slots_per_frame / nb_periods_per_frame;
     for (int slot = 0; slot < split7->n_tdd_period; ++slot) {
       for (int sym = 0; sym < 14; ++sym) {
-        split7->slot_dirs[slot].sym_dir[sym] = tdd_table->max_tdd_periodicity_list[slot].max_num_of_symbol_per_slot_list[sym].slot_config.value;
+        split7->slot_dirs[slot%10].sym_dir[sym] = tdd_table->max_tdd_periodicity_list[slot%10].max_num_of_symbol_per_slot_list[sym].slot_config.value;
       }
     }
   }
