@@ -77,6 +77,9 @@
 #define F1AP_MAX_NO_OF_TNL_ASSOCIATIONS 32
 #define F1AP_MAX_NO_UE_ID 1024
 
+/* 9.3.1.42 of 3GPP TS 38.473 - gNB-CU System Information */
+#define F1AP_MAX_NO_SIB_TYPES 32
+
 typedef struct f1ap_net_config_t {
   char *CU_f1_ip_address;
   char *DU_f1c_ip_address;
@@ -171,6 +174,14 @@ typedef struct f1ap_du_register_req_t {
   f1ap_net_config_t net_config;
 } f1ap_du_register_req_t;
 
+typedef struct f1ap_sib_msg_t {
+  /// RRC container with system information owned by gNB-CU
+  uint8_t *SI_container;
+  int SI_container_length;
+  /// SIB block type, e.g. 2 for sibType2
+  int SI_type;
+} f1ap_sib_msg_t;
+
 typedef struct served_cells_to_activate_s {
   f1ap_plmn_t plmn;
   // NR Global Cell Id
@@ -179,10 +190,8 @@ typedef struct served_cells_to_activate_s {
   uint16_t nrpci;
   /// num SI messages per DU cell
   uint8_t num_SI;
-  /// SI message containers (up to 21 messages per cell)
-  uint8_t *SI_container[21];
-  int      SI_container_length[21];
-  int SI_type[21];
+  /// gNB-CU System Information message (up to 32 messages per cell)
+  f1ap_sib_msg_t SI_msg[F1AP_MAX_NO_SIB_TYPES];
 } served_cells_to_activate_t;
 
 typedef struct f1ap_setup_resp_s {

@@ -299,16 +299,19 @@ int CU_send_gNB_CU_CONFIGURATION_UPDATE(sctp_assoc_t assoc_id, f1ap_gnb_cu_confi
         //printf("\n");
 
         // for (int sIBtype=2;sIBtype<33;sIBtype++) { //21 ? 33 ?
-        for (int sIBtype=2; sIBtype<21; sIBtype++) {
-          if (f1ap_gnb_cu_configuration_update->cells_to_activate[i].SI_container[sIBtype]!=NULL) {
-            AssertFatal(sIBtype < 6 || sIBtype == 9, "Illegal SI type %d\n",sIBtype);
+        for (int j = 0; j < sizeofArray(f1ap_gnb_cu_configuration_update->cells_to_activate[i].SI_msg); j++) {
+          if (f1ap_gnb_cu_configuration_update->cells_to_activate[i].SI_msg[j].SI_container != NULL) {
             asn1cSequenceAdd(gNB_CUSystemInformation->sibtypetobeupdatedlist.list, F1AP_SibtypetobeupdatedListItem_t, sib_item);
-            sib_item->sIBtype = sIBtype;
+            sib_item->sIBtype = f1ap_gnb_cu_configuration_update->cells_to_activate[i].SI_msg[j].SI_type;
+            AssertFatal(sib_item->sIBtype < 6 || sib_item->sIBtype == 9, "Illegal SI type %ld\n", sib_item->sIBtype);
             OCTET_STRING_fromBuf(&sib_item->sIBmessage,
-                                 (const char *)f1ap_gnb_cu_configuration_update->cells_to_activate[i].SI_container[sIBtype],
-                                 f1ap_gnb_cu_configuration_update->cells_to_activate[i].SI_container_length[sIBtype]);
-            LOG_D(F1AP, "f1ap_setup_resp->SI_container_length[%d][%d] = %d \n", i,sIBtype,
-                  f1ap_gnb_cu_configuration_update->cells_to_activate[i].SI_container_length[sIBtype]);
+                                 (const char *)f1ap_gnb_cu_configuration_update->cells_to_activate[i].SI_msg[j].SI_container,
+                                 f1ap_gnb_cu_configuration_update->cells_to_activate[i].SI_msg[j].SI_container_length);
+            LOG_D(F1AP,
+                  "f1ap_setup_resp->SI_container_length[%d][sIBtype %ld] = %d \n",
+                  i,
+                  sib_item->sIBtype,
+                  f1ap_gnb_cu_configuration_update->cells_to_activate[i].SI_msg[j].SI_container_length);
           }
         }
       }

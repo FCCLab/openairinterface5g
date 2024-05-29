@@ -237,13 +237,14 @@ int DU_handle_gNB_CU_CONFIGURATION_UPDATE(instance_t instance, sctp_assoc_t asso
                 for (int si = 0; si < gNB_CUSystemInformation->sibtypetobeupdatedlist.list.count; si++) {
                   F1AP_SibtypetobeupdatedListItem_t *sib_item = gNB_CUSystemInformation->sibtypetobeupdatedlist.list.array[si];
                   size_t size = sib_item->sIBmessage.size;
-                  F1AP_GNB_CU_CONFIGURATION_UPDATE (msg_p).cells_to_activate[i].SI_container_length[si] = size;
+                  F1AP_GNB_CU_CONFIGURATION_UPDATE(msg_p).cells_to_activate[i].SI_msg[si].SI_container_length = size;
                   LOG_D(F1AP, "F1AP: SI_container_length[%d][%ld] %ld bytes\n", i, sib_item->sIBtype, size);
-                  F1AP_GNB_CU_CONFIGURATION_UPDATE (msg_p).cells_to_activate[i].SI_container[si] = malloc(F1AP_GNB_CU_CONFIGURATION_UPDATE (msg_p).cells_to_activate[i].SI_container_length[si]);
-                  memcpy((void *)F1AP_GNB_CU_CONFIGURATION_UPDATE (msg_p).cells_to_activate[i].SI_container[si],
+                  F1AP_GNB_CU_CONFIGURATION_UPDATE(msg_p).cells_to_activate[i].SI_msg[si].SI_container =
+                      malloc(F1AP_GNB_CU_CONFIGURATION_UPDATE(msg_p).cells_to_activate[i].SI_msg[si].SI_container_length);
+                  memcpy((void *)F1AP_GNB_CU_CONFIGURATION_UPDATE(msg_p).cells_to_activate[i].SI_msg[si].SI_container,
                          (void *)sib_item->sIBmessage.buf,
                          size);
-                  F1AP_GNB_CU_CONFIGURATION_UPDATE (msg_p).cells_to_activate[i].SI_type[si]=sib_item->sIBtype;
+                  F1AP_GNB_CU_CONFIGURATION_UPDATE(msg_p).cells_to_activate[i].SI_msg[si].SI_type = sib_item->sIBtype;
                 }
 
                 break;

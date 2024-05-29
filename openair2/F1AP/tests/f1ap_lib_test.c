@@ -268,10 +268,9 @@ static void test_f1ap_setup_response(void)
     AssertFatal(SI_container != NULL, "out of memory\n");
     strcpy((char *)SI_container, s);
     /* complete original message */
-    orig.cells_to_activate[0].num_SI = 1,
-    orig.cells_to_activate[0].SI_container[0] = (uint8_t *)SI_container;
-    orig.cells_to_activate[0].SI_container_length[0] = SI_container_length;
-    orig.cells_to_activate[0].SI_type[0] = 2;
+    orig.cells_to_activate[0].num_SI = 1, orig.cells_to_activate[0].SI_msg[0].SI_container = (uint8_t *)SI_container;
+    orig.cells_to_activate[0].SI_msg[0].SI_container_length = SI_container_length;
+    orig.cells_to_activate[0].SI_msg[0].SI_type = 2;
   }
   F1AP_F1AP_PDU_t *f1enc = encode_f1ap_setup_response(&orig);
   F1AP_F1AP_PDU_t *f1dec = f1ap_encode_decode(f1enc);

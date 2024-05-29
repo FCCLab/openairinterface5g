@@ -552,7 +552,7 @@ F1AP_F1AP_PDU_t *encode_f1ap_setup_response(const f1ap_setup_resp_t *msg)
 
       /* optional */
       /* - gNB-CU System Information */
-      if (msg->cells_to_activate[i].num_SI > 0) {
+      for (int n = 0; n < msg->cells_to_activate[i].num_SI; n++) {
         /* 3.1.2 gNB-CUSystem Information */
         F1AP_ProtocolExtensionContainer_10696P112_t *p = calloc(1, sizeof(*p));
         cells_to_be_activated_item->iE_Extensions = (struct F1AP_ProtocolExtensionContainer *)p;
@@ -564,15 +564,13 @@ F1AP_F1AP_PDU_t *encode_f1ap_setup_response(const f1ap_setup_resp_t *msg)
         F1AP_GNB_CUSystemInformation_t *gNB_CUSystemInformation =
             &cells_to_be_activated_itemExtIEs->extensionValue.choice.GNB_CUSystemInformation;
         /* gNB-CU System Information message */
-        for (int sIBtype = 2; sIBtype < 21; sIBtype++) {
-          if (msg->cells_to_activate[i].SI_container[sIBtype] != NULL) {
-            CHECK_F1AP_CONDITION(msg->cells_to_activate[i].SI_type[sIBtype] > 6 && msg->cells_to_activate[i].SI_type[sIBtype] != 9);
-            asn1cSequenceAdd(gNB_CUSystemInformation->sibtypetobeupdatedlist.list, F1AP_SibtypetobeupdatedListItem_t, sib_item);
-            sib_item->sIBtype = sIBtype;
-            OCTET_STRING_fromBuf(&sib_item->sIBmessage,
-                                 (const char *)msg->cells_to_activate[i].SI_container[sIBtype],
-                                 msg->cells_to_activate[i].SI_container_length[sIBtype]);
-          }
+        if (msg->cells_to_activate[i].SI_msg[n].SI_container != NULL) {
+          CHECK_F1AP_CONDITION(msg->cells_to_activate[i].SI_msg[n].SI_type > 6 && msg->cells_to_activate[i].SI_msg[n].SI_type != 9);
+          asn1cSequenceAdd(gNB_CUSystemInformation->sibtypetobeupdatedlist.list, F1AP_SibtypetobeupdatedListItem_t, sib_item);
+          sib_item->sIBtype = msg->cells_to_activate[i].SI_msg[n].SI_type;
+          OCTET_STRING_fromBuf(&sib_item->sIBmessage,
+                               (const char *)msg->cells_to_activate[i].SI_msg[n].SI_container,
+                               msg->cells_to_activate[i].SI_msg[n].SI_container_length);
         }
       }
     }
@@ -697,13 +695,11 @@ bool decode_f1ap_setup_response(const F1AP_F1AP_PDU_t *pdu, f1ap_setup_resp_t *o
                 AssertError(out->cells_to_activate[i].num_SI == 0, return -false, "System Information handling not implemented");
                 CHECK_IE_CONDITION(ext->list.count == 1); // At least one SI message should be there, and only 1 for now
 
-                for (int si = 0; si < gNB_CUSystemInformation->sibtypetobeupdatedlist.list.count; si++) {
-                  F1AP_SibtypetobeupdatedListItem_t *sib_item = gNB_CUSystemInformation->sibtypetobeupdatedlist.list.array[si];
-                  size_t size = sib_item->sIBmessage.size;
-                  out->cells_to_activate[i].SI_container_length[si] = size;
-                  out->cells_to_activate[i].SI_container[si] = malloc(out->cells_to_activate[i].SI_container_length[si]);
-                  memcpy(out->cells_to_activate[i].SI_container[si], sib_item->sIBmessage.buf, size);
-                  out->cells_to_activate[i].SI_type[si] = sib_item->sIBtype;
+                for (int s = 0; s < out->cells_to_activate[i].num_SI; s++) {
+                  F1AP_SibtypetobeupdatedListItem_t *sib_item = gNB_CUSystemInformation->sibtypetobeupdatedlist.list.array[s];
+                  out->cells_to_activate[i].SI_msg[s].SI_container =
+                      cp_octet_string(&sib_item->sIBmessage, &out->cells_to_activate[i].SI_msg[s].SI_container_length);
+                  out->cells_to_activate[i].SI_msg[s].SI_type = sib_item->sIBtype;
                 }
 
                 break;
@@ -765,13 +761,15 @@ bool eq_f1ap_setup_response(const f1ap_setup_resp_t *a, const f1ap_setup_resp_t 
         "a=%ld, b=%ld", a->cells_to_activate[i].nr_cellid, b->cells_to_activate[i].nr_cellid);
       if (!eq_f1ap_plmn(&a->cells_to_activate[i].plmn, &b->cells_to_activate[i].plmn))
         return false;
+      if (sizeofArray(a->cells_to_activate[i].SI_msg) != sizeofArray(b->cells_to_activate[i].SI_msg))
+        return false;
       for (int j = 0; j < b->cells_to_activate[i].num_SI; j++) {
-        CHECK_AND_RETURN_FALSE(*a->cells_to_activate[i].SI_container[j] == *b->cells_to_activate[i].SI_container[j],
-          "a=%d, b=%d", *a->cells_to_activate[i].SI_container[j], *b->cells_to_activate[i].SI_container[j]);
-        CHECK_AND_RETURN_FALSE(a->cells_to_activate[i].SI_container_length[j] == b->cells_to_activate[i].SI_container_length[j],
-          "a=%d, b=%d", a->cells_to_activate[i].SI_container_length[j], b->cells_to_activate[i].SI_container_length[j]);
-        CHECK_AND_RETURN_FALSE(a->cells_to_activate[i].SI_type[j] ==  b->cells_to_activate[i].SI_type[j],
-          "a=%d, b=%d", a->cells_to_activate[i].SI_type[j], b->cells_to_activate[i].SI_type[j]);
+        if (*a->cells_to_activate[i].SI_msg[j].SI_container != *b->cells_to_activate[i].SI_msg[j].SI_container)
+          return false;
+        if (a->cells_to_activate[i].SI_msg[j].SI_container_length != b->cells_to_activate[i].SI_msg[j].SI_container_length)
+          return false;
+        if (a->cells_to_activate[i].SI_msg[j].SI_type != b->cells_to_activate[i].SI_msg[j].SI_type)
+          return false;
       }
     }
   }
@@ -802,9 +800,9 @@ f1ap_setup_resp_t cp_f1ap_setup_response(const f1ap_setup_resp_t *msg)
     cp.cells_to_activate[n].num_SI = msg->cells_to_activate[n].num_SI;
     cp.cells_to_activate[n].plmn = msg->cells_to_activate[n].plmn;
     for (int j = 0; j < msg->cells_to_activate[n].num_SI; j++) {
-      cp.cells_to_activate[n].SI_container[j] = msg->cells_to_activate[n].SI_container[j];
-      cp.cells_to_activate[n].SI_container_length[j]  = msg->cells_to_activate[n].SI_container_length[j];
-      cp.cells_to_activate[n].SI_type[j] = msg->cells_to_activate[n].SI_type[j];
+      *cp.cells_to_activate[n].SI_msg[j].SI_container = *msg->cells_to_activate[n].SI_msg[j].SI_container;
+      cp.cells_to_activate[n].SI_msg[j].SI_container_length = msg->cells_to_activate[n].SI_msg[j].SI_container_length;
+      cp.cells_to_activate[n].SI_msg[j].SI_type = msg->cells_to_activate[n].SI_msg[j].SI_type;
     }
   }
   for (int i = 0; i < sizeofArray(msg->rrc_ver); i++)
@@ -822,8 +820,8 @@ void free_f1ap_setup_response(f1ap_setup_resp_t *msg)
     free(msg->gNB_CU_name);
   for (int i = 0; i < msg->num_cells_to_activate; i++)
     for (int j = 0; j < msg->cells_to_activate[i].num_SI; j++)
-      if (msg->cells_to_activate[i].SI_container_length[j] > 0)
-        free(msg->cells_to_activate[i].SI_container[j]);
+      if (msg->cells_to_activate[i].SI_msg[j].SI_container_length > 0)
+        free(msg->cells_to_activate[i].SI_msg[j].SI_container);
 }
 
 /* ====================================
