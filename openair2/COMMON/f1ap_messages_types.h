@@ -225,6 +225,7 @@ typedef struct f1ap_setup_failure_s {
 } f1ap_setup_failure_t;
 
 typedef struct f1ap_gnb_cu_configuration_update_acknowledge_s {
+  uint64_t transaction_id;
   uint16_t num_cells_failed_to_be_activated;
   f1ap_plmn_t plmn[F1AP_MAX_NB_CELLS];
   uint64_t nr_cellid[F1AP_MAX_NB_CELLS];

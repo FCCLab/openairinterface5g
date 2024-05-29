@@ -1699,3 +1699,35 @@ f1ap_gnb_cu_configuration_update_t cp_f1ap_cu_configuration_update(const f1ap_gn
   }
   return cp;
 }
+
+/* ====================================
+ *   F1AP gNB-CU Configuration Ack
+ * ==================================== */
+
+/**
+ * @brief F1 gNB-CU Configuration Update Acknowledge message encoding (9.2.1.11 of 3GPP TS 38.473)
+ */
+F1AP_F1AP_PDU_t *encode_f1ap_cu_configuration_update_acknowledge(const f1ap_gnb_cu_configuration_update_acknowledge_t *msg)
+{
+  CHECK_F1AP_CONDITION(msg->num_cells_failed_to_be_activated == 0);
+  CHECK_F1AP_CONDITION(msg->noofTNLAssociations_to_setup == 0);
+  CHECK_F1AP_CONDITION(msg->noofDedicatedSIDeliveryNeededUEs == 0);
+  F1AP_F1AP_PDU_t *pdu = calloc(1, sizeof(*pdu));
+  AssertError(pdu != NULL, return NULL, "out of memory\n");
+  /* Create */
+  /* 0. pdu Type */
+  pdu->present = F1AP_F1AP_PDU_PR_successfulOutcome;
+  asn1cCalloc(pdu->choice.successfulOutcome, tmp);
+  tmp->procedureCode = F1AP_ProcedureCode_id_gNBCUConfigurationUpdate;
+  tmp->criticality = F1AP_Criticality_reject;
+  tmp->value.present = F1AP_SuccessfulOutcome__value_PR_GNBCUConfigurationUpdateAcknowledge;
+  F1AP_GNBCUConfigurationUpdateAcknowledge_t *out = &tmp->value.choice.GNBCUConfigurationUpdateAcknowledge;
+  /* mandatory */
+  /* c1. Transaction ID (integer value)*/
+  asn1cSequenceAdd(out->protocolIEs.list, F1AP_GNBCUConfigurationUpdateAcknowledgeIEs_t, ie);
+  ie->id = F1AP_ProtocolIE_ID_id_TransactionID;
+  ie->criticality = F1AP_Criticality_reject;
+  ie->value.present = F1AP_GNBCUConfigurationUpdateAcknowledgeIEs__value_PR_TransactionID;
+  ie->value.choice.TransactionID = msg->transaction_id;
+  return pdu;
+}
