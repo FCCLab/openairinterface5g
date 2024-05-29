@@ -189,48 +189,22 @@ int DU_send_gNB_CU_CONFIGURATION_UPDATE_FAILURE(sctp_assoc_t assoc_id,
               GNBCUConfigurationUpdateFailure->cause);
 }
 
-int DU_send_gNB_CU_CONFIGURATION_UPDATE_ACKNOWLEDGE(
-    sctp_assoc_t assoc_id,
-    f1ap_gnb_cu_configuration_update_acknowledge_t *GNBCUConfigurationUpdateAcknowledge)
+/**
+ * @brief Encode and transfer F1 GNB CU Configuration Update Acknowledge message
+ */
+int DU_send_gNB_CU_CONFIGURATION_UPDATE_ACKNOWLEDGE(sctp_assoc_t assoc_id, f1ap_gnb_cu_configuration_update_acknowledge_t *msg)
 {
-  AssertFatal(GNBCUConfigurationUpdateAcknowledge->num_cells_failed_to_be_activated == 0,
-              "%d cells failed to activate\n",
-              GNBCUConfigurationUpdateAcknowledge->num_cells_failed_to_be_activated);
-  AssertFatal(GNBCUConfigurationUpdateAcknowledge->noofTNLAssociations_to_setup == 0,
-              "%d TNLAssociations to setup, handle this ...\n",
-              GNBCUConfigurationUpdateAcknowledge->noofTNLAssociations_to_setup);
-  AssertFatal(GNBCUConfigurationUpdateAcknowledge->noofTNLAssociations_failed == 0,
-              "%d TNLAssociations failed\n",
-              GNBCUConfigurationUpdateAcknowledge->noofTNLAssociations_failed);
-  AssertFatal(GNBCUConfigurationUpdateAcknowledge->noofDedicatedSIDeliveryNeededUEs == 0,
-              "%d DedicatedSIDeliveryNeededUEs\n",
-              GNBCUConfigurationUpdateAcknowledge->noofDedicatedSIDeliveryNeededUEs);
-  F1AP_F1AP_PDU_t           pdu= {0};
-  uint8_t  *buffer=NULL;
-  uint32_t  len=0;
-  /* Create */
-  /* 0. pdu Type */
-  pdu.present = F1AP_F1AP_PDU_PR_successfulOutcome;
-  asn1cCalloc(pdu.choice.successfulOutcome, tmp);
-  tmp->procedureCode = F1AP_ProcedureCode_id_gNBCUConfigurationUpdate;
-  tmp->criticality   = F1AP_Criticality_reject;
-  tmp->value.present = F1AP_SuccessfulOutcome__value_PR_GNBCUConfigurationUpdateAcknowledge;
-  F1AP_GNBCUConfigurationUpdateAcknowledge_t *out = &tmp->value.choice.GNBCUConfigurationUpdateAcknowledge;
-  /* mandatory */
-  /* c1. Transaction ID (integer value)*/
-  asn1cSequenceAdd(out->protocolIEs.list, F1AP_GNBCUConfigurationUpdateAcknowledgeIEs_t, ie);
-  ie->id                        = F1AP_ProtocolIE_ID_id_TransactionID;
-  ie->criticality               = F1AP_Criticality_reject;
-  ie->value.present             = F1AP_GNBCUConfigurationUpdateAcknowledgeIEs__value_PR_TransactionID;
-  ie->value.choice.TransactionID = F1AP_get_next_transaction_identifier(0, 0);
-
-  /* encode */
-  if (f1ap_encode_pdu(&pdu, &buffer, &len) < 0) {
-    LOG_E(F1AP, "Failed to encode GNB-DU-Configuration-Update-Acknowledge\n");
+  uint8_t *buffer = NULL;
+  uint32_t len = 0;
+  /* encode F1 message */
+  F1AP_F1AP_PDU_t *pdu = encode_f1ap_cu_configuration_update_acknowledge(msg);
+  /* encode F1AP PDU */
+  if (!pdu || f1ap_encode_pdu(pdu, &buffer, &len) < 0) {
+    LOG_E(F1AP, "Failed to encode GNB-CU-Configuration-Update-Acknowledge\n");
+    ASN_STRUCT_FREE(asn_DEF_F1AP_F1AP_PDU, pdu);
     return -1;
   }
-
-  ASN_STRUCT_RESET(asn_DEF_F1AP_F1AP_PDU, &pdu);
+  ASN_STRUCT_FREE(asn_DEF_F1AP_F1AP_PDU, pdu);
   f1ap_itti_send_sctp_data_req(assoc_id, buffer, len);
   return 0;
 }
