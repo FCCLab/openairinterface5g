@@ -1330,11 +1330,26 @@ void RCconfig_nr_macrlc(configmodule_interface_t *cfg)
   timer_config.sr_ProhibitTimer = *Timers_Params[GNB_TIMERS_SR_PROHIBIT_TIMER_IDX].iptr;
   timer_config.sr_TransMax = *Timers_Params[GNB_TIMERS_SR_TRANS_MAX_IDX].iptr;
   timer_config.sr_ProhibitTimer_v1700 = *Timers_Params[GNB_TIMERS_SR_PROHIBIT_TIMER_V1700_IDX].iptr;
+  timer_config.t300 = *Timers_Params[GNB_TIMERS_T300_IDX].iptr;
+  timer_config.t301 = *Timers_Params[GNB_TIMERS_T301_IDX].iptr;
+  timer_config.t310 = *Timers_Params[GNB_TIMERS_T310_IDX].iptr;
+  timer_config.n310 = *Timers_Params[GNB_TIMERS_N310_IDX].iptr;
+  timer_config.t311 = *Timers_Params[GNB_TIMERS_T311_IDX].iptr;
+  timer_config.n311 = *Timers_Params[GNB_TIMERS_N311_IDX].iptr;
+  timer_config.t319 = *Timers_Params[GNB_TIMERS_T319_IDX].iptr;
   LOG_I(GNB_APP,
-        "sr_ProhibitTimer %d, sr_TransMax %d, sr_ProhibitTimer_v1700 %d\n",
+        "sr_ProhibitTimer %d, sr_TransMax %d, sr_ProhibitTimer_v1700 %d, "
+        "t300 %d, t301 %d, t310 %d, n310 %d, t311 %d, n311 %d, t319 %d\n",
         timer_config.sr_ProhibitTimer,
         timer_config.sr_TransMax,
-        timer_config.sr_ProhibitTimer_v1700);
+        timer_config.sr_ProhibitTimer_v1700,
+        timer_config.t300,
+        timer_config.t301,
+        timer_config.t310,
+        timer_config.n310,
+        timer_config.t311,
+        timer_config.n311,
+        timer_config.t319);
 
   NR_ServingCellConfigCommon_t *scc = get_scc_config(cfg, config.minRXTXTIME);
   //xer_fprint(stdout, &asn_DEF_NR_ServingCellConfigCommon, scc);
