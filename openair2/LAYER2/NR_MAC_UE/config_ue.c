@@ -1510,6 +1510,7 @@ static void handle_reconfiguration_with_sync(NR_UE_MAC_INST_t *mac,
 
     if (reconfigurationWithSync->spCellConfigCommon->downlinkConfigCommon && reconfigurationWithSync->spCellConfigCommon->downlinkConfigCommon->frequencyInfoDL) {
       struct NR_FrequencyInfoDL *frequencyInfoDL = reconfigurationWithSync->spCellConfigCommon->downlinkConfigCommon->frequencyInfoDL;
+      mac->synch_request.synch_req.scs = frequencyInfoDL->scs_SpecificCarrierList.list.array[0]->subcarrierSpacing;
       mac->synch_request.synch_req.absoluteFrequencySSB = from_nrarfcn(*frequencyInfoDL->frequencyBandList.list.array[0],
                                                                        frequencyInfoDL->scs_SpecificCarrierList.list.array[0]->subcarrierSpacing,
                                                                        *frequencyInfoDL->absoluteFrequencySSB);

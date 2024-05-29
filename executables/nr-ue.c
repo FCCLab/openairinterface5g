@@ -611,9 +611,15 @@ static int UE_dl_preprocessing(PHY_VARS_NR_UE *UE, const UE_nr_rxtx_proc_t *proc
     if (UE->synch_request.received_synch_request == 1) {
       fapi_nr_synch_request_t *synch_req = &UE->synch_request.synch_req;
       if( synch_req->absoluteFrequencySSB != UINT64_MAX) {
-        UE->frame_parms.dl_CarrierFreq = synch_req->absoluteFrequencySSB;
-        UE->frame_parms.ul_CarrierFreq = synch_req->absoluteFrequencySSB;
-        nr_rf_card_config_freq(&openair0_cfg[UE->rf_map.card], UE->frame_parms.dl_CarrierFreq, UE->frame_parms.ul_CarrierFreq, 0);
+
+        uint64_t diff = UE->frame_parms.dl_CarrierFreq - UE->frame_parms.ul_CarrierFreq;
+        uint64_t dl_bw = (12 * UE->frame_parms.N_RB_DL) * (15000 << synch_req->scs);
+        uint64_t dl_CarrierFreq = (dl_bw >> 1) + synch_req->absoluteFrequencyPointA;
+
+        UE->frame_parms.dl_CarrierFreq = dl_CarrierFreq;
+        UE->frame_parms.ul_CarrierFreq = dl_CarrierFreq - diff;
+
+        nr_rf_card_config_freq(&openair0_cfg[UE->rf_map.card], UE->frame_parms.ul_CarrierFreq, UE->frame_parms.dl_CarrierFreq, 0);
         UE->rfdevice.trx_set_freq_func(&UE->rfdevice, &openair0_cfg[0]);
         init_symbol_rotation(&UE->frame_parms);
       }
