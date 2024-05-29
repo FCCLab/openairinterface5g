@@ -192,42 +192,20 @@ int CU_handle_gNB_DU_CONFIGURATION_UPDATE(instance_t instance, sctp_assoc_t asso
   return 0;
 }
 
-int CU_send_gNB_DU_CONFIGURATION_UPDATE_ACKNOWLEDGE(
-    sctp_assoc_t assoc_id,
-    f1ap_gnb_du_configuration_update_acknowledge_t *GNBDUConfigurationUpdateAcknowledge)
+int CU_send_gNB_DU_CONFIGURATION_UPDATE_ACKNOWLEDGE(sctp_assoc_t assoc_id, f1ap_gnb_du_configuration_update_acknowledge_t *msg)
 {
-  F1AP_F1AP_PDU_t pdu = {};
   uint8_t *buffer;
   uint32_t len;
-
-  /* Create */
-  /* 0. Message */
-
-  pdu.present = F1AP_F1AP_PDU_PR_successfulOutcome;
-  asn1cCalloc(pdu.choice.successfulOutcome, succOut);
-  succOut->procedureCode = F1AP_ProcedureCode_id_gNBDUConfigurationUpdate;
-  succOut->criticality = F1AP_Criticality_reject;
-  succOut->value.present = F1AP_SuccessfulOutcome__value_PR_GNBDUConfigurationUpdateAcknowledge;
-  F1AP_GNBDUConfigurationUpdateAcknowledge_t *ack = &succOut->value.choice.GNBDUConfigurationUpdateAcknowledge;
-
-  /* Mandatory */
-  /* Transaction Id */
-  asn1cSequenceAdd(ack->protocolIEs.list, F1AP_GNBDUConfigurationUpdateAcknowledgeIEs_t, ie1);
-  ie1->id = F1AP_ProtocolIE_ID_id_TransactionID;
-  ie1->criticality = F1AP_Criticality_reject;
-  ie1->value.present = F1AP_GNBDUConfigurationUpdateAcknowledgeIEs__value_PR_TransactionID;
-  ie1->value.choice.TransactionID = GNBDUConfigurationUpdateAcknowledge->transaction_id;
-
-  /* Todo add optional fields */
-  /* encode */
-
-  if (f1ap_encode_pdu(&pdu, &buffer, &len) < 0) {
-    LOG_E(F1AP, "Failed to encode F1 gNB-DU CONFIGURATION UPDATE\n");
+  /* Encode F1 gNB-CU Configuration Update message */
+  F1AP_F1AP_PDU_t *pdu = encode_f1ap_du_configuration_update_acknowledge(msg);
+  /* Encode F1AP PDU */
+  if (f1ap_encode_pdu(pdu, &buffer, &len) < 0) {
+    ASN_STRUCT_FREE(asn_DEF_F1AP_F1AP_PDU, &pdu);
+    LOG_E(F1AP, "Failed to encode F1 gNB-DU Configuration Update Acknowledge\n");
     return -1;
   }
-
   LOG_DUMPMSG(F1AP, LOG_DUMP_CHAR, buffer, len, "F1AP gNB-DU CONFIGURATION UPDATE : ");
-  ASN_STRUCT_RESET(asn_DEF_F1AP_F1AP_PDU, &pdu);
+  ASN_STRUCT_FREE(asn_DEF_F1AP_F1AP_PDU, &pdu);
   f1ap_itti_send_sctp_data_req(assoc_id, buffer, len);
   return 0;
 }
