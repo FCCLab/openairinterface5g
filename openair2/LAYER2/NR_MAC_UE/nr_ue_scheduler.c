@@ -56,6 +56,11 @@
 #include "LAYER2/RLC/rlc.h"
 
 //#define SRS_DEBUG
+#define verifyMutex(a)                                                \
+  {                                                                   \
+    int ret = a;                                                      \
+    AssertFatal(ret == 0, "Failure in mutex management ret=%d\n", a); \
+  }
 
 static void nr_ue_prach_scheduler(NR_UE_MAC_INST_t *mac, frame_t frameP, sub_frame_t slotP);
 static void schedule_ta_command(fapi_nr_dl_config_request_t *dl_config, NR_UL_TIME_ALIGNMENT_t *ul_time_alignment);
@@ -65,9 +70,9 @@ void clear_ul_config_request(NR_UE_MAC_INST_t *mac, int scs)
   int slots = nr_slots_per_frame[scs];
   for (int i = 0; i < slots ; i++) {
     fapi_nr_ul_config_request_t *ul_config = mac->ul_config_request + i;
-    pthread_mutex_lock(&ul_config->mutex_ul_config);
+    verifyMutex(pthread_mutex_lock(&ul_config->mutex_ul_config));
     ul_config->number_pdus = 0;
-    pthread_mutex_unlock(&ul_config->mutex_ul_config);
+    verifyMutex(pthread_mutex_unlock(&ul_config->mutex_ul_config));
   }
 }
 
@@ -81,7 +86,7 @@ fapi_nr_ul_config_request_pdu_t *lockGet_ul_config(NR_UE_MAC_INST_t *mac, frame_
   AssertFatal(mac->ul_config_request != NULL, "mac->ul_config_request not initialized, logic bug\n");
   fapi_nr_ul_config_request_t *ul_config = mac->ul_config_request + slot_tx;
 
-  pthread_mutex_lock(&ul_config->mutex_ul_config);
+  verifyMutex(pthread_mutex_lock(&ul_config->mutex_ul_config));
   if (ul_config->number_pdus != 0 && (ul_config->frame != frame_tx || ul_config->slot != slot_tx)) {
     LOG_E(NR_MAC, "Error in ul config consistency, clearing slot %d\n", slot_tx);
     ul_config->number_pdus = 0;
@@ -90,12 +95,11 @@ fapi_nr_ul_config_request_pdu_t *lockGet_ul_config(NR_UE_MAC_INST_t *mac, frame_
   ul_config->slot = slot_tx;
   if (ul_config->number_pdus >= FAPI_NR_UL_CONFIG_LIST_NUM) {
     LOG_E(NR_MAC, "Error in ul config for slot %d, no memory\n", slot_tx);
-    pthread_mutex_unlock(&ul_config->mutex_ul_config);
+    verifyMutex(pthread_mutex_unlock(&ul_config->mutex_ul_config));
     return NULL;
   }
   fapi_nr_ul_config_request_pdu_t *pdu = ul_config->ul_config_list + ul_config->number_pdus++;
   pdu->pdu_type = pdu_type;
-  AssertFatal(!pdu->lock, "no lock in fapi_nr_ul_config_request_pdu_t, aborting");
   pdu->lock = &ul_config->mutex_ul_config;
   pdu->privateNBpdus = &ul_config->number_pdus;
   LOG_D(NR_MAC, "Added ul pdu for %d.%d, type %d\n", frame_tx, slot_tx, pdu_type);
@@ -181,30 +185,28 @@ void remove_ul_config_last_item(fapi_nr_ul_config_request_pdu_t *pdu)
 
 void release_ul_config(fapi_nr_ul_config_request_pdu_t *configPerSlot, bool clearIt)
 {
-  pthread_mutex_t *lock = configPerSlot->lock;
-  configPerSlot->lock = NULL;
   if (clearIt)
     *configPerSlot->privateNBpdus = 0;
-  pthread_mutex_unlock(lock);
+  verifyMutex(pthread_mutex_unlock(configPerSlot->lock));
 }
 
 fapi_nr_ul_config_request_pdu_t *fapiLockIterator(fapi_nr_ul_config_request_t *ul_config, frame_t frame_tx, int slot_tx)
 {
-  pthread_mutex_lock(&ul_config->mutex_ul_config);
+  verifyMutex(pthread_mutex_lock(&ul_config->mutex_ul_config));
   if (ul_config->number_pdus >= FAPI_NR_UL_CONFIG_LIST_NUM) {
     LOG_E(NR_MAC, "Error in ul config in slot %d no memory\n", ul_config->slot);
-    pthread_mutex_unlock(&ul_config->mutex_ul_config);
+    verifyMutex(pthread_mutex_unlock(&ul_config->mutex_ul_config));
     return NULL;
   }
   if (ul_config->number_pdus != 0 && (ul_config->frame != frame_tx || ul_config->slot != slot_tx)) {
     LOG_E(NR_MAC, "Error in ul config consistency, clearing it slot %d\n", slot_tx);
     ul_config->number_pdus = 0;
-    pthread_mutex_unlock(&ul_config->mutex_ul_config);
+    verifyMutex(pthread_mutex_unlock(&ul_config->mutex_ul_config));
     return NULL;
   }
   if (ul_config->number_pdus >= FAPI_NR_UL_CONFIG_LIST_NUM) {
     LOG_E(NR_MAC, "Error in ul config for slot %d, no memory\n", slot_tx);
-    pthread_mutex_unlock(&ul_config->mutex_ul_config);
+    verifyMutex(pthread_mutex_unlock(&ul_config->mutex_ul_config));
     return NULL;
   }
   fapi_nr_ul_config_request_pdu_t *pdu = ul_config->ul_config_list + ul_config->number_pdus;
@@ -1007,6 +1009,9 @@ void nr_ue_aperiodic_srs_scheduling(NR_UE_MAC_INST_t *mac, long resource_trigger
     return;
   }
 
+  AssertFatal(slot_offset > DURATION_RX_TO_TX,
+              "Slot offset between DCI and aperiodic SRS (%d) needs to be higher than DURATION_RX_TO_TX (%d)\n",
+              slot_offset, DURATION_RX_TO_TX);
   int n_slots_frame = nr_slots_per_frame[current_UL_BWP->scs];
   int sched_slot = (slot + slot_offset) % n_slots_frame;
   NR_TDD_UL_DL_ConfigCommon_t *tdd_config = mac->tdd_UL_DL_ConfigurationCommon;
@@ -1301,7 +1306,6 @@ void nr_ue_ul_scheduler(NR_UE_MAC_INST_t *mac, nr_uplink_indication_t *ul_info)
   while (ulcfg_pdu->pdu_type != FAPI_NR_END) {
     uint8_t *ulsch_input_buffer = ulsch_input_buffer_array[number_of_pdus];
     if (ulcfg_pdu->pdu_type == FAPI_NR_UL_CONFIG_TYPE_PUSCH) {
-      int mac_pdu_exist = 0;
       uint16_t TBS_bytes = ulcfg_pdu->pusch_config_pdu.pusch_data.tb_size;
       LOG_D(NR_MAC,
             "harq_id %d, new_data_indicator %d, TBS_bytes %d (ra_state %d)\n",
@@ -1309,27 +1313,26 @@ void nr_ue_ul_scheduler(NR_UE_MAC_INST_t *mac, nr_uplink_indication_t *ul_info)
             ulcfg_pdu->pusch_config_pdu.pusch_data.new_data_indicator,
             TBS_bytes,
             ra->ra_state);
+      ulcfg_pdu->pusch_config_pdu.tx_request_body.fapiTxPdu = NULL;
       if (ra->ra_state == nrRA_WAIT_RAR && !ra->cfra) {
         nr_get_msg3_payload(mac, ulsch_input_buffer, TBS_bytes);
         for (int k = 0; k < TBS_bytes; k++) {
           LOG_D(NR_MAC, "(%i): 0x%x\n", k, ulsch_input_buffer[k]);
         }
-        mac_pdu_exist = 1;
+        ulcfg_pdu->pusch_config_pdu.tx_request_body.fapiTxPdu = ulsch_input_buffer;
+        ulcfg_pdu->pusch_config_pdu.tx_request_body.pdu_length = TBS_bytes;
+        number_of_pdus++;
       } else {
         if (ulcfg_pdu->pusch_config_pdu.pusch_data.new_data_indicator
             && (mac->state == UE_CONNECTED || (ra->ra_state == nrRA_WAIT_RAR && ra->cfra))) {
           // Getting IP traffic to be transmitted
           nr_ue_get_sdu(mac, cc_id, frame_tx, slot_tx, gNB_index, ulsch_input_buffer, TBS_bytes);
-          mac_pdu_exist = 1;
+	  ulcfg_pdu->pusch_config_pdu.tx_request_body.fapiTxPdu = ulsch_input_buffer;
+	  ulcfg_pdu->pusch_config_pdu.tx_request_body.pdu_length = TBS_bytes;
+	  number_of_pdus++;
         }
       }
 
-      // Config UL TX PDU
-      if (mac_pdu_exist) {
-        ulcfg_pdu->pusch_config_pdu.tx_request_body.pdu = ulsch_input_buffer;
-        ulcfg_pdu->pusch_config_pdu.tx_request_body.pdu_length = TBS_bytes;
-        number_of_pdus++;
-      }
       if (ra->ra_state == nrRA_WAIT_CONTENTION_RESOLUTION && !ra->cfra) {
         LOG_I(NR_MAC, "[RAPROC][%d.%d] RA-Msg3 retransmitted\n", frame_tx, slot_tx);
         // 38.321 restart the ra-ContentionResolutionTimer at each HARQ retransmission in the first symbol after the end of the Msg3
@@ -1465,6 +1468,13 @@ int nr_ue_pusch_scheduler(const NR_UE_MAC_INST_t *mac,
         AssertFatal(1 == 0, "Invalid numerology %i\n", mu);
     }
 
+    AssertFatal((k2 + delta) > DURATION_RX_TO_TX,
+                "Slot offset (%ld) for Msg3 needs to be higher than DURATION_RX_TO_TX (%d). Please set min_rxtxtime at least to %d in gNB config file or gNBs.[0].min_rxtxtime=%d via command line.\n",
+                k2,
+                DURATION_RX_TO_TX,
+                DURATION_RX_TO_TX,
+                DURATION_RX_TO_TX);
+
     *slot_tx = (current_slot + k2 + delta) % nr_slots_per_frame[mu];
     if (current_slot + k2 + delta >= nr_slots_per_frame[mu]){
       *frame_tx = (current_frame + 1) % 1024;
@@ -1473,6 +1483,14 @@ int nr_ue_pusch_scheduler(const NR_UE_MAC_INST_t *mac,
     }
 
   } else {
+
+    AssertFatal(k2 > DURATION_RX_TO_TX,
+                "Slot offset K2 (%ld) needs to be higher than DURATION_RX_TO_TX (%d). Please set min_rxtxtime at least to %d in gNB config file or gNBs.[0].min_rxtxtime=%d via command line.\n",
+                k2,
+                DURATION_RX_TO_TX,
+                DURATION_RX_TO_TX,
+                DURATION_RX_TO_TX);
+
     if (k2 < 0) { // This can happen when a false DCI is received
       LOG_W(PHY, "%d.%d. Received k2 %ld\n", current_frame, current_slot, k2);
       return -1;
@@ -1884,13 +1902,12 @@ static void map_ssb_to_ro(NR_UE_MAC_INST_t *mac)
 
 // Returns a RACH occasion if any matches the SSB idx, the frame and the slot
 static int get_nr_prach_info_from_ssb_index(prach_association_pattern_t *prach_assoc_pattern,
-                                            uint8_t ssb_idx,
+                                            int ssb_idx,
                                             int frame,
                                             int slot,
                                             ssb_list_info_t *ssb_list,
                                             prach_occasion_info_t **prach_occasion_info_pp)
 {
-  ssb_info_t *ssb_info_p;
   prach_occasion_slot_t *prach_occasion_slot_p = NULL;
 
   *prach_occasion_info_pp = NULL;
@@ -1900,14 +1917,20 @@ static int get_nr_prach_info_from_ssb_index(prach_association_pattern_t *prach_a
   //      - ssb_idx mapped to one of the ROs in that RO slot
   //      - exact slot number
   //      - frame offset
-  ssb_info_p = &ssb_list->tx_ssb[ssb_idx];
+  int idx_list = ssb_list->nb_ssb_per_index[ssb_idx];
+  ssb_info_t *ssb_info_p = &ssb_list->tx_ssb[idx_list];
   LOG_D(NR_MAC, "checking for prach : ssb_info_p->nb_mapped_ro %d\n", ssb_info_p->nb_mapped_ro);
-  for (uint8_t n_mapped_ro=0; n_mapped_ro<ssb_info_p->nb_mapped_ro; n_mapped_ro++) {
-    LOG_D(NR_MAC,"%d.%d: mapped_ro[%d]->frame.slot %d.%d, prach_assoc_pattern->nb_of_frame %d\n",
-          frame,slot,n_mapped_ro,ssb_info_p->mapped_ro[n_mapped_ro]->frame,ssb_info_p->mapped_ro[n_mapped_ro]->slot,prach_assoc_pattern->nb_of_frame);
+  for (int n_mapped_ro = 0; n_mapped_ro < ssb_info_p->nb_mapped_ro; n_mapped_ro++) {
+    LOG_D(NR_MAC,
+          "%d.%d: mapped_ro[%d]->frame.slot %d.%d, prach_assoc_pattern->nb_of_frame %d\n",
+          frame,
+          slot,
+          n_mapped_ro,
+          ssb_info_p->mapped_ro[n_mapped_ro]->frame,
+          ssb_info_p->mapped_ro[n_mapped_ro]->slot,
+          prach_assoc_pattern->nb_of_frame);
     if ((slot == ssb_info_p->mapped_ro[n_mapped_ro]->slot) &&
         (ssb_info_p->mapped_ro[n_mapped_ro]->frame == (frame % prach_assoc_pattern->nb_of_frame))) {
-
       uint8_t prach_config_period_nb = ssb_info_p->mapped_ro[n_mapped_ro]->frame / prach_assoc_pattern->prach_conf_period_list[0].nb_of_frame;
       uint8_t frame_nb_in_prach_config_period = ssb_info_p->mapped_ro[n_mapped_ro]->frame % prach_assoc_pattern->prach_conf_period_list[0].nb_of_frame;
       prach_occasion_slot_p = &prach_assoc_pattern->prach_conf_period_list[prach_config_period_nb].prach_occasion_slot_map[frame_nb_in_prach_config_period][slot];
