@@ -63,4 +63,7 @@ void free_f1ap_cu_configuration_update(f1ap_gnb_cu_configuration_update_t *msg);
 /* F1 gNB-CU Configuration Update Acknowledge */
 struct F1AP_F1AP_PDU *encode_f1ap_cu_configuration_update_acknowledge(const f1ap_gnb_cu_configuration_update_acknowledge_t *msg);
 
+/* F1 gNB-DU Configuration Update Acknowledge */
+struct F1AP_F1AP_PDU *encode_f1ap_du_configuration_update_acknowledge(const f1ap_gnb_du_configuration_update_acknowledge_t *msg);
+
 #endif /* F1AP_INTERFACE_MANAGEMENT_H_ */
