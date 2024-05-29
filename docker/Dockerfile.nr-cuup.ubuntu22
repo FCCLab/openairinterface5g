@@ -45,10 +45,16 @@ RUN apt-get update && \
         openssl && \
 # if the --sanitize option was used to build, additional packages are required
     /bin/bash -c 'if [[ "$BUILD_OPTION" = "--sanitize" ]]; then DEBIAN_FRONTEND=noninteractive apt-get install --yes \
-        libasan5 \
+        #libasan5 \ see below
         libubsan1 \
         liblapacke; fi' && \
     rm -rf /var/lib/apt/lists/*
+
+# we select another compile (gcc-12) for compilation, requiring another libasan
+# library version. Installing it above would install the wrong version. Hence,
+# copy the right version from ran-build. When upgrading to Ubuntu24, install
+# the correct one above!
+COPY --from=gnb-build /usr/lib/x86_64-linux-gnu/libasan.so.8.0.0 /usr/lib/x86_64-linux-gnu/
 
 WORKDIR /opt/oai-gnb/bin
 COPY --from=gnb-build \
