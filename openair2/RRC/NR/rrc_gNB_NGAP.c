@@ -1284,7 +1284,9 @@ rrc_gNB_send_NGAP_PDUSESSION_RELEASE_RESPONSE(
       //clear
       memset(&UE->pduSession[i], 0, sizeof(*UE->pduSession));
       UE->pduSession[i].status = PDU_SESSION_STATUS_RELEASED;
-      LOG_W(NR_RRC, "Released pdu session, but code to finish to free memory\n");
+      UE->nb_of_pdusessions--;
+      LOG_W(NR_RRC, "Released pdu session, but code to finish to free memory, curr nb_of_pdusessions %d for UE %x\n",
+		     UE->nb_of_pdusessions,UE->rnti);
     }
   }
 
