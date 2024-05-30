@@ -319,7 +319,6 @@ static void configure_dlsch(NR_UE_DLSCH_t *dlsch0,
 
 static void configure_ta_command(PHY_VARS_NR_UE *ue, fapi_nr_ta_command_pdu *ta_command_pdu)
 {
-
   /* Time Alignment procedure
   // - UE processing capability 1
   // - Setting the TA update to be applied after the reception of the TA command
@@ -360,7 +359,7 @@ static void configure_ta_command(PHY_VARS_NR_UE *ue, fapi_nr_ta_command_pdu *ta_
   /* Time alignment procedure */
   // N_t_1 + N_t_2 + N_TA_max must be in msec
   const double t_subframe = 1.0; // subframe duration of 1 msec
-  const int ul_tx_timing_adjustment = 1 + (int)ceil(slots_per_subframe*(N_t_1 + N_t_2 + N_TA_max + 0.5)/t_subframe);
+  const int ul_tx_timing_adjustment = 1 + (int)ceil(slots_per_subframe * (N_t_1 + N_t_2 + N_TA_max + 0.5) / t_subframe);
 
   if (ta_command_pdu->is_rar) {
     ue->ta_slot = ta_command_pdu->ta_slot;
@@ -375,8 +374,19 @@ static void configure_ta_command(PHY_VARS_NR_UE *ue, fapi_nr_ta_command_pdu *ta_
       ue->ta_frame = ta_command_pdu->ta_frame;
     ue->ta_command = ta_command_pdu->ta_command;
   }
-  LOG_D(PHY,"TA command received in Frame.Slot %d.%d -- Starting UL time alignment procedures. TA update will be applied at frame %d slot %d\n",
+
+  LOG_D(PHY,
+        "TA command received in %d.%d Starting UL time alignment procedures. TA update will be applied at frame %d slot %d\n",
         ta_command_pdu->ta_frame, ta_command_pdu->ta_slot, ue->ta_frame, ue->ta_slot);
+
+  if (ta_command_pdu->ta_offset != -1) {
+    // ta_offset_samples : ta_offset = samples_per_subframe : (Δf_max x N_f / 1000)
+    // As described in Section 4.3.1 in 38.211
+    int ta_offset_samples = (ta_command_pdu->ta_offset * samples_per_subframe) / (4096 * 480);
+    ue->N_TA_offset = ta_offset_samples;
+    LOG_D(PHY, "Received N_TA offset %d from upper layers. Corresponds to %d samples.\n",
+          ta_command_pdu->ta_offset, ta_offset_samples);
+  }
 }
 
 static void nr_ue_scheduled_response_dl(NR_UE_MAC_INST_t *mac,

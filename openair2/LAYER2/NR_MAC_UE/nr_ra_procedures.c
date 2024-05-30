@@ -884,9 +884,14 @@ void nr_ra_failed(NR_UE_MAC_INST_t *mac, uint8_t CC_id, NR_PRACH_RESOURCES_t *pr
 
   prach_resources->RA_PREAMBLE_TRANSMISSION_COUNTER++;
 
-  if (prach_resources->RA_PREAMBLE_TRANSMISSION_COUNTER == ra->preambleTransMax + 1){
+  // when the Contention Resolution is considered not successful
+  // stop timeAlignmentTimer
+  nr_timer_stop(&mac->time_alignment_timer);
 
-    LOG_D(MAC, "[UE %d][%d.%d] Maximum number of RACH attempts (%d) reached, selecting backoff time...\n",
+  if (prach_resources->RA_PREAMBLE_TRANSMISSION_COUNTER == ra->preambleTransMax + 1) {
+
+    LOG_D(NR_MAC,
+          "[UE %d][%d.%d] Maximum number of RACH attempts (%d) reached, selecting backoff time...\n",
           mac->ue_id,
           frame,
           slot,
@@ -903,23 +908,12 @@ void nr_ra_failed(NR_UE_MAC_INST_t *mac, uint8_t CC_id, NR_PRACH_RESOURCES_t *pr
   }
 }
 
-void schedule_RA_after_SR_failure(NR_UE_MAC_INST_t *mac)
+void trigger_MAC_UE_RA(NR_UE_MAC_INST_t *mac)
 {
   LOG_W(NR_MAC, "Triggering new RA procedure for UE with RNTI %x\n", mac->crnti);
   mac->state = UE_SYNC;
   reset_ra(mac, false);
   mac->ra.msg3_C_RNTI = true;
-  // release PUCCH for all Serving Cells;
-  // release SRS for all Serving Cells;
-  release_PUCCH_SRS(mac);
-  // clear any configured downlink assignments and uplink grants;
-  int scs = mac->current_UL_BWP->scs;
-  if (mac->dl_config_request)
-    memset(mac->dl_config_request, 0, sizeof(*mac->dl_config_request));
-  if (mac->ul_config_request)
-    clear_ul_config_request(mac, scs);
-  // clear any PUSCH resources for semi-persistent CSI reporting
-  // TODO we don't have semi-persistent CSI reporting
 }
 
 void prepare_msg4_feedback(NR_UE_MAC_INST_t *mac, int pid, int ack_nack)

@@ -2911,24 +2911,30 @@ void nr_ue_send_sdu(NR_UE_MAC_INST_t *mac, nr_downlink_indication_t *dl_info, in
 {
   VCD_SIGNAL_DUMPER_DUMP_FUNCTION_BY_NAME(VCD_SIGNAL_DUMPER_FUNCTIONS_UE_SEND_SDU, VCD_FUNCTION_IN);
 
-  LOG_D(MAC, "In [%d.%d] Handling DLSCH PDU type %d\n",
-        dl_info->frame, dl_info->slot, dl_info->rx_ind->rx_indication_body[pdu_id].pdu_type);
+  LOG_D(NR_MAC,
+        "In [%d.%d] Handling DLSCH PDU type %d\n",
+        dl_info->frame,
+        dl_info->slot,
+        dl_info->rx_ind->rx_indication_body[pdu_id].pdu_type);
 
   // Processing MAC PDU
   // it parses MAC CEs subheaders, MAC CEs, SDU subheaderds and SDUs
-  switch (dl_info->rx_ind->rx_indication_body[pdu_id].pdu_type){
-    case FAPI_NR_RX_PDU_TYPE_DLSCH:
-    nr_ue_process_mac_pdu(mac, dl_info, pdu_id);
-    break;
-    case FAPI_NR_RX_PDU_TYPE_RAR:
+  switch (dl_info->rx_ind->rx_indication_body[pdu_id].pdu_type) {
+    case FAPI_NR_RX_PDU_TYPE_DLSCH :
+      // DL data arrival during RRC_CONNECTED when UL synchronisation status is "non-synchronised"
+      if (!is_nr_timer_active(mac->time_alignment_timer) && mac->state == UE_CONNECTED) {
+        trigger_MAC_UE_RA(mac);
+        break;
+      }
+      nr_ue_process_mac_pdu(mac, dl_info, pdu_id);
+      break;
+    case FAPI_NR_RX_PDU_TYPE_RAR :
       nr_ue_process_rar(mac, dl_info, pdu_id);
-    break;
-    default:
-    break;
+      break;
+    default :
+      AssertFatal(false, "Invalid DLSCH PDU type\n");
   }
-
   VCD_SIGNAL_DUMPER_DUMP_FUNCTION_BY_NAME(VCD_SIGNAL_DUMPER_FUNCTIONS_UE_SEND_SDU, VCD_FUNCTION_OUT);
-
 }
 
 // #define EXTRACT_DCI_ITEM(val,size) val= readBits(dci_pdu, &pos, size);
@@ -3518,29 +3524,28 @@ void nr_ue_process_mac_pdu(NR_UE_MAC_INST_t *mac, nr_downlink_indication_t *dl_i
         //  38.321 Ch6.1.3.4
         mac_len = 1;
 
-        /*uint8_t ta_command = ((NR_MAC_CE_TA *)pduP)[1].TA_COMMAND;
-          uint8_t tag_id = ((NR_MAC_CE_TA *)pduP)[1].TAGID;*/
-
         const int ta = ((NR_MAC_CE_TA *)pduP)[1].TA_COMMAND;
         const int tag = ((NR_MAC_CE_TA *)pduP)[1].TAGID;
 
+        if (tag != mac->tag_Id) {
+          LOG_E(NR_MAC, "MAC CE TAG %d does not correspond to the one configured at MAC %ld\n", tag, mac->tag_Id);
+          done = 1;
+          break;
+        }
+
+        // start or restart the timeAlignmentTimer associated with the indicated TAG
+        nr_timer_start(&mac->time_alignment_timer);
+
         NR_UL_TIME_ALIGNMENT_t *ul_time_alignment = &mac->ul_time_alignment;
-        ul_time_alignment->tag_id = tag;
         ul_time_alignment->ta_command = ta;
         ul_time_alignment->frame = frameP;
         ul_time_alignment->slot = slot;
         ul_time_alignment->ta_apply = adjustment_ta;
-        /*
-        #ifdef DEBUG_HEADER_PARSING
-        LOG_D(MAC, "[UE] CE %d : UE Timing Advance : %d\n", i, pduP[1]);
-        #endif
-        */
 
         if (ta == 31)
           LOG_D(NR_MAC, "[%d.%d] Received TA_COMMAND %u TAGID %u CC_id %d \n", frameP, slot, ta, tag, CC_id);
         else
           LOG_I(NR_MAC, "[%d.%d] Received TA_COMMAND %u TAGID %u CC_id %d \n", frameP, slot, ta, tag, CC_id);
-
         break;
       case DL_SCH_LCID_CON_RES_ID:
         //  Clause 5.1.5 and 6.1.3.3 of 3GPP TS 38.321 version 16.2.1 Release 16
@@ -3886,13 +3891,15 @@ static void nr_ue_process_rar(NR_UE_MAC_INST_t *mac, nr_downlink_indication_t *d
     }
   }
 
-  #ifdef DEBUG_RAR
-  LOG_D(MAC, "[DEBUG_RAR] (%d,%d) number of RAR subheader %d; number of RAR pyloads %d\n",
+#ifdef DEBUG_RAR
+  LOG_D(NR_MAC,
+        "[DEBUG_RAR] (%d,%d) number of RAR subheader %d; number of RAR pyloads %d\n",
         frame,
         slot,
         n_subheaders,
         n_subPDUs);
-  LOG_D(MAC, "[DEBUG_RAR] Received RAR (%02x|%02x.%02x.%02x.%02x.%02x.%02x) for preamble %d/%d\n",
+  LOG_D(NR_MAC,
+        "[DEBUG_RAR] Received RAR (%02x|%02x.%02x.%02x.%02x.%02x.%02x) for preamble %d/%d\n",
         *(uint8_t *) rarh,
         rar[0],
         rar[1],
@@ -3902,30 +3909,18 @@ static void nr_ue_process_rar(NR_UE_MAC_INST_t *mac, nr_downlink_indication_t *d
         rar[5],
         rarh->RAPID,
         preamble_index);
-  #endif
+#endif
 
   if (ra->RA_RAPID_found) {
     RAR_grant_t rar_grant;
 
-    unsigned char tpc_command;
-#ifdef DEBUG_RAR
-    unsigned char csi_req;
-#endif
-
-    // TA command
-    NR_UL_TIME_ALIGNMENT_t *ul_time_alignment = &mac->ul_time_alignment;
-    const int ta = rar->TA2 + (rar->TA1 << 5);
-    ul_time_alignment->ta_command = ta;
-    ul_time_alignment->ta_apply = rar_ta;
-
-    LOG_W(MAC, "received TA command %d\n", 31 + ta);
 #ifdef DEBUG_RAR
     // CSI
-    csi_req = (unsigned char) (rar->UL_GRANT_4 & 0x01);
+    unsigned char csi_req = (unsigned char) (rar->UL_GRANT_4 & 0x01);
 #endif
 
     // TPC
-    tpc_command = (unsigned char) ((rar->UL_GRANT_4 >> 1) & 0x07);
+    unsigned char tpc_command = (unsigned char) ((rar->UL_GRANT_4 >> 1) & 0x07);
     switch (tpc_command){
       case 0:
         ra->Msg3_TPC = -6;
@@ -3963,6 +3958,37 @@ static void nr_ue_process_rar(NR_UE_MAC_INST_t *mac, nr_downlink_indication_t *d
     // frequency hopping
     rar_grant.freq_hopping = (unsigned char) (rar->UL_GRANT_1 >> 2);
 
+    // Schedule Msg3
+    const NR_UE_UL_BWP_t *current_UL_BWP = mac->current_UL_BWP;
+    const NR_UE_DL_BWP_t *current_DL_BWP = mac->current_DL_BWP;
+    const NR_BWP_PDCCH_t *pdcch_config = &mac->config_BWP_PDCCH[current_DL_BWP->bwp_id];
+    NR_tda_info_t tda_info = get_ul_tda_info(current_UL_BWP,
+                                             *pdcch_config->ra_SS->controlResourceSetId,
+                                             pdcch_config->ra_SS->searchSpaceType->present,
+                                             TYPE_RA_RNTI_,
+                                             rar_grant.Msg3_t_alloc);
+    if (tda_info.nrOfSymbols == 0) {
+      LOG_E(MAC, "Cannot schedule Msg3. Something wrong in TDA information\n");
+      return;
+    }
+    ret = nr_ue_pusch_scheduler(mac, is_Msg3, frame, slot, &frame_tx, &slot_tx, tda_info.k2);
+
+    // TA command
+    // if the timeAlignmentTimer associated with this TAG is not running
+    if (!is_nr_timer_active(mac->time_alignment_timer)) {
+      NR_UL_TIME_ALIGNMENT_t *ul_time_alignment = &mac->ul_time_alignment;
+      const int ta = rar->TA2 + (rar->TA1 << 5);
+      // apply the Timing Advance Command
+      ul_time_alignment->ta_command = ta;
+      ul_time_alignment->ta_apply = rar_ta;
+      ul_time_alignment->frame = frame_tx;
+      ul_time_alignment->slot = slot_tx;
+      // start the timeAlignmentTimer
+      nr_timer_start(&mac->time_alignment_timer);
+      LOG_W(MAC, "received TA command %d\n", 31 + ta);
+    }
+    // else ignore the received Timing Advance Command
+
 #ifdef DEBUG_RAR
     LOG_I(NR_MAC, "rarh->E = 0x%x\n", rarh->E);
     LOG_I(NR_MAC, "rarh->T = 0x%x\n", rarh->T);
@@ -3993,23 +4019,6 @@ static void nr_ue_process_rar(NR_UE_MAC_INST_t *mac, nr_downlink_indication_t *d
           tpc_command);
 #endif
 
-    // Schedule Msg3
-    const NR_UE_UL_BWP_t *current_UL_BWP = mac->current_UL_BWP;
-    const NR_UE_DL_BWP_t *current_DL_BWP = mac->current_DL_BWP;
-    const NR_BWP_PDCCH_t *pdcch_config = &mac->config_BWP_PDCCH[current_DL_BWP->bwp_id];
-    NR_tda_info_t tda_info = get_ul_tda_info(current_UL_BWP,
-                                             *pdcch_config->ra_SS->controlResourceSetId,
-                                             pdcch_config->ra_SS->searchSpaceType->present,
-                                             TYPE_RA_RNTI_,
-                                             rar_grant.Msg3_t_alloc);
-    if (tda_info.nrOfSymbols == 0) {
-      LOG_E(MAC, "Cannot schedule Msg3. Something wrong in TDA information\n");
-      return;
-    }
-    ret = nr_ue_pusch_scheduler(mac, is_Msg3, frame, slot, &frame_tx, &slot_tx, tda_info.k2);
-    ul_time_alignment->frame = frame_tx;
-    ul_time_alignment->slot = slot_tx;
-
     if (ret != -1) {
       uint16_t rnti = mac->crnti;
       // Upon successful reception, set the T-CRNTI to the RAR value if the RA preamble is selected among the contention-based RA Preambles
@@ -4038,6 +4047,9 @@ static void nr_ue_process_rar(NR_UE_MAC_INST_t *mac, nr_downlink_indication_t *d
 
   } else {
     ra->t_crnti = 0;
+    // TODO if the Random Access Preamble was not selected by the MAC entity
+    //      among the contention-based Random Access Preamble
+    //      apply the Timing Advance Command and start or restart the timeAlignmentTimer
   }
   return;
 }

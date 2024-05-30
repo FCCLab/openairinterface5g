@@ -76,7 +76,7 @@
 #define NR_INVALID_LCGID (NR_MAX_NUM_LCGID)
 
 #define MAX_NUM_BWP_UE 5
-#define NUM_SLOT_FRAME 10
+#define MAX_NUM_TAGS 4
 #define NR_MAX_SR_ID 8  // SchedulingRequestId ::= INTEGER (0..7)
 
 /*!\brief value for indicating BSR Timer is not running */
@@ -411,10 +411,9 @@ typedef enum ta_type {
 } ta_type_t;
 
 typedef struct NR_UL_TIME_ALIGNMENT {
-  /// TA command and TAGID received from the gNB
+  /// TA command received from the gNB
   ta_type_t ta_apply;
   int ta_command;
-  uint32_t tag_id;
   int frame;
   int slot;
 } NR_UL_TIME_ALIGNMENT_t;
@@ -554,6 +553,7 @@ typedef struct NR_UE_MAC_INST_s {
   int dmrs_TypeA_Position;
   int p_Max;
   int p_Max_alt;
+  int n_ta_offset; // -1 not present, otherwise value to be applied
 
   long pdsch_HARQ_ACK_Codebook;
 
@@ -571,6 +571,11 @@ typedef struct NR_UE_MAC_INST_s {
   nr_downlink_indication_t dl_info;
   NR_UE_HARQ_STATUS_t dl_harq_info[NR_MAX_HARQ_PROCESSES];
   NR_UL_HARQ_INFO_t ul_harq_info[NR_MAX_HARQ_PROCESSES];
+
+  NR_TAG_Id_t tag_Id;
+  A_SEQUENCE_OF(NR_TAG_t) TAG_list;
+  NR_TimeAlignmentTimer_t timeAlignmentTimerCommon;
+  NR_timer_t time_alignment_timer;
 
   nr_emulated_l1_t nr_ue_emul_l1;
 
