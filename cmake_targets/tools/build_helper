@@ -262,29 +262,33 @@ install_usrp_uhd_driver_from_source(){
     # For our legacy TDD eNB running with a B2xx RF board
     # the following patch has to be applied
     if [[ -v UHD_VERSION ]]; then
-        git checkout tags/v${UHD_VERSION}
-        # We recommend to use not older than 3.15.0.0
-        if [[ "$UHD_VERSION" == "3.15.0.0" ]]; then
-            # Tested that patch for the following versions:
-            # - 3.15.0.0
-            git apply $OPENAIR_DIR/cmake_targets/tools/uhd-3.15-tdd-patch.diff
-            ret=$?;[[ $ret -ne 0 ]] && echo_fatal "Could not apply the TDD patch"
-        else
-            # Tested that patch for the following versions:
-            # - 4.0.0.0
-            # - 4.1.0.0
-            # - 4.1.0.5
-            # - 4.2.0.0
-            # - 4.2.0.1
-            # - 4.3.0.0-rc1
-            # - 4.4.0.0
-            git apply $OPENAIR_DIR/cmake_targets/tools/uhd-4.x-tdd-patch.diff
-            ret=$?;[[ $ret -ne 0 ]] && echo_fatal "Could not apply the TDD patch"
-        fi
+        UHD_TAG=${UHD_VERSION}
     else
-        git checkout tags/v4.0.0.0
-        git apply $OPENAIR_DIR/cmake_targets/tools/uhd-4.x-tdd-patch.diff
-        ret=$?;[[ $ret -ne 0 ]] && echo_fatal "Could not apply the TDD patch"
+        UHD_TAG="4.0.0.0"
+    fi
+    git checkout tags/v${UHD_TAG}
+    # We recommend to use not older than 3.15.0.0
+    UHD_VERSION_MAJOR_MINOR=$(echo ${UHD_TAG} | awk -F'.' '{print $1"."$2}')
+    UHD_VERSION_MAJOR=$(echo ${UHD_TAG} | awk -F'.' '{print $1"."}')
+    file_to_apply=$(find $OPENAIR_DIR/cmake_targets/tools/ -name uhd-${UHD_VERSION_MAJOR_MINOR}* | head -n 1)
+    [ -z "${file_to_apply}"  ] && file_to_apply=$(find $OPENAIR_DIR/cmake_targets/tools/ -name uhd-${UHD_VERSION_MAJOR}* | head -n 1)
+    if [ ! -z "${file_to_apply}"  ]
+    then
+        # Tested that patch for the following versions:
+        # - 3.15.0.0
+        # - 4.0.0.0
+        # - 4.1.0.0
+        # - 4.1.0.5
+        # - 4.2.0.0
+        # - 4.2.0.1
+        # - 4.3.0.0-rc1
+        # - 4.4.0.0
+        set +e
+        git apply --check ${file_to_apply}
+        ret=$?;
+        set -e
+        [[ $ret -ne 0 ]] && echo_fatal "Could not apply the TDD patch ${file_to_apply}"
+        [ $ret -eq 0 ] && git apply ${file_to_apply}
     fi
     # Printing out the results of the patch to make sure it was properly applied
     git diff
