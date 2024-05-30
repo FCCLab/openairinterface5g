@@ -890,8 +890,8 @@ class Containerize():
 		ranAllowMerge = self.ranAllowMerge
 
 		if ranCommitID == '':
-			logging.error('need ranCommitID in CreateWorkspace()')
-			sys.exit('Insufficient Parameter in CreateWorkspace()')
+			logging.error('need ranCommitID to create workspace')
+			sys.exit('Insufficient Parameter to create workspace')
 
 		sshSession.command(f'rm -rf {sourcePath}', '\$', 10)
 		sshSession.command('mkdir -p ' + sourcePath, '\$', 5)
