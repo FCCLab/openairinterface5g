@@ -1,6 +1,6 @@
 services:
     oai-enb:
-        image: oai-enb:latest
+        image: oaisoftwarealliance/oai-enb:develop
         privileged: true
         container_name: oai-enb
         environment:

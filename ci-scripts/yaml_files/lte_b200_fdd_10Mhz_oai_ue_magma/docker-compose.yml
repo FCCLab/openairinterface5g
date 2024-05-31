@@ -1,6 +1,6 @@
 services:
     lte_ue0:
-        image: oai-lte-ue:latest
+        image: oaisoftwarealliance/oai-lte-ue:develop
         privileged: true
         container_name: lte-b200-ue-fdd-10Mhz-tm1
         environment:

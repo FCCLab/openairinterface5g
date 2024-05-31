@@ -217,6 +217,8 @@ def GetParametersFromXML(action):
 
 	elif action == 'Initialize_UE' or action == 'Attach_UE' or action == 'Detach_UE' or action == 'Terminate_UE' or action == 'CheckStatusUE' or action == 'DataEnable_UE' or action == 'DataDisable_UE':
 		CiTestObj.ue_ids = test.findtext('id').split(' ')
+		if test.findtext('nodes'):
+			CiTestObj.nodes = test.findtext('nodes').split(' ')
 
 	elif action == 'Build_OAI_UE':
 		CiTestObj.Build_OAI_UE_args = test.findtext('Build_OAI_UE_args')
@@ -263,12 +265,18 @@ def GetParametersFromXML(action):
 		CiTestObj.ping_args = test.findtext('ping_args')
 		CiTestObj.ping_packetloss_threshold = test.findtext('ping_packetloss_threshold')
 		CiTestObj.ue_ids = test.findtext('id').split(' ')
+		if test.findtext('nodes'):
+			CiTestObj.nodes = test.findtext('nodes').split(' ')
 		ping_rttavg_threshold = test.findtext('ping_rttavg_threshold') or ''
 
 	elif action == 'Iperf':
 		CiTestObj.iperf_args = test.findtext('iperf_args')
 		CiTestObj.ue_ids = test.findtext('id').split(' ')
 		CiTestObj.svr_id = test.findtext('svr_id') or None
+		if test.findtext('nodes'):
+			CiTestObj.nodes = test.findtext('nodes').split(' ')
+		if test.findtext('svr_node'):
+			CiTestObj.svr_node = test.findtext('svr_node')
 		CiTestObj.iperf_packetloss_threshold = test.findtext('iperf_packetloss_threshold')
 		CiTestObj.iperf_bitrate_threshold = test.findtext('iperf_bitrate_threshold') or '90'
 		CiTestObj.iperf_profile = test.findtext('iperf_profile') or 'balanced'
@@ -335,7 +343,7 @@ def GetParametersFromXML(action):
 		if (string_field is not None):
 			EPC.cfgUnDeploy = string_field	
 
-	elif action == 'Deploy_Object' or action == 'Undeploy_Object':
+	elif action == 'Deploy_Object' or action == 'Undeploy_Object' or action == "Create_Workspace":
 		eNB_instance=test.findtext('eNB_instance')
 		if (eNB_instance is None):
 			CONTAINERS.eNB_instance=0
@@ -840,6 +848,8 @@ elif re.match('^TesteNB$', mode, re.IGNORECASE) or re.match('^TestUE$', mode, re
 						success = CONTAINERS.Clean_Test_Server_Images(HTML)
 						if not success:
 							RAN.prematureExit = True
+					elif action == 'Create_Workspace':
+						CONTAINERS.Create_Workspace()
 					elif action == 'Deploy_Object':
 						CONTAINERS.DeployObject(HTML, EPC)
 						if CONTAINERS.exitStatus==1:
