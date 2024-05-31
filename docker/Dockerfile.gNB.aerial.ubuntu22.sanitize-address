@@ -60,7 +60,7 @@ RUN /bin/sh oaienv && \
 
 
 #start from scratch for target executable
-FROM ubuntu:focal as oai-gnb-aerial
+FROM ubuntu:jammy as oai-gnb-aerial
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Europe
 

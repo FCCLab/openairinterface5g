@@ -21,63 +21,43 @@
 #---------------------------------------------------------------------
 #
 # Dockerfile for the Open-Air-Interface BUILD service
-#   Valid for Ubuntu 20.04 to cross-compile for ARM64
+#   Valid for Ubuntu 22.04
 #
 #---------------------------------------------------------------------
 
-# Very important, the focal image shall not be using mirrors. A lot of them do NOT support ARM64.
-FROM ubuntu:focal AS ran-base
+
+FROM ubuntu:jammy AS ran-base
+ARG NEEDED_GIT_PROXY
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Europe/Paris
-# Specifying a working version of SIMDE for ARM:
-ENV SIMDE_VERSION=389f360a66d4a3bec62b7d71ad8be877487809ba
+ENV BUILD_UHD_FROM_SOURCE=True
+ENV UHD_VERSION=4.4.0.0
 
 #install developers pkg/repo
+#use gcc-12 to avoid problems of default gcc-11 in FlexRIC
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get upgrade --yes && \
-    #enabling arm64 architecture
-    dpkg --add-architecture arm64 && \
-    echo "deb [arch=arm64] http://ports.ubuntu.com/ focal main restricted\n" \
-         "deb [arch=arm64] http://ports.ubuntu.com/ focal-updates main restricted\n" \
-         "deb [arch=arm64] http://ports.ubuntu.com/ focal universe\n" \
-         "deb [arch=arm64] http://ports.ubuntu.com/ focal-updates universe\n" \
-         "deb [arch=arm64] http://ports.ubuntu.com/ focal multiverse\n" \
-         "deb [arch=arm64] http://ports.ubuntu.com/ focal-updates multiverse\n" \
-         "deb [arch=arm64] http://ports.ubuntu.com/ focal-backports main restricted universe multiverse" \
-         | tee /etc/apt/sources.list.d/arm-cross-compile-sources.list && \
-    cp /etc/apt/sources.list "/etc/apt/sources.list.`date`.backup" && \
-    sed -i -E "s/(deb)\ (http:.+)/\1\ [arch=amd64]\ \2/" /etc/apt/sources.list && \
-    apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get upgrade --yes && \
     DEBIAN_FRONTEND=noninteractive apt-get install --yes \
-      build-essential \
-      psmisc \
-      git \
-      tzdata \
-      xxd \
-      # ARM64 packages
-      libatlas-base-dev:arm64 \
-      libblas-dev:arm64 \
-      liblapack-dev:arm64 \
-      liblapacke-dev:arm64 \
-      libreadline-dev:arm64 \
-      libgnutls28-dev:arm64 \
-      libconfig-dev:arm64 \
-      libsctp-dev:arm64 \
-      libssl-dev:arm64 \
-      libtool:arm64 \
-      zlib1g-dev:arm64 \
-      # cross build libs and compilers
-      libc6-dev-i386 \
-      gcc-9-aarch64-linux-gnu \
-      g++-9-aarch64-linux-gnu && \
-    apt-get clean
+       #gcc needed for build_oai
+       build-essential \
+       psmisc \
+       git \
+       gcc-12 \
+       g++-12 \
+       xxd \
+       # python3-pip for conf template generation
+       python3-pip && \
+    update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 100 --slave /usr/bin/g++ g++ /usr/bin/g++-12 && \
+    pip3 install --ignore-installed pyyaml
 
 # Add "Tini - A tiny but valid init for containers", https://github.com/krallin/tini
 # it will be copied into target containers, to print exit numbers and handle signals properly
 ENV TINI_VERSION v0.19.0
 ADD https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini /tini
 RUN chmod +x /tini
+
+# In some network environments, GIT proxy is required
+RUN /bin/bash -c "if [[ -v NEEDED_GIT_PROXY ]]; then git config --global http.proxy $NEEDED_GIT_PROXY; fi"
 
 # Copying only the needed files to create ran-base
 WORKDIR /oai-ran/cmake_targets/tools
@@ -92,8 +72,7 @@ WORKDIR /oai-ran
 COPY oaienv .
 
 #run build_oai -I to get the builder image
-RUN /bin/sh oaienv && \
+RUN /bin/sh oaienv && \ 
     cd cmake_targets && \
     mkdir -p log && \
-    ./build_oai -I && \
-    apt-get clean
+    ./build_oai -I -w USRP --install-optional-packages
