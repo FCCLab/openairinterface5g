@@ -609,11 +609,16 @@ int main(int argc, char *argv[])
                                 .do_SRS = 0,
                                 .force_256qam_off = false};
 
+  const nr_mac_timers_t timer_config = {
+    .sr_ProhibitTimer       = 0,
+    .sr_TransMax            = 64,
+    .sr_ProhibitTimer_v1700 = 0};
+
   RC.nb_nr_macrlc_inst = 1;
   RC.nb_nr_mac_CC = (int*)malloc(RC.nb_nr_macrlc_inst*sizeof(int));
   for (i = 0; i < RC.nb_nr_macrlc_inst; i++)
     RC.nb_nr_mac_CC[i] = 1;
-  mac_top_init_gNB(ngran_gNB, scc, NULL /* scd will be updated further below */, &conf);
+  mac_top_init_gNB(ngran_gNB, scc, NULL /* scd will be updated further below */, &conf, &timer_config);
 
   NR_ServingCellConfig_t *scd = calloc(1,sizeof(NR_ServingCellConfig_t));
   prepare_scd(scd);
@@ -622,7 +627,7 @@ int main(int argc, char *argv[])
   prepare_sim_uecap(UE_Capability_nr,scc,mu,
                     N_RB_UL,0,mcs_table);
 
-  NR_CellGroupConfig_t *secondaryCellGroup = get_default_secondaryCellGroup(scc, scd, UE_Capability_nr, 0, 1, &conf, 0);
+  NR_CellGroupConfig_t *secondaryCellGroup = get_default_secondaryCellGroup(scc, scd, UE_Capability_nr, 0, 1, RC.nrmac[0], 0);
 
   /* RRC parameter validation for secondaryCellGroup */
   fix_scd(scd);
