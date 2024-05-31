@@ -1232,7 +1232,8 @@ int main(int argc, char *argv[])
                                gNB->frame_parms.N_RB_UL,
                                offset,
                                0,
-                               gNB->frame_parms.Ncp == EXTENDED ? 12 : 14);
+                               gNB->frame_parms.Ncp == EXTENDED ? 12 : 14,
+                               false);
         }
 
         ul_proc_error = phy_procedures_gNB_uespec_RX(gNB, frame, slot);

@@ -65,7 +65,6 @@ int nr_slot_fep_init_sync(PHY_VARS_NR_UE *ue,
                           const UE_nr_rxtx_proc_t *proc,
                           unsigned char symbol,
                           int sample_offset,
-                          bool pbch_decoded,
                           c16_t rxdataF[][ue->frame_parms.samples_per_slot_wCP],
                           int link_type);
 

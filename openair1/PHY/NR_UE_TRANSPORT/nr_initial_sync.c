@@ -210,7 +210,7 @@ nr_initial_sync_t nr_initial_sync(UE_nr_rxtx_proc_t *proc, PHY_VARS_NR_UE *ue, i
     /* rxdataF stores SS/PBCH from beginning of buffers in the same symbol order as in time domain */
 
     for (int i = 0; i < NR_N_SYMBOLS_SSB; i++)
-      nr_slot_fep_init_sync(ue, proc, i, frame_id * fp->samples_per_frame + ue->ssb_offset, false, rxdataF, link_type_dl);
+      nr_slot_fep_init_sync(ue, proc, i, frame_id * fp->samples_per_frame + ue->ssb_offset, rxdataF, link_type_dl);
 
 #ifdef DEBUG_INITIAL_SYNCH
     LOG_I(PHY, "Calling sss detection (normal CP)\n");
