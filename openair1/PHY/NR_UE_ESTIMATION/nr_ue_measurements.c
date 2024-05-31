@@ -78,7 +78,7 @@ void nr_ue_measurements(PHY_VARS_NR_UE *ue,
                         const UE_nr_rxtx_proc_t *proc,
                         NR_UE_DLSCH_t *dlsch,
                         uint32_t pdsch_est_size,
-                        int32_t dl_ch_estimates[][pdsch_est_size])
+                        c16_t dl_ch_estimates[][pdsch_est_size])
 {
   int slot = proc->nr_slot_rx;
   int aarx, aatx, gNB_id = 0;
@@ -113,7 +113,7 @@ void nr_ue_measurements(PHY_VARS_NR_UE *ue,
       ue->measurements.rx_power[gNB_id][aarx] = 0;
 
       for (aatx = 0; aatx < frame_parms->nb_antenna_ports_gNB; aatx++){
-        const int z=signal_energy_nodc(&dl_ch_estimates[gNB_id][ch_offset], N_RB_DL * NR_NB_SC_PER_RB);
+        const int z = signal_energy_nodc((int32_t *)&dl_ch_estimates[gNB_id][ch_offset], N_RB_DL * NR_NB_SC_PER_RB);
         rx_spatial_power[gNB_id][aatx][aarx] = z;
 
         if (rx_spatial_power[gNB_id][aatx][aarx] < 0)

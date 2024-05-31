@@ -41,9 +41,6 @@ int nr_prs_channel_estimation(uint8_t gNB_id,
                               NR_DL_FRAME_PARMS *frame_params,
                               c16_t rxdataF[][ue->frame_parms.samples_per_slot_wCP]);
 
-/* Generic function to find the peak of channel estimation buffer */
-void peak_estimator(int32_t *buffer, int32_t buf_len, int32_t *peak_idx, int32_t *peak_val, int32_t mean_val);
-
 /*!
 \brief This function performs channel estimation including frequency and temporal interpolation
 */
@@ -91,7 +88,7 @@ int nr_pdsch_channel_estimation(PHY_VARS_NR_UE *ue,
                                 unsigned short bwp_start_subcarrier,
                                 unsigned short nb_rb_pdsch,
                                 uint32_t pdsch_est_size,
-                                int32_t dl_ch_estimates[][pdsch_est_size],
+                                c16_t dl_ch_estimates[][pdsch_est_size],
                                 int rxdataFsize,
                                 c16_t rxdataF[][rxdataFsize],
                                 uint32_t *nvar);
@@ -109,7 +106,7 @@ void nr_ue_measurements(PHY_VARS_NR_UE *ue,
                         const UE_nr_rxtx_proc_t *proc,
                         NR_UE_DLSCH_t *dlsch,
                         uint32_t pdsch_est_size,
-                        int32_t dl_ch_estimates[][pdsch_est_size]);
+                        c16_t dl_ch_estimates[][pdsch_est_size]);
 
 void nr_ue_ssb_rsrp_measurements(PHY_VARS_NR_UE *ue,
                                  uint8_t gNB_index,
@@ -129,7 +126,7 @@ void nr_pdsch_ptrs_processing(PHY_VARS_NR_UE *ue,
                               c16_t ptrs_phase_per_slot[][14],
                               int32_t ptrs_re_per_slot[][14],
                               uint32_t rx_size_symbol,
-                              int32_t rxdataF_comp[][nbRx][rx_size_symbol * NR_SYMBOLS_PER_SLOT],
+                              c16_t rxdataF_comp[][nbRx][rx_size_symbol * NR_SYMBOLS_PER_SLOT],
                               NR_DL_FRAME_PARMS *frame_parms,
                               NR_DL_UE_HARQ_t *dlsch0_harq,
                               NR_DL_UE_HARQ_t *dlsch1_harq,

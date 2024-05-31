@@ -363,9 +363,9 @@ int init_nr_ue_signal(PHY_VARS_NR_UE *ue, int nb_connected_gNB)
         AssertFatal(ue->nr_csi_info->nr_gold_csi_rs[slot][symb] != NULL, "NR init: csi reference signal for slot %d symbol %d - malloc failed\n", slot, symb);
       }
     }
-    ue->nr_csi_info->csi_rs_generated_signal = malloc16(NR_MAX_NB_PORTS * sizeof(int32_t *));
+    ue->nr_csi_info->csi_rs_generated_signal = malloc16(NR_MAX_NB_PORTS * sizeof(c16_t *));
     for (i=0; i<NR_MAX_NB_PORTS; i++) {
-      ue->nr_csi_info->csi_rs_generated_signal[i] = malloc16_clear(fp->samples_per_frame_wCP * sizeof(int32_t));
+      ue->nr_csi_info->csi_rs_generated_signal[i] = malloc16_clear(fp->samples_per_frame_wCP * sizeof(c16_t));
     }
 
     ue->nr_srs_info = malloc16_clear(sizeof(nr_srs_info_t));
