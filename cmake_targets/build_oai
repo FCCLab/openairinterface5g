@@ -500,7 +500,7 @@ function main() {
     # e.g., cmake_targets/ran_build/build, hence the ../../..
     CMAKE_CMD="$CMAKE_CMD ../../.."
     echo_info "Running \"$CMAKE_CMD\""
-    eval $CMAKE_CMD
+    $CMAKE_CMD
     compilations $BUILD_DIR all.txt $TARGET_LIST
     ###################
     # Doxygen Support #

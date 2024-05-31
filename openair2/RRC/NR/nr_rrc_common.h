@@ -24,7 +24,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdint.h> 
+#include <stdint.h>
 
 #define NR_RRC_HEADER_SIZE_MAX 64
 #define NR_RRC_BUFFER_SIZE_MAX 1024
