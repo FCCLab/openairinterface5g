@@ -1,0 +1,131 @@
+def node = "porcepix"
+def resource = "CI-NEU-CI"
+
+pipeline {
+  agent {
+    label node
+  }
+  options {
+    timestamps()
+    ansiColor('xterm')
+    timeout(time: 3, unit: 'HOURS')
+  }
+  stages {
+    stage ("Connect Colosseum VPN client") {
+      steps {
+        lock (resource) {
+          script {
+            echo 'Connect Colosseum VPN client'
+
+            // terminate previous VPN connection, if any
+            sh "sudo kill -2 `pidof openconnect` 2> /dev/null || true"
+
+            withCredentials([
+              [$class: 'UsernamePasswordMultiBinding', credentialsId: "${params.ColosseumCredentials}", usernameVariable: 'col_username', passwordVariable: 'col_password'],
+            ]) {
+              try {
+                sh "./ci-scripts/colosseum_scripts/connect-vpn.sh ${col_username} ${col_password}"
+              } catch (Exception e) {
+                echo 'Exception occurred: ' + e.toString()
+                
+                echo 'Close existing VPN connection to Colosseum, if any'
+                sh "sudo kill -2 `pidof openconnect` 2> /dev/null || true"
+
+                sh "sleep 10"
+
+                echo 'Retry to open VPN connection to Colosseum'
+                sh "./ci-scripts/colosseum_scripts/connect-vpn.sh ${col_username} ${col_password}"
+              }
+            }
+          }
+        }
+      }
+    }
+    stage ("Trigger NEU CI") {
+      steps {
+        lock (resource) {
+          script {
+            withCredentials([
+              [$class: 'UsernamePasswordMultiBinding', credentialsId: "${params.ColosseumCredentials}", usernameVariable: 'col_username', passwordVariable: 'col_password'],
+            ]) {
+              // use eNB target branch variable if eNB repository is empty
+              def git_Branch = ""
+              if (params.eNB_Branch.isEmpty()) {
+                echo 'eNB_Branch parameter is empty, using eNB_TargetBranch instead'
+                git_Branch = params.eNB_TargetBranch
+              } else {
+                git_Branch = params.eNB_Branch
+              }
+
+              sh "./ci-scripts/colosseum_scripts/launch-job.sh ${col_username} ${col_password} ${currentBuild.number} ${params.eNB_Repository} ${git_Branch}"
+            }
+          }
+        }
+      }
+    }
+    stage ("Wait for job to finish") {
+      steps {
+        lock (resource) {
+          script {
+            withCredentials([
+              [$class: 'UsernamePasswordMultiBinding', credentialsId: "${params.ColosseumCredentials}", usernameVariable: 'col_username', passwordVariable: 'col_password'],
+            ]) {
+              timeout (time: 2, unit: 'HOURS') {
+                sh "./ci-scripts/colosseum_scripts/wait-job-end.sh ${col_username} ${col_password}"
+              }
+            }
+          }
+        }
+      }
+    }
+    stage ("Get test results") {
+      steps {
+        lock (resource) {
+          script {
+            withCredentials([
+              [$class: 'UsernamePasswordMultiBinding', credentialsId: "${params.ColosseumCredentials}", usernameVariable: 'col_username', passwordVariable: 'col_password'],
+            ]) {
+              sh "./ci-scripts/colosseum_scripts/get-test-results.sh ${col_username} ${col_password}"
+            }
+
+            if(fileExists("results.tar.xz")) {
+              archiveArtifacts "results.tar.xz"
+
+              sh "mkdir -p results"
+              sh "tar -xf results.tar.xz -C results --strip-components=1"
+
+              if(fileExists("results/test_summary.html")) {
+                archiveArtifacts "results/test_summary.html"
+              }
+
+              // check if test passed
+              sh "./ci-scripts/colosseum_scripts/check-results.sh results/test_summary.html"
+
+              sh "rm -Rf ./results"
+            }
+          }
+        }
+      }
+    }
+    stage ("Disconnect Colosseum VPN client") {
+      steps {
+        lock (resource) {
+          script {
+            echo 'Disconnect Colosseum VPN client'
+            sh "./ci-scripts/colosseum_scripts/disconnect-vpn.sh"
+          }
+        }
+      }
+    }
+    stage ("Set job status") {
+      steps {
+        lock (resource) {
+          script {
+            echo 'Set job status'
+            sh "./ci-scripts/colosseum_scripts/set-job-status.sh"
+          }
+        }
+      }
+    }
+  }
+}
