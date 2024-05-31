@@ -165,6 +165,7 @@ typedef struct {
   udp_data udp;
 
   uint8_t thread_started;
+  int8_t thread_core;
 
   nfapi_vnf_p7_config_t *config;
 

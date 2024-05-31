@@ -429,6 +429,7 @@ typedef enum {
 #define CONFIG_STRING_MACRLC_LOCAL_N_PORTD                 "local_n_portd"
 #define CONFIG_STRING_MACRLC_REMOTE_N_PORTD                "remote_n_portd"
 #define CONFIG_STRING_MACRLC_TRANSPORT_S_PREFERENCE        "tr_s_preference"
+#define CONFIG_STRING_MACRLC_TRANSPORT_S_SHM_PREFIX        "tr_s_shm_prefix"
 #define CONFIG_STRING_MACRLC_LOCAL_S_ADDRESS               "local_s_address"
 #define CONFIG_STRING_MACRLC_REMOTE_S_ADDRESS              "remote_s_address"
 #define CONFIG_STRING_MACRLC_LOCAL_S_PORTC                 "local_s_portc"

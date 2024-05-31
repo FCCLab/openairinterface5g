@@ -1188,7 +1188,12 @@ extern "C" {
       exit(EXIT_FAILURE);
     }
   } else {
-    s->usrp->set_time_next_pps(uhd::time_spec_t(0.0));
+    struct timespec tp;
+    if (clock_gettime(CLOCK_REALTIME, &tp)!=0)
+      LOG_W(PHY,"error getting system time\n");
+    double gps_sec = (double) tp.tv_sec;
+
+    s->usrp->set_time_next_pps(uhd::time_spec_t(gps_sec));
  
     if (s->usrp->get_clock_source(0) == "external") {
       if (check_ref_locked(s,0)) {

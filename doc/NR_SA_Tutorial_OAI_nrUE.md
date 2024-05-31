@@ -137,6 +137,14 @@ cd ~/openairinterface5g/cmake_targets/ran_build/build
 sudo ./nr-uesoftmodem -r 106 --numerology 1 --band 78 -C 3619200000 --ue-fo-compensation --sa -E --uicc0.imsi 001010000000001
 ```
 
+### USRP N310/X410
+For bandwidth higher than 40MHz up to 100MHz, you need a USRP N310 or X410 (X310 might work too but is not well tested).
+In the following example the OAI UE uses the X410 and the gNB based on [Nvidia Aerial and Foxconn](./Aerial_FAPI_Split_Tutorial.md). Other setups might require a different timing advance.
+
+````bash
+sudo ./nr-uesoftmodem -r 273 --numerology 1 --band 78 -C 3750000000 --ssb 1478 --usrp-args "addr=192.168.40.111" --ue-fo-compensation --sa --uicc0.imsi 001010000099999 -A 90 
+```
+
 ### RFsimulator
 Important notes:
 - This should be run on the same host as the OAI gNB
