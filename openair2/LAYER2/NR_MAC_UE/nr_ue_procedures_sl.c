@@ -19,7 +19,8 @@
  *      contact@openairinterface.org
  */
 
-#include "mac_defs_sl.h"
+#include "mac_defs.h"
+#include "mac_proto.h"
 
 #define SL_DEBUG
 
@@ -474,10 +475,11 @@ uint8_t sl_determine_sci_1a_len(uint16_t *num_subchannels,
     AssertFatal(*rpool->sl_Additional_MCS_Table_r16<=2, "additional table value cannot be > 2. Resource Pool Configuration Error.\n");
   }
 
-  LOG_D(NR_MAC,"sci 1A - additional_table:%ld, sci 1a len:%d, additional table nbits:%d\n",
-                                                                *rpool->sl_Additional_MCS_Table_r16,
-                                                                sci_1a_len,
-                                                                sci_1a->additional_mcs_table_indicator.nbits);
+  LOG_D(NR_MAC,
+        "sci 1A - additional_table:%ld, sci 1a len:%d, additional table nbits:%d\n",
+        rpool->sl_Additional_MCS_Table_r16 ? *rpool->sl_Additional_MCS_Table_r16 : 0,
+        sci_1a_len,
+        sci_1a->additional_mcs_table_indicator.nbits);
 
   uint8_t psfch_period = 0;
   if (rpool->sl_PSFCH_Config_r16 &&

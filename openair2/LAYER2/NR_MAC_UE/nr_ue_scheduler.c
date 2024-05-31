@@ -129,6 +129,26 @@ NR_LC_SCHEDULING_INFO *get_scheduling_info_from_lcid(NR_UE_MAC_INST_t *mac, NR_L
   int idx = lcid_buffer_index(lcid);
   return &mac->scheduling_info.lc_sched_info[idx];
 }
+void fill_scheduled_response(nr_scheduled_response_t *scheduled_response,
+                             fapi_nr_dl_config_request_t *dl_config,
+                             fapi_nr_ul_config_request_t *ul_config,
+                             fapi_nr_tx_request_t *tx_request,
+                             sl_nr_rx_config_request_t *sl_rx_config,
+                             sl_nr_tx_config_request_t *sl_tx_config,
+                             module_id_t mod_id,
+                             int cc_id,
+                             frame_t frame,
+                             int slot,
+                             void *phy_data)
+{
+  scheduled_response->dl_config = dl_config;
+  scheduled_response->ul_config = ul_config;
+  scheduled_response->module_id = mod_id;
+  scheduled_response->CC_id = cc_id;
+  scheduled_response->phy_data = phy_data;
+  scheduled_response->sl_rx_config = sl_rx_config;
+  scheduled_response->sl_tx_config = sl_tx_config;
+}
 
 static void trigger_regular_bsr(NR_UE_MAC_INST_t *mac, NR_LogicalChannelIdentity_t lcid, bool sr_DelayTimerApplied)
 {
