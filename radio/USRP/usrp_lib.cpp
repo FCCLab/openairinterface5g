@@ -1188,8 +1188,30 @@ extern "C" {
       exit(EXIT_FAILURE);
     }
   } else {
-    s->usrp->set_time_next_pps(uhd::time_spec_t(0.0));
- 
+
+    if (s->usrp->get_time_source(0) == "external") {
+      //synch the USRP time accross devices using the host clock (ideally syched with PTP, but also NTP works) and assuming all devices are synched by octoclock
+      //First, wait for PPS.
+      uhd::time_spec_t time_last_pps = s->usrp->get_time_last_pps();
+      
+      while (time_last_pps == s->usrp->get_time_last_pps()) {
+	boost::this_thread::sleep(boost::posix_time::milliseconds(1));
+      }
+      
+      // get host time
+      struct timespec tp;
+      if (clock_gettime(CLOCK_TAI, &tp)!=0)
+	LOG_W(PHY,"error getting system time\n");
+      double tai_sec = (double) tp.tv_sec;
+      
+      //set USRP time to host time at next pps
+      s->usrp->set_time_next_pps(uhd::time_spec_t(tai_sec));
+      LOG_I(HW,"USRP clock set to %f sec\n",tai_sec);
+    }
+    else {
+      s->usrp->set_time_next_pps(uhd::time_spec_t(0.0));
+    }
+
     if (s->usrp->get_clock_source(0) == "external") {
       if (check_ref_locked(s,0)) {
 	LOG_I(HW,"USRP locked to external reference!\n");
