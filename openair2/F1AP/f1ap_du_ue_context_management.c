@@ -176,6 +176,24 @@ int DU_handle_UE_CONTEXT_SETUP_REQUEST(instance_t instance, sctp_assoc_t assoc_i
       f1ap_ue_context_setup_req->cu_to_du_rrc_information->uE_CapabilityRAT_ContainerList_length = ieCuRrcInfo->value.choice.CUtoDURRCInformation.uE_CapabilityRAT_ContainerList->size;
       LOG_D(F1AP, "Size f1ap_ue_context_setup_req->cu_to_du_rrc_information->uE_CapabilityRAT_ContainerList_length: %d \n", f1ap_ue_context_setup_req->cu_to_du_rrc_information->uE_CapabilityRAT_ContainerList_length);
     }
+    if (ieCuRrcInfo->value.choice.CUtoDURRCInformation.iE_Extensions != NULL) {
+      f1ap_ue_context_setup_req->cu_to_du_rrc_information->ie_extensions = (protocol_extension_container_t *)calloc(1, sizeof(protocol_extension_container_t));
+      F1AP_ProtocolExtensionContainer_10696P60_t *ie_extensions = (F1AP_ProtocolExtensionContainer_10696P60_t *)ieCuRrcInfo->value.choice.CUtoDURRCInformation.iE_Extensions;
+      for (int i_ext = 0; i_ext < ie_extensions->list.count; i_ext++) {
+        F1AP_CUtoDURRCInformation_ExtIEs_t *ie = ie_extensions->list.array[i_ext];
+        switch (ie->extensionValue.present) {
+          case F1AP_CUtoDURRCInformation_ExtIEs__extensionValue_PR_CellGroupConfig:
+            f1ap_ue_context_setup_req->cu_to_du_rrc_information->ie_extensions->cell_group_config =
+                (uint8_t *)calloc(1, ie->extensionValue.choice.CellGroupConfig.size*sizeof(uint8_t));
+            memcpy(f1ap_ue_context_setup_req->cu_to_du_rrc_information->ie_extensions->cell_group_config, ie->extensionValue.choice.CellGroupConfig.buf, ie->extensionValue.choice.CellGroupConfig.size);
+            f1ap_ue_context_setup_req->cu_to_du_rrc_information->ie_extensions->cell_group_config_length = ie->extensionValue.choice.CellGroupConfig.size;
+            break;
+          default:
+            LOG_E(F1AP, "%s: Procedures for extension value %i are not implemented yet!\n", __FUNCTION__, ie->extensionValue.present);
+            break;
+        }
+      }
+    }
   }
 
   /* DRB */
@@ -352,15 +370,12 @@ int DU_send_UE_CONTEXT_SETUP_RESPONSE(sctp_assoc_t assoc_id, f1ap_ue_context_set
 
   /* optional */
   /* c4. C_RNTI */
-  if (0) {
+  if (resp->crnti!=NULL) {
     asn1cSequenceAdd(out->protocolIEs.list, F1AP_UEContextSetupResponseIEs_t, ie4);
     ie4->id                             = F1AP_ProtocolIE_ID_id_C_RNTI;
     ie4->criticality                    = F1AP_Criticality_ignore;
     ie4->value.present                  = F1AP_UEContextSetupResponseIEs__value_PR_C_RNTI;
-    //C_RNTI_TO_BIT_STRING(rntiP, &ie->value.choice.C_RNTI);
-    ie4->value.choice.C_RNTI=0;
-    AssertFatal(false, "not implemented\n");
-    LOG_E(F1AP,"RNTI to code!\n");
+    ie4->value.choice.C_RNTI            = *resp->crnti;
   }
 
   /* optional */
@@ -1015,6 +1030,7 @@ int DU_handle_UE_CONTEXT_MODIFICATION_REQUEST(instance_t instance, sctp_assoc_t 
     /* correct here */
     if ( ieRRC->value.choice.RRCContainer.size )  {
       f1ap_ue_context_modification_req->rrc_container = malloc(ieRRC->value.choice.RRCContainer.size);
+      f1ap_ue_context_modification_req->rrc_container_length = ieRRC->value.choice.RRCContainer.size;
       memcpy(f1ap_ue_context_modification_req->rrc_container,
           ieRRC->value.choice.RRCContainer.buf, ieRRC->value.choice.RRCContainer.size);
       f1ap_ue_context_modification_req->rrc_container_length = ieRRC->value.choice.RRCContainer.size;
@@ -1049,6 +1065,19 @@ int DU_handle_UE_CONTEXT_MODIFICATION_REQUEST(instance_t instance, sctp_assoc_t 
       cu2du->uE_CapabilityRAT_ContainerList_length = uecap->size;
       memcpy(cu2du->uE_CapabilityRAT_ContainerList, uecap->buf, uecap->size);
     }
+  }
+
+  /* TransmissionActionIndicator */
+  F1AP_UEContextModificationRequestIEs_t *ieTxInd;
+  F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_UEContextModificationRequestIEs_t,
+                             ieTxInd,
+                             container,
+                             F1AP_ProtocolIE_ID_id_TransmissionActionIndicator,
+                             false);
+
+  if (ieTxInd) {
+    f1ap_ue_context_modification_req->transmission_action_indicator = calloc(1, sizeof(uint8_t));
+    *f1ap_ue_context_modification_req->transmission_action_indicator = ieTxInd->value.choice.TransmissionActionIndicator;
   }
 
   ue_context_modification_request(f1ap_ue_context_modification_req);

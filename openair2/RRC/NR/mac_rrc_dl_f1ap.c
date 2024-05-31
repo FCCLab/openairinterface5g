@@ -73,6 +73,17 @@ static void ue_context_setup_request_f1ap(sctp_assoc_t assoc_id, const f1ap_ue_c
       AssertFatal(du2cu_new->uE_CapabilityRAT_ContainerList != NULL, "out of memory\n");
       memcpy(du2cu_new->uE_CapabilityRAT_ContainerList, du2cu_req->uE_CapabilityRAT_ContainerList, du2cu_new->uE_CapabilityRAT_ContainerList_length);
     }
+    if (req->cu_to_du_rrc_information->ie_extensions != NULL && req->cu_to_du_rrc_information->ie_extensions->cell_group_config != NULL) {
+      const cu_to_du_rrc_information_t *du2cu_req = req->cu_to_du_rrc_information;
+      cu_to_du_rrc_information_t *du2cu_new = f1ap_msg->cu_to_du_rrc_information;
+      du2cu_new->ie_extensions = calloc(1, sizeof(protocol_extension_container_t));
+      AssertFatal(du2cu_new->ie_extensions != NULL, "out of memory\n");
+      DevAssert(du2cu_req->ie_extensions->cell_group_config_length > 0);
+      du2cu_new->ie_extensions->cell_group_config_length = du2cu_req->ie_extensions->cell_group_config_length;
+      du2cu_new->ie_extensions->cell_group_config = malloc(du2cu_new->ie_extensions->cell_group_config_length);
+      AssertFatal(du2cu_new->ie_extensions->cell_group_config != NULL, "out of memory\n");
+      memcpy(du2cu_new->ie_extensions->cell_group_config, du2cu_req->ie_extensions->cell_group_config, du2cu_new->ie_extensions->cell_group_config_length);
+    }
   }
   if (req->drbs_to_be_setup_length > 0) {
     int n = req->drbs_to_be_setup_length;

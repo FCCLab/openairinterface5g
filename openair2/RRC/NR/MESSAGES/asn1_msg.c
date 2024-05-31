@@ -80,6 +80,7 @@
 #include "NR_PCCH-Message.h"
 #include "NR_PagingRecord.h"
 #include "NR_UE-CapabilityRequestFilterNR.h"
+#include "NR_HandoverCommand.h"
 #include "common/utils/nr/nr_common.h"
 #if defined(NR_Rel16)
   #include "NR_SCS-SpecificCarrier.h"
@@ -1220,4 +1221,26 @@ int do_NR_Paging(uint8_t Mod_id, uint8_t *buffer, uint32_t tmsi)
   }
 
   return((enc_rval.encoded+7)/8);
+}
+
+int16_t do_NR_HandoverCommand(uint8_t *ho_buf, int16_t ho_size, uint8_t *rrc_buffer, int16_t rrc_size)
+{
+  NR_HandoverCommand_t *ho_command = calloc(1, sizeof(NR_HandoverCommand_t));
+  ho_command->criticalExtensions.present = NR_HandoverCommand__criticalExtensions_PR_c1;
+  ho_command->criticalExtensions.choice.c1 = calloc(1, sizeof(struct NR_HandoverCommand__criticalExtensions__c1));
+  ho_command->criticalExtensions.choice.c1->present = NR_HandoverCommand__criticalExtensions__c1_PR_handoverCommand;
+  ho_command->criticalExtensions.choice.c1->choice.handoverCommand = calloc(1, sizeof(struct NR_HandoverCommand_IEs));
+
+  AssertFatal(OCTET_STRING_fromBuf(&ho_command->criticalExtensions.choice.c1->choice.handoverCommand->handoverCommandMessage,
+                                   (char *)rrc_buffer, rrc_size) != -1, "fatal: OCTET_STRING_fromBuf failed\n");
+
+  if (LOG_DEBUGFLAG(DEBUG_ASN1)) {
+    xer_fprint(stdout, &asn_DEF_NR_HandoverCommand, ho_command);
+  }
+
+  asn_enc_rval_t enc_rval = uper_encode_to_buffer(&asn_DEF_NR_HandoverCommand, NULL, ho_command, ho_buf, ho_size);
+
+  AssertFatal(enc_rval.encoded > 0, "ASN1 message encoding failed (%s, %lu)!\n", enc_rval.failed_type->name, enc_rval.encoded);
+
+  return ((enc_rval.encoded + 7) / 8);
 }

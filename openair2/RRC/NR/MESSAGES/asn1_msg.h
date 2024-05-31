@@ -106,6 +106,8 @@ int do_RRCReconfiguration(const gNB_RRC_UE_t *UE,
                           struct NR_RRCReconfiguration_v1530_IEs__dedicatedNAS_MessageList *dedicatedNAS_MessageList,
                           NR_CellGroupConfig_t *cellGroupConfig);
 
+int16_t do_NR_HandoverCommand(uint8_t *ho_buf, int16_t ho_size, uint8_t *rrc_buffer, int16_t rrc_size);
+
 int do_RRCSetupComplete(uint8_t *buffer,
                         size_t buffer_size,
                         const uint8_t Transaction_id,

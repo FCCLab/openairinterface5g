@@ -156,6 +156,15 @@ static void rrc_deliver_dl_rrc_message(void *deliver_pdu_data, ue_id_t ue_id, in
   data->rrc->mac_rrc.dl_rrc_message_transfer(data->assoc_id, data->dl_rrc);
 }
 
+static void nr_rrc_prepare_protected_rrc_message(void *deliver_pdu_data, ue_id_t ue_id, int srb_id, char *buf, int size, int sdu_id)
+{
+  DevAssert(deliver_pdu_data != NULL);
+  deliver_dl_rrc_message_data_t *data = (deliver_dl_rrc_message_data_t *)deliver_pdu_data;
+  data->dl_rrc->rrc_container_length = size;
+  memcpy(data->dl_rrc->rrc_container, buf, size);
+  DevAssert(data->dl_rrc->srb_id == srb_id);
+}
+
 void nr_rrc_transfer_protected_rrc_message(const gNB_RRC_INST *rrc,
                                            const gNB_RRC_UE_t *ue_p,
                                            uint8_t srb_id,
@@ -245,6 +254,162 @@ static void rrc_gNB_CU_DU_init(gNB_RRC_INST *rrc)
       break;
   }
   cu_init_f1_ue_data();
+}
+
+static uint64_t get_ssb_bitmap_from_SIB1(const NR_SIB1_t *sib1)
+{
+  return ((uint64_t)sib1->servingCellConfigCommon->ssb_PositionsInBurst.inOneGroup.buf[0]) << 56;
+}
+
+static rnti_t get_new_rnti(gNB_RRC_INST *rrc)
+{
+  rnti_t rnti;
+  do {
+    rnti = (taus() % 65518) + 1;
+  } while (rrc_gNB_get_ue_context(rrc, rnti) != NULL);
+  return rnti;
+}
+
+void nr_HO_trigger(gNB_RRC_INST *rrc, rrc_gNB_ue_context_t *ue_context_pP, nr_rrc_du_container_t *du)
+{
+  LOG_I(NR_RRC, "Handover triggered\n");
+
+  // The gNB-CU sends a UE CONTEXT SETUP REQUEST message to the target gNB-DU to create a UE context and setup
+  // SRBs and DRBs bearers
+
+  // Handover information
+  gNB_RRC_UE_t *ue_p = &ue_context_pP->ue_context;
+
+  nr_rrc_du_container_t *target_du = find_target_du(rrc, du->assoc_id);
+  if (target_du == NULL) {
+    LOG_E(NR_RRC, "Target gNB-DU not found. Handover aborted.\n");
+    return;
+  }
+
+  if (!ue_p->masterCellGroup || !ue_p->masterCellGroup->spCellConfig) {
+    LOG_E(NR_RRC, "CellGroupConfig or SpCellConfig not found. Handover aborted.\n");
+    return;
+  }
+
+  ue_p->StatusRrc = NR_RRC_HO_EXECUTION;
+  ue_p->handover_info.source_assoc_id = du->assoc_id;
+  ue_p->handover_info.source_rnti = ue_p->rnti;
+  ue_p->handover_info.target_assoc_id = target_du->assoc_id;
+  ue_p->handover_info.target_rnti = get_new_rnti(rrc);
+
+  // ReconfigurationWithSync
+  if (ue_p->masterCellGroup->spCellConfig->reconfigurationWithSync == NULL) {
+    ue_p->masterCellGroup->spCellConfig->reconfigurationWithSync =
+        calloc(1, sizeof(*ue_p->masterCellGroup->spCellConfig->reconfigurationWithSync));
+  }
+  NR_ReconfigurationWithSync_t *reconfigurationWithSync = ue_p->masterCellGroup->spCellConfig->reconfigurationWithSync;
+  reconfigurationWithSync->newUE_Identity = ue_p->handover_info.target_rnti;
+  reconfigurationWithSync->t304 = NR_ReconfigurationWithSync__t304_ms2000;
+  reconfigurationWithSync->rach_ConfigDedicated = NULL;
+  reconfigurationWithSync->ext1 = NULL;
+  if (ue_p->masterCellGroup->spCellConfig->reconfigurationWithSync->rach_ConfigDedicated == NULL) {
+    ue_p->masterCellGroup->spCellConfig->reconfigurationWithSync->rach_ConfigDedicated =
+        calloc(1, sizeof(struct NR_ReconfigurationWithSync__rach_ConfigDedicated));
+  }
+  struct NR_ReconfigurationWithSync__rach_ConfigDedicated *rach_ConfigDedicated =
+      ue_p->masterCellGroup->spCellConfig->reconfigurationWithSync->rach_ConfigDedicated;
+  rach_ConfigDedicated->present = NR_ReconfigurationWithSync__rach_ConfigDedicated_PR_uplink;
+  if (rach_ConfigDedicated->choice.uplink == NULL) {
+    rach_ConfigDedicated->choice.uplink = calloc(1, sizeof(struct NR_RACH_ConfigDedicated));
+  }
+  rach_ConfigDedicated->choice.uplink->ra_Prioritization = NULL;
+  rach_ConfigDedicated->choice.uplink->ext1 = NULL;
+  if (rach_ConfigDedicated->choice.uplink->cfra == NULL) {
+    rach_ConfigDedicated->choice.uplink->cfra = calloc(1, sizeof(struct NR_CFRA));
+  }
+  struct NR_CFRA *cfra = rach_ConfigDedicated->choice.uplink->cfra;
+  if (cfra->occasions == NULL) {
+    cfra->occasions = calloc(1, sizeof(struct NR_CFRA__occasions));
+  }
+  memcpy(&reconfigurationWithSync->rach_ConfigDedicated->choice.uplink->cfra->occasions->rach_ConfigGeneric,
+      &du->sib1->servingCellConfigCommon->uplinkConfigCommon->initialUplinkBWP.rach_ConfigCommon->choice.setup->rach_ConfigGeneric,
+      sizeof(NR_RACH_ConfigGeneric_t));
+  if (cfra->occasions->ssb_perRACH_Occasion == NULL) {
+    cfra->occasions->ssb_perRACH_Occasion = calloc(1, sizeof(long));
+  }
+  *cfra->occasions->ssb_perRACH_Occasion = NR_CFRA__occasions__ssb_perRACH_Occasion_one;
+  cfra->resources.present = NR_CFRA__resources_PR_ssb;
+  if (cfra->resources.choice.ssb == NULL) {
+    cfra->resources.choice.ssb = calloc(1, sizeof(struct NR_CFRA__resources__ssb));
+  }
+  cfra->resources.choice.ssb->ra_ssb_OccasionMaskIndex = 0;
+  int n_ssb = 0;
+  uint64_t bitmap = get_ssb_bitmap_from_SIB1(du->sib1); // TODO: Is this right?
+  struct NR_CFRA_SSB_Resource *ssbElem[64];
+  for (int i = 0; i < 64; i++) {
+    if ((bitmap >> (63 - i)) & 0x01) {
+      ssbElem[n_ssb] = calloc(1, sizeof(struct NR_CFRA_SSB_Resource));
+      ssbElem[n_ssb]->ssb = i;
+      ssbElem[n_ssb]->ra_PreambleIndex = 63 - (taus() % 64);
+      ASN_SEQUENCE_ADD(&cfra->resources.choice.ssb->ssb_ResourceList.list, ssbElem[n_ssb]);
+      n_ssb++;
+    }
+  }
+  cu_to_du_rrc_information_t cu2du = {0};
+  cu2du.ie_extensions = calloc(1, sizeof(protocol_extension_container_t));
+  cu2du.ie_extensions->cell_group_config = calloc(1, 4096);
+  asn_enc_rval_t enc_rval =
+      uper_encode_to_buffer(&asn_DEF_NR_CellGroupConfig, NULL, ue_p->masterCellGroup, cu2du.ie_extensions->cell_group_config, 4096);
+  AssertFatal(enc_rval.encoded > 0,
+              "ASN1 NR_CellGroupConfig encoding failed (%s, %jd)!\n",
+              enc_rval.failed_type->name,
+              enc_rval.encoded);
+  cu2du.ie_extensions->cell_group_config_length = (enc_rval.encoded + 7) >> 3;
+
+  // SRBs
+  f1ap_srb_to_be_setup_t srbs[2] = {{.srb_id = 1, .lcid = 1}, {.srb_id = 2, .lcid = 2}};
+
+  // The callback will fill the UE context setup request and forward it
+  f1_ue_data_t ue_data = cu_get_f1_ue_data(ue_p->rrc_ue_id);
+  f1ap_served_cell_info_t *cell_info = &target_du->setup_req->cell[0].info;
+  RETURN_IF_INVALID_ASSOC_ID(ue_data);
+  f1ap_ue_context_setup_t ue_context_setup_req = {
+      .gNB_CU_ue_id = ue_p->rrc_ue_id,
+      .gNB_DU_ue_id = reconfigurationWithSync->newUE_Identity,
+      .plmn.mcc = cell_info->plmn.mcc,
+      .plmn.mnc = cell_info->plmn.mnc,
+      .plmn.mnc_digit_length = cell_info->plmn.mnc_digit_length,
+      .nr_cellid = cell_info->nr_cellid,
+      .servCellId = 0, // TODO: correct value?
+      .srbs_to_be_setup_length = 2,
+      .srbs_to_be_setup = srbs,
+      .drbs_to_be_setup_length = 1,
+      .drbs_to_be_setup = (f1ap_drb_to_be_setup_t *)&rrc->drbs[0],
+      .cu_to_du_rrc_information = &cu2du,
+  };
+
+  rrc->mac_rrc.ue_context_setup_request(ue_p->handover_info.target_assoc_id, &ue_context_setup_req);
+}
+
+void nr_rrc_update_ho_timer(gNB_RRC_INST *rrc)
+{
+  rrc_gNB_ue_context_t *ue_context_p = NULL;
+  // Cast is necessary to eliminate warning "discards ‘const’ qualifier
+  RB_FOREACH (ue_context_p, rrc_nr_ue_tree_s, &((gNB_RRC_INST *)rrc)->rrc_ue_head) {
+    gNB_RRC_UE_t *ue_p = &ue_context_p->ue_context;
+
+    if (ue_p->handover_info.location_ho_timer_active) {
+      nr_rrc_du_container_t *du = get_du_for_ue(rrc, ue_p->rrc_ue_id);
+      const f1ap_setup_req_t *sr = du->setup_req;
+      LOG_W(NR_RRC, "[DU %lx] LOCATION-BASED TRIGGER TIMER = %2i\n", sr->gNB_DU_id, ue_p->handover_info.location_ho_timer);
+
+      ue_p->handover_info.location_ho_timer--;
+
+      if (ue_p->handover_info.location_ho_timer == 0) {
+        ue_p->handover_info.location_ho_timer_active = false;
+        nr_HO_trigger(rrc, ue_context_p, du);
+      }
+
+    } else {
+      ue_p->handover_info.location_ho_timer_active = true;
+      ue_p->handover_info.location_ho_timer = rrc->location_ho_trigger;
+    }
+  }
 }
 
 void openair_rrc_gNB_configuration(gNB_RRC_INST *rrc, gNB_RrcConfigurationReq *configuration)
@@ -518,7 +683,7 @@ void rrc_gNB_generate_dedicatedRRCReconfiguration(const protocol_ctxt_t *const c
 
   NR_CellGroupConfig_t *cellGroupConfig = ue_p->masterCellGroup;
 
-  const nr_rrc_du_container_t *du = get_du_for_ue(rrc, ue_p->rrc_ue_id);
+  nr_rrc_du_container_t *du = get_du_for_ue(rrc, ue_p->rrc_ue_id);
   DevAssert(du != NULL);
   f1ap_served_cell_info_t *cell_info = &du->setup_req->cell[0].info;
   NR_MeasConfig_t *measconfig = NULL;
@@ -563,7 +728,43 @@ void rrc_gNB_generate_dedicatedRRCReconfiguration(const protocol_ctxt_t *const c
         ctxt_pP->module_id,
         DCCH);
 
-  nr_rrc_transfer_protected_rrc_message(rrc, ue_p, DCCH, buffer, size);
+  if (ue_p->StatusRrc == NR_RRC_HO_EXECUTION) {
+    f1_ue_data_t ue_data = cu_get_f1_ue_data(ue_p->rrc_ue_id);
+    uint8_t rrc_container[RRC_BUF_SIZE] = {0};
+    f1ap_dl_rrc_message_t dl_rrc = {.gNB_CU_ue_id = ue_p->rrc_ue_id, .gNB_DU_ue_id = ue_data.secondary_ue, .srb_id = DCCH, .rrc_container = rrc_container};
+    deliver_dl_rrc_message_data_t data = {.rrc = rrc, .dl_rrc = &dl_rrc, .assoc_id = ue_data.du_assoc_id};
+    nr_pdcp_data_req_srb(ue_p->rrc_ue_id,
+                         DCCH,
+                         rrc_gNB_mui++,
+                         size,
+                         (unsigned char *const)buffer,
+                         nr_rrc_prepare_protected_rrc_message,
+                         &data);
+
+
+    uint8_t ho_buffer[RRC_BUF_SIZE] = {0};
+    int16_t ho_size = do_NR_HandoverCommand(ho_buffer, RRC_BUF_SIZE, data.dl_rrc->rrc_container, data.dl_rrc->rrc_container_length);
+
+    uint8_t transmission_action_indicator = 0;
+
+    RETURN_IF_INVALID_ASSOC_ID(ue_data);
+    f1ap_ue_context_modif_req_t ue_context_modif_req = {
+        .gNB_CU_ue_id = ue_p->rrc_ue_id,
+        .gNB_DU_ue_id = ue_data.secondary_ue,
+        .plmn.mcc = rrc->configuration.mcc[0],
+        .plmn.mnc = rrc->configuration.mnc[0],
+        .plmn.mnc_digit_length = rrc->configuration.mnc_digit_length[0],
+        .nr_cellid = rrc->nr_cellid,
+        .servCellId = 0, // TODO: correct value?
+        .ReconfigComplOutcome = RRCreconf_success,
+        .transmission_action_indicator = &transmission_action_indicator,
+        .rrc_container_length = ho_size,
+        .rrc_container = ho_buffer,
+    };
+    rrc->mac_rrc.ue_context_modification_request(ue_data.du_assoc_id, &ue_context_modif_req);
+  } else {
+    nr_rrc_transfer_protected_rrc_message(rrc, ue_p, DCCH, buffer, size);
+  }
 }
 
 //-----------------------------------------------------------------------------
@@ -1453,6 +1654,24 @@ static void handle_rrcReconfigurationComplete(const protocol_ctxt_t *const ctxt_
       LOG_I(RRC, "UE %d: transaction %d still ongoing for action %d\n", UE->rrc_ue_id, i, UE->xids[i]);
     }
   }
+
+  if (UE->StatusRrc == NR_RRC_HO_EXECUTION) {
+    gNB_RRC_INST *rrc = RC.nrrrc[ctxt_pP->module_id];
+    f1_ue_data_t ue_data = cu_get_f1_ue_data(UE->rrc_ue_id);
+    RETURN_IF_INVALID_ASSOC_ID(ue_data);
+    f1ap_ue_context_release_cmd_t ue_context_release_cmd = {
+        .gNB_CU_ue_id = UE->rrc_ue_id,
+        .gNB_DU_ue_id = UE->handover_info.source_rnti,
+        .cause = F1AP_CAUSE_RADIO_NETWORK,
+        .cause_value = 10, // 10 = F1AP_CauseRadioNetwork_normal_release
+        .srb_id = DCCH,
+    };
+    rrc->mac_rrc.ue_context_release_command(UE->handover_info.source_assoc_id, &ue_context_release_cmd);
+
+    UE->rnti = UE->handover_info.target_rnti;
+    UE->StatusRrc = NR_RRC_CONNECTED;
+    memset(&UE->handover_info, 0, sizeof(UE->handover_info));
+  }
 }
 //-----------------------------------------------------------------------------
 int rrc_gNB_decode_dcch(const protocol_ctxt_t *const ctxt_pP,
@@ -1830,7 +2049,8 @@ static void rrc_CU_process_ue_context_release_complete(MessageDef *msg_p)
     return;
   }
 
-  rrc_remove_ue(RC.nrrrc[0], ue_context_p);
+  if (complete->gNB_DU_ue_id == ue_context_p->ue_context.rnti)
+    rrc_remove_ue(RC.nrrrc[0], ue_context_p);
 }
 
 static void rrc_CU_process_ue_context_modification_response(MessageDef *msg_p, instance_t instance)
@@ -1865,6 +2085,15 @@ static void rrc_CU_process_ue_context_modification_response(MessageDef *msg_p, i
     UE->masterCellGroup = cellGroupConfig;
 
     rrc_gNB_generate_dedicatedRRCReconfiguration(&ctxt, ue_context_p);
+  }
+
+  // Update with new RNTI, and update secondary UE association
+  if (UE->StatusRrc == NR_RRC_HO_EXECUTION) {
+    f1_ue_data_t ue_data = cu_get_f1_ue_data(UE->rrc_ue_id);
+    ue_data.secondary_ue = UE->handover_info.target_rnti;
+    ue_data.du_assoc_id = UE->handover_info.target_assoc_id;
+    cu_remove_f1_ue_data(UE->rrc_ue_id);
+    cu_add_f1_ue_data(UE->rrc_ue_id, &ue_data);
   }
 }
 
@@ -1976,14 +2205,13 @@ void rrc_gNB_process_e1_bearer_context_setup_resp(e1ap_bearer_setup_resp_t *resp
   }
 
   /* Instruction towards the DU for DRB configuration and tunnel creation */
-  f1ap_drb_to_be_setup_t drbs[32]; // maximum DRB can be 32
   int nb_drb = 0;
   for (int p = 0; p < resp->numPDUSessions; ++p) {
     rrc_pdu_session_param_t *RRC_pduSession = find_pduSession(UE, resp->pduSession[p].id, false);
     DevAssert(RRC_pduSession);
     for (int i = 0; i < resp->pduSession[p].numDRBSetup; i++) {
       DRB_nGRAN_setup_t *drb_config = &resp->pduSession[p].DRBnGRanList[i];
-      f1ap_drb_to_be_setup_t *drb = &drbs[nb_drb];
+      f1ap_drb_to_be_setup_t *drb = &rrc->drbs[nb_drb];
       drb->drb_id = resp->pduSession[p].DRBnGRanList[i].id;
       drb->rlc_mode = rrc->configuration.um_on_default_drb ? RLC_MODE_UM : RLC_MODE_AM;
       drb->up_ul_tnl[0].tl_address = drb_config->UpParamList[0].tlAddress;
@@ -2027,9 +2255,9 @@ void rrc_gNB_process_e1_bearer_context_setup_resp(e1ap_bearer_setup_resp_t *resp
   AssertFatal(UE->as_security_active, "logic bug: security should be active when activating DRBs\n");
 
   if (!UE->f1_ue_context_active)
-    rrc_gNB_generate_UeContextSetupRequest(rrc, ue_context_p, nb_drb, drbs);
+    rrc_gNB_generate_UeContextSetupRequest(rrc, ue_context_p, nb_drb, rrc->drbs);
   else
-    rrc_gNB_generate_UeContextModificationRequest(rrc, ue_context_p, nb_drb, drbs, 0, NULL);
+    rrc_gNB_generate_UeContextModificationRequest(rrc, ue_context_p, nb_drb, rrc->drbs, 0, NULL);
 }
 
 /**
@@ -2185,7 +2413,14 @@ void *rrc_gnb_task(void *args_p) {
     /* timer to write stats to file */
     timer_setup(1, 0, TASK_RRC_GNB, 0, TIMER_PERIODIC, NULL, &stats_timer_id);
   }
-  
+
+  gNB_RRC_INST *rrc = RC.nrrrc[0];
+  long ho_timer_id = 2;
+  if (rrc->node_type == ngran_gNB_CU && rrc->location_ho_trigger > 0) {
+    // Timer to location-based handover trigger
+    timer_setup(1, 0, TASK_RRC_GNB, 0, TIMER_PERIODIC, NULL, &ho_timer_id);
+  }
+
   itti_mark_task_ready(TASK_RRC_GNB);
   LOG_I(NR_RRC,"Entering main loop of NR_RRC message task\n");
 
@@ -2211,8 +2446,11 @@ void *rrc_gnb_task(void *args_p) {
 
       case TIMER_HAS_EXPIRED:
         /* only this one handled for now */
-        DevAssert(TIMER_HAS_EXPIRED(msg_p).timer_id == stats_timer_id);
-        write_rrc_stats(RC.nrrrc[0]);
+        DevAssert(TIMER_HAS_EXPIRED(msg_p).timer_id == stats_timer_id || TIMER_HAS_EXPIRED(msg_p).timer_id == ho_timer_id);
+        if (TIMER_HAS_EXPIRED(msg_p).timer_id == stats_timer_id)
+          write_rrc_stats(rrc);
+        else if (TIMER_HAS_EXPIRED(msg_p).timer_id == ho_timer_id)
+          nr_rrc_update_ho_timer(rrc);
         break;
 
       case F1AP_INITIAL_UL_RRC_MESSAGE:

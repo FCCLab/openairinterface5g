@@ -417,3 +417,31 @@ void dump_du_info(const gNB_RRC_INST *rrc, FILE *f)
     }
   }
 }
+
+nr_rrc_du_container_t *find_target_du(gNB_RRC_INST *rrc, sctp_assoc_t source_assoc_id)
+{
+  nr_rrc_du_container_t *target_du = NULL;
+  nr_rrc_du_container_t *it = NULL;
+  bool next_du = false;
+  RB_FOREACH (it, rrc_du_tree, &rrc->dus) {
+    if(next_du == false && source_assoc_id != it->assoc_id) {
+      continue;
+    } else if (source_assoc_id == it->assoc_id) {
+      next_du = true;
+    } else {
+      target_du = it;
+      break;
+    }
+  }
+  if (target_du == NULL) {
+    RB_FOREACH (it, rrc_du_tree, &rrc->dus) {
+      if (source_assoc_id == it->assoc_id) {
+        continue;
+      } else {
+        target_du = it;
+        break;
+      }
+    }
+  }
+  return target_du;
+}

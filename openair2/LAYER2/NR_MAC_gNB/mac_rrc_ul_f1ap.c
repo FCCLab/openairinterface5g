@@ -161,6 +161,10 @@ static void ue_context_setup_response_f1ap(const f1ap_ue_context_setup_t *req, c
     for (int i = 0; i < f1ap_msg->drbs_to_be_setup_length; ++i)
       f1ap_msg->drbs_to_be_setup[i] = resp->drbs_to_be_setup[i];
   }
+  if (resp->crnti) {
+    f1ap_msg->crnti = calloc(1, sizeof(uint16_t));
+    *f1ap_msg->crnti = *resp->crnti;
+  }
 
   f1ap_msg->du_to_cu_rrc_information = malloc(sizeof(*resp->du_to_cu_rrc_information));
   AssertFatal(f1ap_msg->du_to_cu_rrc_information != NULL, "out of memory\n");
