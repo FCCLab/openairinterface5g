@@ -636,6 +636,9 @@ typedef struct PHY_VARS_gNB_s {
 
   int ldpc_offload_flag;
 
+  /// NR ULSCH decoding related
+  int nr_ulsch_decoding_interface_flag; // Flag enabling NR ULSCH decoding module
+
   int max_ldpc_iterations;
   /// indicate the channel estimation technique in time domain
   int chest_time;

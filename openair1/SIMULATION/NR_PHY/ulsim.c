@@ -35,6 +35,7 @@
 #include "PHY/defs_nr_UE.h"
 #include "PHY/phy_vars_nr_ue.h"
 #include "PHY/types.h"
+#include "PHY/CODING/nr_ulsch_decoding_interface.h"
 #include "PHY/INIT/nr_phy_init.h"
 #include "PHY/MODULATION/modulation_UE.h"
 #include "PHY/MODULATION/nr_modulation.h"
@@ -1610,6 +1611,9 @@ int main(int argc, char *argv[])
   free_MIB_NR(mib);
   if (gNB->ldpc_offload_flag)
     free_LDPClib(&ldpc_interface_offload);
+
+  if (gNB->nr_ulsch_decoding_interface_flag)
+    free_nr_ulsch_decoding_interface(&nr_ulsch_decoding_interface);
 
   if (output_fd)
     fclose(output_fd);

@@ -1,7 +1,12 @@
 # LDPC coder/decoder implementation
-The LDPC coder and decoder are implemented in a shared library, dynamically loaded at run-time using the [oai shared library loader](file://../../../../common/utils/DOC/loader.md). The code loading the LDPC library is in [nrLDPC_load.c](file://../nrLDPC_load.c), in function `load_nrLDPClib`, which must be called at init time.
+The LDPC coder and decoder are implemented in a shared library, dynamically loaded at run-time using the [oai shared library loader](file://../../../../common/utils/DOC/loader.md).
+Two types of library are available with two different interfaces. There are libraries implementing the coder and decoder of code segments and libraries implementing the decoder of slots.
 
-## Selecting the LDPC library at run time
+## LDPC segment coder/decoder
+The interface of the library is defined in [nrLDPC_defs.h](file://../nrLDPC_defs.h).
+The code loading the LDPC library is in [nrLDPC_load.c](file://../nrLDPC_load.c), in function `load_nrLDPClib`, which must be called at init time.
+
+### Selecting the LDPC library at run time
 
 By default the function `int load_nrLDPClib(void)` looks for `libldpc.so`, this default behavior can be changed using the oai loader configuration options in the configuration file or from the command line as shown below:
 
@@ -195,5 +200,69 @@ Libraries implementing the LDPC algorithms must be named `libldpc<_version>.so`,
 `libldpc_cuda.so`has been tested with the `ldpctest` executable, usage from the softmodem's has to be tested.
 
 `libldpc_cl.so`is under development.
+
+## LDPC slot decoder
+The interface of the library is defined in [nr_ulsch_decoding_interface.h](file://../nr_ulsch_decoding_interface.h).
+The code loading the LDPC library is in [nr_ulsch_decoding_interface_load.c](file://../nr_ulsch_decoding_interface_load.c), in function `load_nr_ulsch_decoding_interface`, which must be called at init time.
+
+### Selecting the LDPC library at run time
+
+By default the function `int load_nr_ulsch_decoding_interface(void)` looks for `libldpc.so`.\
+If `libldpc.so` does not implement the LDPC slot decoder interface then the loader just fails which allows to fallback to the code segment decoding interface.\
+This default behavior can be changed using the oai loader configuration options in the configuration file or from the command line as shown below:
+
+#### Examples of ldpc shared lib selection when running nr softmodem's:
+
+loading `libldpc_slot_demo.so` instead of `libldpc.so`:
+
+```
+./nr-softmodem -O libconfig:gnb.band78.tm1.106PRB.usrpx300.conf:dbgl5  --loader.ldpc.shlibversion _slot_demo
+.......................
+[CONFIG] loader.ldpc.shlibversion set to default value ""
+[LIBCONFIG] loader.ldpc: 2/2 parameters successfully set, (1 to default value)
+[CONFIG] shlibversion set to  _slot_demo from command line
+[CONFIG] loader.ldpc 1 options set from command line
+shlib_path libldpc_slot_demo.so
+[LOADER] library libldpc_slot_demo.so successfully loaded
+........................
+```
+
+loading `libldpc_slot_t2.so` instead of `libldpc.so`:
+
+`make ldpc_slot_t2`
+
+This command creates the `libldpc_slot_t2.so` shared library.
+
+```
+Building C object CMakeFiles/ldpc_slot_t2.dir/openair1/PHY/CODING/nrLDPC_decoder/nr_ulsch_decoding_t2.c.o
+Linking C shared module libldpc_slot_t2.so
+```
+
+At runtime, to successfully use the T2 board, you need to install vendor specific drivers and tools.
+
+`./nr-softmodem -O  libconfig:gnb.band78.sa.fr1.106PRB.usrpb210.conf:dbgl5 --rfsim --rfsimulator.serveraddr server  --sa --log_config.gtpu_log_level info  --loader.ldpc.shlibversion _slot_t2`
+
+``` 
+
+.......................
+[CONFIG] loader.ldpc.shlibversion set to default value ""
+[LIBCONFIG] loader.ldpc: 2/2 parameters successfully set, (1 to default value)
+[CONFIG] shlibversion set to  _slot_t2 from command line
+[CONFIG] loader.ldpc 1 options set from command line
+shlib_path libldpc_slot_t2.so
+[LOADER] library libldpc_slot_t2.so successfully loaded
+........................
+```
+
+#### Examples of ldpc shared lib selection when running ldpctest:
+
+Slot decoding libraries cannot be used within ldpctest.
+
+### LDPC libraries
+Libraries implementing the slotwise LDPC decoding must be named `libldpc<_version>.so`, in addition of the code segment decoding interface that is necessary for encoding, they must implement three functions: `nr_ulsch_decoding_init`, `nr_ulsch_decoding_shutdown` and `nr_ulsch_decoding_decoder`. The prototypes for these functions is defined in [nr_ulsch_decoding_interface.h](file://../nr_ulsch_decoding_interface.h).
+
+`libldpc_slot_demo.so`has been tested with the `nr_ulsim` and `nr-softmodem` executables.
+
+`libnr_slot_t2.so`is under development.
 
 [oai Wikis home](https://gitlab.eurecom.fr/oai/openairinterface5g/wikis/home)
