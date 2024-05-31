@@ -1,6 +1,6 @@
 services:
     enb_mono_tdd:
-        image: oai-enb:latest
+        image: oaisoftwarealliance/oai-enb:develop
         privileged: true
         container_name: lte-b200-enb-tdd-20Mhz-tm1
         environment:
