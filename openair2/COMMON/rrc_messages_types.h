@@ -47,19 +47,19 @@
 //-------------------------------------------------------------------------------------------//
 // Messages for RRC logging
 #if defined(DISABLE_ITTI_XER_PRINT)
-  #include "LTE_BCCH-DL-SCH-Message.h"
-  #include "LTE_DL-CCCH-Message.h"
-  #include "LTE_DL-DCCH-Message.h"
-  #include "LTE_UE-EUTRA-Capability.h"
-  #include "LTE_UL-CCCH-Message.h"
-  #include "LTE_UL-DCCH-Message.h"
+#include "LTE_BCCH-DL-SCH-Message.h"
+#include "LTE_DL-CCCH-Message.h"
+#include "LTE_DL-DCCH-Message.h"
+#include "LTE_UE-EUTRA-Capability.h"
+#include "LTE_UL-CCCH-Message.h"
+#include "LTE_UL-DCCH-Message.h"
 
-  typedef LTE_BCCH_DL_SCH_Message_t   RrcDlBcchMessage;
-  typedef LTE_DL_CCCH_Message_t       RrcDlCcchMessage;
-  typedef LTE_DL_DCCH_Message_t       RrcDlDcchMessage;
-  typedef LTE_UE_EUTRA_Capability_t   RrcUeEutraCapability;
-  typedef LTE_UL_CCCH_Message_t       RrcUlCcchMessage;
-  typedef LTE_UL_DCCH_Message_t       RrcUlDcchMessage;
+typedef LTE_BCCH_DL_SCH_Message_t RrcDlBcchMessage;
+typedef LTE_DL_CCCH_Message_t RrcDlCcchMessage;
+typedef LTE_DL_DCCH_Message_t RrcDlDcchMessage;
+typedef LTE_UE_EUTRA_Capability_t RrcUeEutraCapability;
+typedef LTE_UL_CCCH_Message_t RrcUlCcchMessage;
+typedef LTE_UL_DCCH_Message_t RrcUlDcchMessage;
 #endif
 
 //-------------------------------------------------------------------------------------------//
@@ -96,10 +96,12 @@
 
 #define NAS_OAI_TUN_NSA(mSGpTR)         (mSGpTR)->ittiMsg.nas_oai_tun_nsa
 #define NAS_PDU_SESSION_REQ(mSGpTR) (mSGpTR)->ittiMsg.nas_pdu_session_req
+#define NAS_INIT_NOS1_IF(mSGpTR) (mSGpTR)->ittiMsg.nas_init_nos1_if
+#define NAS_PDU_SESSION_REL(mSGpTR) (mSGpTR)->ittiMsg.nas_pdu_session_rel
 
 //-------------------------------------------------------------------------------------------//
 typedef struct RrcStateInd_s {
-  Rrc_State_t     state;
+  Rrc_State_t state;
   Rrc_Sub_State_t sub_state;
 } RrcStateInd;
 

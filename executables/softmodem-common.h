@@ -146,6 +146,7 @@ extern "C"
 #define CONTINUOUS_TX       softmodem_params.continuous_tx
 #define SYNC_REF            softmodem_params.sync_ref
 #define LDPC_OFFLOAD_FLAG   softmodem_params.ldpc_offload_flag
+#define DEFAULT_PDU_ID softmodem_params.default_pdu_session_id
 
 #define DEFAULT_RFCONFIG_FILE    "/usr/local/etc/syriq/ue.band7.tm1.PRB100.NR40.dat";
 
@@ -194,6 +195,7 @@ extern int usrp_tx_thread;
   {"sync-ref",              CONFIG_HLP_SYNC_REF,      0,              .uptr=&SYNC_REF,                        .defintval=0,             TYPE_UINT,   0},  \
   {"A" ,                    CONFIG_HLP_TADV,          0,             .iptr=&softmodem_params.command_line_sample_advance,.defintval=0,            TYPE_INT,   0},  \
   {"E" ,                    CONFIG_HLP_TQFS,          PARAMFLAG_BOOL, .iptr=&softmodem_params.threequarter_fs, .defintval=0,            TYPE_INT,    0}, \
+  {"default_pdu_id",        NULL,                     0,              .iptr=&DEFAULT_PDU_ID,                  .defintval=1,             TYPE_INT,    0},  \
 }
 // clang-format on
 
@@ -235,6 +237,7 @@ extern int usrp_tx_thread;
                {"MONOLITHIC", "PNF", "VNF", "AERIAL","UE_STUB_PNF","UE_STUB_OFFNET","STANDALONE_PNF"}, \
                {NFAPI_MONOLITHIC, NFAPI_MODE_PNF, NFAPI_MODE_VNF, NFAPI_MODE_AERIAL,NFAPI_UE_STUB_PNF,NFAPI_UE_STUB_OFFNET,NFAPI_MODE_STANDALONE_PNF}, \
                7 } }, \
+    { .s5 = { NULL } },                     \
     { .s5 = { NULL } },                     \
     { .s5 = { NULL } },                     \
     { .s5 = { NULL } },                     \
@@ -355,6 +358,7 @@ typedef struct {
   int no_itti;
   int ldpc_offload_flag;
   int threequarter_fs;
+  int default_pdu_session_id;
 } softmodem_params_t;
 
 uint64_t get_softmodem_optmask(void);

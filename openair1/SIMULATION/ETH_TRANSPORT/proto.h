@@ -62,8 +62,9 @@ int multicast_link_read_data_from_sock(uint8_t eNB_flag);
 void clear_eNB_transport_info(uint8_t);
 void clear_UE_transport_info(uint8_t);
 int netlink_init(void);
-int netlink_init_tun(char *ifsuffix, int num_if, int id);
+int init_tun(char *ifsuffix, int num_if, int id);
 int netlink_init_mbms_tun(char *ifsuffix, int id);
+int init_single_tun(const char *ifname);
 void netlink_cleanup(void);
 
 #endif /* EMU_PROTO_H_ */
