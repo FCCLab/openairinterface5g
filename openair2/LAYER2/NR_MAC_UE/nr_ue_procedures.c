@@ -38,7 +38,7 @@
 #include "executables/nr-softmodem.h"
 
 /* RRC*/
-#include "RRC/NR_UE/rrc_proto.h"
+#include "RRC/NR_UE/L2_interface_ue.h"
 
 /* MAC */
 #include "NR_MAC_COMMON/nr_mac.h"
@@ -2916,19 +2916,22 @@ void nr_ue_send_sdu(NR_UE_MAC_INST_t *mac, nr_downlink_indication_t *dl_info, in
 
   // Processing MAC PDU
   // it parses MAC CEs subheaders, MAC CEs, SDU subheaderds and SDUs
-  switch (dl_info->rx_ind->rx_indication_body[pdu_id].pdu_type){
-    case FAPI_NR_RX_PDU_TYPE_DLSCH:
-    nr_ue_process_mac_pdu(mac, dl_info, pdu_id);
-    break;
-    case FAPI_NR_RX_PDU_TYPE_RAR:
+  switch (dl_info->rx_ind->rx_indication_body[pdu_id].pdu_type) {
+    case FAPI_NR_RX_PDU_TYPE_DLSCH :
+      // start or restart dataInactivityTimer if any MAC entity receives a MAC SDU for DTCH logical channel,
+      // DCCH logical channel, or CCCH logical channel
+      if (mac->data_inactivity_timer)
+        nr_timer_start(mac->data_inactivity_timer);
+      nr_ue_process_mac_pdu(mac, dl_info, pdu_id);
+      break;
+    case FAPI_NR_RX_PDU_TYPE_RAR :
       nr_ue_process_rar(mac, dl_info, pdu_id);
-    break;
+      break;
     default:
-    break;
+      AssertFatal(false, "Invalid PDU type\n");
   }
 
   VCD_SIGNAL_DUMPER_DUMP_FUNCTION_BY_NAME(VCD_SIGNAL_DUMPER_FUNCTIONS_UE_SEND_SDU, VCD_FUNCTION_OUT);
-
 }
 
 // #define EXTRACT_DCI_ITEM(val,size) val= readBits(dci_pdu, &pos, size);

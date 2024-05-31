@@ -47,6 +47,7 @@
 
 #include "rrc_defs.h"
 #include "rrc_proto.h"
+#include "L2_interface_ue.h"
 #include "LAYER2/NR_MAC_UE/mac_proto.h"
 
 #include "intertask_interface.h"
@@ -1735,6 +1736,12 @@ void *rrc_nrue(void *notUsed)
     nr_rrc_handle_timers(rrc);
     NR_UE_RRC_SI_INFO *SInfo = &rrc->perNB[NRRRC_FRAME_PROCESS(msg_p).gnb_id].SInfo;
     nr_rrc_SI_timers(SInfo);
+    break;
+
+  case NR_RRC_MAC_INAC_IND:
+    LOG_D(NR_RRC, "Received data inactivity indication from lower layers\n");
+    NR_Release_Cause_t release_cause = RRC_CONNECTION_FAILURE;
+    nr_rrc_going_to_IDLE(rrc, release_cause, NULL);
     break;
 
   case NR_RRC_MAC_MSG3_IND:
