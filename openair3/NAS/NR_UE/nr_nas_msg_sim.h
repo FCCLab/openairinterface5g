@@ -42,6 +42,9 @@
 #include "FGSUplinkNasTransport.h"
 #include <openair3/UICC/usim_interface.h>
 #include "secu_defs.h"
+#include <openair3/NAS/UE/API/USER/user_api_defs.h>
+#include "openair3/NAS/UE/API/USER/at_response.h"
+#include "openair3/NAS/UE/user_defs.h"
 
 #define PLAIN_5GS_MSG                                      0b0000
 #define INTEGRITY_PROTECTED                                0b0001
@@ -74,6 +77,12 @@
 #define SECURITY_PROTECTED_5GS_NAS_MESSAGE_HEADER_LENGTH   7
 #define PAYLOAD_CONTAINER_LENGTH_MIN                       3
 #define PAYLOAD_CONTAINER_LENGTH_MAX                       65537
+#define IPV4V6_ADDR_LEN 8
+
+typedef struct {
+  int default_pdu_session_id;
+  bool nsa;
+} nr_nas_thread_info_t;
 
 /* List of allowed NSSAI from NAS messaging. */
 typedef struct {
@@ -102,6 +111,8 @@ typedef struct {
   stream_security_container_t *security_container;
   Guti5GSMobileIdentity_t *guti;
   bool termination_procedure;
+  nr_nas_msg_snssai_t nas_allowed_nssai[8];
+  nas_user_t *nas_user;
 } nr_ue_nas_t;
 
 typedef enum fgs_protocol_discriminator_e {
@@ -187,6 +198,8 @@ nr_ue_nas_t *get_ue_nas_info(module_id_t module_id);
 void generateRegistrationRequest(as_nas_info_t *initialNasMsg, nr_ue_nas_t *nas);
 void *nas_nrue_task(void *args_p);
 void *nas_nrue(void *args_p);
+void nr_ue_create_ip_if(const char *ifname, int ue_id, int pdu_session_id, bool ipv6, const uint8_t addr[IPV4V6_ADDR_LEN]);
+void nas_nrue_user(void *args_p);
 
 #endif /* __NR_NAS_MSG_SIM_H__*/
 

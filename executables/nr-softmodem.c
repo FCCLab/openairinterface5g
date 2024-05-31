@@ -80,6 +80,7 @@ unsigned short config_frames[4] = {2,9,11,13};
 #include "nfapi/oai_integration/vendor_ext.h"
 #include "gnb_config.h"
 #include "openair2/E1AP/e1ap_common.h"
+#include "openair2/SDAP/nr_sdap/nr_sdap_entity.h"
 #ifdef ENABLE_AERIAL
 #include "nfapi/oai_integration/aerial/fapi_nvIPC.h"
 #endif
@@ -322,6 +323,7 @@ static int create_gNB_tasks(ngran_node_t node_type, configmodule_interface_t *cf
       !(node_type == ngran_gNB_DU))  {
     // we start pdcp in both cuup (for drb) and cucp (for srb)
     init_pdcp();
+    sdap_init();
   }
 
   if (is_x2ap_enabled() ) { //&& !NODE_IS_DU(node_type)

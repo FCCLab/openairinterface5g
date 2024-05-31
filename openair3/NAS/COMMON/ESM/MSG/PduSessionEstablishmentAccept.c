@@ -27,19 +27,19 @@
 
 extern char *baseNetAddress;
 
-static uint16_t getShort(uint8_t *input)
+static uint16_t getShort(const uint8_t *input)
 {
   uint16_t tmp16;
   memcpy(&tmp16, input, sizeof(tmp16));
   return htons(tmp16);
 }
 
-void capture_pdu_session_establishment_accept_msg(uint8_t *buffer, uint32_t msg_length)
+void capture_pdu_session_establishment_accept_msg(const uint8_t *buffer, uint32_t msg_length, int *pdu_id)
 {
   security_protected_nas_5gs_msg_t       sec_nas_hdr;
   security_protected_plain_nas_5gs_msg_t sec_nas_msg;
   pdu_session_establishment_accept_msg_t psea_msg;
-  uint8_t *curPtr = buffer;
+  const uint8_t *curPtr = buffer;
   sec_nas_hdr.epd = *curPtr++;
   sec_nas_hdr.sht = *curPtr++;
   uint32_t tmp;
@@ -56,6 +56,7 @@ void capture_pdu_session_establishment_accept_msg(uint8_t *buffer, uint32_t msg_
   /* Mandatory Presence IEs */
   psea_msg.epd = *curPtr++;
   psea_msg.pdu_id = *curPtr++;
+  *pdu_id = psea_msg.pdu_id;
   psea_msg.pti = *curPtr++;
   psea_msg.msg_type = *curPtr++;
   psea_msg.pdu_type = *curPtr & 0x0f;
@@ -112,7 +113,10 @@ void capture_pdu_session_establishment_accept_msg(uint8_t *buffer, uint32_t msg_
           psea_msg.pdu_addr_ie.pdu_addr_oct4 = *curPtr++;
           nas_getparams();
           sprintf(baseNetAddress, "%d.%d", psea_msg.pdu_addr_ie.pdu_addr_oct1, psea_msg.pdu_addr_ie.pdu_addr_oct2);
-          nas_config(1, psea_msg.pdu_addr_ie.pdu_addr_oct3, psea_msg.pdu_addr_ie.pdu_addr_oct4, "oaitun_ue");
+          uint8_t addr[IPV4V6_ADDR_LEN] = {0};
+          addr[0] = psea_msg.pdu_addr_ie.pdu_addr_oct3;
+          addr[1] = psea_msg.pdu_addr_ie.pdu_addr_oct4;
+          nr_ue_create_ip_if("", 1, psea_msg.pdu_id, false, addr);
           LOG_T(NAS, "PDU SESSION ESTABLISHMENT ACCEPT - Received UE IP: %d.%d.%d.%d\n",
                 psea_msg.pdu_addr_ie.pdu_addr_oct1,
                 psea_msg.pdu_addr_ie.pdu_addr_oct2,
@@ -185,6 +189,7 @@ void capture_pdu_session_establishment_accept_msg(uint8_t *buffer, uint32_t msg_
     }
   }
 
-  set_qfi_pduid(qos_rule.qfi, psea_msg.pdu_id);
+  const int ue_id = 0;
+  set_qfi(qos_rule.qfi, psea_msg.pdu_id, ue_id);
   return;
 }

@@ -5257,9 +5257,12 @@ rrc_eNB_process_RRCConnectionReconfigurationComplete(
             LOG_I(OIP, "[eNB %d] trying to bring up the OAI interface oai%d\n",
                   ctxt_pP->module_id,
                   ctxt_pP->module_id);
-            oip_ifup = nas_config(ctxt_pP->module_id,   // interface index
-                                  ctxt_pP->module_id + 1,   // third octet
-                                  ctxt_pP->module_id + 1,   // fourth octet
+            uint8_t addr[IPV4V6_ADDR_LEN] = {0};
+            addr[0] = ctxt_pP->module_id + 1; // third octet
+            addr[1] = ctxt_pP->module_id + 1; // fourth octet
+            oip_ifup = nas_config(ctxt_pP->module_id, // interface index
+                                  false,
+                                  addr,
                                   "oai");
 
             if (oip_ifup == 0) { // interface is up --> send a config the DRB

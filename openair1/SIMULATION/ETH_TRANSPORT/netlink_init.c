@@ -132,20 +132,24 @@ int netlink_init_mbms_tun(char *ifprefix, int id) {//for UE, id = 1, 2, ...,
   return 1;
 }
 
-int netlink_init_tun(char *ifprefix, int num_if, int id) {//for UE, id = 1, 2, ...,
+int init_single_tun(char *ifname)
+{
+  int sock = tun_alloc(ifname);
+  AssertFatal(sock != -1, "TUN: Error opening socket %s (%d:%s)\n", ifname, errno, strerror(errno));
+  LOG_I(OIP, "TUN: Opened interface %s with fd = %d\n", ifname, sock);
+  return sock;
+}
+
+int init_tun(char *ifprefix, int num_if, int id)
+{ // for UE, id = 1, 2, ...,
   int ret;
   char ifname[64];
 
   int begx = (id == 0) ? 0 : id - 1;
   int endx = (id == 0) ? num_if : id;
   for (int i = begx; i < endx; i++) {
-    sprintf(ifname, "oaitun_%.3s%d",ifprefix,i+1);
-    nas_sock_fd[i] = tun_alloc(ifname);
-
-    if (nas_sock_fd[i] == -1) {
-      LOG_E(PDCP, "TUN: Error opening socket %s (%d:%s)\n",ifname,errno, strerror(errno));
-      exit(1);
-    }
+    sprintf(ifname, "oaitun_%.3s%d", ifprefix, i + 1);
+    nas_sock_fd[i] = init_single_tun(ifname);
 
     LOG_I(PDCP, "TUN: Opened socket %s with fd nas_sock_fd[%d]=%d\n",
            ifname, i, nas_sock_fd[i]);
@@ -162,7 +166,6 @@ int netlink_init_tun(char *ifprefix, int num_if, int id) {//for UE, id = 1, 2, .
 
   return 1;
 }
-
 
 int netlink_init(void) {
   int ret;

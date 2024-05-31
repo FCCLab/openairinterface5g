@@ -134,6 +134,7 @@ void *nas_ue_task(void *args_p)
       user->at_response = calloc_or_fail(1, sizeof(at_response_t));
       user->lowerlayer_data = calloc_or_fail(1, sizeof(lowerlayer_data_t));
       /* Initialize NAS user */
+      user->nas_ue_type = UE_LTE;
       nas_user_initialize(user, &user_api_emm_callback, &user_api_esm_callback, FIRMWARE_VERSION);
     }
   }
@@ -174,6 +175,7 @@ void *nas_ue_task(void *args_p)
       user->at_response = calloc_or_fail(1, sizeof(at_response_t));
       user->lowerlayer_data = calloc_or_fail(1, sizeof(lowerlayer_data_t));
       /* Initialize NAS user */
+      user->nas_ue_type = UE_LTE;
       nas_user_initialize(user, &user_api_emm_callback, &user_api_esm_callback, FIRMWARE_VERSION);
       user->ueid = 0;
   }

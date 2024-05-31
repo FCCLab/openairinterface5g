@@ -51,8 +51,18 @@ Description NAS type definition to manage a user equipment
 #include "SecurityModeControl.h"
 #include "userDef.h"
 #include "at_response.h"
+#include "as_message.h"
 
-typedef struct {
+enum ue_type {
+  UE_LTE,
+  UE_NR,
+};
+
+#define MAX_PDP_CONTEXTS 8
+
+struct nas_user_s;
+
+typedef struct nas_user_s {
   int ueid; /* UE lower layer identifier */
   proc_data_t proc;
   // Eps Session Management
@@ -79,6 +89,23 @@ typedef struct {
   user_at_commands_t *user_at_commands; //decoded data received from the user application layer
   user_api_id_t *user_api_id;
   lowerlayer_data_t *lowerlayer_data;
+  enum ue_type nas_ue_type;
+  nr_nas_pdp_context_t pdp_context[MAX_PDP_CONTEXTS];
+  int (*nas_reset_pdn)(struct nas_user_s *user, int cid);
+  int (*nas_set_pdn)(struct nas_user_s *user,
+                     int cid,
+                     int type,
+                     const char *apn,
+                     int ipv4_addr,
+                     int emergency,
+                     int p_cscf,
+                     int im_cn_signal,
+                     const char *nssai);
+  int (*nas_get_pdn)(struct nas_user_s *user, int *cids, int *types, const char **apns, const char **nssai, int n_pdn_max);
+  int (*nas_get_pdn_range)(struct nas_user_s *user);
+  int (*nas_deactivate_pdn)(struct nas_user_s *user, int cid);
+  int (*nas_activate_pdn)(struct nas_user_s *user, int cid);
+  int (*nas_get_pdn_status)(struct nas_user_s *user, int *cid, int *status, int n_pdn_max);
 } nas_user_t;
 
 #endif

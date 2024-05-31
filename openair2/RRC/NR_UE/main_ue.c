@@ -62,6 +62,8 @@ void init_nsa_message(NR_UE_RRC_INST_t *rrc, char* reconfig_file, char* rbconfig
     msg_len = fread(buffer, 1, 1024, fd);
     fclose(fd);
     process_nsa_message(rrc, nr_RadioBearerConfigX_r15, buffer,msg_len);
+    MessageDef* ittiMsg = itti_alloc_new_message(TASK_RRC_NRUE, 0, NAS_INIT_NOS1_IF);
+    itti_send_msg_to_task(TASK_NAS_NRUE, 0, ittiMsg);
   }
   else
     LOG_D(NR_RRC, "In NSA mode \n");

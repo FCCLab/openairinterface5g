@@ -106,6 +106,15 @@ void nas_proc_initialize(nas_user_t *user, emm_indication_callback_t emm_cb,
   /* Initialize the ESM procedure manager */
   esm_main_initialize(user, esm_cb);
 
+  AssertFatal(user->nas_ue_type != UE_NR, "Wrong UE type\n");
+  user->nas_reset_pdn = nas_proc_reset_pdn;
+  user->nas_set_pdn = nas_proc_set_pdn;
+  user->nas_get_pdn = nas_proc_get_pdn_param;
+  user->nas_get_pdn_range = nas_proc_get_pdn_range;
+  user->nas_deactivate_pdn = nas_proc_deactivate_pdn;
+  user->nas_activate_pdn = nas_proc_activate_pdn;
+  user->nas_get_pdn_status = nas_proc_get_pdn_status;
+
   LOG_FUNC_OUT;
 }
 
@@ -652,11 +661,11 @@ bool nas_proc_get_attach_status(nas_user_t *user)
  **      Others:    None                                       **
  **                                                                        **
  ***************************************************************************/
-int nas_proc_get_pdn_range(esm_data_t *esm_data)
+int nas_proc_get_pdn_range(nas_user_t *user)
 {
   LOG_FUNC_IN;
 
-  int max_pdn_id = esm_main_get_nb_pdns_max(esm_data);
+  int max_pdn_id = esm_main_get_nb_pdns_max(user->esm_data);
 
   LOG_FUNC_RETURN (max_pdn_id);
 }
@@ -721,13 +730,13 @@ int nas_proc_get_pdn_status(nas_user_t *user, int *cids, int *states, int n_pdn_
  **      Others:    None                                       **
  **                                                                        **
  ***************************************************************************/
-int nas_proc_get_pdn_param(esm_data_t *esm_data, int *cids, int *types, const char **apns,
-                           int n_pdn_max)
+int nas_proc_get_pdn_param(nas_user_t *user, int *cids, int *types, const char **apns, const char **nssai, int n_pdn_max)
 {
   LOG_FUNC_IN;
 
   int cid;
   int n_defined_pdn = 0;
+  esm_data_t *esm_data = user->esm_data;
 
   /* Get the maximum number of supported PDN contexts */
   int n_pdn = esm_main_get_nb_pdns_max(esm_data);
@@ -836,9 +845,20 @@ int nas_proc_get_pdn_addr(nas_user_t *user, int cid, int *cids, const char **add
  **      Others:    None                                       **
  **                                                                        **
  ***************************************************************************/
-int nas_proc_set_pdn(nas_user_t *user, int cid, int type, const char *apn, int ipv4_addr,
-                     int emergency, int p_cscf, int im_cn_signal)
+int nas_proc_set_pdn(nas_user_t *user,
+                     int cid,
+                     int type,
+                     const char *apn,
+                     int ipv4_addr,
+                     int emergency,
+                     int p_cscf,
+                     int im_cn_signal,
+                     const char *nssai)
 {
+  if (user->nas_ue_type != UE_LTE || nssai != NULL) {
+    LOG_TRACE(ERROR, "NSSAI is an unvalid parameter for LTE\n");
+    return RETURNerror;
+  }
   LOG_FUNC_IN;
 
   int rc;
