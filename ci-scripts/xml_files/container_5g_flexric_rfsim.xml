@@ -1,0 +1,197 @@
+<!--
+
+ Licensed to the OpenAirInterface (OAI) Software Alliance under one or more
+ contributor license agreements.  See the NOTICE file distributed with
+ this work for additional information regarding copyright ownership.
+ The OpenAirInterface Software Alliance licenses this file to You under
+ the OAI Public License, Version 1.1  (the "License"); you may not use this file
+ except in compliance with the License.
+ You may obtain a copy of the License at
+
+      http://www.openairinterface.org/?page_id=698
+
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+
+ For more information about the OpenAirInterface (OAI) Software Alliance:
+      contact@openairinterface.org
+
+-->
+<testCaseList>
+        <htmlTabRef>rfsim-5gnr-flexric</htmlTabRef>
+        <htmlTabName>Monolithic SA TDD gNB and FlexRic Integration</htmlTabName>
+        <htmlTabIcon>wrench</htmlTabIcon>
+        <repeatCount>1</repeatCount>
+        <TestCaseRequestedList>
+ 111111
+ 100001
+ 100002
+ 000001
+ 000002
+ 000003
+ 002001
+ 010000
+ 000004
+ 000005
+ 333333
+ 010001
+ 010002
+ 010003
+ 020005
+ 030001
+ 030002
+ 010013
+ 002006
+ 444444
+ 100002
+ 100001
+        </TestCaseRequestedList>
+        <TestCaseExclusionList></TestCaseExclusionList>
+
+        <testCase id="002001">
+                <class>IdleSleep</class>
+                <desc>Sleep</desc>
+                <idle_sleep_time_in_sec>10</idle_sleep_time_in_sec>
+        </testCase>
+
+        <testCase id="111111">
+                <class>Pull_Local_Registry</class>
+                <desc>Pull Images from Local Registry</desc>
+                <test_svr_id>0</test_svr_id>
+                <images_to_pull>oai-gnb-asan oai-nr-ue-asan oai-flexric</images_to_pull>
+        </testCase>
+
+        <testCase id="000001">
+                <class>DeployGenObject</class>
+                <desc>Deploy OAI 5G CoreNetwork</desc>
+                <yaml_path>../doc/tutorial_resources/oai-cn5g</yaml_path>
+                <services>mysql oai-nrf oai-udr oai-udm oai-ausf oai-amf oai-smf oai-upf oai-ext-dn</services>
+                <nb_healthy>9</nb_healthy>
+        </testCase>
+
+        <testCase id="000002">
+                <class>DeployGenObject</class>
+                <desc>Deploy OAI FlexRIC</desc>
+                <yaml_path>yaml_files/5g_rfsimulator_flexric</yaml_path>
+                <services>oai-flexric</services>
+                <nb_healthy>1</nb_healthy>
+        </testCase>
+
+        <testCase id="000003">
+                <class>DeployGenObject</class>
+                <desc>Deploy OAI 5G gNB RF sim SA</desc>
+                <yaml_path>yaml_files/5g_rfsimulator_flexric</yaml_path>
+                <services>oai-gnb</services>
+                <nb_healthy>2</nb_healthy>
+        </testCase>
+
+        <testCase id="000004">
+                <class>DeployGenObject</class>
+                <desc>Deploy OAI 5G NR-UE RF sim SA</desc>
+                <yaml_path>yaml_files/5g_rfsimulator_flexric</yaml_path>
+                <services>oai-nr-ue</services>
+                <nb_healthy>3</nb_healthy>
+        </testCase>
+
+        <testCase id="000005">
+                <class>DeployGenObject</class>
+                <desc>Deploy Second OAI 5G NR-UE RF sim SA</desc>
+                <yaml_path>yaml_files/5g_rfsimulator_flexric</yaml_path>
+                <services>oai-nr-ue2</services>
+                <nb_healthy>4</nb_healthy>
+        </testCase>
+
+        <testCase id="000008">
+                <class>Attach_UE</class>
+                <desc>Attach OAI UE (Wait for IP)</desc>
+                <id>rfsim5g_ue rfsim5g_ue2</id>
+        </testCase>
+
+        <testCase id="020005">
+                <class>Ping</class>
+                <desc>Ping ext-dn from both UEs</desc>
+                <id>rfsim5g_ue rfsim5g_ue2</id>
+                <ping_args>-c 20 192.168.70.135</ping_args>
+                <ping_packetloss_threshold>5</ping_packetloss_threshold>
+        </testCase>
+
+        <testCase id="030001">
+                <class>IperfFromContainer</class>
+                <desc>Iperf UDP Downlink</desc>
+                <server_container_name>rfsim5g-oai-nr-ue</server_container_name>
+                <client_container_name>oai-ext-dn</client_container_name>
+                <server_options>-B 10.0.0.2 -u -i 1 -s</server_options>
+                <client_options>-c 10.0.0.2 -u -i 1 -t 30 -b 3M</client_options>
+        </testCase>
+
+        <testCase id="030002">
+                <class>IperfFromContainer</class>
+                <desc>Iperf UDP Uplink</desc>
+                <server_container_name>oai-ext-dn</server_container_name>
+                <client_container_name>rfsim5g-oai-nr-ue</client_container_name>
+                <server_options>-u -i 1 -s</server_options>
+                <client_options>-B 10.0.0.2 -c 192.168.70.135 -u -i 1 -t 30 -b 1M</client_options>
+        </testCase>
+
+        <testCase id="333333">
+                <class>Attach_UE</class>
+                <desc>Attach OAI UE 1 and 2</desc>
+                <id>rfsim5g_ue rfsim5g_ue2</id>
+        </testCase>
+
+        <testCase id="444444">
+                <class>Detach_UE</class>
+                <desc>Detach OAI UE 1 and 2</desc>
+                <id>rfsim5g_ue rfsim5g_ue2</id>
+        </testCase>
+
+        <testCase id="100001">
+                <class>UndeployGenObject</class>
+                <desc>Undeploy Core Network</desc>
+                <yaml_path>../doc/tutorial_resources/oai-cn5g</yaml_path>
+        </testCase>
+
+        <testCase id="100002">
+                <class>UndeployGenObject</class>
+                <desc>Undeploy RAN and Flexric</desc>
+		<yaml_path>yaml_files/5g_rfsimulator_flexric</yaml_path>
+        </testCase>
+
+	<testCase id="010000">
+		<class>Custom_Command</class>
+		<desc>RC monitoring</desc>
+		<node>localhost</node>
+		<command>docker exec oai-flexric bash -c "stdbuf -o0 /usr/local/flexric/xApp/c/monitor/xapp_rc_moni" > ../cmake_targets/log/5g_rfsimulator_flexric/rc-moni-010000.log</command>
+	</testCase>
+
+	<testCase id="010001">
+		<class>Custom_Command</class>
+		<desc>KPM monitoring</desc>
+		<node>localhost</node>
+		<command>docker exec oai-flexric bash -c "stdbuf -o0 /usr/local/flexric/xApp/c/monitor/xapp_kpm_moni" > ../cmake_targets/log/5g_rfsimulator_flexric/kpm-moni-010001.log</command>
+	</testCase>
+
+	<testCase id="010002">
+		<class>Custom_Command</class>
+		<desc>KPM monitoring and RC control</desc>
+		<node>localhost</node>
+		<command>docker exec oai-flexric bash -c "stdbuf -o0 /usr/local/flexric/xApp/c/kpm_rc/xapp_kpm_rc" > ../cmake_targets/log/5g_rfsimulator_flexric/kpm_rc-010002.log</command>
+	</testCase>
+
+	<testCase id="010003">
+		<class>Custom_Command</class>
+		<desc>Custom SMs monitoring</desc>
+		<node>localhost</node>
+		<command>docker exec oai-flexric bash -c "stdbuf -o0 /usr/local/flexric/xApp/c/monitor/xapp_gtp_mac_rlc_pdcp_moni" > ../cmake_targets/log/5g_rfsimulator_flexric/sms-moni-010003.log</command>
+	</testCase>
+	<testCase id="010013">
+		<class>Custom_Command</class>
+		<desc>Custom SMs monitoring</desc>
+		<node>localhost</node>
+		<command>docker exec oai-flexric bash -c "stdbuf -o0 /usr/local/flexric/xApp/c/monitor/xapp_gtp_mac_rlc_pdcp_moni" > ../cmake_targets/log/5g_rfsimulator_flexric/sms-moni-010013.log</command>
+	</testCase>
+
+</testCaseList>

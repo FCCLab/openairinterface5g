@@ -35,6 +35,8 @@ import sys		# arg
 import re		# reg
 import yaml
 import constants as CONST
+import cls_cmd
+import logging
 
 #-----------------------------------------------------------
 # Parsing Command Line Arguements
@@ -116,14 +118,22 @@ def ArgsParse(argvs,CiTestObj,RAN,HTML,EPC,ldpc,CONTAINERS,HELP,SCA,PHYSIM,CLUST
                 matchReg = re.match('^\-\-eNBCommitID=(.*)$', myArgv, re.IGNORECASE)
             else:
                 matchReg = re.match('^\-\-ranCommitID=(.*)$', myArgv, re.IGNORECASE)
-            CiTestObj.ranCommitID = matchReg.group(1)
-            RAN.ranCommitID=matchReg.group(1)
-            HTML.ranCommitID=matchReg.group(1)
-            ldpc.ranCommitID=matchReg.group(1)
-            CONTAINERS.ranCommitID=matchReg.group(1)
-            SCA.ranCommitID=matchReg.group(1)
-            PHYSIM.ranCommitID=matchReg.group(1)
-            CLUSTER.ranCommitID=matchReg.group(1)
+            if matchReg.group(1) == 'develop':
+                lCmd = cls_cmd.LocalCmd()
+                commit = lCmd.run('curl --silent "https://gitlab.eurecom.fr/api/v4/projects/oai%2Fopenairinterface5g/repository/branches/develop" | jq .commit.id', silent=True)
+                commitID = commit.stdout.replace('"', '', 2)
+                logging.warning(f'develop was passed as ranCommitID: will use "{commitID}" as proper sha-one')
+                lCmd.close()
+            else:
+                commitID=matchReg.group(1)
+            CiTestObj.ranCommitID=commitID
+            RAN.ranCommitID=commitID
+            HTML.ranCommitID=commitID
+            ldpc.ranCommitID=commitID
+            CONTAINERS.ranCommitID=commitID
+            SCA.ranCommitID=commitID
+            PHYSIM.ranCommitID=commitID
+            CLUSTER.ranCommitID=commitID
         elif re.match('^\-\-eNBTargetBranch=(.*)$|^\-\-ranTargetBranch=(.*)$', myArgv, re.IGNORECASE):
             if re.match('^\-\-eNBTargetBranch=(.*)$', myArgv, re.IGNORECASE):
                 matchReg = re.match('^\-\-eNBTargetBranch=(.*)$', myArgv, re.IGNORECASE)
@@ -273,6 +283,19 @@ def ArgsParse(argvs,CiTestObj,RAN,HTML,EPC,ldpc,CONTAINERS,HELP,SCA,PHYSIM,CLUST
         elif re.match('^\-\-BuildId=(.+)$', myArgv, re.IGNORECASE):
             matchReg = re.match('^\-\-BuildId=(.+)$', myArgv, re.IGNORECASE)
             RAN.BuildId = matchReg.group(1)
+        elif re.match('^\-\-FlexRicTag=(.+)$', myArgv, re.IGNORECASE):
+            matchReg = re.match('^\-\-FlexRicTag=(.+)$', myArgv, re.IGNORECASE)
+            if matchReg.group(1) == 'develop':
+                lCmd = cls_cmd.LocalCmd()
+                commit = lCmd.run('curl --silent "https://gitlab.eurecom.fr/api/v4/projects/mosaic5g%2Fflexric/repository/branches/dev" | jq .commit.short_id', silent=True)
+                shortCommit = commit.stdout.replace('"', '', 2)
+                CONTAINERS.flexricTag=f'develop-{shortCommit}'
+                HTML.flexricTag=f'develop-{shortCommit}'
+                logging.warning(f'develop was passed as FlexRicTag: will use "develop-{shortCommit}" as proper tag')
+                lCmd.close()
+            else:
+                CONTAINERS.flexricTag=matchReg.group(1)
+                HTML.flexricTag=matchReg.group(1)
         else:
             HELP.GenericHelp(CONST.Version)
             sys.exit('Invalid Parameter: ' + myArgv)

@@ -285,6 +285,29 @@ pipeline {
             }
           }
         }
+        stage ("FLEXRIC-5G-RAN-Test") {
+          when { expression {do5Gtest} }
+          steps {
+            script {
+              triggerSlaveJob ('OAI-FLEXRIC-RAN-Integration-Test', 'FLEXRIC-5G-RAN-Test')
+            }
+          }
+          post {
+            always {
+              script {
+                // Using a unique variable name for each test stage to avoid overwriting on a global variable
+                // due to parallel-time concurrency
+                flexricRAN5GStatus = finalizeSlaveJob('OAI-FLEXRIC-RAN-Integration-Test')
+              }
+            }
+            failure {
+              script {
+                currentBuild.result = 'FAILURE'
+                failingStages += flexricRAN5GStatus
+              }
+            }
+          }
+        }
         stage ("L2-Sim-Test-4G") {
           when { expression {do4Gtest} }
           steps {

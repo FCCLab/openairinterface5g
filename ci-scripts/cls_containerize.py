@@ -94,7 +94,9 @@ def CreateWorkspace(sshSession, sourcePath, ranRepository, ranCommitID, ranTarge
 		logging.debug(f'Merging with the target branch: {ranTargetBranch}')
 		sshSession.command(f'git merge --ff origin/{ranTargetBranch} -m "Temporary merge for CI"', '\$', 30)
 
-def ImageTagToUse(imageName, ranCommitID, ranBranch, ranAllowMerge):
+def ImageTagToUse(imageName, ranCommitID, ranBranch, ranAllowMerge, flexricTag):
+	if imageName == 'oai-flexric':
+		return f'{imageName}:{flexricTag}'
 	shortCommit = ranCommitID[0:8]
 	if ranAllowMerge:
 		# Allowing contributor to have a name/branchName format
@@ -176,12 +178,17 @@ def AnalyzeBuildLogs(buildRoot, images, globalStatus):
 # really written to loFile.
 # So it is mandatory to keep the loop
 def LaunchPySharkCapture(lIfs, lFilter, loFile):
+	logging.debug(f'LaunchPySharkCapture on {lIfs} -- {lFilter} -- {loFile}')
 	capture = pyshark.LiveCapture(interface=lIfs, bpf_filter=lFilter, output_file=loFile, debug=False)
 	for packet in capture.sniff_continuously():
 		pass
 
 def StopPySharkCapture(testcase):
 	with cls_cmd.LocalCmd() as myCmd:
+		cmd = 'ps aux | grep tshark'
+		psStatus = myCmd.run(cmd, reportNonZero=False)
+		if re.search(testcase, psStatus.stdout) is None:
+			return True
 		cmd = 'killall tshark'
 		myCmd.run(cmd, reportNonZero=False)
 		cmd = 'killall dumpcap'
@@ -250,6 +257,8 @@ class Containerize():
 		self.imageToPull = []
 		#checkers from xml
 		self.ran_checkers={}
+
+		self.flexricTag = 'dev'
 
 #-----------------------------------------------------------
 # Container management functions
@@ -738,7 +747,7 @@ class Containerize():
 		if self.ranAllowMerge:
 			orgTag = 'ci-temp'
 		for image in IMAGES:
-			tagToUse = ImageTagToUse(image, self.ranCommitID, self.ranBranch, self.ranAllowMerge)
+			tagToUse = ImageTagToUse(image, self.ranCommitID, self.ranBranch, self.ranAllowMerge, self.flexricTag)
 			mySSH.command(f'docker image tag {image}:{orgTag} {imagePrefix}/{tagToUse}', '\$', 5)
 			if re.search('Error response from daemon: No such image:', mySSH.getBefore()) is not None:
 				continue
@@ -787,34 +796,43 @@ class Containerize():
 			sys.exit('Insufficient Parameter')
 		logging.debug('\u001B[1m Pulling image(s) on server: ' + lIpAddr + '\u001B[0m')
 		myCmd = cls_cmd.getConnection(lIpAddr)
-		imagePrefix = 'porcepix.sboai.cs.eurecom.fr'
-		response = myCmd.run(f'docker login -u oaicicd -p oaicicd {imagePrefix}')
-		if response.returncode != 0:
-			msg = 'Could not log into local registry'
-			logging.error(msg)
-			myCmd.close()
-			HTML.CreateHtmlTestRow(msg, 'KO', CONST.ALL_PROCESSES_OK)
-			return False
-		for image in self.imageToPull:
-			tagToUse = ImageTagToUse(image, self.ranCommitID, self.ranBranch, self.ranAllowMerge)
-			cmd = f'docker pull {imagePrefix}/{tagToUse}'
-			response = myCmd.run(cmd, timeout=120)
+		registries = ['porcepix', 'selfix']
+		for myRegistry in registries:
+			imagePrefix = f'{myRegistry}.sboai.cs.eurecom.fr'
+			response = myCmd.run(f'docker login -u oaicicd -p oaicicd {imagePrefix}')
 			if response.returncode != 0:
-				logging.debug(response)
-				msg = f'Could not pull {image} from local registry : {tagToUse}'
+				msg = 'Could not log into local registry'
+				logging.error(msg)
+				# Some servers might not be configured w/ selfix as insecure registry
+				if myRegistry == 'selfix':
+					continue
+				myCmd.close()
+				HTML.CreateHtmlTestRow(msg, 'KO', CONST.ALL_PROCESSES_OK)
+				return False
+			for image in self.imageToPull:
+				if image == 'oai-flexric' and myRegistry == 'porcepix':
+					continue
+				if image != 'oai-flexric' and myRegistry == 'selfix':
+					continue
+				tagToUse = ImageTagToUse(image, self.ranCommitID, self.ranBranch, self.ranAllowMerge, self.flexricTag)
+				cmd = f'docker pull {imagePrefix}/{tagToUse}'
+				response = myCmd.run(cmd, timeout=120)
+				if response.returncode != 0:
+					logging.debug(response)
+					msg = f'Could not pull {image} from local registry : {tagToUse}'
+					logging.error(msg)
+					myCmd.close()
+					HTML.CreateHtmlTestRow('msg', 'KO', CONST.ALL_PROCESSES_OK)
+					return False
+				myCmd.run(f'docker tag {imagePrefix}/{tagToUse} oai-ci/{tagToUse}')
+				myCmd.run(f'docker rmi {imagePrefix}/{tagToUse}')
+			response = myCmd.run(f'docker logout {imagePrefix}')
+			if response.returncode != 0:
+				msg = 'Could not log off from local registry'
 				logging.error(msg)
 				myCmd.close()
-				HTML.CreateHtmlTestRow('msg', 'KO', CONST.ALL_PROCESSES_OK)
+				HTML.CreateHtmlTestRow(msg, 'KO', CONST.ALL_PROCESSES_OK)
 				return False
-			myCmd.run(f'docker tag {imagePrefix}/{tagToUse} oai-ci/{tagToUse}')
-			myCmd.run(f'docker rmi {imagePrefix}/{tagToUse}')
-		response = myCmd.run(f'docker logout {imagePrefix}')
-		if response.returncode != 0:
-			msg = 'Could not log off from local registry'
-			logging.error(msg)
-			myCmd.close()
-			HTML.CreateHtmlTestRow(msg, 'KO', CONST.ALL_PROCESSES_OK)
-			return False
 		myCmd.close()
 		HTML.CreateHtmlTestRow('N/A', 'OK', CONST.ALL_PROCESSES_OK)
 		return True
@@ -847,8 +865,10 @@ class Containerize():
 			logging.debug('Removing test images locally')
 			myCmd = cls_cmd.LocalCmd()
 
-		for image in IMAGES:
-			imageTag = ImageTagToUse(image, self.ranCommitID, self.ranBranch, self.ranAllowMerge)
+		deleteImages = IMAGES.copy()
+		deleteImages.append('oai-flexric')
+		for image in deleteImages:
+			imageTag = ImageTagToUse(image, self.ranCommitID, self.ranBranch, self.ranAllowMerge, self.flexricTag)
 			cmd = f'docker rmi oai-ci/{imageTag}'
 			myCmd.run(cmd, reportNonZero=False)
 
@@ -886,7 +906,7 @@ class Containerize():
 		mySSH.command('cd ' + lSourcePath + '/' + self.yamlPath[self.eNB_instance], '\$', 5)
 		mySSH.command('cp docker-compose.y*ml ci-docker-compose.yml', '\$', 5)
 		for image in IMAGES:
-			imageTag = ImageTagToUse(image, self.ranCommitID, self.ranBranch, self.ranAllowMerge)
+			imageTag = ImageTagToUse(image, self.ranCommitID, self.ranBranch, self.ranAllowMerge, self.flexricTag)
 			mySSH.command(f'sed -i -e "s#image: {image}:latest#image: oai-ci/{imageTag}#" ci-docker-compose.yml', '\$', 2)
 
 		# Currently support only one
@@ -1099,22 +1119,23 @@ class Containerize():
 			return
 		cmd = 'cp docker-compose.y*ml docker-compose-ci.yml'
 		myCmd.run(cmd, silent=self.displayedNewTags)
-		imageNames = ['oai-enb', 'oai-gnb', 'oai-lte-ue', 'oai-nr-ue', 'oai-lte-ru', 'oai-nr-cuup']
-		for image in imageNames:
-			tagToUse = ImageTagToUse(image, self.ranCommitID, self.ranBranch, self.ranAllowMerge)
-			# In the scenario, for 5G images, we have the choice of either pulling normal images
-			# or -asan images. We need to detect which kind we did pull.
-			if image == 'oai-gnb' or image == 'oai-nr-ue' or image == 'oai-nr-cuup':
-				ret = myCmd.run(f'docker image inspect oai-ci/{tagToUse}', reportNonZero=False, silent=self.displayedNewTags)
-				if ret.returncode != 0:
-					tagToUse = tagToUse.replace('oai-gnb', 'oai-gnb-asan')
-					tagToUse = tagToUse.replace('oai-nr-ue', 'oai-nr-ue-asan')
-					tagToUse = tagToUse.replace('oai-nr-cuup', 'oai-nr-cuup-asan')
-					if not self.displayedNewTags:
-						logging.debug(f'\u001B[1m Using sanitized version of {image} with {tagToUse}\u001B[0m')
-			cmd = f'sed -i -e "s@oaisoftwarealliance/{image}:develop@oai-ci/{tagToUse}@" docker-compose-ci.yml'
-			myCmd.run(cmd, silent=self.displayedNewTags)
-		self.displayedNewTags = True
+		if re.search('tutorial_resources', self.yamlPath[0]) is None:
+			imageNames = ['oai-enb', 'oai-gnb', 'oai-lte-ue', 'oai-nr-ue', 'oai-lte-ru', 'oai-nr-cuup', 'oai-flexric']
+			for image in imageNames:
+				tagToUse = ImageTagToUse(image, self.ranCommitID, self.ranBranch, self.ranAllowMerge, self.flexricTag)
+				# In the scenario, for 5G images, we have the choice of either pulling normal images
+				# or -asan images. We need to detect which kind we did pull.
+				if image == 'oai-gnb' or image == 'oai-nr-ue' or image == 'oai-nr-cuup':
+					ret = myCmd.run(f'docker image inspect oai-ci/{tagToUse}', reportNonZero=False, silent=self.displayedNewTags)
+					if ret.returncode != 0:
+						tagToUse = tagToUse.replace('oai-gnb', 'oai-gnb-asan')
+						tagToUse = tagToUse.replace('oai-nr-ue', 'oai-nr-ue-asan')
+						tagToUse = tagToUse.replace('oai-nr-cuup', 'oai-nr-cuup-asan')
+						if not self.displayedNewTags:
+							logging.debug(f'\u001B[1m Using sanitized version of {image} with {tagToUse}\u001B[0m')
+				cmd = f'sed -i -e "s@oaisoftwarealliance/{image}:develop@oai-ci/{tagToUse}@" docker-compose-ci.yml'
+				myCmd.run(cmd, silent=self.displayedNewTags)
+			self.displayedNewTags = True
 
 		cmd = f'docker-compose -f docker-compose-ci.yml up -d {self.services[0]}'
 		deployStatus = myCmd.run(cmd, timeout=100)
@@ -1209,16 +1230,19 @@ class Containerize():
 		cmd = 'docker-compose -f docker-compose-ci.yml config | grep com.docker.network.bridge.name | sed -e "s@^.*name: @@"'
 		networkNames = myCmd.run(cmd, silent=True)
 		myCmd.close()
-		# Allow only: control plane RAN (SCTP), HTTP of control in CN (port 80), PFCP traffic (port 8805), MySQL (port 3306)
-		capture_filter = 'sctp or port 80 or port 8805 or icmp or port 3306'
+		# Allow only: control plane RAN (SCTP), HTTP of control in CN (ports 80 and 8080), PFCP traffic (port 8805), MySQL (port 3306)
+		capture_filter = 'sctp or port 80 or port 8080 or port 8805 or icmp or port 3306'
 		interfaces = []
 		iInterfaces = ''
 		for name in networkNames.stdout.split('\n'):
-			if re.search('rfsim', name) is not None or re.search('l2sim', name) is not None:
+			if re.search('rfsim', name) is not None or re.search('l2sim', name) is not None or re.search('demo-oai', name) is not None:
 				interfaces.append(name)
 				iInterfaces += f'-i {name} '
-		ymlPath = self.yamlPath[0].split('/')
-		output_file = f'/tmp/capture_{ymlPath[1]}.pcap'
+		if re.search('tutorial_resources', self.yamlPath[0]) is not None:
+			output_file = f'/tmp/capture_tutorial_resources.pcap'
+		else:
+			ymlPath = self.yamlPath[0].split('/')
+			output_file = f'/tmp/capture_{ymlPath[1]}.pcap'
 		self.tsharkStarted = True
 		# On old systems (ubuntu 18), pyshark live-capture is buggy.
 		# Going back to old method
@@ -1235,8 +1259,11 @@ class Containerize():
 	def UndeployGenObject(self, HTML, RAN, UE):
 		self.exitStatus = 0
 		# Implicitly we are running locally
-		ymlPath = self.yamlPath[0].split('/')
-		logPath = '../cmake_targets/log/' + ymlPath[1]
+		if re.search('tutorial_resources', self.yamlPath[0]) is not None:
+			logPath = '../cmake_targets/log/tutorial_resources'
+		else:
+			ymlPath = self.yamlPath[0].split('/')
+			logPath = '../cmake_targets/log/' + ymlPath[1]
 		myCmd = cls_cmd.LocalCmd(d = self.yamlPath[0])
 		cmd = 'cp docker-compose.y*ml docker-compose-ci.yml'
 		myCmd.run(cmd)
@@ -1319,7 +1346,10 @@ class Containerize():
 						HTML.CreateHtmlTestRow('UE log Analysis', 'OK', CONST.ALL_PROCESSES_OK)
 		myCmd2.close()
 		if self.tsharkStarted:
-			self.tsharkStarted = StopPySharkCapture(ymlPath[1])
+			if re.search('tutorial_resources', self.yamlPath[0]) is not None:
+				self.tsharkStarted = StopPySharkCapture('tutorial_resources')
+			else:
+				self.tsharkStarted = StopPySharkCapture(ymlPath[1])
 		logging.debug('\u001B[1m Undeploying \u001B[0m')
 		logging.debug(f'Working dir is back {self.yamlPath[0]}')
 		cmd = 'docker-compose -f docker-compose-ci.yml down -v'

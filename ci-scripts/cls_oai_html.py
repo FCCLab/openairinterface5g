@@ -38,6 +38,7 @@ import logging
 import os
 import time
 import subprocess
+import json
 from multiprocessing import Process, Lock, SimpleQueue
 
 import constants as CONST
@@ -58,6 +59,8 @@ class HTMLManagement():
 		self.ranCommitID = ''
 		self.ranAllowMerge = False
 		self.ranTargetBranch = ''
+
+		self.flexricTag = ''
 
 		self.nbTestXMLfiles = 0
 		self.htmlTabRefs = []
@@ -123,57 +126,43 @@ class HTMLManagement():
 			self.htmlFile.write('  </table>\n')
 			self.htmlFile.write('  <br>\n')
 			self.htmlFile.write('  <div class="alert alert-info"><strong> <span class="glyphicon glyphicon-dashboard"></span> TEMPLATE_STAGE_NAME</strong></div>\n')
-			self.htmlFile.write('  <table border = "1">\n')
-			self.htmlFile.write('     <tr>\n')
-			self.htmlFile.write('       <td bgcolor = "lightcyan" > <span class="glyphicon glyphicon-time"></span> Build Start Time (UTC) </td>\n')
-			self.htmlFile.write('       <td>TEMPLATE_BUILD_TIME</td>\n')
-			self.htmlFile.write('     </tr>\n')
-			self.htmlFile.write('     <tr>\n')
-			self.htmlFile.write('       <td bgcolor = "lightcyan" > <span class="glyphicon glyphicon-cloud-upload"></span> GIT Repository </td>\n')
-			self.htmlFile.write('       <td><a href="' + self.ranRepository + '">' + self.ranRepository + '</a></td>\n')
-			self.htmlFile.write('     </tr>\n')
-			self.htmlFile.write('     <tr>\n')
-			self.htmlFile.write('       <td bgcolor = "lightcyan" > <span class="glyphicon glyphicon-wrench"></span> Job Trigger </td>\n')
-			if (self.ranAllowMerge):
-				self.htmlFile.write('       <td>Merge-Request</td>\n')
-			else:
-				self.htmlFile.write('       <td>Push to Branch</td>\n')
-			self.htmlFile.write('     </tr>\n')
-			self.htmlFile.write('     <tr>\n')
-			if (self.ranAllowMerge):
-				self.htmlFile.write('       <td bgcolor = "lightcyan" > <span class="glyphicon glyphicon-log-out"></span> Source Branch </td>\n')
-			else:
-				self.htmlFile.write('       <td bgcolor = "lightcyan" > <span class="glyphicon glyphicon-tree-deciduous"></span> Branch</td>\n')
-			self.htmlFile.write('       <td>' + self.ranBranch + '</td>\n')
-			self.htmlFile.write('     </tr>\n')
-			self.htmlFile.write('     <tr>\n')
-			if (self.ranAllowMerge):
-				self.htmlFile.write('       <td bgcolor = "lightcyan" > <span class="glyphicon glyphicon-tag"></span> Source Commit ID </td>\n')
-			else:
-				self.htmlFile.write('       <td bgcolor = "lightcyan" > <span class="glyphicon glyphicon-tag"></span> Commit ID </td>\n')
-			self.htmlFile.write('       <td>' + self.ranCommitID + '</td>\n')
-			self.htmlFile.write('     </tr>\n')
-			if self.ranAllowMerge != '':
-				commit_message = subprocess.check_output("git log -n1 --pretty=format:\"%s\" " + self.ranCommitID, shell=True, universal_newlines=True)
-				commit_message = commit_message.strip()
-				self.htmlFile.write('     <tr>\n')
-				if (self.ranAllowMerge):
-					self.htmlFile.write('       <td bgcolor = "lightcyan" > <span class="glyphicon glyphicon-comment"></span> Source Commit Message </td>\n')
-				else:
-					self.htmlFile.write('       <td bgcolor = "lightcyan" > <span class="glyphicon glyphicon-comment"></span> Commit Message </td>\n')
-				self.htmlFile.write('       <td>' + commit_message + '</td>\n')
-				self.htmlFile.write('     </tr>\n')
-			if (self.ranAllowMerge):
-				self.htmlFile.write('     <tr>\n')
-				self.htmlFile.write('       <td bgcolor = "lightcyan" > <span class="glyphicon glyphicon-log-in"></span> Target Branch </td>\n')
-				if (self.ranTargetBranch == ''):
-					self.htmlFile.write('       <td>develop</td>\n')
-				else:
-					self.htmlFile.write('       <td>' + self.ranTargetBranch + '</td>\n')
-				self.htmlFile.write('     </tr>\n')
-			self.htmlFile.write('  </table>\n')
 
-			self.htmlFile.write('  <br>\n')
+			commit_message = subprocess.check_output("git log -n1 --pretty=format:\"%s\" " + self.ranCommitID, shell=True, universal_newlines=True)
+			commit_message = commit_message.strip()
+			self.CreateHtmlGitInfoTable(self.ranRepository, self.ranAllowMerge, self.ranBranch, self.ranCommitID, commit_message, self.ranTargetBranch)
+
+			# Creating the Flex GitInfo table
+			if self.flexricTag != '':
+				flexricRepoURL = 'https://gitlab.eurecom.fr/mosaic5g/flexric'
+				flexricIsMR = False
+				flexricBranch = 'dev'
+				flexricTarget = 'dev'
+				flexricCommitId = 'do-not-know-yet'
+				commit_message = 'do not know yet'
+				if re.search('ci-tmp-pr-', self.flexricTag) is not None:
+					flexricIsMR = True
+					res = re.search('ci-tmp-pr-([0-9]+)-([0-9a-zA-Z]+)', self.flexricTag)
+					mrId = res.group(1)
+					flexricCommitId = res.group(2)
+					# retrieving the source branch of the merge request
+					flexricBranch = subprocess.check_output(f'curl --silent "https://gitlab.eurecom.fr/api/v4/projects/mosaic5g%2Fflexric/merge_requests/{mrId}/" | jq .source_branch', shell=True, universal_newlines=True)
+					flexricBranch = flexricBranch.strip()
+					flexricBranch = flexricBranch.replace('"','')
+				else:
+					res = re.search('develop-([0-9a-zA-Z]+)', self.flexricTag)
+					flexricCommitId = res.group(1)
+
+				# retrieving all commits of the branch
+				json_payload = subprocess.check_output(f'curl --silent "https://gitlab.eurecom.fr/api/v4/projects/mosaic5g%2Fflexric/repository/commits?ref_name={flexricBranch}" | jq .', shell=True, universal_newlines=True)
+				json_data = json.loads(json_payload)
+				for item in json_data:
+					if item['short_id'] == flexricCommitId:
+						flexricCommitId = item['id']
+						commit_message = item['message']
+						break
+
+				self.CreateHtmlGitInfoTable(flexricRepoURL, flexricIsMR, flexricBranch, flexricCommitId, commit_message, flexricTarget)
+
 			self.htmlFile.write('  <ul class="nav nav-pills">\n')
 			count = 0
 			while (count < self.nbTestXMLfiles):
@@ -193,6 +182,55 @@ class HTMLManagement():
 			self.htmlFile.write('  </ul>\n')
 			self.htmlFile.write('  <div class="tab-content">\n')
 			self.htmlFile.close()
+
+	def CreateHtmlGitInfoTable(self, repoURL, isMergeRequest, branchName, commitID, commitMessage, targetBranch):
+		self.htmlFile.write('  <table border = "1">\n')
+		self.htmlFile.write('     <tr>\n')
+		self.htmlFile.write('       <td bgcolor = "lightcyan" > <span class="glyphicon glyphicon-time"></span> Build Start Time (UTC) </td>\n')
+		self.htmlFile.write('       <td>TEMPLATE_BUILD_TIME</td>\n')
+		self.htmlFile.write('     </tr>\n')
+		self.htmlFile.write('     <tr>\n')
+		self.htmlFile.write('       <td bgcolor = "lightcyan" > <span class="glyphicon glyphicon-cloud-upload"></span> GIT Repository </td>\n')
+		self.htmlFile.write(f'       <td><a href="{repoURL}">{repoURL}</a></td>\n')
+		self.htmlFile.write('     </tr>\n')
+		self.htmlFile.write('     <tr>\n')
+		self.htmlFile.write('       <td bgcolor = "lightcyan" > <span class="glyphicon glyphicon-wrench"></span> Job Trigger </td>\n')
+		if (isMergeRequest):
+			self.htmlFile.write('       <td>Merge-Request</td>\n')
+		else:
+			self.htmlFile.write('       <td>Push to Branch</td>\n')
+		self.htmlFile.write('     </tr>\n')
+		self.htmlFile.write('     <tr>\n')
+		if (isMergeRequest):
+			self.htmlFile.write('       <td bgcolor = "lightcyan" > <span class="glyphicon glyphicon-log-out"></span> Source Branch </td>\n')
+		else:
+			self.htmlFile.write('       <td bgcolor = "lightcyan" > <span class="glyphicon glyphicon-tree-deciduous"></span> Branch</td>\n')
+		self.htmlFile.write(f'       <td>{branchName}</td>\n')
+		self.htmlFile.write('     </tr>\n')
+		self.htmlFile.write('     <tr>\n')
+		if (isMergeRequest):
+			self.htmlFile.write('       <td bgcolor = "lightcyan" > <span class="glyphicon glyphicon-tag"></span> Source Commit ID </td>\n')
+		else:
+			self.htmlFile.write('       <td bgcolor = "lightcyan" > <span class="glyphicon glyphicon-tag"></span> Commit ID </td>\n')
+		self.htmlFile.write(f'       <td>{commitID}</td>\n')
+		self.htmlFile.write('     </tr>\n')
+		self.htmlFile.write('     <tr>\n')
+		if (isMergeRequest):
+			self.htmlFile.write('       <td bgcolor = "lightcyan" > <span class="glyphicon glyphicon-comment"></span> Source Commit Message </td>\n')
+		else:
+			self.htmlFile.write('       <td bgcolor = "lightcyan" > <span class="glyphicon glyphicon-comment"></span> Commit Message </td>\n')
+		self.htmlFile.write(f'       <td>{commitMessage}</td>\n')
+		self.htmlFile.write('     </tr>\n')
+		if (isMergeRequest):
+			self.htmlFile.write('     <tr>\n')
+			self.htmlFile.write('       <td bgcolor = "lightcyan" > <span class="glyphicon glyphicon-log-in"></span> Target Branch </td>\n')
+			if (targetBranch == ''):
+				self.htmlFile.write('       <td>develop</td>\n')
+			else:
+				self.htmlFile.write(f'       <td>{targetBranch}</td>\n')
+			self.htmlFile.write('     </tr>\n')
+		self.htmlFile.write('  </table>\n')
+		self.htmlFile.write('  <br>\n')
 
 	def CreateHtmlTabHeader(self):
 		if (not self.htmlHeaderCreated):
