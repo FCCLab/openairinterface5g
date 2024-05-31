@@ -1428,6 +1428,7 @@ void nr_rrc_mac_config_req_reset(module_id_t module_id,
       nr_ue_mac_default_configs(mac);
       // new sync but no target cell id -> -1
       nr_ue_send_synch_request(mac, module_id, 0, -1);
+      mac->pucch_power_control_initialized = false;
       break;
     case DETACH:
       LOG_A(NR_MAC, "Received detach indication\n");
@@ -1436,11 +1437,13 @@ void nr_rrc_mac_config_req_reset(module_id_t module_id,
       nr_ue_reset_sync_state(mac);
       release_mac_configuration(mac, cause);
       mac->state = UE_DETACHING;
+      mac->pucch_power_control_initialized = false;
       break;
     case T300_EXPIRY:
       reset_ra(mac, false);
       reset_mac_inst(mac);
       mac->state = UE_SYNC; // still in sync but need to restart RA
+      mac->pucch_power_control_initialized = false;
       break;
     case RE_ESTABLISHMENT:
       reset_mac_inst(mac);
