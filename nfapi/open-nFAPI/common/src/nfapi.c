@@ -585,41 +585,54 @@ uint8_t unpackarray(uint8_t **ppReadPackedMsg, void *array, uint16_t array_eleme
   return 1;
 }
 
-uint32_t pack_dci_payload(uint8_t payload[], uint16_t payloadSizeBits, uint8_t **out, uint8_t *end)
+uint32_t pack_dci_payload(uint8_t *payload, uint16_t payloadSizeBits, uint8_t **out, uint8_t *end)
 {
   // Helper vars for DCI Payload
-  uint8_t dci_bytes_inverted[DCI_PAYLOAD_BYTE_LEN];
+  uint8_t dci_bytes_inverted[DCI_PAYLOAD_BYTE_LEN] = {0};
   uint8_t dci_byte_len = (payloadSizeBits + 7) / 8;
+  uint8_t payload_internal[DCI_PAYLOAD_BYTE_LEN] = {0}; // Used to not edit the "outside" pointer
+  uint8_t rotation_bits = 0;
   // Align the dci payload bits to the left on the payload buffer
-  uint64_t *dci_pdu = (uint64_t *)payload;
   if (payloadSizeBits % 8 != 0) {
-    uint8_t rotation_bits = 8 - (payloadSizeBits % 8);
-    *dci_pdu = (*dci_pdu << rotation_bits);
+    rotation_bits = 8 - (payloadSizeBits % 8);
+    // Bit shifting value ( << )
+    uint64_t t = 0;
+    memcpy(&t, payload, dci_byte_len);
+    t = t << rotation_bits;
+    memcpy(payload_internal, &t, dci_byte_len);
+  } else {
+    // No rotation needed
+    memcpy(payload_internal, payload, dci_byte_len);
   }
   // Invert the byte order of the DCI Payload
   for (int j = 0; j < dci_byte_len; j++) {
-    dci_bytes_inverted[j] = payload[(dci_byte_len - 1) - j];
+    dci_bytes_inverted[j] = payload_internal[(dci_byte_len - 1) - j];
   }
   return pusharray8(dci_bytes_inverted, DCI_PAYLOAD_BYTE_LEN, dci_byte_len, out, end);
 }
 
-uint32_t unpack_dci_payload(uint8_t payload[], uint16_t payloadSizeBits, uint8_t **in, uint8_t *end)
+uint32_t unpack_dci_payload(uint8_t *payload, uint16_t payloadSizeBits, uint8_t **in, uint8_t *end)
 {
   // Pull the inverted DCI and invert it back
   //  Helper vars for DCI Payload
-  uint8_t dci_bytes_inverted[DCI_PAYLOAD_BYTE_LEN];
   uint8_t dci_byte_len = (payloadSizeBits + 7) / 8;
+  uint8_t dci_bytes_inverted[DCI_PAYLOAD_BYTE_LEN] = {0};
   // Get DCI array inverted
   uint32_t pullresult = pullarray8(in, dci_bytes_inverted, DCI_PAYLOAD_BYTE_LEN, dci_byte_len, end);
-  uint64_t *dci_pdu = (uint64_t *)payload;
+
   // Reversing the byte order of the inverted DCI payload
   for (uint16_t j = 0; j < dci_byte_len; j++) {
     payload[j] = dci_bytes_inverted[(dci_byte_len - 1) - j];
   }
+
+  uint64_t t = 0;
+  memcpy(&t, payload, dci_byte_len);
   if (payloadSizeBits % 8 != 0) {
     uint8_t rotation_bits = 8 - (payloadSizeBits % 8);
-    *dci_pdu = (*dci_pdu >> rotation_bits);
+    t = (t >> (uint64_t)rotation_bits);
   }
+  memcpy(payload, &t, dci_byte_len);
+
   return pullresult;
 }
 
@@ -808,6 +821,20 @@ int unpack_nr_tlv_list(unpack_tlv_t unpack_fns[],
     for (idx = 0; idx < size; ++idx) {
       if (unpack_fns[idx].tag == generic_tl.tag) { // match the extracted tag value with all the tags in unpack_fn list
         tagMatch = 1;
+
+        if (generic_tl.tag == NFAPI_NR_PARAM_TLV_NUM_CONFIG_TLVS_TO_REPORT_TAG) {
+
+          //padding and sub tlvs handled already
+          nfapi_nr_cell_param_t *cellParamTable = (nfapi_nr_cell_param_t* )unpack_fns[idx].tlv;
+          cellParamTable->num_config_tlvs_to_report.tl.tag = generic_tl.tag;
+          cellParamTable->num_config_tlvs_to_report.tl.length = generic_tl.length;
+          int result = (*unpack_fns[idx].unpack_func)(unpack_fns[idx].tlv, ppReadPackedMsg, end);
+          if (result == 0) {
+            return 0;
+          }
+          continue;
+        }
+
         nfapi_tl_t *tl = (nfapi_tl_t *)(unpack_fns[idx].tlv);
         tl->tag = generic_tl.tag;
         tl->length = generic_tl.length;
@@ -1138,6 +1165,133 @@ uint8_t pack_nr_tlv(uint16_t tag, void *tlv, uint8_t **ppWritePackedMsg, uint8_t
   return 1;
 }
 
+uint8_t pack_nr_generic_tlv(uint16_t tag, void *tlv, uint8_t **ppWritePackedMsg, uint8_t *end)
+{
+  nfapi_nr_generic_tlv_scf_t *toPack = (nfapi_nr_generic_tlv_scf_t*) tlv;
+  // If the tag is defined
+  if (toPack->tl.tag == tag && toPack->tl.length != 0) {
+    // write the tlv header, length comes with value
+    if (pack_tl(&(toPack->tl), ppWritePackedMsg, end) == 0)
+      return 0;
+
+    // pack the tlv value
+    switch(toPack->tl.length){
+      case UINT_8:
+        if(push8(toPack->value.u8, ppWritePackedMsg, end) == 0){
+          return 0;
+        }
+        break;
+      case UINT_16:
+        if(push16(toPack->value.u16, ppWritePackedMsg, end) == 0){
+          return 0;
+        }
+        break;
+      case UINT_32:
+        if(push32(toPack->value.u32, ppWritePackedMsg, end) == 0){
+          return 0;
+        }
+        break;
+      case ARRAY_UINT_16:
+        if((push16(toPack->value.array_u16[0], ppWritePackedMsg, end)
+             && push16(toPack->value.array_u16[1], ppWritePackedMsg, end)
+             && push16(toPack->value.array_u16[2], ppWritePackedMsg, end)
+             && push16(toPack->value.array_u16[3], ppWritePackedMsg, end)
+             && push16(toPack->value.array_u16[4], ppWritePackedMsg, end)) == 0){
+          return 0;
+        }
+        break;
+      default:
+        break;
+    }
+
+    // calculate the length of the value and rewrite the tl header
+    // in case of nfapi_nr_config_response_tlv_list_scf_t this is to come pre-calculated, possibly unnecessary
+    /*toPack->tl.length = (*ppWritePackedMsg) - pStartOfValue;
+    // rewrite the header with the correct length
+    pack_tl(&(toPack->tl), &pStartOfTlv, end);*/
+    // Add padding that ensures multiple of 4 bytes (SCF 225 Section 2.3.2.1)
+    int padding = get_tlv_padding(toPack->tl.length);
+    NFAPI_TRACE(NFAPI_TRACE_DEBUG, "TLV 0x%x with padding of %d bytes\n", toPack->tl.tag, padding);
+    if (padding != 0) {
+      memset(*ppWritePackedMsg, 0, padding);
+      (*ppWritePackedMsg) += padding;
+    }
+  } else {
+    if (toPack->tl.tag != 0) {
+      NFAPI_TRACE(NFAPI_TRACE_WARN, "Warning pack_tlv tag 0x%x does not match expected 0x%x\n", toPack->tl.tag, tag);
+    } else {
+      // NFAPI_TRACE(NFAPI_TRACE_ERROR, "Warning pack_tlv tag 0x%x ZERO does not match expected 0x%x\n", tl->tag, tag);
+    }
+  }
+
+  return 1;
+}
+
+uint8_t unpack_nr_generic_tlv(){
+  return 1;
+}
+
+uint8_t unpack_nr_generic_tlv_list(void* tlv_list, uint8_t tlv_count, uint8_t **ppReadPackedMsg,uint8_t *end)
+{
+  nfapi_nr_generic_tlv_scf_t *toUnpack = (nfapi_nr_generic_tlv_scf_t*) tlv_list;
+  uint8_t numBadTags = 0;
+  for (int i = 0; i < tlv_count; ++i) {
+    nfapi_nr_generic_tlv_scf_t *element = &(toUnpack[i]);
+
+    //unpack each generic tlv
+    // unpack the tl and process the values accordingly
+    if (unpack_tl(ppReadPackedMsg, &(element->tl), end) == 0)
+      return 0;
+
+    uint8_t *pStartOfValue = *ppReadPackedMsg;
+    //check for valid tag
+    if(element->tl.tag < NFAPI_NR_CONFIG_DL_BANDWIDTH_TAG || element->tl.tag >NFAPI_NR_CONFIG_RSSI_MEASUREMENT_TAG){
+      numBadTags++;
+      if (numBadTags > MAX_BAD_TAG) {
+        NFAPI_TRACE(NFAPI_TRACE_ERROR, "Supplied message has had too many bad tags\n");
+        on_error();
+        return 0;
+      }
+    }
+    //if tag is valid, check length to determine which type to unpack
+    switch(element->tl.length){
+      case UINT_8:
+        pull8(ppReadPackedMsg, &(element->value.u8), end);
+        break;
+      case UINT_16:
+        pull16(ppReadPackedMsg, &(element->value.u16), end);
+        break;
+      case UINT_32:
+        pull32(ppReadPackedMsg, &(element->value.u32), end);
+        break;
+      case ARRAY_UINT_16:
+        for (int j = 0; j < 5; ++j) {
+          pull16(ppReadPackedMsg, &(element->value.array_u16[j]), end);
+        }
+        break;
+      default:
+        printf("unknown length %d\n", element->tl.length);
+        break;
+    }
+
+    // check if the length was right;
+    if (element->tl.length != (*ppReadPackedMsg - pStartOfValue)) {
+      NFAPI_TRACE(NFAPI_TRACE_ERROR,
+                  "Warning tlv tag 0x%x length %d not equal to unpack %ld\n",
+                  element->tl.tag,
+                  element->tl.length,
+                  (*ppReadPackedMsg - pStartOfValue));
+      on_error();
+    }
+    // Remove padding that ensures multiple of 4 bytes (SCF 225 Section 2.3.2.1)
+    int padding = get_tlv_padding(element->tl.length);
+    if (padding != 0) {
+      (*ppReadPackedMsg) += padding;
+    }
+  }
+  return 1;
+}
+
 const char *nfapi_error_code_to_str(nfapi_error_code_e value) {
   switch(value) {
     case NFAPI_MSG_OK:
@@ -1175,4 +1329,326 @@ const char *nfapi_error_code_to_str(nfapi_error_code_e value) {
 uint8_t get_tlv_padding(uint16_t tlv_length)
 {
   return (4 - (tlv_length % 4)) % 4;
+}
+
+uint8_t pack_pnf_param_general_value(void *tlv, uint8_t **ppWritePackedMsg, uint8_t *end)
+{
+  nfapi_pnf_param_general_t *value = (nfapi_pnf_param_general_t *)tlv;
+  return push8(value->nfapi_sync_mode, ppWritePackedMsg, end)
+         && push8(value->location_mode, ppWritePackedMsg, end)
+         && push16(value->location_coordinates_length, ppWritePackedMsg, end)
+         && pusharray8(value->location_coordinates,
+                       NFAPI_PNF_PARAM_GENERAL_LOCATION_LENGTH,
+                       value->location_coordinates_length,
+                       ppWritePackedMsg,
+                       end)
+         && push32(value->dl_config_timing, ppWritePackedMsg, end)
+         && push32(value->tx_timing, ppWritePackedMsg, end)
+         && push32(value->ul_config_timing, ppWritePackedMsg, end)
+         && push32(value->hi_dci0_timing, ppWritePackedMsg, end)
+         && push16(value->maximum_number_phys, ppWritePackedMsg, end)
+         && push16(value->maximum_total_bandwidth, ppWritePackedMsg, end)
+         && push8(value->maximum_total_number_dl_layers, ppWritePackedMsg, end)
+         && push8(value->maximum_total_number_ul_layers, ppWritePackedMsg, end)
+         && push8(value->shared_bands, ppWritePackedMsg, end)
+         && push8(value->shared_pa, ppWritePackedMsg, end)
+         && pushs16(value->maximum_total_power, ppWritePackedMsg, end)
+         && pusharray8(value->oui, NFAPI_PNF_PARAM_GENERAL_OUI_LENGTH, NFAPI_PNF_PARAM_GENERAL_OUI_LENGTH, ppWritePackedMsg, end);
+}
+
+uint8_t unpack_pnf_param_general_value(void *tlv, uint8_t **ppReadPackedMsg, uint8_t *end)
+{
+  nfapi_pnf_param_general_t *value = (nfapi_pnf_param_general_t *)tlv;
+  return pull8(ppReadPackedMsg, &value->nfapi_sync_mode, end)
+         && pull8(ppReadPackedMsg, &value->location_mode, end)
+         && pull16(ppReadPackedMsg, &value->location_coordinates_length, end)
+         && pullarray8(ppReadPackedMsg,
+                       value->location_coordinates,
+                       NFAPI_PNF_PARAM_GENERAL_LOCATION_LENGTH,
+                       value->location_coordinates_length,
+                       end)
+         && pull32(ppReadPackedMsg, &value->dl_config_timing, end)
+         && pull32(ppReadPackedMsg, &value->tx_timing, end)
+         && pull32(ppReadPackedMsg, &value->ul_config_timing, end)
+         && pull32(ppReadPackedMsg, &value->hi_dci0_timing, end)
+         && pull16(ppReadPackedMsg, &value->maximum_number_phys, end)
+         && pull16(ppReadPackedMsg, &value->maximum_total_bandwidth, end)
+         && pull8(ppReadPackedMsg, &value->maximum_total_number_dl_layers, end)
+         && pull8(ppReadPackedMsg, &value->maximum_total_number_ul_layers, end)
+         && pull8(ppReadPackedMsg, &value->shared_bands, end)
+         && pull8(ppReadPackedMsg, &value->shared_pa, end)
+         && pulls16(ppReadPackedMsg, &value->maximum_total_power, end)
+         && pullarray8(ppReadPackedMsg, value->oui, NFAPI_PNF_PARAM_GENERAL_OUI_LENGTH, NFAPI_PNF_PARAM_GENERAL_OUI_LENGTH, end);
+}
+
+uint8_t pack_rf_config_info(void *elem, uint8_t **ppWritePackedMsg, uint8_t *end)
+{
+  nfapi_rf_config_info_t *rf = (nfapi_rf_config_info_t *)elem;
+  return push16(rf->rf_config_index, ppWritePackedMsg, end);
+}
+
+uint8_t unpack_rf_config_info(void *elem, uint8_t **ppReadPackedMsg, uint8_t *end)
+{
+  nfapi_rf_config_info_t *info = (nfapi_rf_config_info_t *)elem;
+  return pull16(ppReadPackedMsg, &info->rf_config_index, end);
+}
+
+uint8_t pack_pnf_phy_info(void *elem, uint8_t **ppWritePackedMsg, uint8_t *end)
+{
+  nfapi_pnf_phy_info_t *phy = (nfapi_pnf_phy_info_t *)elem;
+  return push16(phy->phy_config_index, ppWritePackedMsg, end)
+         && push16(phy->number_of_rfs, ppWritePackedMsg, end)
+         && packarray(phy->rf_config,
+                      sizeof(nfapi_rf_config_info_t),
+                      NFAPI_MAX_PNF_PHY_RF_CONFIG,
+                      phy->number_of_rfs,
+                      ppWritePackedMsg,
+                      end,
+                      &pack_rf_config_info)
+         && push16(phy->number_of_rf_exclusions, ppWritePackedMsg, end)
+         && packarray(phy->excluded_rf_config,
+                      sizeof(nfapi_rf_config_info_t),
+                      NFAPI_MAX_PNF_PHY_RF_CONFIG,
+                      phy->number_of_rf_exclusions,
+                      ppWritePackedMsg,
+                      end,
+                      &pack_rf_config_info)
+         && push16(phy->downlink_channel_bandwidth_supported, ppWritePackedMsg, end)
+         && push16(phy->uplink_channel_bandwidth_supported, ppWritePackedMsg, end)
+         && push8(phy->number_of_dl_layers_supported, ppWritePackedMsg, end)
+         && push8(phy->number_of_ul_layers_supported, ppWritePackedMsg, end)
+         && push16(phy->maximum_3gpp_release_supported, ppWritePackedMsg, end)
+         && push8(phy->nmm_modes_supported, ppWritePackedMsg, end);
+}
+
+uint8_t unpack_pnf_phy_info(void *elem, uint8_t **ppReadPackedMsg, uint8_t *end)
+{
+  nfapi_pnf_phy_info_t *phy = (nfapi_pnf_phy_info_t *)elem;
+  return pull16(ppReadPackedMsg, &phy->phy_config_index, end)
+         && pull16(ppReadPackedMsg, &phy->number_of_rfs, end)
+         && unpackarray(ppReadPackedMsg,
+                        phy->rf_config,
+                        sizeof(nfapi_rf_config_info_t),
+                        NFAPI_MAX_PNF_PHY_RF_CONFIG,
+                        phy->number_of_rfs,
+                        end,
+                        &unpack_rf_config_info)
+         && pull16(ppReadPackedMsg, &phy->number_of_rf_exclusions, end)
+         && unpackarray(ppReadPackedMsg,
+                        phy->excluded_rf_config,
+                        sizeof(nfapi_rf_config_info_t),
+                        NFAPI_MAX_PNF_PHY_RF_CONFIG,
+                        phy->number_of_rf_exclusions,
+                        end,
+                        &unpack_rf_config_info)
+         && pull16(ppReadPackedMsg, &phy->downlink_channel_bandwidth_supported, end)
+         && pull16(ppReadPackedMsg, &phy->uplink_channel_bandwidth_supported, end)
+         && pull8(ppReadPackedMsg, &phy->number_of_dl_layers_supported, end)
+         && pull8(ppReadPackedMsg, &phy->number_of_ul_layers_supported, end)
+         && pull16(ppReadPackedMsg, &phy->maximum_3gpp_release_supported, end)
+         && pull8(ppReadPackedMsg, &phy->nmm_modes_supported, end);
+}
+
+uint8_t pack_pnf_phy_value(void *tlv, uint8_t **ppWritePackedMsg, uint8_t *end)
+{
+  nfapi_pnf_phy_t *value = (nfapi_pnf_phy_t *)tlv;
+  return push16(value->number_of_phys, ppWritePackedMsg, end)
+         && packarray(value->phy,
+                      sizeof(nfapi_pnf_phy_info_t),
+                      NFAPI_MAX_PNF_PHY,
+                      value->number_of_phys,
+                      ppWritePackedMsg,
+                      end,
+                      &pack_pnf_phy_info);
+}
+
+uint8_t unpack_pnf_phy_value(void *tlv, uint8_t **ppReadPackedMsg, uint8_t *end)
+{
+  nfapi_pnf_phy_t *value = (nfapi_pnf_phy_t *)tlv;
+  return pull16(ppReadPackedMsg, &value->number_of_phys, end)
+         && unpackarray(ppReadPackedMsg,
+                        value->phy,
+                        sizeof(nfapi_pnf_phy_info_t),
+                        NFAPI_MAX_PNF_PHY,
+                        value->number_of_phys,
+                        end,
+                        &unpack_pnf_phy_info);
+}
+
+uint8_t pack_phy_rf_config_info(void *elem, uint8_t **ppWritePackedMsg, uint8_t *end)
+{
+  nfapi_phy_rf_config_info_t *rf = (nfapi_phy_rf_config_info_t *)elem;
+  return push16(rf->phy_id, ppWritePackedMsg, end)
+         && push16(rf->phy_config_index, ppWritePackedMsg, end)
+         && push16(rf->rf_config_index, ppWritePackedMsg, end);
+}
+
+uint8_t unpack_phy_rf_config_info(void *elem, uint8_t **ppReadPackedMsg, uint8_t *end)
+{
+  nfapi_phy_rf_config_info_t *rf = (nfapi_phy_rf_config_info_t *)elem;
+  return pull16(ppReadPackedMsg, &rf->phy_id, end)
+         && pull16(ppReadPackedMsg, &rf->phy_config_index, end)
+         && pull16(ppReadPackedMsg, &rf->rf_config_index, end);
+}
+
+uint8_t pack_pnf_phy_rf_config_value(void *tlv, uint8_t **ppWritePackedMsg, uint8_t *end)
+{
+  nfapi_pnf_phy_rf_config_t *value = (nfapi_pnf_phy_rf_config_t *)tlv;
+  return push16(value->number_phy_rf_config_info, ppWritePackedMsg, end)
+         && packarray(value->phy_rf_config,
+                      sizeof(nfapi_phy_rf_config_info_t),
+                      NFAPI_MAX_PHY_RF_INSTANCES,
+                      value->number_phy_rf_config_info,
+                      ppWritePackedMsg,
+                      end,
+                      &pack_phy_rf_config_info);
+}
+
+uint8_t unpack_pnf_phy_rf_config_value(void *tlv, uint8_t **ppReadPackedMsg, uint8_t *end)
+{
+  nfapi_pnf_phy_rf_config_t *value = (nfapi_pnf_phy_rf_config_t *)tlv;
+  return pull16(ppReadPackedMsg, &value->number_phy_rf_config_info, end)
+         && unpackarray(ppReadPackedMsg,
+                        value->phy_rf_config,
+                        sizeof(nfapi_phy_rf_config_info_t),
+                        NFAPI_MAX_PHY_RF_INSTANCES,
+                        value->number_phy_rf_config_info,
+                        end,
+                        &unpack_phy_rf_config_info);
+}
+
+uint8_t pack_ipv4_address_value(void *tlv, uint8_t **ppWritePackedMsg, uint8_t *end)
+{
+  nfapi_ipv4_address_t *value = (nfapi_ipv4_address_t *)tlv;
+  return pusharray8(value->address, NFAPI_IPV4_ADDRESS_LENGTH, NFAPI_IPV4_ADDRESS_LENGTH, ppWritePackedMsg, end);
+}
+
+uint8_t unpack_ipv4_address_value(void *tlv, uint8_t **ppReadPackedMsg, uint8_t *end)
+{
+  nfapi_ipv4_address_t *value = (nfapi_ipv4_address_t *)tlv;
+  return pullarray8(ppReadPackedMsg, value->address, NFAPI_IPV4_ADDRESS_LENGTH, NFAPI_IPV4_ADDRESS_LENGTH, end);
+}
+
+uint8_t pack_ipv6_address_value(void *tlv, uint8_t **ppWritePackedMsg, uint8_t *end)
+{
+  nfapi_ipv6_address_t *value = (nfapi_ipv6_address_t *)tlv;
+  return pusharray8(value->address, NFAPI_IPV6_ADDRESS_LENGTH, NFAPI_IPV6_ADDRESS_LENGTH, ppWritePackedMsg, end);
+}
+
+uint8_t unpack_ipv6_address_value(void *tlv, uint8_t **ppReadPackedMsg, uint8_t *end)
+{
+  nfapi_ipv4_address_t *value = (nfapi_ipv4_address_t *)tlv;
+  return pullarray8(ppReadPackedMsg, value->address, NFAPI_IPV6_ADDRESS_LENGTH, NFAPI_IPV6_ADDRESS_LENGTH, end);
+}
+
+uint8_t pack_stop_response(void *msg, uint8_t **ppWritePackedMsg, uint8_t *end, nfapi_p4_p5_codec_config_t *config)
+{
+  nfapi_stop_response_t *pNfapiMsg = (nfapi_stop_response_t *)msg;
+  return push32(pNfapiMsg->error_code, ppWritePackedMsg, end)
+         && pack_vendor_extension_tlv(pNfapiMsg->vendor_extension, ppWritePackedMsg, end, config);
+}
+
+uint8_t unpack_stop_response(uint8_t **ppReadPackedMsg, uint8_t *end, void *msg, nfapi_p4_p5_codec_config_t *config)
+{
+  nfapi_stop_response_t *pNfapiMsg = (nfapi_stop_response_t *)msg;
+  return pull32(ppReadPackedMsg, &pNfapiMsg->error_code, end)
+         && unpack_tlv_list(NULL, 0, ppReadPackedMsg, end, config, &(pNfapiMsg->vendor_extension));
+}
+
+uint8_t pack_measurement_request(void *msg, uint8_t **ppWritePackedMsg, uint8_t *end, nfapi_p4_p5_codec_config_t *config)
+{
+  nfapi_measurement_request_t *pNfapiMsg = (nfapi_measurement_request_t *)msg;
+  return pack_tlv(NFAPI_MEASUREMENT_REQUEST_DL_RS_XTX_POWER_TAG,
+                  &(pNfapiMsg->dl_rs_tx_power),
+                  ppWritePackedMsg,
+                  end,
+                  &pack_uint16_tlv_value)
+         && pack_tlv(NFAPI_MEASUREMENT_REQUEST_RECEIVED_INTERFERENCE_POWER_TAG,
+                     &(pNfapiMsg->received_interference_power),
+                     ppWritePackedMsg,
+                     end,
+                     &pack_uint16_tlv_value)
+         && pack_tlv(NFAPI_MEASUREMENT_REQUEST_THERMAL_NOISE_POWER_TAG,
+                     &(pNfapiMsg->thermal_noise_power),
+                     ppWritePackedMsg,
+                     end,
+                     &pack_uint16_tlv_value)
+         && pack_vendor_extension_tlv(pNfapiMsg->vendor_extension, ppWritePackedMsg, end, config);
+}
+
+uint8_t unpack_measurement_request(uint8_t **ppReadPackedMsg, uint8_t *end, void *msg, nfapi_p4_p5_codec_config_t *config)
+{
+  nfapi_measurement_request_t *pNfapiMsg = (nfapi_measurement_request_t *)msg;
+
+  unpack_tlv_t unpack_fns[] = {
+      {NFAPI_MEASUREMENT_REQUEST_DL_RS_XTX_POWER_TAG, &pNfapiMsg->dl_rs_tx_power, &unpack_uint16_tlv_value},
+      {NFAPI_MEASUREMENT_REQUEST_RECEIVED_INTERFERENCE_POWER_TAG,
+       &pNfapiMsg->received_interference_power,
+       &unpack_uint16_tlv_value},
+      {NFAPI_MEASUREMENT_REQUEST_THERMAL_NOISE_POWER_TAG, &pNfapiMsg->thermal_noise_power, &unpack_uint16_tlv_value},
+  };
+  return unpack_tlv_list(unpack_fns,
+                         sizeof(unpack_fns) / sizeof(unpack_tlv_t),
+                         ppReadPackedMsg,
+                         end,
+                         config,
+                         &(pNfapiMsg->vendor_extension));
+}
+
+uint8_t pack_uint32_tlv_value(void *tlv, uint8_t **ppWritePackedMsg, uint8_t *end)
+{
+  nfapi_uint32_tlv_t *value = (nfapi_uint32_tlv_t *)tlv;
+  return push32(value->value, ppWritePackedMsg, end);
+}
+
+uint8_t unpack_uint32_tlv_value(void *tlv, uint8_t **ppReadPackedMsg, uint8_t *end)
+{
+  nfapi_uint32_tlv_t *value = (nfapi_uint32_tlv_t *)tlv;
+  return pull32(ppReadPackedMsg, &value->value, end);
+}
+
+uint8_t pack_uint16_tlv_value(void *tlv, uint8_t **ppWritePackedMsg, uint8_t *end)
+{
+  nfapi_uint16_tlv_t *value = (nfapi_uint16_tlv_t *)tlv;
+  return push16(value->value, ppWritePackedMsg, end);
+}
+
+uint8_t unpack_uint16_tlv_value(void *tlv, uint8_t **ppReadPackedMsg, uint8_t *end)
+{
+  nfapi_uint16_tlv_t *value = (nfapi_uint16_tlv_t *)tlv;
+  return pull16(ppReadPackedMsg, &value->value, end);
+}
+
+uint8_t pack_int16_tlv_value(void *tlv, uint8_t **ppWritePackedMsg, uint8_t *end)
+{
+  nfapi_int16_tlv_t *value = (nfapi_int16_tlv_t *)tlv;
+  return pushs16(value->value, ppWritePackedMsg, end);
+}
+
+uint8_t unpack_int16_tlv_value(void *tlv, uint8_t **ppReadPackedMsg, uint8_t *end)
+{
+  nfapi_int16_tlv_t *value = (nfapi_int16_tlv_t *)tlv;
+  return pulls16(ppReadPackedMsg, &value->value, end);
+}
+
+uint8_t pack_uint8_tlv_value(void *tlv, uint8_t **ppWritePackedMsg, uint8_t *end)
+{
+  nfapi_uint8_tlv_t *value = (nfapi_uint8_tlv_t *)tlv;
+  return push8(value->value, ppWritePackedMsg, end);
+}
+
+uint8_t unpack_uint8_tlv_value(void *tlv, uint8_t **ppReadPackedMsg, uint8_t *end)
+{
+  nfapi_uint8_tlv_t *value = (nfapi_uint8_tlv_t *)tlv;
+  return pull8(ppReadPackedMsg, &value->value, end);
+}
+
+uint32_t get_packed_msg_len(uintptr_t msgHead, uintptr_t msgEnd)
+{
+  if (msgEnd < msgHead) {
+    NFAPI_TRACE(NFAPI_TRACE_ERROR, "get_packed_msg_len: Error in pointers supplied %p, %p\n", &msgHead, &msgEnd);
+    return 0;
+  }
+
+  return msgEnd - msgHead;
 }
