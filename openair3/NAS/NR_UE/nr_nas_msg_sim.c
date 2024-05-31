@@ -60,6 +60,9 @@ extern uint16_t NB_UE_INST;
 static nr_ue_nas_t nr_ue_nas = {0};
 static nr_nas_msg_snssai_t nas_allowed_nssai[8];
 
+/* TS 33.501 6.4.3.1 describes the COUNT for integrity algorithm as NAS_SQN */
+static uint32_t nasDlSequenceNum = 0;
+
 static int nas_protected_security_header_encode(
   char                                       *buffer,
   const fgs_nas_message_security_header_t    *header,
@@ -603,7 +606,7 @@ static void generateSecurityModeComplete(nr_ue_nas_t *nas, as_nas_info_t *initia
   initialNasMsg->length = security_header_len + mm_msg_encode(mm_msg, (uint8_t*)(initialNasMsg->data+security_header_len), size-security_header_len);
 
   stream_cipher.context    = nas->security_container->integrity_context;
-  stream_cipher.count      = nas->security.mm_counter++;
+  stream_cipher.count      = nasDlSequenceNum++;
   stream_cipher.bearer     = 1;
   stream_cipher.direction  = 0;
   stream_cipher.message    = (unsigned char *)(initialNasMsg->data + 6);
@@ -658,7 +661,7 @@ static void generateRegistrationComplete(nr_ue_nas_t *nas, as_nas_info_t *initia
   sp_msg->header.protocol_discriminator = FGS_MOBILITY_MANAGEMENT_MESSAGE;
   sp_msg->header.security_header_type   = INTEGRITY_PROTECTED_AND_CIPHERED;
   sp_msg->header.message_authentication_code = 0;
-  sp_msg->header.sequence_number        = 1;
+  sp_msg->header.sequence_number        = nasDlSequenceNum & 0xff;
   length = 7;
   sp_msg->plain.mm_msg.registration_complete.protocoldiscriminator = FGS_MOBILITY_MANAGEMENT_MESSAGE;
   length += 1;
@@ -703,7 +706,7 @@ static void generateRegistrationComplete(nr_ue_nas_t *nas, as_nas_info_t *initia
   
   initialNasMsg->length = length;
   stream_cipher.context    = nas->security_container->integrity_context;
-  stream_cipher.count      = nas->security.mm_counter++;
+  stream_cipher.count      = nasDlSequenceNum++;
   stream_cipher.bearer     = 1;
   stream_cipher.direction  = 0;
   stream_cipher.message    = (unsigned char *)(initialNasMsg->data + 6);
@@ -740,7 +743,7 @@ static void generateDeregistrationRequest(nr_ue_nas_t *nas, as_nas_info_t *initi
   sp_msg->header.protocol_discriminator = FGS_MOBILITY_MANAGEMENT_MESSAGE;
   sp_msg->header.security_header_type = INTEGRITY_PROTECTED_AND_CIPHERED;
   sp_msg->header.message_authentication_code = 0;
-  sp_msg->header.sequence_number = 3;
+  sp_msg->header.sequence_number = nasDlSequenceNum & 0xff;
   int size = sizeof(fgs_nas_message_security_header_t);
 
   fgs_deregistration_request_ue_originating_msg *dereg_req = &sp_msg->plain.mm_msg.fgs_deregistration_request_ue_originating;
@@ -765,7 +768,7 @@ static void generateDeregistrationRequest(nr_ue_nas_t *nas, as_nas_info_t *initi
 
   nas_stream_cipher_t stream_cipher = {
     .context = nas->security_container->integrity_context,
-    .count = nas->security.mm_counter++,
+    .count = nasDlSequenceNum++,
     .bearer = 1,
     .direction = 0,
     .message = (unsigned char *)(initialNasMsg->data + 6),
@@ -802,7 +805,7 @@ static void generatePduSessionEstablishRequest(nr_ue_nas_t *nas, as_nas_info_t *
   uint8_t             mac[4];
   nas_msg.header.protocol_discriminator = FGS_MOBILITY_MANAGEMENT_MESSAGE;
   nas_msg.header.security_header_type = INTEGRITY_PROTECTED_AND_CIPHERED;
-  nas_msg.header.sequence_number = 2;
+  nas_msg.header.sequence_number = nasDlSequenceNum & 0xff;
 
   size += 7;
 
@@ -855,7 +858,7 @@ static void generatePduSessionEstablishRequest(nr_ue_nas_t *nas, as_nas_info_t *
   initialNasMsg->length = security_header_len + mm_msg_encode(mm_msg, (uint8_t*)(initialNasMsg->data+security_header_len), size-security_header_len);
 
   stream_cipher.context    = nas->security_container->integrity_context;
-  stream_cipher.count      = nas->security.mm_counter++;
+  stream_cipher.count      = nasDlSequenceNum++;
   stream_cipher.bearer     = 1;
   stream_cipher.direction  = 0;
   stream_cipher.message    = (unsigned char *)(initialNasMsg->data + 6);
