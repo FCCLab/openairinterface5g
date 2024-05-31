@@ -66,6 +66,8 @@
 // #define DEBUG_RAR
 extern uint32_t N_RB_DL;
 
+extern unsigned int NTN_UE_Koffset;
+
 /* TS 38.213 9.2.5.2 UE procedure for multiplexing HARQ-ACK/SR and CSI in a PUCCH */
 /* this is a counter of number of pucch format 4 per subframe */
 static int nb_pucch_format_4_in_subframes[LTE_NUMBER_OF_SUBFRAMES_PER_FRAME] = { 0 } ;
@@ -434,7 +436,7 @@ static int nr_ue_process_dci_ul_00(NR_UE_MAC_INST_t *mac,
   if (tda_info.nrOfSymbols == 0)
     return -1;
 
-  if (-1 == nr_ue_pusch_scheduler(mac, 0, frame, slot, &frame_tx, &slot_tx, tda_info.k2)) {
+  if (-1 == nr_ue_pusch_scheduler(mac, 0, frame, slot, &frame_tx, &slot_tx, tda_info.k2 + NTN_UE_Koffset)) {
     LOG_E(MAC, "Cannot schedule PUSCH\n");
     return -1;
   }
@@ -507,7 +509,7 @@ static int nr_ue_process_dci_ul_01(NR_UE_MAC_INST_t *mac,
   if (tda_info.nrOfSymbols == 0)
     return -1;
 
-  if (-1 == nr_ue_pusch_scheduler(mac, 0, frame, slot, &frame_tx, &slot_tx, tda_info.k2)) {
+  if (-1 == nr_ue_pusch_scheduler(mac, 0, frame, slot, &frame_tx, &slot_tx, tda_info.k2 + NTN_UE_Koffset)) {
     LOG_E(MAC, "Cannot schedule PUSCH\n");
     return -1;
   }
@@ -797,10 +799,14 @@ static int nr_ue_process_dci_dl_10(NR_UE_MAC_INST_t *mac,
     return -1;
   }
 
+  /* PDSCH_TO_HARQ_FEEDBACK_TIME_IND */
+  // according to TS 38.213 9.2.3
+  uint16_t feedback_ti = 1 + dci->pdsch_to_harq_feedback_timing_indicator.val + NTN_UE_Koffset;
+
   if (dci_ind->rnti != mac->ra.ra_rnti && dci_ind->rnti != SI_RNTI) {
-    AssertFatal(1 + dci->pdsch_to_harq_feedback_timing_indicator.val > DURATION_RX_TO_TX,
+    AssertFatal(feedback_ti > DURATION_RX_TO_TX,
                 "PDSCH to HARQ feedback time (%d) needs to be higher than DURATION_RX_TO_TX (%d).\n",
-                1 + dci->pdsch_to_harq_feedback_timing_indicator.val,
+                feedback_ti,
                 DURATION_RX_TO_TX);
     // set the harq status at MAC for feedback
     const int tpc[] = {-1, 0, 1, 3};
@@ -808,7 +814,7 @@ static int nr_ue_process_dci_dl_10(NR_UE_MAC_INST_t *mac,
                     dci->pucch_resource_indicator,
                     dci->harq_pid,
                     tpc[dci->tpc],
-                    1 + dci->pdsch_to_harq_feedback_timing_indicator.val,
+                    feedback_ti,
                     dci->dai[0].val,
                     dci_ind->n_CCE,
                     dci_ind->N_CCE,
@@ -842,9 +848,9 @@ static int nr_ue_process_dci_dl_10(NR_UE_MAC_INST_t *mac,
         dlsch_pdu->scaling_factor_S,
         dci->tpc,
         dci->pucch_resource_indicator,
-        1 + dci->pdsch_to_harq_feedback_timing_indicator.val);
+        feedback_ti);
 
-  dlsch_pdu->k1_feedback = 1 + dci->pdsch_to_harq_feedback_timing_indicator.val;
+  dlsch_pdu->k1_feedback = feedback_ti;
 
   LOG_D(MAC, "(nr_ue_procedures.c) pdu_type=%d\n\n", dl_conf_req->pdu_type);
 
@@ -1126,7 +1132,7 @@ static int nr_ue_process_dci_dl_11(NR_UE_MAC_INST_t *mac,
 
   /* PDSCH_TO_HARQ_FEEDBACK_TIME_IND */
   // according to TS 38.213 Table 9.2.3-1
-  uint8_t feedback_ti = pucch_Config->dl_DataToUL_ACK->list.array[dci->pdsch_to_harq_feedback_timing_indicator.val][0];
+  uint16_t feedback_ti = pucch_Config->dl_DataToUL_ACK->list.array[dci->pdsch_to_harq_feedback_timing_indicator.val][0] + NTN_UE_Koffset;
 
   AssertFatal(feedback_ti > DURATION_RX_TO_TX,
               "PDSCH to HARQ feedback time (%d) needs to be higher than DURATION_RX_TO_TX (%d). Min feedback time set in config "
@@ -1318,7 +1324,7 @@ void set_harq_status(NR_UE_MAC_INST_t *mac,
                      uint8_t pucch_id,
                      uint8_t harq_id,
                      int8_t delta_pucch,
-                     uint8_t data_toul_fb,
+                     uint16_t data_toul_fb,
                      uint8_t dai,
                      int n_CCE,
                      int N_CCE,
@@ -1339,7 +1345,7 @@ void set_harq_status(NR_UE_MAC_INST_t *mac,
   current_harq->ul_frame = frame;
   current_harq->ul_slot = slot + data_toul_fb;
   if (current_harq->ul_slot >= slots_per_frame) {
-    current_harq->ul_frame = (frame + 1) % 1024;
+    current_harq->ul_frame = (frame + current_harq->ul_slot / slots_per_frame) % MAX_FRAME_NUMBER;
     current_harq->ul_slot %= slots_per_frame;
   }
   // counter DAI in DCI ranges from 0 to 3
@@ -3527,9 +3533,12 @@ void nr_ue_process_mac_pdu(NR_UE_MAC_INST_t *mac, nr_downlink_indication_t *dl_i
         NR_UL_TIME_ALIGNMENT_t *ul_time_alignment = &mac->ul_time_alignment;
         ul_time_alignment->tag_id = tag;
         ul_time_alignment->ta_command = ta;
-        ul_time_alignment->frame = frameP;
-        ul_time_alignment->slot = slot;
         ul_time_alignment->ta_apply = adjustment_ta;
+
+        const int n_slots_frame = nr_slots_per_frame[mac->current_UL_BWP->scs];
+        ul_time_alignment->frame = (frameP + (slot + NTN_UE_Koffset) / n_slots_frame) % MAX_FRAME_NUMBER;
+        ul_time_alignment->slot = (slot + NTN_UE_Koffset) % n_slots_frame;
+
         /*
         #ifdef DEBUG_HEADER_PARSING
         LOG_D(MAC, "[UE] CE %d : UE Timing Advance : %d\n", i, pduP[1]);
@@ -4006,9 +4015,11 @@ static void nr_ue_process_rar(NR_UE_MAC_INST_t *mac, nr_downlink_indication_t *d
       LOG_E(MAC, "Cannot schedule Msg3. Something wrong in TDA information\n");
       return;
     }
-    ret = nr_ue_pusch_scheduler(mac, is_Msg3, frame, slot, &frame_tx, &slot_tx, tda_info.k2);
-    ul_time_alignment->frame = frame_tx;
-    ul_time_alignment->slot = slot_tx;
+    ret = nr_ue_pusch_scheduler(mac, is_Msg3, frame, slot, &frame_tx, &slot_tx, tda_info.k2 + NTN_UE_Koffset);
+
+    const int n_slots_frame = nr_slots_per_frame[current_UL_BWP->scs];
+    ul_time_alignment->frame = (frame_tx + (slot_tx + NTN_UE_Koffset) / n_slots_frame) % MAX_FRAME_NUMBER;
+    ul_time_alignment->slot = (slot_tx + NTN_UE_Koffset) % n_slots_frame;
 
     if (ret != -1) {
       uint16_t rnti = mac->crnti;

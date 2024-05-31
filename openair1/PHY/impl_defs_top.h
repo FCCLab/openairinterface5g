@@ -274,7 +274,8 @@
 // should be 2 as per NR standard, but current UE is not able to perform this value
 #define NR_UE_CAPABILITY_SLOT_RX_TO_TX (3)
 
-#define DURATION_RX_TO_TX (NR_UE_CAPABILITY_SLOT_RX_TO_TX)
+extern unsigned int NTN_UE_Koffset;
+#define DURATION_RX_TO_TX (NR_UE_CAPABILITY_SLOT_RX_TO_TX + NTN_UE_Koffset)
 
 #define NR_MAX_ULSCH_HARQ_PROCESSES              (NR_MAX_HARQ_PROCESSES)  /* cf 38.214 6.1 UE procedure for receiving the physical uplink shared channel */
 #define NR_MAX_DLSCH_HARQ_PROCESSES              (NR_MAX_HARQ_PROCESSES)  /* cf 38.214 5.1 UE procedure for receiving the physical downlink shared channel */

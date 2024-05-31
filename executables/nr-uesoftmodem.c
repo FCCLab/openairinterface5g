@@ -159,6 +159,9 @@ int           oaisim_flag = 0;
 int            emulate_rf = 0;
 uint32_t       N_RB_DL    = 106;
 
+// NTN cellSpecificKoffset-r17, but in slots for DL SCS
+unsigned int NTN_UE_Koffset = 0;
+
 /* see file openair2/LAYER2/MAC/main.c for why abstraction_flag is needed
  * this is very hackish - find a proper solution
  */
@@ -565,6 +568,9 @@ int main(int argc, char **argv)
 
       init_nr_ue_vars(UE[CC_id], 0, abstraction_flag);
     }
+
+    // NTN cellSpecificKoffset-r17, but in slots for DL SCS
+    NTN_UE_Koffset = nrUE_params.ntn_koffset << UE[0]->frame_parms.numerology_index;
 
     init_openair0();
     set_latency_target();

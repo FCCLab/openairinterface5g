@@ -41,6 +41,8 @@
 #include <executables/softmodem-common.h>
 #include "openair2/LAYER2/RLC/rlc.h"
 
+extern unsigned int NTN_UE_Koffset;
+
 int16_t get_prach_tx_power(NR_UE_MAC_INST_t *mac)
 {
   RA_config_t *ra = &mac->ra;
@@ -571,12 +573,12 @@ void nr_Msg3_transmitted(NR_UE_MAC_INST_t *mac, uint8_t CC_id, frame_t frameP, s
   RA_config_t *ra = &mac->ra;
   NR_RACH_ConfigCommon_t *nr_rach_ConfigCommon = mac->current_UL_BWP->rach_ConfigCommon;
   long mu = mac->current_UL_BWP->scs;
-  int subframes_per_slot = nr_slots_per_frame[mu] / 10;
+  int slots_per_subframe = nr_slots_per_frame[mu] / 10;
 
   // start contention resolution timer
   int RA_contention_resolution_timer_subframes = (nr_rach_ConfigCommon->ra_ContentionResolutionTimer + 1) << 3;
   // timer step 1 slot and timer target given by ra_ContentionResolutionTimer
-  nr_timer_setup(&ra->contention_resolution_timer, RA_contention_resolution_timer_subframes * subframes_per_slot, 1);
+  nr_timer_setup(&ra->contention_resolution_timer, RA_contention_resolution_timer_subframes * slots_per_subframe + NTN_UE_Koffset, 1);
   nr_timer_start(&ra->contention_resolution_timer);
 
   ra->ra_state = nrRA_WAIT_CONTENTION_RESOLUTION;
@@ -782,7 +784,7 @@ void nr_get_RA_window(NR_UE_MAC_INST_t *mac)
   int ra_ResponseWindow = rach_ConfigGeneric->ra_ResponseWindow;
   int mu = mac->current_DL_BWP->scs;
 
-  ra->RA_window_cnt = ra->RA_offset * nr_slots_per_frame[mu]; // taking into account the 2 frames gap introduced by OAI gNB
+  ra->RA_window_cnt = ra->RA_offset * nr_slots_per_frame[mu] + NTN_UE_Koffset; // taking into account the 2 frames gap introduced by OAI gNB
 
   switch (ra_ResponseWindow) {
     case NR_RACH_ConfigGeneric__ra_ResponseWindow_sl1:
