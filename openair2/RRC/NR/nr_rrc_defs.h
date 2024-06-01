@@ -360,6 +360,8 @@ typedef struct {
 } nr_security_configuration_t;
 
 typedef struct nr_mac_rrc_dl_if_s {
+  f1_reset_cu_initiated_func_t f1_reset;
+  f1_reset_acknowledge_du_initiated_func_t f1_reset_acknowledge;
   f1_setup_response_func_t f1_setup_response;
   f1_setup_failure_func_t f1_setup_failure;
   gnb_du_configuration_update_ack_func_t gnb_du_configuration_update_acknowledge;

@@ -3009,7 +3009,7 @@ int nr_mac_enable_ue_rrc_processing_timer(gNB_MAC_INST *mac, NR_UE_info_t *UE, b
   return 0;
 }
 
-void nr_mac_release_ue(gNB_MAC_INST *mac, int rnti)
+void nr_mac_release_ue(gNB_MAC_INST *mac, int rnti, bool generate_ue_release_complete)
 {
   NR_SCHED_ENSURE_LOCKED(&mac->sched_lock);
 
@@ -3026,11 +3026,13 @@ void nr_mac_release_ue(gNB_MAC_INST *mac, int rnti)
     // du_remove_f1_ue_data() (and also while sending the message to RRC)
     NR_SCHED_UNLOCK(&mac->sched_lock);
     f1_ue_data_t ue_data = du_get_f1_ue_data(rnti);
-    f1ap_ue_context_release_complete_t complete = {
-      .gNB_CU_ue_id = ue_data.secondary_ue,
-      .gNB_DU_ue_id = rnti,
-    };
-    mac->mac_rrc.ue_context_release_complete(&complete);
+    if(generate_ue_release_complete) {
+      f1ap_ue_context_release_complete_t complete = {
+        .gNB_CU_ue_id = ue_data.secondary_ue,
+        .gNB_DU_ue_id = rnti,
+      };
+      mac->mac_rrc.ue_context_release_complete(&complete);
+    }
 
     du_remove_f1_ue_data(rnti);
     NR_SCHED_LOCK(&mac->sched_lock);
@@ -3051,7 +3053,7 @@ void nr_mac_update_timers(module_id_t module_id,
     NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
 
     if (nr_mac_check_release(sched_ctrl, UE->rnti)) {
-      nr_mac_release_ue(mac, UE->rnti);
+      nr_mac_release_ue(mac, UE->rnti, true);
       // go back to examine the next UE, which is at the position the
       // current UE was
       UE--;

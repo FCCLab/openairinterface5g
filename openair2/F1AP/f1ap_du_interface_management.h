@@ -37,8 +37,8 @@
  * Reset
  */
 int DU_handle_RESET(instance_t instance, sctp_assoc_t assoc_id, uint32_t stream, F1AP_F1AP_PDU_t *pdu);
-int DU_send_RESET_ACKKNOWLEDGE(sctp_assoc_t assoc_id, F1AP_ResetAcknowledge_t *ResetAcknowledge);
-int DU_send_RESET(sctp_assoc_t assoc_id, F1AP_Reset_t *Reset);
+int DU_send_RESET_ACKNOWLEDGE(sctp_assoc_t assoc_id, f1ap_reset_ack_t *ack);
+int DU_send_RESET(sctp_assoc_t assoc_id, f1ap_reset_t *reset);
 int DU_handle_RESET_ACKNOWLEDGE(instance_t instance, sctp_assoc_t assoc_id, uint32_t stream, F1AP_F1AP_PDU_t *pdu);
 
 /*

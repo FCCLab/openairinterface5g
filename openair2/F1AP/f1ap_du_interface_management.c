@@ -52,14 +52,115 @@ int to_NRNRB(int nrb) {
 
 int DU_handle_RESET(instance_t instance, sctp_assoc_t assoc_id, uint32_t stream, F1AP_F1AP_PDU_t *pdu)
 {
-  AssertFatal(1==0,"Not implemented yet\n");
+  LOG_D(F1AP, "DU_handle_RESET\n");\
+  F1AP_Reset_t  *container;
+  F1AP_ResetIEs_t *ie;
+  DevAssert(pdu != NULL);
+  container = &pdu->choice.initiatingMessage->value.choice.Reset;
+
+  /* Reset == Non UE-related procedure -> stream 0 */
+  if (stream != 0) {
+    LOG_W(F1AP, "[SCTP %d] Received Reset on stream != 0 (%d)\n",
+        assoc_id, stream);
+  }
+
+  MessageDef *msg_p = itti_alloc_new_message(TASK_DU_F1, 0, F1AP_RESET);
+  msg_p->ittiMsgHeader.originInstance = assoc_id;
+  f1ap_reset_t *f1ap_reset = &F1AP_RESET(msg_p);
+
+  /* Transaction ID */
+  F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_ResetIEs_t, ie, container, F1AP_ProtocolIE_ID_id_TransactionID, true);
+  f1ap_reset->transaction_id = ie->value.choice.TransactionID;
+  LOG_D(F1AP, "req->transaction_id %lu \n", f1ap_reset->transaction_id);
+  
+  /* Cause */
+  F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_ResetIEs_t, ie, container, F1AP_ProtocolIE_ID_id_Cause, true);
+  switch(ie->value.choice.Cause.present) 
+  {
+    case F1AP_Cause_PR_radioNetwork:
+      LOG_D(F1AP, "Cause: Radio Network\n");
+      f1ap_reset->cause = F1AP_CAUSE_RADIO_NETWORK;
+      f1ap_reset->cause_value = ie->value.choice.Cause.choice.radioNetwork;
+      break;
+    case F1AP_Cause_PR_transport:
+      LOG_D(F1AP, "Cause: Transport\n");
+      f1ap_reset->cause = F1AP_CAUSE_TRANSPORT;
+      f1ap_reset->cause_value = ie->value.choice.Cause.choice.transport;
+      break;
+    case F1AP_Cause_PR_protocol:
+      LOG_D(F1AP, "Cause: Protocol\n");
+      f1ap_reset->cause = F1AP_CAUSE_PROTOCOL;
+      f1ap_reset->cause_value = ie->value.choice.Cause.choice.protocol;
+      break;
+    case F1AP_Cause_PR_misc:
+      LOG_D(F1AP, "Cause: Misc\n");
+      f1ap_reset->cause = F1AP_CAUSE_MISC;
+      f1ap_reset->cause_value = ie->value.choice.Cause.choice.misc;
+      break;
+    default:
+      AssertFatal(1==0,"Unknown cause\n");
+  }
+
+  /* ResetType */
+  F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_ResetIEs_t, ie, container, F1AP_ProtocolIE_ID_id_ResetType, true);
+  switch(ie->value.choice.ResetType.present) {
+    case F1AP_ResetType_PR_f1_Interface:
+      LOG_D(F1AP, "ResetType: F1 Interface\n");
+      f1ap_reset->reset_type = F1AP_RESET_ALL;
+      break;
+    case F1AP_ResetType_PR_partOfF1_Interface:
+      LOG_D(F1AP, "ResetType: Part of F1 Interface\n");
+      f1ap_reset->reset_type = F1AP_RESET_PART_OF_F1_INTERFACE;
+      break;
+    default:
+      AssertFatal(1==0,"Unknown reset type\n");
+  }
+
+  /* Part of F1 Interface */
+  if (f1ap_reset->reset_type == F1AP_RESET_PART_OF_F1_INTERFACE) {
+    AssertFatal(1==0, "Not implemented yet\n");
+  }
+  
+  f1_reset_cu_initiated(f1ap_reset);
+  return 0;
 }
 
-int DU_send_RESET_ACKKNOWLEDGE(sctp_assoc_t assoc_id, F1AP_ResetAcknowledge_t *ResetAcknowledge) {
-  AssertFatal(1==0,"Not implemented yet\n");
+int DU_send_RESET_ACKNOWLEDGE(sctp_assoc_t assoc_id, f1ap_reset_ack_t *ack) 
+{
+  F1AP_F1AP_PDU_t       pdu= {0};
+  uint8_t  *buffer;
+  uint32_t  len;
+  /* Create */
+  /* 0. pdu Type */
+  pdu.present = F1AP_F1AP_PDU_PR_successfulOutcome;
+  asn1cCalloc(pdu.choice.successfulOutcome, successMsg);
+  successMsg->procedureCode = F1AP_ProcedureCode_id_Reset;
+  successMsg->criticality   = F1AP_Criticality_reject;
+  successMsg->value.present = F1AP_SuccessfulOutcome__value_PR_ResetAcknowledge;
+  F1AP_ResetAcknowledge_t *f1ResetAcknowledge = &successMsg->value.choice.ResetAcknowledge;
+  /* mandatory */
+  /* c1. Transaction ID (integer value) */
+  asn1cSequenceAdd(f1ResetAcknowledge->protocolIEs.list, F1AP_ResetAcknowledgeIEs_t, ieC1);
+  ieC1->id                        = F1AP_ProtocolIE_ID_id_TransactionID;
+  ieC1->criticality               = F1AP_Criticality_reject;
+  ieC1->value.present             = F1AP_ResetAcknowledgeIEs__value_PR_TransactionID;
+  ieC1->value.choice.TransactionID = ack->transaction_id;
+
+  /* TODO: (Optional) partialF1Interface, criticality diagnostics */
+
+  /* encode */
+  if (f1ap_encode_pdu(&pdu, &buffer, &len) < 0) {
+    LOG_E(F1AP, "Failed to encode F1ResetAcknowledge\n");
+    return -1;
+  }
+
+  /* send */
+  ASN_STRUCT_RESET(asn_DEF_F1AP_F1AP_PDU, &pdu);
+  f1ap_itti_send_sctp_data_req(assoc_id, buffer, len);
+  return 0;
 }
 
-int DU_send_RESET(sctp_assoc_t assoc_id, F1AP_Reset_t *Reset)
+int DU_send_RESET(sctp_assoc_t assoc_id, f1ap_reset_t *reset)
 {
   AssertFatal(1==0,"Not implemented yet\n");
 }
@@ -223,6 +324,20 @@ static F1AP_GNB_DU_System_Information_t *encode_system_info(const f1ap_gnb_du_sy
 // SETUP REQUEST
 int DU_send_F1_SETUP_REQUEST(sctp_assoc_t assoc_id, const f1ap_setup_req_t *setup_req)
 {
+  LOG_D(F1AP, "DU_send_F1_SETUP_REQUEST\n");
+  // NOTE: before sending F1 Setup, we should initialize the UE states.
+  // This is to handle cases when DU loses the existing SCTP connection,
+  // and reestablishes a new connection to either a new CU or the same CU.
+  // This triggers a new F1 Setup Request from DU to CU as per the specs.
+  // Reinitializing the UE states is necessary to avoid any inconsistent states
+  // between DU and CU.
+
+  // TS38.473 [Sec 8.2.3.1]: "This procedure also re-initialises the F1AP UE-related 
+  // contexts (if any) and erases all related signalling connections
+  // in the two nodes like a Reset procedure would do."
+  LOG_D(F1AP, "Clearing the DU's UE states before , if any.\n");
+  du_clear_all_ue_states();
+
   F1AP_F1AP_PDU_t       pdu= {0};
   uint8_t  *buffer;
   uint32_t  len;

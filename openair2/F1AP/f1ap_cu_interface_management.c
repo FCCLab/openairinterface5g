@@ -35,14 +35,16 @@
 #include "f1ap_itti_messaging.h"
 #include "f1ap_cu_interface_management.h"
 
-int CU_send_RESET(sctp_assoc_t assoc_id, F1AP_Reset_t *Reset)
+int CU_send_RESET(sctp_assoc_t assoc_id, f1ap_reset_t *reset)
 {
   AssertFatal(1==0,"Not implemented yet\n");
 }
 
-int CU_handle_RESET_ACKKNOWLEDGE(instance_t instance, sctp_assoc_t assoc_id, uint32_t stream, F1AP_F1AP_PDU_t *pdu)
+int CU_handle_RESET_ACKNOWLEDGE(instance_t instance, sctp_assoc_t assoc_id, uint32_t stream, F1AP_F1AP_PDU_t *pdu)
 {
-  AssertFatal(1==0,"Not implemented yet\n");
+  LOG_D(F1AP, "CU_handle_RESET_ACKNOWLEDGE\n");
+  (void) pdu;
+  return 0;
 }
 
 int CU_handle_RESET(instance_t instance, sctp_assoc_t assoc_id, uint32_t stream, F1AP_F1AP_PDU_t *pdu)
@@ -50,7 +52,7 @@ int CU_handle_RESET(instance_t instance, sctp_assoc_t assoc_id, uint32_t stream,
   AssertFatal(1==0,"Not implemented yet\n");
 }
 
-int CU_send_RESET_ACKNOWLEDGE(sctp_assoc_t assoc_id, F1AP_ResetAcknowledge_t *ResetAcknowledge)
+int CU_send_RESET_ACKNOWLEDGE(sctp_assoc_t assoc_id, f1ap_reset_ack_t *ack)
 {
   AssertFatal(1==0,"Not implemented yet\n");
 }

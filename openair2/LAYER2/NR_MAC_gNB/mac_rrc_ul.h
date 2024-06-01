@@ -25,6 +25,9 @@
 #include "common/platform_types.h"
 #include "f1ap_messages_types.h"
 
+typedef void (*f1_reset_du_initiated_func_t)(const f1ap_reset_t *reset);
+typedef void (*f1_reset_acknowledge_cu_initiated_func_t)(const f1ap_reset_ack_t *ack);
+
 typedef void (*f1_setup_request_func_t)(const f1ap_setup_req_t* req);
 typedef void (*gnb_du_configuration_update_t)(const f1ap_gnb_du_configuration_update_t *upd);
 

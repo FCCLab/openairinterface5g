@@ -34,6 +34,9 @@
 
 #define F1AP_DU_REGISTER_REQ(mSGpTR)               (mSGpTR)->ittiMsg.f1ap_du_register_req
 
+#define F1AP_RESET(mSGpTR)                         (mSGpTR)->ittiMsg.f1ap_reset
+#define F1AP_RESET_ACK(mSGpTR)                         (mSGpTR)->ittiMsg.f1ap_reset_ack
+
 #define F1AP_SETUP_REQ(mSGpTR)                     (mSGpTR)->ittiMsg.f1ap_setup_req
 #define F1AP_SETUP_RESP(mSGpTR)                    (mSGpTR)->ittiMsg.f1ap_setup_resp
 #define F1AP_GNB_CU_CONFIGURATION_UPDATE(mSGpTR)   (mSGpTR)->ittiMsg.f1ap_gnb_cu_configuration_update
@@ -77,6 +80,8 @@
 
 #define F1AP_MAX_NO_OF_TNL_ASSOCIATIONS 32
 #define F1AP_MAX_NO_UE_ID 1024
+
+#define F1AP_MAX_NO_OF_INDIVIDUAL_CONNECTIONS_TO_RESET 65536
 
 typedef net_ip_address_t f1ap_net_ip_address_t;
 
@@ -533,5 +538,30 @@ typedef struct f1ap_paging_ind_s {
 typedef struct f1ap_lost_connection_t {
   int dummy;
 } f1ap_lost_connection_t;
+
+typedef enum F1AP_ResetType_e {
+  F1AP_RESET_ALL,
+  F1AP_RESET_PART_OF_F1_INTERFACE
+} f1ap_ResetType_t;
+
+typedef struct f1ap_reset_t {
+  uint64_t          transaction_id;
+  f1ap_Cause_t      cause;
+  long              cause_value;
+  f1ap_ResetType_t  reset_type;
+  struct {
+    uint32_t gNB_CU_ue_id;
+    uint32_t gNB_DU_ue_id;
+  } ue_to_reset[F1AP_MAX_NO_OF_INDIVIDUAL_CONNECTIONS_TO_RESET];
+} f1ap_reset_t;
+
+typedef struct f1ap_reset_ack_t {
+  uint64_t          transaction_id;
+  struct {
+    uint32_t gNB_CU_ue_id;
+    uint32_t gNB_DU_ue_id;
+  } ue_to_reset[F1AP_MAX_NO_OF_INDIVIDUAL_CONNECTIONS_TO_RESET];
+  uint16_t criticality_diagnostics;
+} f1ap_reset_ack_t;
 
 #endif /* F1AP_MESSAGES_TYPES_H_ */

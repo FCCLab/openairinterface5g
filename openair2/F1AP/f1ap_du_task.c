@@ -134,6 +134,10 @@ void *F1AP_DU_task(void *arg) {
         DUuniqInstance = gtpInst;
       } break;
 
+      case F1AP_RESET_ACK:
+        DU_send_RESET_ACKNOWLEDGE(assoc_id, &F1AP_RESET_ACK(msg));
+        break;
+
       case F1AP_GNB_CU_CONFIGURATION_UPDATE_ACKNOWLEDGE:
         DU_send_gNB_CU_CONFIGURATION_UPDATE_ACKNOWLEDGE(assoc_id,
             &F1AP_GNB_CU_CONFIGURATION_UPDATE_ACKNOWLEDGE(msg));

@@ -160,6 +160,10 @@ void *F1AP_CU_task(void *arg) {
                                      &received_msg->ittiMsg.sctp_data_ind);
         break;
 
+      case F1AP_RESET_ACK:
+        CU_send_RESET_ACKNOWLEDGE(assoc_id, &F1AP_RESET_ACK(received_msg));
+        break;
+
       case F1AP_SETUP_RESP: // from rrc
         CU_send_F1_SETUP_RESPONSE(assoc_id,
                                   &F1AP_SETUP_RESP(received_msg));
