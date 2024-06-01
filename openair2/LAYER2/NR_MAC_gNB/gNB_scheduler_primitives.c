@@ -773,6 +773,7 @@ int get_mcs_from_bler(const NR_bler_options_t *bler_options,
 }
 
 void config_uldci(const NR_UE_ServingCell_Info_t *sc_info,
+                  const NR_SearchSpace_t *ss,
                   const nfapi_nr_pusch_pdu_t *pusch_pdu,
                   dci_pdu_rel15_t *dci_pdu_rel15,
                   nr_srs_feedback_t *srs_feedback,
@@ -784,8 +785,15 @@ void config_uldci(const NR_UE_ServingCell_Info_t *sc_info,
   int bwp_id = ul_bwp->bwp_id;
   nr_dci_format_t dci_format = ul_bwp->dci_format;
 
+  //  when DCI format 0_0 is used in any common search space
+  // the size of the initial UL bandwidth part shall be used
+  // 38.214 section 6.1.2.2.2
+  const uint16_t alloc_size = (ss->searchSpaceType->present == NR_SearchSpace__searchSpaceType_PR_common
+                               && ss->searchSpaceType->choice.common->dci_Format0_0_AndFormat1_0)
+                                  ? sc_info->initial_ul_BWPSize
+                                  : ul_bwp->BWPSize;
   dci_pdu_rel15->frequency_domain_assignment.val =
-      PRBalloc_to_locationandbandwidth0(pusch_pdu->rb_size, pusch_pdu->rb_start, ul_bwp->BWPSize);
+      PRBalloc_to_locationandbandwidth0(pusch_pdu->rb_size, pusch_pdu->rb_start, alloc_size);
   dci_pdu_rel15->time_domain_assignment.val = time_domain_assignment;
   dci_pdu_rel15->frequency_hopping_flag.val = pusch_pdu->frequency_hopping;
   dci_pdu_rel15->mcs = pusch_pdu->mcs_index;

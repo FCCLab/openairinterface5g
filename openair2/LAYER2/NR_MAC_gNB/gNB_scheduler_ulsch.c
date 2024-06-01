@@ -1588,9 +1588,16 @@ static bool allocate_ul_retransmission(gNB_MAC_INST *nrmac,
   NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
   NR_sched_pusch_t *retInfo = &sched_ctrl->ul_harq_processes[harq_pid].sched_pusch;
   NR_UE_UL_BWP_t *ul_bwp = &UE->current_UL_BWP;
+  NR_SearchSpace_t *ss = sched_ctrl->search_space;
 
   int rbStart = 0; // wrt BWP start
-  const uint16_t bwpSize = ul_bwp->BWPSize;
+  //  when DCI format 0_0 is used in any common search space
+  // the size of the initial UL bandwidth part shall be used
+  // 38.214 section 6.1.2.2.2
+  const uint16_t bwpSize = (ss->searchSpaceType->present == NR_SearchSpace__searchSpaceType_PR_common
+                            && ss->searchSpaceType->choice.common->dci_Format0_0_AndFormat1_0)
+                               ? UE->sc_info.initial_ul_BWPSize
+                               : ul_bwp->BWPSize;
   const uint8_t nrOfLayers = retInfo->nrOfLayers;
   LOG_D(NR_MAC,"retInfo->time_domain_allocation = %d, tda = %d\n", retInfo->time_domain_allocation, tda);
   LOG_D(NR_MAC,"tbs %d\n",retInfo->tb_size);
@@ -1739,7 +1746,7 @@ static void pf_ul(module_id_t module_id,
   // UEs that could be scheduled
   UEsched_t UE_sched[MAX_MOBILES_PER_GNB] = {0};
   int remainUEs = max_num_ue;
-  int curUE=0;
+  int curUE = 0;
 
   /* Loop UE_list to calculate throughput and coeff */
   UE_iterator(UE_list, UE) {
@@ -1753,7 +1760,15 @@ static void pf_ul(module_id_t module_id,
 
     int rbStart = 0; // wrt BWP start
 
-    const uint16_t bwpSize = current_BWP->BWPSize;
+    //  when DCI format 0_0 is used in any common search space
+    // the size of the initial UL bandwidth part shall be used
+    // 38.214 section 6.1.2.2.2
+    NR_SearchSpace_t *ss = sched_ctrl->search_space;
+    const uint16_t bwpSize = (ss->searchSpaceType->present == NR_SearchSpace__searchSpaceType_PR_common
+                              && ss->searchSpaceType->choice.common->dci_Format0_0_AndFormat1_0)
+                                 ? UE->sc_info.initial_ul_BWPSize
+                                 : current_BWP->BWPSize;
+
     NR_sched_pusch_t *sched_pusch = &sched_ctrl->sched_pusch;
     const NR_mac_dir_stats_t *stats = &UE->mac_stats.ul;
 
@@ -1821,9 +1836,11 @@ static void pf_ul(module_id_t module_id,
       /* if no data, pre-allocate 5RB */
       /* Find a free CCE */
       int CCEIndex = get_cce_index(nrmac,
-                                   CC_id, slot, UE->rnti,
+                                   CC_id,
+                                   slot,
+                                   UE->rnti,
                                    &sched_ctrl->aggregation_level,
-                                   sched_ctrl->search_space,
+                                   ss,
                                    sched_ctrl->coreset,
                                    &sched_ctrl->sched_pdcch,
                                    false);
@@ -1839,7 +1856,7 @@ static void pf_ul(module_id_t module_id,
       sched_pusch->time_domain_allocation = get_ul_tda(nrmac, scc, sched_pusch->frame, sched_pusch->slot);
       sched_pusch->tda_info = get_ul_tda_info(current_BWP,
                                               sched_ctrl->coreset->controlResourceSetId,
-                                              sched_ctrl->search_space->searchSpaceType->present,
+                                              ss->searchSpaceType->present,
                                               TYPE_C_RNTI_,
                                               sched_pusch->time_domain_allocation);
       sched_pusch->dmrs_info = get_ul_dmrs_params(scc,
@@ -1936,10 +1953,13 @@ static void pf_ul(module_id_t module_id,
   while (remainUEs> 0 && n_rb_sched >= min_rb && iterator->UE != NULL) {
 
     NR_UE_sched_ctrl_t *sched_ctrl = &iterator->UE->UE_sched_ctrl;
+    NR_SearchSpace_t *ss = sched_ctrl->search_space;
     int CCEIndex = get_cce_index(nrmac,
-                                 CC_id, slot, iterator->UE->rnti,
+                                 CC_id,
+                                 slot,
+                                 iterator->UE->rnti,
                                  &sched_ctrl->aggregation_level,
-                                 sched_ctrl->search_space,
+                                 ss,
                                  sched_ctrl->coreset,
                                  &sched_ctrl->sched_pdcch,
                                  false);
@@ -1955,14 +1975,13 @@ static void pf_ul(module_id_t module_id,
     else LOG_D(NR_MAC, "%4d.%2d free CCE for UL DCI UE %04x\n",frame,slot, iterator->UE->rnti);
 
     NR_UE_UL_BWP_t *current_BWP = &iterator->UE->current_UL_BWP;
-
     NR_sched_pusch_t *sched_pusch = &sched_ctrl->sched_pusch;
 
     sched_pusch->nrOfLayers = sched_ctrl->srs_feedback.ul_ri + 1;
     sched_pusch->time_domain_allocation = get_ul_tda(nrmac, scc, sched_pusch->frame, sched_pusch->slot);
     sched_pusch->tda_info = get_ul_tda_info(current_BWP,
                                             sched_ctrl->coreset->controlResourceSetId,
-                                            sched_ctrl->search_space->searchSpaceType->present,
+                                            ss->searchSpaceType->present,
                                             TYPE_C_RNTI_,
                                             sched_pusch->time_domain_allocation);
     sched_pusch->dmrs_info = get_ul_dmrs_params(scc,
@@ -1972,7 +1991,13 @@ static void pf_ul(module_id_t module_id,
 
     int rbStart = 0;
     const uint16_t slbitmap = SL_to_bitmap(sched_pusch->tda_info.startSymbolIndex, sched_pusch->tda_info.nrOfSymbols);
-    const uint16_t bwpSize = current_BWP->BWPSize;
+    //  when DCI format 0_0 is used in any common search space
+    // the size of the initial UL bandwidth part shall be used
+    // 38.214 section 6.1.2.2.2
+    const uint16_t bwpSize = (ss->searchSpaceType->present == NR_SearchSpace__searchSpaceType_PR_common
+                              && ss->searchSpaceType->choice.common->dci_Format0_0_AndFormat1_0)
+                                 ? iterator->UE->sc_info.initial_ul_BWPSize
+                                 : current_BWP->BWPSize;
     while (rbStart < bwpSize && (rballoc_mask[rbStart] & slbitmap) != slbitmap)
       rbStart++;
     sched_pusch->rbStart = rbStart;
@@ -2529,6 +2554,7 @@ void nr_schedule_ulsch(module_id_t module_id, frame_t frame, sub_frame_t slot, n
     memset(&uldci_payload, 0, sizeof(uldci_payload));
 
     config_uldci(&UE->sc_info,
+                 ss,
                  pusch_pdu,
                  &uldci_payload,
                  &sched_ctrl->srs_feedback,

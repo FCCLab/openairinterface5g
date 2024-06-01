@@ -384,13 +384,13 @@ void abort_nr_dl_harq(NR_UE_info_t* UE, int8_t harq_pid)
 
 }
 
-static void get_start_stop_allocation(gNB_MAC_INST *mac,
-                                      NR_UE_info_t *UE,
-                                      int *rbStart,
-                                      int *rbStop)
+void get_start_stop_allocation(gNB_MAC_INST *mac,
+                               NR_UE_ServingCell_Info_t *sc_info,
+                               NR_UE_DL_BWP_t *dl_bwp,
+                               NR_SearchSpace_t *ss,
+                               int *rbStart,
+                               int *rbStop)
 {
-  NR_UE_DL_BWP_t *dl_bwp = &UE->current_DL_BWP;
-  NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
   // UE is scheduled in a set of contiguously allocated resource blocks within the active bandwidth part of size N_BWP PRBs
   // except for the case when DCI format 1_0 is decoded in any common search space
   // in which case the size of CORESET 0 shall be used if CORESET 0 is configured for the cell
@@ -398,15 +398,15 @@ static void get_start_stop_allocation(gNB_MAC_INST *mac,
   // TS 38.214 Section 5.1.2.2.2
   *rbStop = dl_bwp->BWPSize - 1;
   *rbStart = 0; // start wrt BWPstart
-  if (sched_ctrl->search_space->searchSpaceType->present == NR_SearchSpace__searchSpaceType_PR_common &&
-      dl_bwp->dci_format == NR_DL_DCI_FORMAT_1_0) {
+  if (ss->searchSpaceType->present == NR_SearchSpace__searchSpaceType_PR_common
+      && ss->searchSpaceType->choice.common->dci_Format0_0_AndFormat1_0) {
     if (mac->cset0_bwp_size != 0) {
       *rbStart = mac->cset0_bwp_start;
       *rbStop = *rbStart + mac->cset0_bwp_size - 1;
     }
     else {
-      *rbStart = UE->sc_info.initial_dl_BWPStart;
-      *rbStop = *rbStart + UE->sc_info.initial_dl_BWPSize - 1;
+      *rbStart = sc_info->initial_dl_BWPStart;
+      *rbStop = *rbStart + sc_info->initial_dl_BWPSize - 1;
     }
   }
 }
@@ -439,7 +439,7 @@ static bool allocate_dl_retransmission(module_id_t module_id,
 
   int rbStop = 0;
   int rbStart = 0;
-  get_start_stop_allocation(nr_mac, UE, &rbStart, &rbStop);
+  get_start_stop_allocation(nr_mac, &UE->sc_info, dl_bwp, sched_ctrl->search_space, &rbStart, &rbStop);
 
   int rbSize = 0;
   const int tda = get_dl_tda(nr_mac, scc, slot);
@@ -782,7 +782,7 @@ static void pf_dl(module_id_t module_id,
 
     int rbStop = 0;
     int rbStart = 0;
-    get_start_stop_allocation(mac, iterator->UE, &rbStart, &rbStop);
+    get_start_stop_allocation(mac, &iterator->UE->sc_info, dl_bwp, sched_ctrl->search_space, &rbStart, &rbStop);
     // Freq-demain allocation
     while (rbStart < rbStop && (rballoc_mask[rbStart] & slbitmap) != slbitmap)
       rbStart++;
@@ -1183,7 +1183,11 @@ void nr_schedule_ue_spec(module_id_t module_id,
     // TS 38.214 Section 5.1.2.2.2
     int rbStop = 0;
     int rbStart = 0;
-    get_start_stop_allocation(gNB_mac, UE, &rbStart, &rbStop);
+    get_start_stop_allocation(gNB_mac, &UE->sc_info, current_BWP, sched_ctrl->search_space, &rbStart, &rbStop);
+    AssertFatal(pdsch_pdu->rbStart >= rbStart,
+                "Start of allocated PRBs %d cannot be smaller than allowed allocation start %d\n",
+                pdsch_pdu->rbStart,
+                rbStart);
     dci_payload.frequency_domain_assignment.val = PRBalloc_to_locationandbandwidth0(pdsch_pdu->rbSize,
                                                                                     pdsch_pdu->rbStart - rbStart,
                                                                                     rbStop - rbStart + 1);

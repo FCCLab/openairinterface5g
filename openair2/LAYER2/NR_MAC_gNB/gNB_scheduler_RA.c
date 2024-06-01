@@ -603,7 +603,7 @@ static void nr_generate_Msg3_retransmission(module_id_t module_idP,
     uint16_t *vrb_map_UL = &nr_mac->common_channels[CC_id].vrb_map_UL[buffer_index * MAX_BWP_SIZE];
 
     const int BWPSize = sc_info->initial_ul_BWPSize;
-    const int BWPStart = sc_info->initial_ul_BWPStart;
+    const int BWPStart = ul_bwp->BWPStart;
 
     int rbStart = 0;
     for (int i = 0; (i < ra->msg3_nb_rb) && (rbStart <= (BWPSize - ra->msg3_nb_rb)); i++) {
@@ -697,6 +697,7 @@ static void nr_generate_Msg3_retransmission(module_id_t module_idP,
     dci_pdu_rel15_t uldci_payload={0};
 
     config_uldci(sc_info,
+                 ss,
                  pusch_pdu,
                  &uldci_payload,
                  NULL,
@@ -1235,22 +1236,18 @@ static void nr_generate_Msg2(module_id_t module_idP,
     return;
   }
 
-  int mcsIndex = -1; // initialization value
-  int rbStart = 0;
-  int rbSize = 8;
-
   NR_SearchSpace_t *ss = ra->ra_ss;
-
-  long BWPStart = 0;
-  long BWPSize = 0;
+  int mcsIndex = -1; // initialization value
+  int rbSize = 8;
+  int rbStop = 0;
+  int rbStart = 0;
+  get_start_stop_allocation(nr_mac, sc_info, dl_bwp, ss, &rbStart, &rbStop);
+  int alloc_start = rbStart;
+  long BWPStart = dl_bwp->BWPStart;
+  long BWPSize = dl_bwp->BWPSize;
   NR_Type0_PDCCH_CSS_config_t *type0_PDCCH_CSS_config = NULL;
-  if (*ss->controlResourceSetId != 0) {
-    BWPStart = dl_bwp->BWPStart;
-    BWPSize = sc_info->initial_dl_BWPSize;
-  } else {
+  if(*ss->controlResourceSetId == 0) {
     type0_PDCCH_CSS_config = &nr_mac->type0_PDCCH_CSS_config[ra->beam_id];
-    BWPStart = type0_PDCCH_CSS_config->cset_start_rb;
-    BWPSize = type0_PDCCH_CSS_config->num_rbs;
   }
 
   NR_ControlResourceSet_t *coreset = ra->coreset;
@@ -1269,14 +1266,14 @@ static void nr_generate_Msg2(module_id_t module_idP,
                                            false);
 
   uint16_t *vrb_map = cc[CC_id].vrb_map;
-  for (int i = 0; (i < rbSize) && (rbStart <= (BWPSize - rbSize)); i++) {
+  for (int i = 0; (i < rbSize) && (rbStart <= (rbStop - rbSize)); i++) {
     if (vrb_map[BWPStart + rbStart + i] & SL_to_bitmap(tda_info.startSymbolIndex, tda_info.nrOfSymbols)) {
       rbStart += i;
       i = 0;
     }
   }
 
-  if (rbStart > (BWPSize - rbSize)) {
+  if (rbStart > (rbStop - rbSize)) {
     LOG_W(NR_MAC, "%s(): cannot find free vrb_map for RA RNTI %04x!\n", __func__, ra->RA_rnti);
     return;
   }
@@ -1408,8 +1405,12 @@ static void nr_generate_Msg2(module_id_t module_idP,
   dci_pdu->powerControlOffsetSS = 1;
 
   dci_pdu_rel15_t dci_payload;
+  AssertFatal(pdsch_pdu_rel15->rbStart >= alloc_start,
+              "Start of allocated PRBs %d cannot be smaller than allowed allocation start %d\n",
+              pdsch_pdu_rel15->rbStart,
+              alloc_start);
   dci_payload.frequency_domain_assignment.val =
-      PRBalloc_to_locationandbandwidth0(pdsch_pdu_rel15->rbSize, pdsch_pdu_rel15->rbStart, BWPSize);
+      PRBalloc_to_locationandbandwidth0(pdsch_pdu_rel15->rbSize, pdsch_pdu_rel15->rbStart - alloc_start, rbStop - alloc_start);
 
   LOG_D(NR_MAC, "Msg2 rbSize.rbStart.BWPsize %d.%d.%ld\n", pdsch_pdu_rel15->rbSize, pdsch_pdu_rel15->rbStart, BWPSize);
 
@@ -1564,26 +1565,15 @@ static void prepare_dl_pdus(gNB_MAC_INST *nr_mac,
   NR_COMMON_channels_t *cc = &nr_mac->common_channels[CC_id];
   NR_ServingCellConfigCommon_t *scc = cc->ServingCellConfigCommon;
 
-  long BWPStart = 0;
-  long BWPSize = 0;
-  NR_Type0_PDCCH_CSS_config_t *type0_PDCCH_CSS_config = NULL;
   NR_SearchSpace_t *ss = ra->ra_ss;
-  if(*ss->controlResourceSetId!=0) {
-    BWPStart = dl_bwp->BWPStart;
-    BWPSize  = dl_bwp->BWPSize;
-  } else {
-    type0_PDCCH_CSS_config = &nr_mac->type0_PDCCH_CSS_config[ra->beam_id];
-    BWPStart = type0_PDCCH_CSS_config->cset_start_rb;
-    BWPSize = type0_PDCCH_CSS_config->num_rbs;
-  }
 
   int mcsTableIdx = dl_bwp->mcsTableIdx;
 
   pdsch_pdu_rel15->pduBitmap = 0;
   pdsch_pdu_rel15->rnti = rnti;
   pdsch_pdu_rel15->pduIndex = pduindex;
-  pdsch_pdu_rel15->BWPSize  = BWPSize;
-  pdsch_pdu_rel15->BWPStart = BWPStart;
+  pdsch_pdu_rel15->BWPSize = dl_bwp->BWPSize;
+  pdsch_pdu_rel15->BWPStart = dl_bwp->BWPStart;
   pdsch_pdu_rel15->SubcarrierSpacing = dl_bwp->scs;
   pdsch_pdu_rel15->CyclicPrefix = 0;
   pdsch_pdu_rel15->NrOfCodewords = 1;
@@ -1635,9 +1625,15 @@ static void prepare_dl_pdus(gNB_MAC_INST *nr_mac,
   dci_pdu->powerControlOffsetSS = 1;
 
   dci_pdu_rel15_t dci_payload;
-  dci_payload.frequency_domain_assignment.val = PRBalloc_to_locationandbandwidth0(pdsch_pdu_rel15->rbSize,
-                                                                                  pdsch_pdu_rel15->rbStart,
-                                                                                  BWPSize);
+  int alloc_start = 0;
+  int alloc_stop = 0;
+  get_start_stop_allocation(nr_mac, &ra->sc_info, dl_bwp, ss, &alloc_start, &alloc_stop);
+  AssertFatal(pdsch_pdu_rel15->rbStart >= alloc_start,
+              "Start of allocated PRBs %d cannot be smaller than allowed allocation start %d\n",
+              pdsch_pdu_rel15->rbStart,
+              alloc_start);
+  dci_payload.frequency_domain_assignment.val =
+      PRBalloc_to_locationandbandwidth0(pdsch_pdu_rel15->rbSize, pdsch_pdu_rel15->rbStart - alloc_start, alloc_stop - alloc_start);
 
   dci_payload.format_indicator = 1;
   dci_payload.time_domain_assignment.val = time_domain_assignment;
@@ -1756,17 +1752,8 @@ static void nr_generate_Msg4(module_id_t module_idP,
       mac_sdu_length = srb_status.bytes_in_buffer;
     }
 
-    long BWPStart = 0;
-    long BWPSize = 0;
+    long BWPStart = BWPStart = dl_bwp->BWPStart;
     NR_Type0_PDCCH_CSS_config_t *type0_PDCCH_CSS_config = NULL;
-    if(*ss->controlResourceSetId!=0) {
-      BWPStart = dl_bwp->BWPStart;
-      BWPSize  = dl_bwp->BWPSize;
-    } else {
-      type0_PDCCH_CSS_config = &nr_mac->type0_PDCCH_CSS_config[ra->beam_id];
-      BWPStart = type0_PDCCH_CSS_config->cset_start_rb;
-      BWPSize = type0_PDCCH_CSS_config->num_rbs;
-    }
 
     // get CCEindex, needed also for PUCCH and then later for PDCCH
     uint8_t aggregation_level;
@@ -1810,6 +1797,8 @@ static void nr_generate_Msg4(module_id_t module_idP,
     uint8_t mcsIndex = 0;
     int rbStart = 0;
     int rbSize = 0;
+    int rbStop = 0;
+    get_start_stop_allocation(nr_mac, &ra->sc_info, dl_bwp, ss, &rbStart, &rbStop);
     uint8_t tb_scaling = 0;
     uint32_t tb_size = 0;
     uint16_t pdu_length;
@@ -1823,9 +1812,9 @@ static void nr_generate_Msg4(module_id_t module_idP,
       pdu_length = mac_sdu_length + subheader_len + 7; //7 is contetion resolution length
     }
 
-    // increase PRBs until we get to BWPSize or TBS is bigger than MAC PDU size
+    // increase PRBs until we get to max size or TBS is bigger than MAC PDU size
     do {
-      if(rbSize < BWPSize)
+      if (rbSize < rbStop - rbStart)
         rbSize++;
       else
         mcsIndex++;
@@ -1839,16 +1828,16 @@ static void nr_generate_Msg4(module_id_t module_idP,
 
     int i = 0;
     uint16_t *vrb_map = cc[CC_id].vrb_map;
-    while ((i < rbSize) && (rbStart + rbSize <= BWPSize)) {
-      if (vrb_map[BWPStart + rbStart + i]&SL_to_bitmap(msg4_tda.startSymbolIndex, msg4_tda.nrOfSymbols)) {
-        rbStart += i+1;
+    while ((i < rbSize) && (rbStart + rbSize <= rbStop)) {
+      if (vrb_map[BWPStart + rbStart + i] & SL_to_bitmap(msg4_tda.startSymbolIndex, msg4_tda.nrOfSymbols)) {
+        rbStart += i + 1;
         i = 0;
       } else {
         i++;
       }
     }
 
-    if (rbStart > (BWPSize - rbSize)) {
+    if (rbStart > (rbStop - rbSize)) {
       LOG_E(NR_MAC, "%s(): cannot find free vrb_map for RNTI %04x!\n", __func__, ra->rnti);
       return;
     }

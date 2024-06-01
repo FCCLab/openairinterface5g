@@ -47,6 +47,13 @@ void nr_mac_send_f1_setup_req(void);
 void nr_mac_config_scc(gNB_MAC_INST *nrmac, NR_ServingCellConfigCommon_t *scc, const nr_mac_config_t *mac_config);
 void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const f1ap_plmn_t *plmn, uint64_t cellID, int tac);
 
+void get_start_stop_allocation(gNB_MAC_INST *mac,
+                               NR_UE_ServingCell_Info_t *sc_info,
+                               NR_UE_DL_BWP_t *dl_bwp,
+                               NR_SearchSpace_t *ss,
+                               int *rbStart,
+                               int *rbStop);
+
 bool nr_mac_add_test_ue(gNB_MAC_INST *nrmac, uint32_t rnti, NR_CellGroupConfig_t *CellGroup);
 bool nr_mac_prepare_ra_ue(gNB_MAC_INST *nrmac, uint32_t rnti, NR_CellGroupConfig_t *CellGroup);
 
@@ -144,6 +151,7 @@ void handle_nr_uci_pucch_2_3_4(module_id_t mod_id,
                                const nfapi_nr_uci_pucch_pdu_format_2_3_4_t *uci_234);
 
 void config_uldci(const NR_UE_ServingCell_Info_t *sc_info,
+                  const NR_SearchSpace_t *ss,
                   const nfapi_nr_pusch_pdu_t *pusch_pdu,
                   dci_pdu_rel15_t *dci_pdu_rel15,
                   nr_srs_feedback_t *srs_feedback,
