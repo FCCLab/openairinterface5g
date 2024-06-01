@@ -1027,10 +1027,8 @@ void handle_nr_uci_pucch_0_1(module_id_t mod_id,
       const uint8_t harq_value = uci_01->harq.harq_list[harq_bit].harq_value;
       const uint8_t harq_confidence = uci_01->harq.harq_confidence_level;
       NR_UE_harq_t *harq = find_harq(frame, slot, UE, nrmac->dl_bler.harq_round_max);
-      if (!harq) {
-        LOG_E(NR_MAC, "UE %04x: Could not find a HARQ process at %4d.%2d!\n", UE->rnti, frame, slot);
+      if (!harq)
         break;
-      }
       DevAssert(harq->is_waiting);
       const int8_t pid = sched_ctrl->feedback_dl_harq.head;
       remove_front_nr_list(&sched_ctrl->feedback_dl_harq);
@@ -1105,6 +1103,7 @@ void handle_nr_uci_pucch_2_3_4(module_id_t mod_id,
       DevAssert(harq->is_waiting);
       const int8_t pid = sched_ctrl->feedback_dl_harq.head;
       remove_front_nr_list(&sched_ctrl->feedback_dl_harq);
+      LOG_D(NR_MAC,"%4d.%2d bit %d pid %d ack/nack %d\n",frame, slot, harq_bit, pid, acknack);
       handle_dl_harq(UE, pid, uci_234->harq.harq_crc != 1 && acknack, nrmac->dl_bler.harq_round_max);
     }
     free(uci_234->harq.harq_payload);

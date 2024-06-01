@@ -564,15 +564,15 @@ void handle_nr_ul_harq(const int CC_idP,
   int8_t harq_pid = sched_ctrl->feedback_ul_harq.head;
   LOG_D(NR_MAC, "Comparing crc_pdu->harq_id vs feedback harq_pid = %d %d\n",crc_pdu->harq_id, harq_pid);
   while (crc_pdu->harq_id != harq_pid || harq_pid < 0) {
+    if (harq_pid < 0) {
+      NR_SCHED_UNLOCK(&nrmac->sched_lock);
+      return;
+    }
     LOG_W(NR_MAC,
           "Unexpected ULSCH HARQ PID %d (have %d) for RNTI 0x%04x (ignore this warning for RA)\n",
           crc_pdu->harq_id,
           harq_pid,
           crc_pdu->rnti);
-    if (harq_pid < 0) {
-      NR_SCHED_UNLOCK(&nrmac->sched_lock);
-      return;
-    }
 
     remove_front_nr_list(&sched_ctrl->feedback_ul_harq);
     sched_ctrl->ul_harq_processes[harq_pid].is_waiting = false;
@@ -625,6 +625,7 @@ static void _nr_rx_sdu(const module_id_t gnb_mod_idP,
                        const rnti_t rntiP,
                        uint8_t *sduP,
                        const uint16_t sdu_lenP,
+                       const int8_t harq_pid,
                        const uint16_t timing_advance,
                        const uint8_t ul_cqi,
                        const uint16_t rssi)
@@ -642,7 +643,6 @@ static void _nr_rx_sdu(const module_id_t gnb_mod_idP,
   if (UE && UE_waiting_CFRA_msg3 == false) {
 
     NR_UE_sched_ctrl_t *UE_scheduling_control = &UE->UE_sched_ctrl;
-    const int8_t harq_pid = UE_scheduling_control->feedback_ul_harq.head;
 
     if (sduP)
       T(T_GNB_MAC_UL_PDU_WITH_DATA, T_INT(gnb_mod_idP), T_INT(CC_idP),
@@ -718,22 +718,13 @@ static void _nr_rx_sdu(const module_id_t gnb_mod_idP,
       LOG_D(NR_MAC, "Received PDU at MAC gNB \n");
 
       UE->UE_sched_ctrl.pusch_consecutive_dtx_cnt = 0;
-      const uint32_t tb_size = UE_scheduling_control->ul_harq_processes[harq_pid].sched_pusch.tb_size;
-      UE_scheduling_control->sched_ul_bytes -= tb_size;
+      UE_scheduling_control->sched_ul_bytes -= sdu_lenP;
       if (UE_scheduling_control->sched_ul_bytes < 0)
         UE_scheduling_control->sched_ul_bytes = 0;
 
       nr_process_mac_pdu(gnb_mod_idP, UE, CC_idP, frameP, slotP, sduP, sdu_lenP, harq_pid);
     }
     else {
-      NR_UE_ul_harq_t *cur_harq = &UE_scheduling_control->ul_harq_processes[harq_pid];
-      /* reduce sched_ul_bytes when cur_harq->round == 3 */
-      if (cur_harq->round == 3){
-        const uint32_t tb_size = UE_scheduling_control->ul_harq_processes[harq_pid].sched_pusch.tb_size;
-        UE_scheduling_control->sched_ul_bytes -= tb_size;
-        if (UE_scheduling_control->sched_ul_bytes < 0)
-          UE_scheduling_control->sched_ul_bytes = 0;
-      }
       if (ul_cqi == 0xff || ul_cqi <= 128) {
         UE->UE_sched_ctrl.pusch_consecutive_dtx_cnt++;
         UE->mac_stats.ulsch_DTX++;
@@ -940,13 +931,14 @@ void nr_rx_sdu(const module_id_t gnb_mod_idP,
                const rnti_t rntiP,
                uint8_t *sduP,
                const uint16_t sdu_lenP,
+               const int8_t harq_pid,
                const uint16_t timing_advance,
                const uint8_t ul_cqi,
                const uint16_t rssi)
 {
   gNB_MAC_INST *gNB_mac = RC.nrmac[gnb_mod_idP];
   NR_SCHED_LOCK(&gNB_mac->sched_lock);
-  _nr_rx_sdu(gnb_mod_idP, CC_idP, frameP, slotP, rntiP, sduP, sdu_lenP, timing_advance, ul_cqi, rssi);
+  _nr_rx_sdu(gnb_mod_idP, CC_idP, frameP, slotP, rntiP, sduP, sdu_lenP, harq_pid, timing_advance, ul_cqi, rssi);
   NR_SCHED_UNLOCK(&gNB_mac->sched_lock);
 }
 
@@ -2258,9 +2250,17 @@ void nr_schedule_ulsch(module_id_t module_id, frame_t frame, sub_frame_t slot, n
     }
     NR_UE_ul_harq_t *cur_harq = &sched_ctrl->ul_harq_processes[harq_id];
     DevAssert(!cur_harq->is_waiting);
-    add_tail_nr_list(&sched_ctrl->feedback_ul_harq, harq_id);
-    cur_harq->feedback_slot = sched_pusch->slot;
-    cur_harq->is_waiting = true;
+    if (nr_mac->ul_bler.harq_round_max == 1) {
+      add_tail_nr_list(&sched_ctrl->available_ul_harq, harq_id);
+      cur_harq->feedback_slot = -1;
+      cur_harq->is_waiting = false;
+      cur_harq->ndi ^= 1;
+      cur_harq->round = 0;
+    } else {
+      add_tail_nr_list(&sched_ctrl->feedback_ul_harq, harq_id);
+      cur_harq->feedback_slot = sched_pusch->slot;
+      cur_harq->is_waiting = true;
+    }
 
     /* Statistics */
     AssertFatal(cur_harq->round < nr_mac->ul_bler.harq_round_max, "Indexing ulsch_rounds[%d] is out of bounds\n", cur_harq->round);
