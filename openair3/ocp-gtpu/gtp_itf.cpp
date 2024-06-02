@@ -104,7 +104,7 @@ typedef struct gtpv1u_bearer_s {
   tcp_udp_port_t  outgoing_port;
   uint16_t        seqNum;
   uint8_t         npduNum;
-  int outgoing_qfi;
+  gtpv1u_qos_t    outgoing_qfi[NR_GTPV1U_MAX_BEARERS_PER_UE];
 } gtpv1u_bearer_t;
 
 typedef struct {
@@ -291,6 +291,7 @@ static void gtpv1uSend(instance_t instance, gtpv1u_tunnel_data_req_t *req, bool 
   size_t length=req->length;
   ue_id_t ue_id=req->ue_id;
   int  bearer_id=req->bearer_id;
+  int qfi = req->qfi;
   pthread_mutex_lock(&globGtp.gtp_lock);
   getInstRetVoid(compatInst(instance));
   getUeRetVoid(inst, ue_id);
@@ -316,16 +317,30 @@ static void gtpv1uSend(instance_t instance, gtpv1u_tunnel_data_req_t *req, bool 
   gtpv1u_bearer_t tmp=ptr2->second;
   pthread_mutex_unlock(&globGtp.gtp_lock);
 
-  if (tmp.outgoing_qfi != -1) {
+  int j;
+  rb_id_t rb_id;
+  /* Check whether the QFI in the data request
+     for this GTP-U packet is mapped to a bearer */
+  bool addExtHeader = false;
+  for (j = 0; j < NR_GTPV1U_MAX_BEARERS_PER_UE; j++) {
+    for (int i = 0; i < NR_GTPV1U_MAX_QFI_PER_BEARER; i++) {
+      if (tmp.outgoing_qfi[j].qfi[i] == qfi && tmp.outgoing_qfi[j].qfi[i] != -1) {
+        rb_id = tmp.outgoing_qfi[j].rb_id;
+        addExtHeader = true;
+        LOG_D(GTPU, "QoS Flow %d mapped to DRB %ld\n", qfi, rb_id);
+      }
+    }
+  }
+  if (addExtHeader) {
+    /* we add GTP-U extension header */
     Gtpv1uExtHeaderT ext = { 0 };
     ext.ExtHeaderLen = 1; // in quad bytes  EXT_HDR_LNTH_OCTET_UNITS
     ext.pdusession_cntr.spare = 0;
     ext.pdusession_cntr.PDU_type = UL_PDU_SESSION_INFORMATION;
-    ext.pdusession_cntr.QFI = tmp.outgoing_qfi;
+    ext.pdusession_cntr.QFI = qfi;
     ext.pdusession_cntr.Reflective_QoS_activation = false;
     ext.pdusession_cntr.Paging_Policy_Indicator = false;
     ext.NextExtHeaderType = NO_MORE_EXT_HDRS;
-
     gtpv1uCreateAndSendMsg(compatInst(instance),
                            tmp.outgoing_ip_addr,
                            tmp.outgoing_port,
@@ -555,11 +570,12 @@ teid_t newGtpuCreateTunnel(instance_t instance,
                            int incoming_bearer_id,
                            int outgoing_bearer_id,
                            teid_t outgoing_teid,
-                           int outgoing_qfi,
+                           const gtpv1u_qos_t outgoing_qfi[NR_GTPV1U_MAX_BEARERS_PER_UE],
                            transport_layer_addr_t remoteAddr,
                            int port,
                            gtpCallback callBack,
-                           gtpCallbackSDAP callBackSDAP) {
+                           gtpCallbackSDAP callBackSDAP)
+{
   pthread_mutex_lock(&globGtp.gtp_lock);
   getInstRetInt(compatInst(instance));
   auto it=inst->ue2te_mapping.find(ue_id);
@@ -610,7 +626,7 @@ teid_t newGtpuCreateTunnel(instance_t instance,
   tmp->teid_incoming = incoming_teid;
   tmp->outgoing_port=port;
   tmp->teid_outgoing= outgoing_teid;
-  tmp->outgoing_qfi=outgoing_qfi;
+  memcpy(tmp->outgoing_qfi, outgoing_qfi, sizeof(gtpv1u_qos_t) * NR_GTPV1U_MAX_BEARERS_PER_UE);
   pthread_mutex_unlock(&globGtp.gtp_lock);
   char ip4[INET_ADDRSTRLEN];
   char ip6[INET6_ADDRSTRLEN];
@@ -648,12 +664,18 @@ int gtpv1u_create_s1u_tunnel(instance_t instance,
                 "From legacy code not clear, seems impossible (bearer=%d)\n",
                 create_tunnel_req->eps_bearer_id[i]);
     int incoming_rb_id=create_tunnel_req->eps_bearer_id[i]-4;
+    gtpv1u_qos_t outgoing_qfi[NR_GTPV1U_MAX_BEARERS_PER_UE];
+    for (int i = 0; i < NR_GTPV1U_MAX_BEARERS_PER_UE; ++i) {
+      for (int j = 0; j < NR_GTPV1U_MAX_QFI_PER_BEARER; ++j) {
+        outgoing_qfi[i].qfi[j] = -1; // no pdu session in 4G
+      }
+    }
     teid_t teid = newGtpuCreateTunnel(compatInst(instance),
                                       create_tunnel_req->rnti,
                                       incoming_rb_id,
                                       create_tunnel_req->eps_bearer_id[i],
                                       create_tunnel_req->sgw_S1u_teid[i],
-                                      -1, // no pdu session in 4G
+                                      outgoing_qfi,
                                       create_tunnel_req->sgw_addr[i],
                                       dstport,
                                       callBack,
@@ -712,11 +734,10 @@ int gtpv1u_create_ngu_tunnel(const instance_t instance,
                              gtpCallback callBack,
                              gtpCallbackSDAP callBackSDAP)
 {
-  LOG_D(GTPU, "[%ld] Start create tunnels for ue id %lu, num_tunnels %d, sgw_S1u_teid %x\n",
+  LOG_D(GTPU, "[%ld] Create tunnel for UE ID %lu, outgoing_teid %x\n",
         instance,
         create_tunnel_req->ue_id,
-        create_tunnel_req->num_tunnels,
-        create_tunnel_req->outgoing_teid[0]);
+        create_tunnel_req->outgoing_teid);
   pthread_mutex_lock(&globGtp.gtp_lock);
   getInstRetInt(compatInst(instance));
 
@@ -724,26 +745,24 @@ int gtpv1u_create_ngu_tunnel(const instance_t instance,
   uint8_t addr[inst->foundAddrLen];
   memcpy(addr, inst->foundAddr, inst->foundAddrLen);
   pthread_mutex_unlock(&globGtp.gtp_lock);
-  for (int i = 0; i < create_tunnel_req->num_tunnels; i++) {
-    teid_t teid = newGtpuCreateTunnel(instance,
-                                      create_tunnel_req->ue_id,
-                                      create_tunnel_req->incoming_rb_id[i],
-                                      create_tunnel_req->pdusession_id[i],
-                                      create_tunnel_req->outgoing_teid[i],
-                                      create_tunnel_req->outgoing_qfi[i],
-                                      create_tunnel_req->dst_addr[i],
-                                      dstport,
-                                      callBack,
-                                      callBackSDAP);
-    create_tunnel_resp->status=0;
-    create_tunnel_resp->ue_id=create_tunnel_req->ue_id;
-    create_tunnel_resp->num_tunnels=create_tunnel_req->num_tunnels;
-    create_tunnel_resp->gnb_NGu_teid[i]=teid;
-    memcpy(create_tunnel_resp->gnb_addr.buffer,addr,sizeof(addr));
-    create_tunnel_resp->gnb_addr.length= sizeof(addr);
-    create_tunnel_resp->pdusession_id[i] = create_tunnel_req->pdusession_id[i];
-  }
-
+  /* GTP-U Create Tunnel */
+  teid_t teid = newGtpuCreateTunnel(instance,
+                                    create_tunnel_req->ue_id,
+                                    create_tunnel_req->incoming_rb_id,
+                                    create_tunnel_req->pdusession_id,
+                                    create_tunnel_req->outgoing_teid,
+                                    create_tunnel_req->outgoing_qfi,
+                                    create_tunnel_req->dst_addr,
+                                    dstport,
+                                    callBack,
+                                    callBackSDAP);
+  /* Fill response */
+  create_tunnel_resp->status = 0;
+  create_tunnel_resp->ue_id = create_tunnel_req->ue_id;
+  create_tunnel_resp->gnb_NGu_teid = teid;
+  memcpy(create_tunnel_resp->gnb_addr.buffer, addr, sizeof(addr));
+  create_tunnel_resp->gnb_addr.length = sizeof(addr);
+  create_tunnel_resp->pdusession_id = create_tunnel_req->pdusession_id;
   return !GTPNOK;
 }
 

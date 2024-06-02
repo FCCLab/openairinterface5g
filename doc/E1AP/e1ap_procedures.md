@@ -72,3 +72,46 @@ sequenceDiagram
   u->>c: BEARER CONTEXT MODIFICATION RESPONSE
   Note over c: e1apCUCP_handle_BEARER_CONTEXT_MODIFICATION_RESPONSE
 ```
+
+## DRB Setup over E1
+
+```mermaid
+flowchart TD
+    in((IN))-->pdu_req
+    pdu_req[rrc_gNB_process_NGAP_PDUSESSION_SETUP_REQ]-->trigger
+    subgraph trigger[trigger_bearer_setup]
+    subgraph pdus[loop over PDUS to setup]
+    PDU_i-->|PDU_i|setup_pdu[decodePDUSessionResourceSetup]
+    setup_pdu-->drbs
+    subgraph drbs[loop over DRBs to setup]
+    DRB_j-->|DRB_j|gen[generateDRB]
+    gen-->DRB_j[int j=0; j < pdu->numDRB2Setup; j++]
+    end
+    drbs-->PDU_i[int i = 0; i < nb_pdusessions_tosetup; i++]
+    end
+    end
+    trigger-->out((OUT))
+```
+
+```mermaid
+sequenceDiagram
+    participant Network
+    participant CUCP
+    participant CUUP
+    participant UE
+    Network->>CUCP: NGAP_PDUSESSION_SETUP_REQ
+    Note over CUCP: rrc_gNB_process_NGAP_PDUSESSION_SETUP_REQ
+    Note over CUCP: trigger_bearer_setup
+    loop nb_pdusessions_tosetup
+        CUCP->>CUCP: decodePDUSessionResourceSetup
+        loop numDRB2Setup
+            CUCP->>CUCP: generateDRB
+            Note over CUCP: add_drb
+            Note over CUCP: new_nr_pdcp_entity
+            Note over CUCP: new_nr_sdap_entity
+        end
+    end
+    CUCP->>CUUP: e1_bearer_context_setup
+    CUUP->>CUCP: e1_bearer_context_setup_resp
+    # ue_context_modification_request
+```

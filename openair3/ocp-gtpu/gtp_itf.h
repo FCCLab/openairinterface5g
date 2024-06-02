@@ -88,7 +88,7 @@ extern "C" {
                              int incoming_bearer_id,
                              int outgoing_rb_id,
                              teid_t teid,
-                             int outgoing_qfi,
+                             const gtpv1u_qos_t outgoing_qfi[NR_GTPV1U_MAX_BEARERS_PER_UE],
                              transport_layer_addr_t remoteAddr,
                              int port,
                              gtpCallback callBack,

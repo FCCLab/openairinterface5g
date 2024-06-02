@@ -82,14 +82,16 @@ void set_bearer_context_pdcp_config(bearer_context_pdcp_config_t *pdcp_config, d
 
 drb_t *generateDRB(gNB_RRC_UE_t *ue,
                    uint8_t drb_id,
-                   const rrc_pdu_session_param_t *pduSession,
+                   const int pdusession_id,
                    bool enable_sdap,
                    int do_drb_integrity,
-                   int do_drb_ciphering)
+                   int do_drb_ciphering,
+                   int qfi,
+                   int fiveQI)
 {
   DevAssert(ue != NULL);
 
-  LOG_I(NR_RRC, "UE %d: configure DRB ID %d for PDU session ID %d\n", ue->rrc_ue_id, drb_id, pduSession->param.pdusession_id);
+  LOG_I(NR_RRC, "UE %d: configure DRB ID %d for PDU session ID %d\n", ue->rrc_ue_id, drb_id, pdusession_id);
 
   drb_t *est_drb = &ue->established_drbs[drb_id - 1];
   DevAssert(est_drb->status == DRB_INACTIVE);
@@ -98,12 +100,11 @@ drb_t *generateDRB(gNB_RRC_UE_t *ue,
   est_drb->drb_id = drb_id;
   est_drb->reestablishPDCP = -1;
   est_drb->recoverPDCP = -1;
-  est_drb->cnAssociation.sdap_config.defaultDRB = true;
-  est_drb->defaultDRBid = drb_id;
+  est_drb->cnAssociation.sdap_config.defaultDRB = drb_id == 1;
 
   /* SDAP Configuration */
   est_drb->cnAssociation.present = NR_DRB_ToAddMod__cnAssociation_PR_sdap_Config;
-  est_drb->cnAssociation.sdap_config.pdusession_id = pduSession->param.pdusession_id;
+  est_drb->cnAssociation.sdap_config.pdusession_id = pdusession_id;
   if (enable_sdap) {
     est_drb->cnAssociation.sdap_config.sdap_HeaderDL = NR_SDAP_Config__sdap_HeaderDL_present;
     est_drb->cnAssociation.sdap_config.sdap_HeaderUL = NR_SDAP_Config__sdap_HeaderUL_present;
@@ -111,9 +112,9 @@ drb_t *generateDRB(gNB_RRC_UE_t *ue,
     est_drb->cnAssociation.sdap_config.sdap_HeaderDL = NR_SDAP_Config__sdap_HeaderDL_absent;
     est_drb->cnAssociation.sdap_config.sdap_HeaderUL = NR_SDAP_Config__sdap_HeaderUL_absent;
   }
-  for (int qos_flow_index = 0; qos_flow_index < pduSession->param.nb_qos; qos_flow_index++) {
-    est_drb->cnAssociation.sdap_config.mappedQoS_FlowsToAdd[qos_flow_index] = pduSession->param.qos[qos_flow_index].qfi;
-    if (pduSession->param.qos[qos_flow_index].fiveQI > 5)
+  for (int qos_flow_index = 0; qos_flow_index < 1; qos_flow_index++) { // NOTE: implementation assumption is 1 QoS Flow per 1 DRB
+    est_drb->cnAssociation.sdap_config.mappedQoS_FlowsToAdd[qos_flow_index] = qfi;
+    if (fiveQI > 5)
       est_drb->status = DRB_ACTIVE_NONGBR;
     else
       est_drb->status = DRB_ACTIVE;
