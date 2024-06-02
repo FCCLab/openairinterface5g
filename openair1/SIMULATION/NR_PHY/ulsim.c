@@ -695,7 +695,6 @@ int main(int argc, char *argv[])
 
   for(int n_scid = 0; n_scid<2; n_scid++) {
     UE->scramblingID_ulsch[n_scid] = frame_parms->Nid_cell;
-    nr_init_pusch_dmrs(UE, frame_parms->Nid_cell, n_scid);
   }
 
   //Configure UE

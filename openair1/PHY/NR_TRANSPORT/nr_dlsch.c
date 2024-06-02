@@ -78,10 +78,8 @@ void nr_generate_pdsch(processingData_L1tx_t *msgTx, int frame, int slot)
 
     if(rel15->dlDmrsScramblingId != gNB->pdsch_gold_init[rel15->SCID])  {
       gNB->pdsch_gold_init[rel15->SCID] = rel15->dlDmrsScramblingId;
-      nr_init_pdsch_dmrs(gNB, rel15->SCID, rel15->dlDmrsScramblingId);
     }
 
-    uint32_t ***pdsch_dmrs = gNB->nr_gold_pdsch_dmrs[slot];
     const int dmrs_symbol_map = rel15->dlDmrsSymbPos; // single DMRS: 010000100 Double DMRS 110001100
     const int xOverhead = 0;
     const int nb_re =
@@ -251,7 +249,8 @@ void nr_generate_pdsch(processingData_L1tx_t *msgTx, int frame, int slot)
             l_prime = 0;
           }
           /// DMRS QPSK modulation
-          nr_modulation(pdsch_dmrs[l_symbol][rel15->SCID],
+          NR_DL_FRAME_PARMS *fp = &gNB->frame_parms;
+          nr_modulation(nr_gold_pdsch(fp->N_RB_DL, fp->symbols_per_slot, rel15->SCID, rel15->dlDmrsScramblingId, slot, l_symbol),
                         n_dmrs * DMRS_MOD_ORDER,
                         DMRS_MOD_ORDER,
                         (int16_t *)mod_dmrs); // Qm = 2 as DMRS is QPSK modulated
@@ -276,7 +275,11 @@ void nr_generate_pdsch(processingData_L1tx_t *msgTx, int frame, int slot)
           if(ptrs_symbol) {
             /* PTRS QPSK Modulation for each OFDM symbol in a slot */
             LOG_D(PHY, "Doing ptrs modulation for symbol %d, n_ptrs %d\n", l_symbol, n_ptrs);
-            nr_modulation(pdsch_dmrs[l_symbol][rel15->SCID], n_ptrs * DMRS_MOD_ORDER, DMRS_MOD_ORDER, (int16_t *)mod_ptrs);
+            NR_DL_FRAME_PARMS *fp = &gNB->frame_parms;
+            nr_modulation(nr_gold_pdsch(fp->N_RB_DL, fp->symbols_per_slot, rel15->SCID, rel15->dlDmrsScramblingId, slot, l_symbol),
+                          n_ptrs * DMRS_MOD_ORDER,
+                          DMRS_MOD_ORDER,
+                          (int16_t *)mod_ptrs);
           }
         }
         uint16_t k = start_sc;

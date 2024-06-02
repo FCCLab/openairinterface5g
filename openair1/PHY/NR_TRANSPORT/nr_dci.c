@@ -97,10 +97,7 @@ void nr_generate_dci(PHY_VARS_gNB *gNB,
 
     if(dci_pdu->ScramblingId != gNB->pdcch_gold_init) {
       gNB->pdcch_gold_init = dci_pdu->ScramblingId;
-      nr_init_pdcch_dmrs(gNB, dci_pdu->ScramblingId);
     }
-
-    uint32_t **gold_pdcch_dmrs = gNB->nr_gold_pdcch_dmrs[slot];
 
     cset_start_symb = pdcch_pdu_rel15->StartSymbolIndex;
     cset_nsymb = pdcch_pdu_rel15->DurationSymbols;
@@ -131,9 +128,11 @@ void nr_generate_dci(PHY_VARS_gNB *gNB,
       
     /// DMRS QPSK modulation
     for (int symb=cset_start_symb; symb<cset_start_symb + pdcch_pdu_rel15->DurationSymbols; symb++) {
+      nr_modulation(nr_gold_pdcch(frame_parms->N_RB_DL, frame_parms->symbols_per_slot, dci_pdu->ScramblingId, slot, symb),
+                    dmrs_length,
+                    DMRS_MOD_ORDER,
+                    mod_dmrs[symb]); // Qm = 2 as DMRS is QPSK modulated
 
-      nr_modulation(gold_pdcch_dmrs[symb], dmrs_length, DMRS_MOD_ORDER, mod_dmrs[symb]); //Qm = 2 as DMRS is QPSK modulated
-      
 #ifdef DEBUG_PDCCH_DMRS
       if(dci_pdu->RNTI!=0xFFFF) {
         for (int i=0; i<dmrs_length>>1; i++)

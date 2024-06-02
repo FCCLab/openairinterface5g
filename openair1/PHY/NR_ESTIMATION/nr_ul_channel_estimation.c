@@ -104,14 +104,19 @@ int nr_pusch_channel_estimation(PHY_VARS_gNB *gNB,
 
   if(pusch_pdu->ul_dmrs_scrambling_id != gNB->pusch_gold_init[pusch_pdu->scid])  {
     gNB->pusch_gold_init[pusch_pdu->scid] = pusch_pdu->ul_dmrs_scrambling_id;
-    nr_gold_pusch(gNB, pusch_pdu->scid, pusch_pdu->ul_dmrs_scrambling_id);
   }
 
   if (pusch_pdu->transform_precoding == transformPrecoder_disabled) {
     // Note: pilot returned by the following function is already the complex conjugate of the transmitted DMRS
+    NR_DL_FRAME_PARMS *fp = &gNB->frame_parms;
     nr_pusch_dmrs_rx(gNB,
                      Ns,
-                     gNB->nr_gold_pusch_dmrs[pusch_pdu->scid][Ns][symbol],
+                     nr_gold_pusch(fp->N_RB_UL,
+                                   fp->symbols_per_slot,
+                                   gNB->gNB_config.cell_config.phy_cell_id.value,
+                                   pusch_pdu->scid,
+                                   Ns,
+                                   symbol),
                      pilot,
                      (1000 + p),
                      0,
@@ -559,7 +564,12 @@ void nr_pusch_ptrs_processing(PHY_VARS_gNB *gNB,
                              symbol,
                              frame_parms->ofdm_symbol_size,
                              (int16_t *)&pusch_vars->rxdataF_comp[aarx][(symbol * nb_re_pusch)],
-                             gNB->nr_gold_pusch_dmrs[rel15_ul->scid][nr_tti_rx][symbol],
+                             nr_gold_pusch(frame_parms->N_RB_UL,
+                                           frame_parms->symbols_per_slot,
+                                           gNB->gNB_config.cell_config.phy_cell_id.value,
+                                           rel15_ul->scid,
+                                           nr_tti_rx,
+                                           symbol),
                              (int16_t *)&phase_per_symbol[symbol],
                              ptrs_re_symbol);
     }

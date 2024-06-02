@@ -615,8 +615,6 @@ int main(int argc, char **argv)
     exit(-1);
   }
 
-  nr_gold_pbch(UE);
-
   processingData_L1tx_t msgDataTx;
   // generate signal
   const uint32_t rxdataF_sz = UE->frame_parms.samples_per_slot_wCP;

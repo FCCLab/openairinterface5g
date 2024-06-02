@@ -19,31 +19,18 @@
  *      contact@openairinterface.org
  */
 
-#include "refsig_defs_ue.h"
-#include "nr_refsig.h"
-#include "nr_refsig_common.h"
+/* Definitions for LTE Reference signals */
+/* Author R. Knopp / EURECOM / OpenAirInterface.org */
+#ifndef __NR_REFSIG_COMMON_H__
+#define __NR_REFSIG_COMMON_H__
 
-void sl_init_psbch_dmrs_gold_sequences(PHY_VARS_NR_UE *UE)
-{
-  unsigned int x1, x2;
-  uint16_t slss_id;
-  uint8_t reset;
+#include "openair1/PHY/LTE_TRANSPORT/transport_proto.h"
+uint32_t* gold_cache(uint32_t key, int length);
+uint32_t *nr_gold_pbch(int Lmax, int Nid, int n_hf, int ssb);
+uint32_t *nr_gold_pdcch(int N_RB_DL, int symbols_per_slot, unsigned short n_idDMRS, int ns, int l);
+uint32_t *nr_gold_pdsch(int N_RB_DL, int symbols_per_slot, int nid, int nscid, int slot, int symbol);
+uint32_t *nr_gold_pusch(int N_RB_UL, int symbols_per_slot, int Nid, int nscid, int ns, int l);
+uint32_t *nr_gold_csi_rs(const NR_DL_FRAME_PARMS *fp, int slot, int symb, uint32_t Nid);
+uint32_t *nr_gold_prs(int nid, int slot, int symbol);
 
-  for (slss_id = 0; slss_id < SL_NR_NUM_SLSS_IDs; slss_id++) {
-    reset = 1;
-    x2 = slss_id;
-
-#ifdef SL_DEBUG_INIT
-    printf("\nPSBCH DMRS GOLD SEQ for SLSSID :%d  :\n", slss_id);
 #endif
-
-    for (uint8_t n = 0; n < SL_NR_NUM_PSBCH_DMRS_RE_DWORD; n++) {
-      UE->SL_UE_PHY_PARAMS.init_params.psbch_dmrs_gold_sequences[slss_id][n] = lte_gold_generic(&x1, &x2, reset);
-      reset = 0;
-
-#ifdef SL_DEBUG_INIT_DATA
-      printf("%x\n", SL_UE_INIT_PARAMS.sl_psbch_dmrs_gold_sequences[slss_id][n]);
-#endif
-    }
-  }
-}
