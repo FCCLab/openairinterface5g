@@ -1,0 +1,137 @@
+# Copyright (c) 2017-2024, NVIDIA CORPORATION.  All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without modification, are permitted
+# provided that the following conditions are met:
+#     * Redistributions of source code must retain the above copyright notice, this list of
+#       conditions and the following disclaimer.
+#     * Redistributions in binary form must reproduce the above copyright notice, this list of
+#       conditions and the following disclaimer in the documentation and/or other materials
+#       provided with the distribution.
+#     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
+#       to endorse or promote products derived from this software without specific prior written
+#       permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
+# IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+# FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
+# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+# BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+# OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+# STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+---
+#gnb_module
+msg_type: scf_5g_fapi
+phy_class: scf_5g_fapi
+slot_advance: 3
+
+# tick_generator_mode: 0 - poll + sleep; 1 - sleep; 2 - timer_fd
+tick_generator_mode: 1
+
+# Allowed maximum latency of SLOT FAPI messages which send from L2 to L1. Unit: slot
+allowed_fapi_latency: 0
+
+# Allowed tick interval error. Unit: us
+allowed_tick_error: 10
+
+timer_thread_config:
+  name: timer_thread
+  cpu_affinity: 7
+  sched_priority: 99
+message_thread_config:
+  name: msg_processing
+  #core assignment
+  cpu_affinity: 7
+  # thread priority
+  sched_priority: 95
+# Lowest TTI for Ticking
+mu_highest: 1
+dl_tb_loc: 1
+instances:
+  # PHY 0
+  -
+    name: scf_gnb_configure_module_0_instance_0
+    prach_ta_offset_usec: 2.5
+  -
+    name: scf_gnb_configure_module_0_instance_1
+    prach_ta_offset_usec: 2.5
+  -
+    name: scf_gnb_configure_module_0_instance_2
+    prach_ta_offset_usec: 2.5
+  -
+    name: scf_gnb_configure_module_0_instance_3
+    prach_ta_offset_usec: 2.5
+  -
+    name: scf_gnb_configure_module_0_instance_4
+    prach_ta_offset_usec: 2.5
+  -
+    name: scf_gnb_configure_module_0_instance_5
+    prach_ta_offset_usec: 2.5
+  -
+    name: scf_gnb_configure_module_0_instance_6
+    prach_ta_offset_usec: 2.5
+  -
+    name: scf_gnb_configure_module_0_instance_7
+    prach_ta_offset_usec: 2.5
+
+# Config dedicated yaml file for nvipc. Example: nvipc_multi_instances.yaml
+nvipc_config_file: null
+
+# Transport settings for nvIPC
+transport:
+  type: shm
+  udp_config:
+    local_port: 38556
+    remort_port: 38555
+  shm_config:
+    primary: 1
+    prefix: nvipc
+    cuda_device_id: 0
+    ring_len: 8192
+    mempool_size:
+      cpu_msg:
+        buf_size: 8192
+        pool_len: 4096
+      cpu_data:
+        buf_size: 576000
+        pool_len: 1024
+      cuda_data:
+        buf_size: 307200
+        pool_len: 0
+      gpu_data:
+        buf_size: 576000
+        pool_len: 0
+  dpdk_config:
+    primary: 1
+    prefix: nvipc
+    local_nic_pci: 0000:ab:00.0
+    peer_nic_mac: 00:00:00:00:00:00
+    cuda_device_id: 0
+    need_eal_init: 0
+    lcore_id: 11
+    mempool_size:
+      cpu_msg:
+        buf_size: 8192
+        pool_len: 4096
+      cpu_data:
+        buf_size: 576000
+        pool_len: 1024
+      cuda_data:
+        buf_size: 307200
+        pool_len: 0
+  app_config:
+    grpc_forward: 0
+    debug_timing: 0
+    pcap_enable: 1
+    pcap_cpu_core: 8 # CPU core of background pcap log save thread
+    pcap_cache_size_bits: 29 # 2^29 = 512MB, size of /dev/shm/${prefix}_pcap
+    pcap_file_size_bits: 31 # 2^31 = 2GB, max size of /var/log/aerial/${prefix}_pcap. Requires pcap_file_size_bits > pcap_cache_size_bits.
+    pcap_max_data_size: 8000 # Max DL/UL FAPI data size to capture reduce pcap size.
+
+cell_group: 1
+prepone_h2d_copy: 1
+pucch_dtx_thresholds: [-100.0, -100.0, -100.0, -100.0, -100.0]
+ptp: {gps_alpha: 0, gps_beta: 0}
+enableTickDynamicSfnSlot: 1
+...

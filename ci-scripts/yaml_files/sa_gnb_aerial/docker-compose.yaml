@@ -22,9 +22,11 @@ services:
       - ./aerial_l1_entrypoint.sh:/opt/nvidia/cuBB/aerial_l1_entrypoint.sh
       - /var/log/aerial:/var/log/aerial
       - ../../../cmake_targets/share:/opt/cuBB/share
+      - ./cuphycontroller_P5G_FXN.yaml:/opt/nvidia/cuBB/cuPHY-CP/cuphycontroller/config/cuphycontroller_P5G_SCF_FXN_NEU.yaml
+      - ./l2_adapter_config_P5G.yaml:/opt/nvidia/cuBB/cuPHY-CP/cuphycontroller/config/l2_adapter_config_P5G.yaml
     userns_mode: host
     ipc: "shareable"
-    image: cubb-build:23-4
+    image: cubb-build:24-1
     environment:
       - cuBB_SDK=/opt/nvidia/cuBB
     command: bash -c " sudo rm -rf /tmp/phy.log && sudo chmod 777 /opt/nvidia/cuBB/aerial_l1_entrypoint.sh && /opt/nvidia/cuBB/aerial_l1_entrypoint.sh"
@@ -39,8 +41,14 @@ services:
     depends_on:
       nv-cubb:
         condition: service_healthy
-    privileged: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - SYS_NICE
+      - IPC_LOCK
     ipc: "container:nv-cubb"
+    environment:
+      USE_ADDITIONAL_OPTIONS: --log_config.global_log_options level,nocolor,time
     deploy:
       resources:
         reservations:
@@ -49,6 +57,11 @@ services:
               count: all
               capabilities:
                 - gpu
+          cpus: '0.25'
+          memory: 1024M
+        limits:
+          cpus: '0.5'
+          memory: 4096M
     network_mode: host
     shm_size: 4096m
     stdin_open: true
