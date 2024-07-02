@@ -1,0 +1,291 @@
+# Copyright (c) 2017-2024, NVIDIA CORPORATION.  All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without modification, are permitted
+# provided that the following conditions are met:
+#     * Redistributions of source code must retain the above copyright notice, this list of
+#       conditions and the following disclaimer.
+#     * Redistributions in binary form must reproduce the above copyright notice, this list of
+#       conditions and the following disclaimer in the documentation and/or other materials
+#       provided with the distribution.
+#     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
+#       to endorse or promote products derived from this software without specific prior written
+#       permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
+# IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+# FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
+# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+# BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+# OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+# STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+---
+l2adapter_filename: l2_adapter_config_P5G.yaml
+aerial_metrics_backend_address: 127.0.0.1:8081
+
+# CPU core shared by all low-priority threads
+low_priority_core: 8
+nic_tput_alert_threshold_mbps: 85000
+
+cuphydriver_config:
+  standalone: 0
+  validation: 0
+  num_slots: 8
+  profiler_sec: 0
+  log_level: DBG
+  dpdk_thread: 8
+  dpdk_verbose_logs: 0
+  accu_tx_sched_res_ns: 500
+  accu_tx_sched_disable: 0
+  fh_stats_dump_cpu_core: 8
+  pdump_client_thread: -1
+  mps_sm_pusch: 84
+  mps_sm_pucch: 16
+  mps_sm_prach: 16
+  mps_sm_pdsch: 82
+  mps_sm_pdcch: 28
+  mps_sm_pbch: 14
+  mps_sm_srs: 16
+  pdsch_fallback: 0
+  dpdk_file_prefix: cuphycontroller
+  nics:
+    - nic: 0000:ab:00.0
+      mtu: 8192
+      cpu_mbufs: 196608
+      uplane_tx_handles: 64
+      txq_count: 48
+      rxq_count: 16
+      txq_size: 8192
+      rxq_size: 16384
+      gpu: 1
+  gpus:
+    - 1
+    # Set GPUID to the GPU sharing the PCIe switch as NIC
+    # run nvidia-smi topo -m to find out which GPU
+  workers_ul:
+    - 2
+    - 3
+  workers_dl:
+    - 4
+    - 5
+    - 6
+  workers_sched_priority: 95
+  prometheus_thread: -1
+  start_section_id_srs: 3072
+  start_section_id_prach: 2048
+  enable_ul_cuphy_graphs: 1
+  enable_dl_cuphy_graphs: 1
+  # Both RF and eLSU eCPRI configs
+  ul_order_timeout_cpu_ns: 4000000
+  ul_order_timeout_gpu_ns: 4000000
+  cplane_disable: 0
+  gpu_init_comms_dl: 1
+  cell_group: 1
+  cell_group_num: 1
+  pusch_sinr: 1
+  pusch_rssi: 1
+  pusch_tdi: 0
+  pusch_cfo: 0
+  pusch_dftsofdm: 0
+  pusch_to:  0
+  pusch_select_eqcoeffalgo: 1
+  pusch_select_chestalgo: 1
+  pusch_tbsizecheck: 1
+  enable_cpu_task_tracing: 0
+  enable_compression_tracing: 0
+  enable_prepare_tracing: 0
+  enable_dl_cqe_tracing: 0
+  mMIMO_enable: 0
+  pusch_forcedNumCsi2Bits: 0
+  enable_srs: 0
+  mCh_segment_proc_enable: 0
+  enable_csip2_v3: 0
+  cells:
+    - name: O-RU 0
+      cell_id: 1
+      ru_type: 1
+      # set to 00:00:00:00:00:00 to use the MAC address of the NIC port to use
+      src_mac_addr: 00:00:00:00:00:00
+      dst_mac_addr: 6C:AD:AD:00:04:6E # MAC address of Foxconn O-RU #1
+      nic: 0000:ab:00.0
+      vlan: 2
+      pcp: 0
+      txq_count_uplane: 1
+      eAxC_id_ssb_pbch: [0, 1, 2, 3]
+      eAxC_id_pdcch: [0, 1, 2, 3]
+      eAxC_id_pdsch: [0, 1, 2, 3]
+      eAxC_id_csirs: [0, 1, 2, 3]
+      eAxC_id_pusch: [0, 1, 2, 3]
+      eAxC_id_pucch: [0, 1, 2, 3]
+      eAxC_id_srs: [0, 1, 2, 3]
+      eAxC_id_prach: [4, 5, 6, 7]
+      dl_iq_data_fmt: {comp_meth: 1, bit_width: 9}
+      ul_iq_data_fmt: {comp_meth: 1, bit_width: 9}
+      section_3_time_offset: 484
+      fs_offset_dl: 15
+      exponent_dl: 4
+      ref_dl: 0
+      fs_offset_ul: -5
+      exponent_ul: 4
+      max_amp_ul: 65504
+      mu: 1
+      T1a_max_up_ns: 280000
+      T1a_max_cp_ul_ns: 405000
+      Ta4_min_ns: 50000
+      Ta4_max_ns: 331000
+      Tcp_adv_dl_ns: 125000
+      fh_len_range: 0
+      pusch_prb_stride: 273
+      prach_prb_stride: 12
+      srs_prb_stride: 273
+      pusch_ldpc_max_num_itr_algo_type: 1
+      pusch_fixed_max_num_ldpc_itrs: 10
+      pusch_ldpc_n_iterations: 10
+      pusch_ldpc_early_termination: 0
+      pusch_ldpc_algo_index: 0
+      pusch_ldpc_flags: 2
+      pusch_ldpc_use_half: 1
+      ul_gain_calibration: 48.68
+      lower_guard_bw: 845
+      tv_pusch: cuPhyChEstCoeffs.h5
+    # - name: O-RU 1
+    #   cell_id: 2
+    #   ru_type: 1
+    #   # set to 00:00:00:00:00:00 to use the MAC address of the NIC port to use
+    #   src_mac_addr: 00:00:00:00:00:00
+    #   dst_mac_addr: 6c:ad:ad:00:04:68 # MAC address of Foxconn O-RU #2
+    #   nic: 0000:ab:00.0
+    #   vlan: 2
+    #   pcp: 0
+    #   txq_count_uplane: 1
+    #   eAxC_id_ssb_pbch: [0, 1, 2, 3]
+    #   eAxC_id_pdcch: [0, 1, 2, 3]
+    #   eAxC_id_pdsch: [0, 1, 2, 3]
+    #   eAxC_id_csirs: [0, 1, 2, 3]
+    #   eAxC_id_pusch: [0, 1, 2, 3]
+    #   eAxC_id_pucch: [0, 1, 2, 3]
+    #   eAxC_id_srs: [0, 1, 2, 3]
+    #   eAxC_id_prach: [4, 5, 6, 7]
+    #   dl_iq_data_fmt: {comp_meth: 1, bit_width: 9}
+    #   ul_iq_data_fmt: {comp_meth: 1, bit_width: 9}
+    #   section_3_time_offset: 484
+    #   fs_offset_dl: 15
+    #   exponent_dl: 4
+    #   ref_dl: 0
+    #   fs_offset_ul: -5
+    #   exponent_ul: 4
+    #   max_amp_ul: 65504
+    #   mu: 1
+    #   T1a_max_up_ns: 280000
+    #   T1a_max_cp_ul_ns: 405000
+    #   Ta4_min_ns: 50000
+    #   Ta4_max_ns: 331000
+    #   Tcp_adv_dl_ns: 125000
+    #   fh_len_range: 0
+    #   pusch_prb_stride: 273
+    #   prach_prb_stride: 12
+    #   srs_prb_stride: 273
+    #   pusch_ldpc_max_num_itr_algo_type: 1
+    #   pusch_fixed_max_num_ldpc_itrs: 10
+    #   pusch_ldpc_n_iterations: 10
+    #   pusch_ldpc_early_termination: 0
+    #   pusch_ldpc_algo_index: 0
+    #   pusch_ldpc_flags: 2
+    #   pusch_ldpc_use_half: 1
+    #   ul_gain_calibration: 48.68
+    #   lower_guard_bw: 845
+    #   tv_pusch: cuPhyChEstCoeffs.h5
+    # - name: O-RU 2
+    #   cell_id: 3
+    #   ru_type: 1
+    #   # set to 00:00:00:00:00:00 to use the MAC address of the NIC port to use
+    #   src_mac_addr: 00:00:00:00:00:00
+    #   dst_mac_addr: 6c:ad:ad:00:02:00 # MAC address of Foxconn O-RU #3
+    #   nic: 0000:ab:00.0
+    #   vlan: 2
+    #   pcp: 0
+    #   txq_count_uplane: 1
+    #   eAxC_id_ssb_pbch: [0, 1, 2, 3]
+    #   eAxC_id_pdcch: [0, 1, 2, 3]
+    #   eAxC_id_pdsch: [0, 1, 2, 3]
+    #   eAxC_id_csirs: [0, 1, 2, 3]
+    #   eAxC_id_pusch: [0, 1, 2, 3]
+    #   eAxC_id_pucch: [0, 1, 2, 3]
+    #   eAxC_id_srs: [0, 1, 2, 3]
+    #   eAxC_id_prach: [4, 5, 6, 7]
+    #   dl_iq_data_fmt: {comp_meth: 1, bit_width: 9}
+    #   ul_iq_data_fmt: {comp_meth: 1, bit_width: 9}
+    #   section_3_time_offset: 484
+    #   fs_offset_dl: 15
+    #   exponent_dl: 4
+    #   ref_dl: 0
+    #   fs_offset_ul: -5
+    #   exponent_ul: 4
+    #   max_amp_ul: 65504
+    #   mu: 1
+    #   T1a_max_up_ns: 280000
+    #   T1a_max_cp_ul_ns: 405000
+    #   Ta4_min_ns: 50000
+    #   Ta4_max_ns: 331000
+    #   Tcp_adv_dl_ns: 125000
+    #   fh_len_range: 0
+    #   pusch_prb_stride: 273
+    #   prach_prb_stride: 12
+    #   srs_prb_stride: 273
+    #   pusch_ldpc_max_num_itr_algo_type: 1
+    #   pusch_fixed_max_num_ldpc_itrs: 10
+    #   pusch_ldpc_n_iterations: 10
+    #   pusch_ldpc_early_termination: 0
+    #   pusch_ldpc_algo_index: 0
+    #   pusch_ldpc_flags: 2
+    #   pusch_ldpc_use_half: 1
+    #   ul_gain_calibration: 48.68
+    #   lower_guard_bw: 845
+    #   tv_pusch: cuPhyChEstCoeffs.h5
+    # - name: O-RU 3
+    #   cell_id: 4
+    #   ru_type: 1
+    #   # set to 00:00:00:00:00:00 to use the MAC address of the NIC port to use
+    #   src_mac_addr: 00:00:00:00:00:00
+    #   dst_mac_addr: 6C:AD:AD:00:04:70 # MAC address of Foxconn O-RU #4
+    #   nic: 0000:ab:00.0
+    #   vlan: 2
+    #   pcp: 0
+    #   txq_count_uplane: 1
+    #   eAxC_id_ssb_pbch: [0, 1, 2, 3]
+    #   eAxC_id_pdcch: [0, 1, 2, 3]
+    #   eAxC_id_pdsch: [0, 1, 2, 3]
+    #   eAxC_id_csirs: [0, 1, 2, 3]
+    #   eAxC_id_pusch: [0, 1, 2, 3]
+    #   eAxC_id_pucch: [0, 1, 2, 3]
+    #   eAxC_id_srs: [0, 1, 2, 3]
+    #   eAxC_id_prach: [4, 5, 6, 7]
+    #   dl_iq_data_fmt: {comp_meth: 1, bit_width: 9}
+    #   ul_iq_data_fmt: {comp_meth: 1, bit_width: 9}
+    #   section_3_time_offset: 484
+    #   fs_offset_dl: 15
+    #   exponent_dl: 4
+    #   ref_dl: 0
+    #   fs_offset_ul: -5
+    #   exponent_ul: 4
+    #   max_amp_ul: 65504
+    #   mu: 1
+    #   T1a_max_up_ns: 280000
+    #   T1a_max_cp_ul_ns: 405000
+    #   Ta4_min_ns: 50000
+    #   Ta4_max_ns: 331000
+    #   Tcp_adv_dl_ns: 125000
+    #   fh_len_range: 0
+    #   pusch_prb_stride: 273
+    #   prach_prb_stride: 12
+    #   srs_prb_stride: 273
+    #   pusch_ldpc_max_num_itr_algo_type: 1
+    #   pusch_fixed_max_num_ldpc_itrs: 10
+    #   pusch_ldpc_n_iterations: 10
+    #   pusch_ldpc_early_termination: 0
+    #   pusch_ldpc_algo_index: 0
+    #   pusch_ldpc_flags: 2
+    #   pusch_ldpc_use_half: 1
+    #   ul_gain_calibration: 48.68
+    #   lower_guard_bw: 845
+    #   tv_pusch: cuPhyChEstCoeffs.h5

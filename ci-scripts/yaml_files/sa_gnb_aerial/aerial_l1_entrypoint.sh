@@ -33,3 +33,7 @@ fi
 
 sudo -E "$cuBB_Path"/build/cuPHY-CP/cuphycontroller/examples/cuphycontroller_scf "$argument"
 sudo -E ./build/cuPHY-CP/gt_common_libs/nvIPC/tests/pcap/pcap_collect
+
+# while true; do
+#     sleep 1
+# done
