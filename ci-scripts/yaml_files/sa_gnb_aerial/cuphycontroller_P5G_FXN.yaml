@@ -102,13 +102,14 @@ cuphydriver_config:
   enable_csip2_v3: 0
   cells:
     - name: O-RU 0
-      cell_id: 1
+      cell_id: 101
       ru_type: 1
       # set to 00:00:00:00:00:00 to use the MAC address of the NIC port to use
-      src_mac_addr: 00:00:00:00:00:00
-      dst_mac_addr: 6C:AD:AD:00:04:6E # MAC address of Foxconn O-RU #1
+      src_mac_addr: 9c:63:c0:a7:08:32
+      # dst_mac_addr: e8:c7:4f:25:89:40 # MAC address of Foxconn O-RU #1 # Liteon
+      dst_mac_addr: 6c:b9:c5:22:92:cc
       nic: 0000:ab:00.0
-      vlan: 2
+      vlan: 564
       pcp: 0
       txq_count_uplane: 1
       eAxC_id_ssb_pbch: [0, 1, 2, 3]
@@ -118,7 +119,7 @@ cuphydriver_config:
       eAxC_id_pusch: [0, 1, 2, 3]
       eAxC_id_pucch: [0, 1, 2, 3]
       eAxC_id_srs: [0, 1, 2, 3]
-      eAxC_id_prach: [4, 5, 6, 7]
+      eAxC_id_prach: [0, 1, 2, 3]
       dl_iq_data_fmt: {comp_meth: 1, bit_width: 9}
       ul_iq_data_fmt: {comp_meth: 1, bit_width: 9}
       section_3_time_offset: 484

@@ -1,0 +1,16 @@
+<data xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
+  <processing-elements xmlns="urn:o-ran:processing-element:1.0">
+    <transport-session-type>ETH-INTERFACE</transport-session-type>
+    <ru-elements>
+      <name>delta_RU</name>
+      <transport-flow>
+        <eth-flow>
+          <vlan-id>564</vlan-id>
+          <ru-mac-address>6c:b9:c5:22:92:ca</ru-mac-address>
+          <o-du-mac-address>9c:63:c0:a7:08:32</o-du-mac-address>
+        </eth-flow>
+        <interface-name>eth0-CU</interface-name>
+      </transport-flow>
+    </ru-elements>
+  </processing-elements>
+</data>

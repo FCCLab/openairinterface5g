@@ -25,51 +25,51 @@ services:
       - ./l2_adapter_config_P5G.yaml:/opt/nvidia/cuBB/cuPHY-CP/cuphycontroller/config/l2_adapter_config_P5G.yaml
     userns_mode: host
     ipc: "host"
-    image: cubb-build:24-1
+    image: nvcr.io/qhrjhjrvlsbu/aerial-cuda-accelerated-ran:24-1-cubb
     environment:
       - cuBB_SDK=/opt/nvidia/cuBB
-    command: bash -c "sudo rm -rf /tmp/phy.log && sudo chmod +x /opt/nvidia/cuBB/aerial_l1_entrypoint.sh && /opt/nvidia/cuBB/aerial_l1_entrypoint.sh"
+    # command: bash -c "sudo rm -rf /tmp/phy.log && sudo chmod +x /opt/nvidia/cuBB/aerial_l1_entrypoint.sh && /opt/nvidia/cuBB/aerial_l1_entrypoint.sh"
     healthcheck:
       test: ["CMD-SHELL",'grep -q "L1 is ready!" /tmp/phy.log && echo 0 || echo 1']
       interval: 20s
       timeout: 5s
       retries: 5
-  oai-gnb-aerial:
-    cpuset: "13-20"
-    image: oai-gnb-aerial:latest
-    depends_on:
-      nv-cubb:
-        condition: service_healthy
-    cap_drop:
-      - ALL
-    cap_add:
-      - SYS_NICE
-      - IPC_LOCK
-    ipc: "container:nv-cubb"
-    environment:
-      USE_ADDITIONAL_OPTIONS: --log_config.global_log_options level,nocolor,time
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities:
-                - gpu
-          cpus: '0.25'
-          memory: 1024M
-        limits:
-          cpus: '0.5'
-          memory: 4096M
-    network_mode: host
-    shm_size: 4096m
-    stdin_open: true
-    tty: true
-    volumes:
-      - ../../conf_files/gnb-vnf.sa.band78.273prb.aerial.conf:/opt/oai-gnb/etc/gnb.conf
-    container_name: oai-gnb-aerial
-    healthcheck:
-      test: /bin/bash -c "ps aux | grep -v grep | grep -c softmodem"
-      interval: 10s
-      timeout: 5s
-      retries: 5
+  # oai-gnb-aerial:
+  #   cpuset: "13-20"
+  #   image: oai-gnb-aerial:latest
+  #   depends_on:
+  #     nv-cubb:
+  #       condition: service_healthy
+  #   cap_drop:
+  #     - ALL
+  #   cap_add:
+  #     - SYS_NICE
+  #     - IPC_LOCK
+  #   ipc: "container:nv-cubb"
+  #   environment:
+  #     USE_ADDITIONAL_OPTIONS: --log_config.global_log_options level,nocolor,time
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: all
+  #             capabilities:
+  #               - gpu
+  #         cpus: '0.25'
+  #         memory: 1024M
+  #       limits:
+  #         cpus: '0.5'
+  #         memory: 4096M
+  #   network_mode: host
+  #   shm_size: 4096m
+  #   stdin_open: true
+  #   tty: true
+  #   volumes:
+  #     - ../../conf_files/gnb-vnf.sa.band78.273prb.aerial.conf:/opt/oai-gnb/etc/gnb.conf
+  #   container_name: oai-gnb-aerial
+  #   healthcheck:
+  #     test: /bin/bash -c "ps aux | grep -v grep | grep -c softmodem"
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
