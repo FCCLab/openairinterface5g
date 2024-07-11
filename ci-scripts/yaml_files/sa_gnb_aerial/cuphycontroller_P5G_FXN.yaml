@@ -102,7 +102,7 @@ cuphydriver_config:
   enable_csip2_v3: 0
   cells:
     - name: O-RU 0
-      cell_id: 101
+      cell_id: 5
       ru_type: 1
       # set to 00:00:00:00:00:00 to use the MAC address of the NIC port to use
       src_mac_addr: 9c:63:c0:a7:08:32
@@ -110,18 +110,18 @@ cuphydriver_config:
       dst_mac_addr: 6c:b9:c5:22:92:cc
       nic: 0000:ab:00.0
       vlan: 564
-      pcp: 0
+      pcp: 7
       txq_count_uplane: 1
-      eAxC_id_ssb_pbch: [0, 1, 2, 3]
+      eAxC_id_ssb_pbch: [0]
       eAxC_id_pdcch: [0, 1, 2, 3]
       eAxC_id_pdsch: [0, 1, 2, 3]
       eAxC_id_csirs: [0, 1, 2, 3]
-      eAxC_id_pusch: [0, 1, 2, 3]
-      eAxC_id_pucch: [0, 1, 2, 3]
-      eAxC_id_srs: [0, 1, 2, 3]
-      eAxC_id_prach: [0, 1, 2, 3]
+      eAxC_id_pusch: [0, 1]
+      eAxC_id_pucch: [0, 1]
+      eAxC_id_srs: [0, 1]
+      eAxC_id_prach: [0, 1]
       dl_iq_data_fmt: {comp_meth: 1, bit_width: 9}
-      ul_iq_data_fmt: {comp_meth: 1, bit_width: 9}
+      ul_iq_data_fmt: {comp_meth: 0, bit_width: 9}
       section_3_time_offset: 484
       fs_offset_dl: 15
       exponent_dl: 4
@@ -149,144 +149,3 @@ cuphydriver_config:
       ul_gain_calibration: 48.68
       lower_guard_bw: 845
       tv_pusch: cuPhyChEstCoeffs.h5
-    # - name: O-RU 1
-    #   cell_id: 2
-    #   ru_type: 1
-    #   # set to 00:00:00:00:00:00 to use the MAC address of the NIC port to use
-    #   src_mac_addr: 00:00:00:00:00:00
-    #   dst_mac_addr: 6c:ad:ad:00:04:68 # MAC address of Foxconn O-RU #2
-    #   nic: 0000:ab:00.0
-    #   vlan: 2
-    #   pcp: 0
-    #   txq_count_uplane: 1
-    #   eAxC_id_ssb_pbch: [0, 1, 2, 3]
-    #   eAxC_id_pdcch: [0, 1, 2, 3]
-    #   eAxC_id_pdsch: [0, 1, 2, 3]
-    #   eAxC_id_csirs: [0, 1, 2, 3]
-    #   eAxC_id_pusch: [0, 1, 2, 3]
-    #   eAxC_id_pucch: [0, 1, 2, 3]
-    #   eAxC_id_srs: [0, 1, 2, 3]
-    #   eAxC_id_prach: [4, 5, 6, 7]
-    #   dl_iq_data_fmt: {comp_meth: 1, bit_width: 9}
-    #   ul_iq_data_fmt: {comp_meth: 1, bit_width: 9}
-    #   section_3_time_offset: 484
-    #   fs_offset_dl: 15
-    #   exponent_dl: 4
-    #   ref_dl: 0
-    #   fs_offset_ul: -5
-    #   exponent_ul: 4
-    #   max_amp_ul: 65504
-    #   mu: 1
-    #   T1a_max_up_ns: 280000
-    #   T1a_max_cp_ul_ns: 405000
-    #   Ta4_min_ns: 50000
-    #   Ta4_max_ns: 331000
-    #   Tcp_adv_dl_ns: 125000
-    #   fh_len_range: 0
-    #   pusch_prb_stride: 273
-    #   prach_prb_stride: 12
-    #   srs_prb_stride: 273
-    #   pusch_ldpc_max_num_itr_algo_type: 1
-    #   pusch_fixed_max_num_ldpc_itrs: 10
-    #   pusch_ldpc_n_iterations: 10
-    #   pusch_ldpc_early_termination: 0
-    #   pusch_ldpc_algo_index: 0
-    #   pusch_ldpc_flags: 2
-    #   pusch_ldpc_use_half: 1
-    #   ul_gain_calibration: 48.68
-    #   lower_guard_bw: 845
-    #   tv_pusch: cuPhyChEstCoeffs.h5
-    # - name: O-RU 2
-    #   cell_id: 3
-    #   ru_type: 1
-    #   # set to 00:00:00:00:00:00 to use the MAC address of the NIC port to use
-    #   src_mac_addr: 00:00:00:00:00:00
-    #   dst_mac_addr: 6c:ad:ad:00:02:00 # MAC address of Foxconn O-RU #3
-    #   nic: 0000:ab:00.0
-    #   vlan: 2
-    #   pcp: 0
-    #   txq_count_uplane: 1
-    #   eAxC_id_ssb_pbch: [0, 1, 2, 3]
-    #   eAxC_id_pdcch: [0, 1, 2, 3]
-    #   eAxC_id_pdsch: [0, 1, 2, 3]
-    #   eAxC_id_csirs: [0, 1, 2, 3]
-    #   eAxC_id_pusch: [0, 1, 2, 3]
-    #   eAxC_id_pucch: [0, 1, 2, 3]
-    #   eAxC_id_srs: [0, 1, 2, 3]
-    #   eAxC_id_prach: [4, 5, 6, 7]
-    #   dl_iq_data_fmt: {comp_meth: 1, bit_width: 9}
-    #   ul_iq_data_fmt: {comp_meth: 1, bit_width: 9}
-    #   section_3_time_offset: 484
-    #   fs_offset_dl: 15
-    #   exponent_dl: 4
-    #   ref_dl: 0
-    #   fs_offset_ul: -5
-    #   exponent_ul: 4
-    #   max_amp_ul: 65504
-    #   mu: 1
-    #   T1a_max_up_ns: 280000
-    #   T1a_max_cp_ul_ns: 405000
-    #   Ta4_min_ns: 50000
-    #   Ta4_max_ns: 331000
-    #   Tcp_adv_dl_ns: 125000
-    #   fh_len_range: 0
-    #   pusch_prb_stride: 273
-    #   prach_prb_stride: 12
-    #   srs_prb_stride: 273
-    #   pusch_ldpc_max_num_itr_algo_type: 1
-    #   pusch_fixed_max_num_ldpc_itrs: 10
-    #   pusch_ldpc_n_iterations: 10
-    #   pusch_ldpc_early_termination: 0
-    #   pusch_ldpc_algo_index: 0
-    #   pusch_ldpc_flags: 2
-    #   pusch_ldpc_use_half: 1
-    #   ul_gain_calibration: 48.68
-    #   lower_guard_bw: 845
-    #   tv_pusch: cuPhyChEstCoeffs.h5
-    # - name: O-RU 3
-    #   cell_id: 4
-    #   ru_type: 1
-    #   # set to 00:00:00:00:00:00 to use the MAC address of the NIC port to use
-    #   src_mac_addr: 00:00:00:00:00:00
-    #   dst_mac_addr: 6C:AD:AD:00:04:70 # MAC address of Foxconn O-RU #4
-    #   nic: 0000:ab:00.0
-    #   vlan: 2
-    #   pcp: 0
-    #   txq_count_uplane: 1
-    #   eAxC_id_ssb_pbch: [0, 1, 2, 3]
-    #   eAxC_id_pdcch: [0, 1, 2, 3]
-    #   eAxC_id_pdsch: [0, 1, 2, 3]
-    #   eAxC_id_csirs: [0, 1, 2, 3]
-    #   eAxC_id_pusch: [0, 1, 2, 3]
-    #   eAxC_id_pucch: [0, 1, 2, 3]
-    #   eAxC_id_srs: [0, 1, 2, 3]
-    #   eAxC_id_prach: [4, 5, 6, 7]
-    #   dl_iq_data_fmt: {comp_meth: 1, bit_width: 9}
-    #   ul_iq_data_fmt: {comp_meth: 1, bit_width: 9}
-    #   section_3_time_offset: 484
-    #   fs_offset_dl: 15
-    #   exponent_dl: 4
-    #   ref_dl: 0
-    #   fs_offset_ul: -5
-    #   exponent_ul: 4
-    #   max_amp_ul: 65504
-    #   mu: 1
-    #   T1a_max_up_ns: 280000
-    #   T1a_max_cp_ul_ns: 405000
-    #   Ta4_min_ns: 50000
-    #   Ta4_max_ns: 331000
-    #   Tcp_adv_dl_ns: 125000
-    #   fh_len_range: 0
-    #   pusch_prb_stride: 273
-    #   prach_prb_stride: 12
-    #   srs_prb_stride: 273
-    #   pusch_ldpc_max_num_itr_algo_type: 1
-    #   pusch_fixed_max_num_ldpc_itrs: 10
-    #   pusch_ldpc_n_iterations: 10
-    #   pusch_ldpc_early_termination: 0
-    #   pusch_ldpc_algo_index: 0
-    #   pusch_ldpc_flags: 2
-    #   pusch_ldpc_use_half: 1
-    #   ul_gain_calibration: 48.68
-    #   lower_guard_bw: 845
-    #   tv_pusch: cuPhyChEstCoeffs.h5

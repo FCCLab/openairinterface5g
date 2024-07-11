@@ -297,7 +297,7 @@
       <gain>0.0</gain>
       <absolute-frequency-center>628334</absolute-frequency-center>
       <downlink-sfn-offset>0</downlink-sfn-offset>
-      <center-of-channel-bandwidth>4849860000</center-of-channel-bandwidth>
+      <center-of-channel-bandwidth>3425010000</center-of-channel-bandwidth>
       <channel-bandwidth>100000000</channel-bandwidth>
       <downlink-radio-frame-offset>0</downlink-radio-frame-offset>
       <type>NR</type>
@@ -308,7 +308,7 @@
       <gain>0.0</gain>
       <absolute-frequency-center>628334</absolute-frequency-center>
       <downlink-sfn-offset>0</downlink-sfn-offset>
-      <center-of-channel-bandwidth>4849860000</center-of-channel-bandwidth>
+      <center-of-channel-bandwidth>3425010000</center-of-channel-bandwidth>
       <channel-bandwidth>100000000</channel-bandwidth>
       <downlink-radio-frame-offset>0</downlink-radio-frame-offset>
       <type>NR</type>
@@ -319,7 +319,7 @@
       <gain>0.0</gain>
       <absolute-frequency-center>628334</absolute-frequency-center>
       <downlink-sfn-offset>0</downlink-sfn-offset>
-      <center-of-channel-bandwidth>4849860000</center-of-channel-bandwidth>
+      <center-of-channel-bandwidth>3425010000</center-of-channel-bandwidth>
       <channel-bandwidth>100000000</channel-bandwidth>
       <downlink-radio-frame-offset>0</downlink-radio-frame-offset>
       <type>NR</type>
@@ -330,7 +330,7 @@
       <gain>0.0</gain>
       <absolute-frequency-center>628334</absolute-frequency-center>
       <downlink-sfn-offset>0</downlink-sfn-offset>
-      <center-of-channel-bandwidth>4849860000</center-of-channel-bandwidth>
+      <center-of-channel-bandwidth>3425010000</center-of-channel-bandwidth>
       <channel-bandwidth>100000000</channel-bandwidth>
       <downlink-radio-frame-offset>0</downlink-radio-frame-offset>
       <type>NR</type>
