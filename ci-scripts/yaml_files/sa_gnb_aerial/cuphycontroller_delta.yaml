@@ -20,7 +20,7 @@
 # STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ---
-l2adapter_filename: l2_adapter_config_P5G.yaml
+l2adapter_filename: l2_adapter_config_delta.yaml
 aerial_metrics_backend_address: 127.0.0.1:8081
 
 # CPU core shared by all low-priority threads
@@ -112,7 +112,7 @@ cuphydriver_config:
       vlan: 564
       pcp: 7
       txq_count_uplane: 1
-      eAxC_id_ssb_pbch: [0]
+      eAxC_id_ssb_pbch: [0, 1, 2, 3]
       eAxC_id_pdcch: [0, 1, 2, 3]
       eAxC_id_pdsch: [0, 1, 2, 3]
       eAxC_id_csirs: [0, 1, 2, 3]

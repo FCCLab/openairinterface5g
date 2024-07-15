@@ -18,11 +18,10 @@ services:
       - /lib/modules:/lib/modules
       - /dev/hugepages:/dev/hugepages
       - /usr/src:/usr/src
-      - ./aerial_l1_entrypoint.sh:/opt/nvidia/cuBB/aerial_l1_entrypoint.sh
       - /var/log/aerial:/var/log/aerial
       - ../../../cmake_targets/share:/opt/cuBB/share
-      - ./cuphycontroller_P5G_FXN.yaml:/opt/nvidia/cuBB/cuPHY-CP/cuphycontroller/config/cuphycontroller_P5G_FXN.yaml
-      - ./l2_adapter_config_P5G.yaml:/opt/nvidia/cuBB/cuPHY-CP/cuphycontroller/config/l2_adapter_config_P5G.yaml
+      - ./aerial_l1_entrypoint.sh:/opt/nvidia/cuBB/aerial_l1_entrypoint.sh
+      - ./:/opt/nvidia/cuBB/cuPHY-CP/cuphycontroller/config/
     userns_mode: host
     ipc: "host"
     image: nvcr.io/qhrjhjrvlsbu/aerial-cuda-accelerated-ran:24-1-cubb
