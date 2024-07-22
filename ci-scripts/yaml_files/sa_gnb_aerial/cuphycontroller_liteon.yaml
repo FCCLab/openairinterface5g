@@ -20,7 +20,7 @@
 # STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ---
-l2adapter_filename: l2_adapter_config_delta.yaml
+l2adapter_filename: l2_adapter_config.yaml
 aerial_metrics_backend_address: 127.0.0.1:8081
 
 # CPU core shared by all low-priority threads
@@ -28,9 +28,6 @@ low_priority_core: 8
 nic_tput_alert_threshold_mbps: 85000
 
 cuphydriver_config:
-  datalake_core: 19 # Core on which data collection runs. E.g isolated odd on R750, any isolated core on gigabyte
-  datalake_address: localhost
-  datalake_samples: 1000000 # Number of samples to collect for each UE/RNTI. Defaults to 1M
   standalone: 0
   validation: 0
   num_slots: 8
@@ -108,10 +105,10 @@ cuphydriver_config:
       cell_id: 5
       ru_type: 1
       # set to 00:00:00:00:00:00 to use the MAC address of the NIC port to use
-      src_mac_addr: 00:00:00:00:00:00 
-      dst_mac_addr: 6c:b9:c5:22:92:cc # MAC address of Delta
+      src_mac_addr: 00:00:00:00:00:00
+      dst_mac_addr: e8:c7:4f:25:89:40 # MAC address of Liteon RU
       nic: 0000:ab:00.0
-      vlan: 564
+      vlan: 200
       pcp: 7
       txq_count_uplane: 1
       eAxC_id_ssb_pbch: [0, 1, 2, 3]
@@ -122,8 +119,8 @@ cuphydriver_config:
       eAxC_id_pucch: [0, 1]
       eAxC_id_srs: [0, 1]
       eAxC_id_prach: [0, 1]
-      dl_iq_data_fmt: {comp_meth: 1, bit_width: 9}
-      ul_iq_data_fmt: {comp_meth: 0, bit_width: 9}
+      dl_iq_data_fmt: {comp_meth: 0, bit_width: 16}
+      ul_iq_data_fmt: {comp_meth: 0, bit_width: 16}
       section_3_time_offset: 484
       fs_offset_dl: 15
       exponent_dl: 4
