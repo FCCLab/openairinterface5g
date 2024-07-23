@@ -119,8 +119,8 @@ cuphydriver_config:
       eAxC_id_pucch: [0, 1]
       eAxC_id_srs: [0, 1]
       eAxC_id_prach: [0, 1]
-      dl_iq_data_fmt: {comp_meth: 0, bit_width: 16}
-      ul_iq_data_fmt: {comp_meth: 0, bit_width: 16}
+      dl_iq_data_fmt: {comp_meth: 1, bit_width: 9}
+      ul_iq_data_fmt: {comp_meth: 1, bit_width: 9}
       section_3_time_offset: 484
       fs_offset_dl: 15
       exponent_dl: 4
