@@ -33,7 +33,7 @@ cuphydriver_config:
   num_slots: 8
   profiler_sec: 0
   log_level: DBG
-  dpdk_thread: 8
+  dpdk_thread: 35
   dpdk_verbose_logs: 0
   accu_tx_sched_res_ns: 500
   accu_tx_sched_disable: 0
@@ -63,12 +63,12 @@ cuphydriver_config:
     # Set GPUID to the GPU sharing the PCIe switch as NIC
     # run nvidia-smi topo -m to find out which GPU
   workers_ul:
-    - 2
-    - 3
+    - 24
+    - 25
   workers_dl:
-    - 4
-    - 5
-    - 6
+    - 26
+    - 27
+    - 28
   workers_sched_priority: 95
   prometheus_thread: -1
   start_section_id_srs: 3072

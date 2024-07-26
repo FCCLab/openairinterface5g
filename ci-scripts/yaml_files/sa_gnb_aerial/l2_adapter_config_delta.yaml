@@ -37,12 +37,12 @@ allowed_tick_error: 10
 
 timer_thread_config:
   name: timer_thread
-  cpu_affinity: 7
+  cpu_affinity: 36
   sched_priority: 99
 message_thread_config:
   name: msg_processing
   #core assignment
-  cpu_affinity: 7
+  cpu_affinity: 36
   # thread priority
   sched_priority: 95
 # Lowest TTI for Ticking
@@ -124,7 +124,7 @@ transport:
     grpc_forward: 0
     debug_timing: 0
     pcap_enable: 1
-    pcap_cpu_core: 8 # CPU core of background pcap log save thread
+    pcap_cpu_core: 37 # CPU core of background pcap log save thread
     pcap_cache_size_bits: 29 # 2^29 = 512MB, size of /dev/shm/${prefix}_pcap
     pcap_file_size_bits: 31 # 2^31 = 2GB, max size of /var/log/aerial/${prefix}_pcap. Requires pcap_file_size_bits > pcap_cache_size_bits.
     pcap_max_data_size: 8000 # Max DL/UL FAPI data size to capture reduce pcap size.
