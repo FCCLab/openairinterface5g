@@ -90,6 +90,9 @@ void nr_rrc_mac_config_req_sib1(module_id_t module_id,
                                 NR_SI_SchedulingInfo_t *si_SchedulingInfo,
                                 NR_ServingCellConfigCommonSIB_t *scc);
 
+void nr_rrc_mac_config_req_sib19_r17(module_id_t module_id,
+                                     NR_SIB19_r17_t *sib19_r17);
+
 void nr_rrc_mac_config_req_reset(module_id_t module_id, NR_UE_MAC_reset_cause_t cause);
 
 /**\brief initialization NR UE MAC instance(s)*/
@@ -190,13 +193,13 @@ uint8_t nr_ue_get_sdu(NR_UE_MAC_INST_t *mac,
                       sub_frame_t subframe,
                       uint8_t gNB_index,
                       uint8_t *ulsch_buffer,
-                      uint16_t buflen);
+                      uint32_t buflen);
 
 void set_harq_status(NR_UE_MAC_INST_t *mac,
                      uint8_t pucch_id,
                      uint8_t harq_id,
                      int8_t delta_pucch,
-                     uint8_t data_toul_fb,
+                     uint16_t data_toul_fb,
                      uint8_t dai,
                      int n_CCE,
                      int N_CCE,
@@ -243,6 +246,7 @@ int nr_ue_configure_pucch(NR_UE_MAC_INST_t *mac,
 
 float nr_get_Pcmax(int p_Max,
                    uint16_t nr_band,
+                   frame_type_t frame_type,
                    frequency_range_t frequency_range,
                    int Qm,
                    bool powerBoostPi2BPSK,
@@ -268,6 +272,10 @@ and fills the PRACH PDU per each FD occasion.
 void nr_ue_pucch_scheduler(NR_UE_MAC_INST_t *mac, frame_t frameP, int slotP);
 void nr_schedule_csirs_reception(NR_UE_MAC_INST_t *mac, int frame, int slot);
 void nr_schedule_csi_for_im(NR_UE_MAC_INST_t *mac, int frame, int slot);
+void configure_csi_resource_mapping(fapi_nr_dl_config_csirs_pdu_rel15_t *csirs_config_pdu,
+                                    NR_CSI_RS_ResourceMapping_t  *resourceMapping,
+                                    uint32_t bwp_size,
+                                    uint32_t bwp_start);
 
 /* \brief This function schedules the Msg3 transmission
 @param

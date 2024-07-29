@@ -250,7 +250,7 @@ static void config_common_ue(NR_UE_MAC_INST_t *mac,
   mac->phy_config.CC_id = cc_idP;
   
   // carrier config
-  LOG_D(MAC, "Entering UE Config Common\n");
+  LOG_D(MAC, "[UE %d] Entering UE Config Common\n", mac->ue_id);
 
   AssertFatal(scc->downlinkConfigCommon, "Not expecting downlinkConfigCommon to be NULL here\n");
 
@@ -408,6 +408,13 @@ static void config_common_ue(NR_UE_MAC_INST_t *mac,
       cfg->prach_config.ssb_per_rach = rach_ConfigCommon->ssb_perRACH_OccasionAndCB_PreamblesPerSSB->present - 1;
       // prach_fd_occasion->num_unused_root_sequences = ???
     }
+  }
+
+  // NTN Config
+  if (scc->ext2) {
+    UPDATE_IE(mac->sc_info.ntn_Config_r17, scc->ext2->ntn_Config_r17, NR_NTN_Config_r17_t);
+  } else {
+    asn1cFreeStruc(asn_DEF_NR_NTN_Config_r17, mac->sc_info.ntn_Config_r17);
   }
 }
 
@@ -872,14 +879,21 @@ void nr_rrc_mac_config_req_mib(module_id_t module_id,
   nr_ue_decode_mib(mac, cc_idP);
 }
 
-static void setup_puschpowercontrol(NR_PUSCH_PowerControl_t *source, NR_PUSCH_PowerControl_t *target)
+static void setup_puschpowercontrol(NR_UE_MAC_INST_t *mac, NR_PUSCH_PowerControl_t *source, NR_PUSCH_PowerControl_t *target)
 {
   UPDATE_IE(target->tpc_Accumulation, source->tpc_Accumulation, long);
   UPDATE_IE(target->msg3_Alpha, source->msg3_Alpha, NR_Alpha_t);
   if (source->p0_NominalWithoutGrant)
     UPDATE_IE(target->p0_NominalWithoutGrant, source->p0_NominalWithoutGrant, long);
-  if (source->p0_AlphaSets)
+  if (source->p0_AlphaSets) {
     UPDATE_IE(target->p0_AlphaSets, source->p0_AlphaSets, struct NR_PUSCH_PowerControl__p0_AlphaSets);
+    if (target->p0_AlphaSets->list.array[0]->alpha) {
+      mac->f_b_f_c = 0;
+    }
+    if (target->p0_AlphaSets->list.array[0]->p0) {
+      mac->f_b_f_c = 0;
+    }
+  }
   UPDATE_IE(target->twoPUSCH_PC_AdjustmentStates, source->twoPUSCH_PC_AdjustmentStates, long);
   UPDATE_IE(target->deltaMCS, source->deltaMCS, long);
   if (source->pathlossReferenceRSToReleaseList) {
@@ -901,6 +915,7 @@ static void setup_puschpowercontrol(NR_PUSCH_PowerControl_t *source, NR_PUSCH_Po
                         sri_PUSCH_PowerControlId);
   }
   if (source->sri_PUSCH_MappingToAddModList) {
+    LOG_E(NR_MAC, "NR_SRI_PUSCH_PowerControl not implemented, power control will not work as intended\n");
     if (!target->sri_PUSCH_MappingToAddModList)
       target->sri_PUSCH_MappingToAddModList = calloc(1, sizeof(*target->sri_PUSCH_MappingToAddModList));
     ADDMOD_IE_FROMLIST(source->sri_PUSCH_MappingToAddModList,
@@ -910,7 +925,7 @@ static void setup_puschpowercontrol(NR_PUSCH_PowerControl_t *source, NR_PUSCH_Po
   }
 }
 
-static void setup_puschconfig(NR_PUSCH_Config_t *source, NR_PUSCH_Config_t *target)
+static void setup_puschconfig(NR_UE_MAC_INST_t *mac, NR_PUSCH_Config_t *source, NR_PUSCH_Config_t *target)
 {
   UPDATE_IE(target->dataScramblingIdentityPUSCH, source->dataScramblingIdentityPUSCH, long);
   UPDATE_IE(target->txConfig, source->txConfig, long);
@@ -927,7 +942,7 @@ static void setup_puschconfig(NR_PUSCH_Config_t *source, NR_PUSCH_Config_t *targ
   if (source->pusch_PowerControl) {
     if (!target->pusch_PowerControl)
       target->pusch_PowerControl = calloc(1, sizeof(*target->pusch_PowerControl));
-    setup_puschpowercontrol(source->pusch_PowerControl, target->pusch_PowerControl);
+    setup_puschpowercontrol(mac, source->pusch_PowerControl, target->pusch_PowerControl);
   }
   UPDATE_IE(target->frequencyHopping, source->frequencyHopping, long);
   if (source->frequencyHoppingOffsetLists)
@@ -963,6 +978,73 @@ static void setup_puschconfig(NR_PUSCH_Config_t *source, NR_PUSCH_Config_t *targ
                   struct NR_UCI_OnPUSCH__betaOffsets);
     }
   }
+}
+
+static void configure_csi_resourcemapping(NR_CSI_RS_ResourceMapping_t *target, NR_CSI_RS_ResourceMapping_t *source)
+{
+  if (target->frequencyDomainAllocation.present != source->frequencyDomainAllocation.present) {
+    UPDATE_NP_IE(target->frequencyDomainAllocation,
+                 source->frequencyDomainAllocation,
+                 struct NR_CSI_RS_ResourceMapping__frequencyDomainAllocation);
+  }
+  else {
+    switch (source->frequencyDomainAllocation.present) {
+      case NR_CSI_RS_ResourceMapping__frequencyDomainAllocation_PR_row1:
+        target->frequencyDomainAllocation.choice.row1.size = source->frequencyDomainAllocation.choice.row1.size;
+        target->frequencyDomainAllocation.choice.row1.bits_unused = source->frequencyDomainAllocation.choice.row1.bits_unused;
+        if (!target->frequencyDomainAllocation.choice.row1.buf)
+          target->frequencyDomainAllocation.choice.row1.buf =
+              calloc(target->frequencyDomainAllocation.choice.row1.size, sizeof(uint8_t));
+        for (int i = 0; i < target->frequencyDomainAllocation.choice.row1.size; i++)
+          target->frequencyDomainAllocation.choice.row1.buf[i] = source->frequencyDomainAllocation.choice.row1.buf[i];
+        break;
+      case NR_CSI_RS_ResourceMapping__frequencyDomainAllocation_PR_row2:
+        target->frequencyDomainAllocation.choice.row2.size = source->frequencyDomainAllocation.choice.row2.size;
+        target->frequencyDomainAllocation.choice.row2.bits_unused = source->frequencyDomainAllocation.choice.row2.bits_unused;
+        if (!target->frequencyDomainAllocation.choice.row2.buf)
+          target->frequencyDomainAllocation.choice.row2.buf =
+              calloc(target->frequencyDomainAllocation.choice.row2.size, sizeof(uint8_t));
+        for (int i = 0; i < target->frequencyDomainAllocation.choice.row2.size; i++)
+          target->frequencyDomainAllocation.choice.row2.buf[i] = source->frequencyDomainAllocation.choice.row2.buf[i];
+        break;
+      case NR_CSI_RS_ResourceMapping__frequencyDomainAllocation_PR_row4:
+        target->frequencyDomainAllocation.choice.row4.size = source->frequencyDomainAllocation.choice.row4.size;
+        target->frequencyDomainAllocation.choice.row4.bits_unused = source->frequencyDomainAllocation.choice.row4.bits_unused;
+        if (!target->frequencyDomainAllocation.choice.row4.buf)
+          target->frequencyDomainAllocation.choice.row4.buf =
+              calloc(target->frequencyDomainAllocation.choice.row4.size, sizeof(uint8_t));
+        for (int i = 0; i < target->frequencyDomainAllocation.choice.row4.size; i++)
+          target->frequencyDomainAllocation.choice.row4.buf[i] = source->frequencyDomainAllocation.choice.row4.buf[i];
+        break;
+      case NR_CSI_RS_ResourceMapping__frequencyDomainAllocation_PR_other:
+        target->frequencyDomainAllocation.choice.other.size = source->frequencyDomainAllocation.choice.other.size;
+        target->frequencyDomainAllocation.choice.other.bits_unused = source->frequencyDomainAllocation.choice.other.bits_unused;
+        if (!target->frequencyDomainAllocation.choice.other.buf)
+          target->frequencyDomainAllocation.choice.other.buf =
+              calloc(target->frequencyDomainAllocation.choice.other.size, sizeof(uint8_t));
+        for (int i = 0; i < target->frequencyDomainAllocation.choice.other.size; i++)
+          target->frequencyDomainAllocation.choice.other.buf[i] = source->frequencyDomainAllocation.choice.other.buf[i];
+        break;
+      default:
+        AssertFatal(false, "Invalid entry\n");
+    }
+  }
+  target->nrofPorts = source->nrofPorts;
+  target->firstOFDMSymbolInTimeDomain = source->firstOFDMSymbolInTimeDomain;
+  UPDATE_IE(target->firstOFDMSymbolInTimeDomain2, source->firstOFDMSymbolInTimeDomain2, long);
+  target->cdm_Type = source->cdm_Type;
+  target->density = source->density;
+  target->freqBand = source->freqBand;
+}
+
+static void config_zp_CSI_RS_Resource(NR_ZP_CSI_RS_Resource_t *target, NR_ZP_CSI_RS_Resource_t *source)
+{
+  target->zp_CSI_RS_ResourceId = source->zp_CSI_RS_ResourceId;
+  configure_csi_resourcemapping(&target->resourceMapping, &source->resourceMapping);
+  if (source->periodicityAndOffset)
+    UPDATE_IE(target->periodicityAndOffset,
+              source->periodicityAndOffset,
+              NR_CSI_ResourcePeriodicityAndOffset_t);
 }
 
 static void setup_pdschconfig(NR_PDSCH_Config_t *source, NR_PDSCH_Config_t *target)
@@ -1022,7 +1104,25 @@ static void setup_pdschconfig(NR_PDSCH_Config_t *source, NR_PDSCH_Config_t *targ
   UPDATE_IE(target->mcs_Table, source->mcs_Table, long);
   UPDATE_IE(target->maxNrofCodeWordsScheduledByDCI, source->maxNrofCodeWordsScheduledByDCI, long);
   UPDATE_NP_IE(target->prb_BundlingType, source->prb_BundlingType, struct NR_PDSCH_Config__prb_BundlingType);
-  AssertFatal(source->zp_CSI_RS_ResourceToAddModList == NULL, "Not handled\n");
+  if (source->zp_CSI_RS_ResourceToAddModList) {
+    if (!target->zp_CSI_RS_ResourceToAddModList)
+      target->zp_CSI_RS_ResourceToAddModList = calloc(1, sizeof(*target->zp_CSI_RS_ResourceToAddModList));
+    ADDMOD_IE_FROMLIST_WFUNCTION(source->zp_CSI_RS_ResourceToAddModList,
+                                 target->zp_CSI_RS_ResourceToAddModList,
+                                 zp_CSI_RS_ResourceId,
+                                 NR_ZP_CSI_RS_Resource_t,
+                                 config_zp_CSI_RS_Resource);
+  }
+  if (source->zp_CSI_RS_ResourceToReleaseList) {
+    RELEASE_IE_FROMLIST(source->zp_CSI_RS_ResourceToReleaseList,
+                        target->zp_CSI_RS_ResourceToAddModList,
+                        zp_CSI_RS_ResourceId);
+  }
+  if (source->p_ZP_CSI_RS_ResourceSet)
+    HANDLE_SETUPRELEASE_IE(target->p_ZP_CSI_RS_ResourceSet,
+                           source->p_ZP_CSI_RS_ResourceSet,
+                           NR_ZP_CSI_RS_ResourceSet_t,
+                           asn_DEF_NR_ZP_CSI_RS_ResourceSet);
   AssertFatal(source->aperiodic_ZP_CSI_RS_ResourceSetsToAddModList == NULL, "Not handled\n");
   AssertFatal(source->sp_ZP_CSI_RS_ResourceSetsToAddModList == NULL, "Not handled\n");
 }
@@ -1330,7 +1430,7 @@ static void configure_dedicated_BWP_ul(NR_UE_MAC_INST_t *mac, int bwp_id, NR_BWP
       if (ul_dedicated->pusch_Config->present == NR_SetupRelease_PUSCH_Config_PR_setup) {
         if (!bwp->pusch_Config)
           bwp->pusch_Config = calloc(1, sizeof(*bwp->pusch_Config));
-        setup_puschconfig(ul_dedicated->pusch_Config->choice.setup, bwp->pusch_Config);
+        setup_puschconfig(mac, ul_dedicated->pusch_Config->choice.setup, bwp->pusch_Config);
       }
     }
     if(ul_dedicated->srs_Config) {
@@ -1498,6 +1598,17 @@ void nr_rrc_mac_config_req_sib1(module_id_t module_id,
   if (!get_softmodem_params()->emulate_l1)
     mac->if_module->phy_config_request(&mac->phy_config);
   mac->phy_config_request_sent = true;
+}
+
+void nr_rrc_mac_config_req_sib19_r17(module_id_t module_id,
+                                     NR_SIB19_r17_t *sib19_r17)
+{
+  NR_UE_MAC_INST_t *mac = get_mac_inst(module_id);
+
+  // ntn-Config-r17
+  UPDATE_IE(mac->sc_info.ntn_Config_r17, sib19_r17->ntn_Config_r17, NR_NTN_Config_r17_t);
+
+  // TODO handle other SIB19 elements
 }
 
 static void handle_reconfiguration_with_sync(NR_UE_MAC_INST_t *mac,
@@ -1717,6 +1828,17 @@ static void configure_maccellgroup(NR_UE_MAC_INST_t *mac, const NR_MAC_CellGroup
         int target_ms = 0;
         if (sr->sr_ProhibitTimer)
           target_ms = 1 << *sr->sr_ProhibitTimer;
+        if (mcg->ext4 && mcg->ext4->schedulingRequestConfig_v1700) {
+          const NR_SchedulingRequestConfig_v1700_t *src_v1700 = mcg->ext4->schedulingRequestConfig_v1700;
+          if (src_v1700->schedulingRequestToAddModListExt_v1700) {
+            if (i < src_v1700->schedulingRequestToAddModListExt_v1700->list.count) {
+              const NR_SchedulingRequestToAddModExt_v1700_t *sr_v1700 = src_v1700->schedulingRequestToAddModListExt_v1700->list.array[i];
+              if (sr_v1700->sr_ProhibitTimer_v1700) {
+                target_ms = 192 + 64 * *sr_v1700->sr_ProhibitTimer_v1700;
+              }
+            }
+          }
+        }
         // length of slot is (1/2^scs)ms
         nr_timer_setup(&sr_info->prohibitTimer, target_ms << scs, 1); // 1 slot update rate
       }
@@ -1748,63 +1870,6 @@ static void configure_maccellgroup(NR_UE_MAC_INST_t *mac, const NR_MAC_CellGroup
   if (mcg->phr_Config) {
     // TODO configuration when PHR is implemented
   }
-}
-
-static void configure_csi_resourcemapping(NR_CSI_RS_ResourceMapping_t *target, NR_CSI_RS_ResourceMapping_t *source)
-{
-  if (target->frequencyDomainAllocation.present != source->frequencyDomainAllocation.present) {
-    UPDATE_NP_IE(target->frequencyDomainAllocation,
-                 source->frequencyDomainAllocation,
-                 struct NR_CSI_RS_ResourceMapping__frequencyDomainAllocation);
-  }
-  else {
-    switch (source->frequencyDomainAllocation.present) {
-      case NR_CSI_RS_ResourceMapping__frequencyDomainAllocation_PR_row1:
-        target->frequencyDomainAllocation.choice.row1.size = source->frequencyDomainAllocation.choice.row1.size;
-        target->frequencyDomainAllocation.choice.row1.bits_unused = source->frequencyDomainAllocation.choice.row1.bits_unused;
-        if (!target->frequencyDomainAllocation.choice.row1.buf)
-          target->frequencyDomainAllocation.choice.row1.buf =
-              calloc(target->frequencyDomainAllocation.choice.row1.size, sizeof(uint8_t));
-        for (int i = 0; i < target->frequencyDomainAllocation.choice.row1.size; i++)
-          target->frequencyDomainAllocation.choice.row1.buf[i] = source->frequencyDomainAllocation.choice.row1.buf[i];
-        break;
-      case NR_CSI_RS_ResourceMapping__frequencyDomainAllocation_PR_row2:
-        target->frequencyDomainAllocation.choice.row2.size = source->frequencyDomainAllocation.choice.row2.size;
-        target->frequencyDomainAllocation.choice.row2.bits_unused = source->frequencyDomainAllocation.choice.row2.bits_unused;
-        if (!target->frequencyDomainAllocation.choice.row2.buf)
-          target->frequencyDomainAllocation.choice.row2.buf =
-              calloc(target->frequencyDomainAllocation.choice.row2.size, sizeof(uint8_t));
-        for (int i = 0; i < target->frequencyDomainAllocation.choice.row2.size; i++)
-          target->frequencyDomainAllocation.choice.row2.buf[i] = source->frequencyDomainAllocation.choice.row2.buf[i];
-        break;
-      case NR_CSI_RS_ResourceMapping__frequencyDomainAllocation_PR_row4:
-        target->frequencyDomainAllocation.choice.row4.size = source->frequencyDomainAllocation.choice.row4.size;
-        target->frequencyDomainAllocation.choice.row4.bits_unused = source->frequencyDomainAllocation.choice.row4.bits_unused;
-        if (!target->frequencyDomainAllocation.choice.row4.buf)
-          target->frequencyDomainAllocation.choice.row4.buf =
-              calloc(target->frequencyDomainAllocation.choice.row4.size, sizeof(uint8_t));
-        for (int i = 0; i < target->frequencyDomainAllocation.choice.row4.size; i++)
-          target->frequencyDomainAllocation.choice.row4.buf[i] = source->frequencyDomainAllocation.choice.row4.buf[i];
-        break;
-      case NR_CSI_RS_ResourceMapping__frequencyDomainAllocation_PR_other:
-        target->frequencyDomainAllocation.choice.other.size = source->frequencyDomainAllocation.choice.other.size;
-        target->frequencyDomainAllocation.choice.other.bits_unused = source->frequencyDomainAllocation.choice.other.bits_unused;
-        if (!target->frequencyDomainAllocation.choice.other.buf)
-          target->frequencyDomainAllocation.choice.other.buf =
-              calloc(target->frequencyDomainAllocation.choice.other.size, sizeof(uint8_t));
-        for (int i = 0; i < target->frequencyDomainAllocation.choice.other.size; i++)
-          target->frequencyDomainAllocation.choice.other.buf[i] = source->frequencyDomainAllocation.choice.other.buf[i];
-        break;
-      default:
-        AssertFatal(false, "Invalid entry\n");
-    }
-  }
-  target->nrofPorts = source->nrofPorts;
-  target->firstOFDMSymbolInTimeDomain = source->firstOFDMSymbolInTimeDomain;
-  UPDATE_IE(target->firstOFDMSymbolInTimeDomain2, source->firstOFDMSymbolInTimeDomain2, long);
-  target->cdm_Type = source->cdm_Type;
-  target->density = source->density;
-  target->freqBand = source->freqBand;
 }
 
 static void configure_csirs_resource(NR_NZP_CSI_RS_Resource_t *target, NR_NZP_CSI_RS_Resource_t *source)
@@ -1999,6 +2064,8 @@ static void configure_servingcell_info(NR_UE_MAC_INST_t *mac, NR_ServingCellConf
           free(sc_info->maxMIMO_Layers_PDSCH);
           sc_info->maxMIMO_Layers_PDSCH = NULL;
         }
+        if (sc_info->downlinkHARQ_FeedbackDisabled_r17)
+          asn1cFreeStruc(asn_DEF_NR_DownlinkHARQ_FeedbackDisabled_r17, sc_info->downlinkHARQ_FeedbackDisabled_r17);
         break;
       case NR_SetupRelease_PDSCH_ServingCellConfig_PR_setup: {
         NR_PDSCH_ServingCellConfig_t *pdsch_servingcellconfig = scd->pdsch_ServingCellConfig->choice.setup;
@@ -2010,6 +2077,28 @@ static void configure_servingcell_info(NR_UE_MAC_INST_t *mac, NR_ServingCellConf
         UPDATE_IE(sc_info->xOverhead_PDSCH, pdsch_servingcellconfig->xOverhead, long);
         if (pdsch_servingcellconfig->ext1 && pdsch_servingcellconfig->ext1->maxMIMO_Layers)
           UPDATE_IE(sc_info->maxMIMO_Layers_PDSCH, pdsch_servingcellconfig->ext1->maxMIMO_Layers, long);
+        if (pdsch_servingcellconfig->ext3 && pdsch_servingcellconfig->ext3->downlinkHARQ_FeedbackDisabled_r17) {
+          switch (pdsch_servingcellconfig->ext3->downlinkHARQ_FeedbackDisabled_r17->present) {
+            case NR_SetupRelease_DownlinkHARQ_FeedbackDisabled_r17_PR_NOTHING:
+              break;
+            case NR_SetupRelease_DownlinkHARQ_FeedbackDisabled_r17_PR_release:
+              if (sc_info->downlinkHARQ_FeedbackDisabled_r17)
+                asn1cFreeStruc(asn_DEF_NR_DownlinkHARQ_FeedbackDisabled_r17, sc_info->downlinkHARQ_FeedbackDisabled_r17);
+              break;
+            case NR_SetupRelease_DownlinkHARQ_FeedbackDisabled_r17_PR_setup:
+              if (sc_info->downlinkHARQ_FeedbackDisabled_r17 == NULL) {
+                sc_info->downlinkHARQ_FeedbackDisabled_r17 = calloc(1, sizeof(*sc_info->downlinkHARQ_FeedbackDisabled_r17));
+                sc_info->downlinkHARQ_FeedbackDisabled_r17->buf = calloc(4, sizeof(*sc_info->downlinkHARQ_FeedbackDisabled_r17->buf));
+              }
+              sc_info->downlinkHARQ_FeedbackDisabled_r17->size = pdsch_servingcellconfig->ext3->downlinkHARQ_FeedbackDisabled_r17->choice.setup.size;
+              sc_info->downlinkHARQ_FeedbackDisabled_r17->bits_unused = pdsch_servingcellconfig->ext3->downlinkHARQ_FeedbackDisabled_r17->choice.setup.bits_unused;
+              for (int i = 0; i < sc_info->downlinkHARQ_FeedbackDisabled_r17->size; i++)
+                sc_info->downlinkHARQ_FeedbackDisabled_r17->buf[i] = pdsch_servingcellconfig->ext3->downlinkHARQ_FeedbackDisabled_r17->choice.setup.buf[i];
+              break;
+            default:
+              AssertFatal(false, "Invalid case\n");
+          }
+        }
         break;
       }
       default:
@@ -2224,7 +2313,7 @@ void nr_rrc_mac_config_req_cg(module_id_t module_id,
                               NR_CellGroupConfig_t *cell_group_config,
                               NR_UE_NR_Capability_t *ue_Capability)
 {
-  LOG_I(MAC,"Applying CellGroupConfig from gNodeB\n");
+  LOG_I(MAC,"[UE %d] Applying CellGroupConfig from gNodeB\n", module_id);
   AssertFatal(cell_group_config, "CellGroupConfig should not be NULL\n");
   NR_UE_MAC_INST_t *mac = get_mac_inst(module_id);
 

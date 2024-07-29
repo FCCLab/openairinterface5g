@@ -541,7 +541,6 @@ check_install_additional_tools (){
         doxygen \
         libgnutls28-dev \
         libpthread-stubs0-dev \
-        libqt5charts5-dev \
         tshark \
         uml-utilities \
         iperf3 \
@@ -614,7 +613,6 @@ check_install_oai_software() {
       gcc \
       gcc-c++ \
       git \
-      atlas-devel \
       pkgconfig \
       libconfig-devel \
       libffi-devel \
