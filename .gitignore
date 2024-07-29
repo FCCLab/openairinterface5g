@@ -25,5 +25,3 @@ tags
 nfapi_nr_interface_scf
 *.log
 *.out
-
-nvipc_src.*
