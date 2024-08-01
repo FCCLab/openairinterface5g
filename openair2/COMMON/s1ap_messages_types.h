@@ -25,7 +25,7 @@
 #include <netinet/in.h>
 #include <netinet/sctp.h>
 #include "common/platform_types.h"
-#include "LTE_asn_constant.h"
+// #include "LTE_asn_constant.h"
 //-------------------------------------------------------------------------------------------//
 // Defines to access message fields.
 

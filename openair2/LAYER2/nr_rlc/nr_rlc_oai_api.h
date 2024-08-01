@@ -42,7 +42,7 @@ struct NR_RLC_Config;
 struct NR_LogicalChannelConfig;
 
 void nr_rlc_add_srb(int rnti, int srb_id, const NR_RLC_BearerConfig_t *rlc_BearerConfig);
-void nr_rlc_add_drb(int rnti, int drb_id, const NR_RLC_BearerConfig_t *rlc_BearerConfig, const ngap_allowed_NSSAI_t *nssai);
+void nr_rlc_add_drb(int rnti, int drb_id, const NR_RLC_BearerConfig_t *rlc_BearerConfig, const nssai_t *nssai);
 
 logical_chan_id_t nr_rlc_get_lcid_from_rb(int ue_id, bool is_srb, int rb_id);
 void nr_rlc_reestablish_entity(int ue_id, int lc_id);
@@ -65,5 +65,5 @@ void nr_rlc_activate_srb0(int rnti, struct gNB_MAC_INST_s *mac, void *rawUE,
                                      sdu_size_t             sdu_len,
                                      void                  *rawUE));
 
-ngap_allowed_NSSAI_t mac_rlc_get_nssai(const rnti_t rntiP,
+nssai_t mac_rlc_get_nssai(const rnti_t rntiP,
                                        const logical_chan_id_t channel_idP);

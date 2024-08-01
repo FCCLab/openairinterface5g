@@ -310,12 +310,12 @@ rlc_buffer_occupancy_t mac_rlc_get_buffer_occupancy_ind(const module_id_t module
   return ret;
 }
 
-ngap_allowed_NSSAI_t mac_rlc_get_nssai(const rnti_t rntiP,
+nssai_t mac_rlc_get_nssai(const rnti_t rntiP,
                                        const logical_chan_id_t channel_idP)
 {
   nr_rlc_ue_t *ue;
   nr_rlc_entity_t *rb;
-  ngap_allowed_NSSAI_t ret;
+  nssai_t ret;
 
   nr_rlc_manager_lock(nr_rlc_ue_manager);
   ue = nr_rlc_manager_get_ue(nr_rlc_ue_manager, rntiP);
@@ -840,7 +840,7 @@ void nr_rlc_add_srb(int ue_id, int srb_id, const NR_RLC_BearerConfig_t *rlc_Bear
   nr_rlc_manager_unlock(nr_rlc_ue_manager);
 }
 
-static void add_drb_am(int rnti, int drb_id, const NR_RLC_BearerConfig_t *rlc_BearerConfig, const ngap_allowed_NSSAI_t *nssai)
+static void add_drb_am(int rnti, int drb_id, const NR_RLC_BearerConfig_t *rlc_BearerConfig, const nssai_t *nssai)
 {
   struct NR_RLC_Config *r = rlc_BearerConfig->rlc_Config;
 
@@ -906,7 +906,7 @@ static void add_drb_am(int rnti, int drb_id, const NR_RLC_BearerConfig_t *rlc_Be
   nr_rlc_manager_unlock(nr_rlc_ue_manager);
 }
 
-static void add_drb_um(int rnti, int drb_id, const NR_RLC_BearerConfig_t *rlc_BearerConfig, const ngap_allowed_NSSAI_t *nssai)
+static void add_drb_um(int rnti, int drb_id, const NR_RLC_BearerConfig_t *rlc_BearerConfig, const nssai_t *nssai)
 {
   struct NR_RLC_Config *r = rlc_BearerConfig->rlc_Config;
 
@@ -958,7 +958,7 @@ static void add_drb_um(int rnti, int drb_id, const NR_RLC_BearerConfig_t *rlc_Be
   nr_rlc_manager_unlock(nr_rlc_ue_manager);
 }
 
-void nr_rlc_add_drb(int rnti, int drb_id, const NR_RLC_BearerConfig_t *rlc_BearerConfig, const ngap_allowed_NSSAI_t *nssai)
+void nr_rlc_add_drb(int rnti, int drb_id, const NR_RLC_BearerConfig_t *rlc_BearerConfig, const nssai_t *nssai)
 {
   switch (rlc_BearerConfig->rlc_Config->present) {
   case NR_RLC_Config_PR_am:

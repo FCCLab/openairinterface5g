@@ -31,9 +31,9 @@
 
 #include "common/utils/time_stat.h"
 
-static void set_rlc_entity_nssai(nr_rlc_entity_t *ent, const ngap_allowed_NSSAI_t *nssai)
+static void set_rlc_entity_nssai(nr_rlc_entity_t *ent, const nssai_t *nssai)
 {
-  ent->nssai = (nssai) ? *nssai : (ngap_allowed_NSSAI_t){.sST = 0xFF, .sD[0] = 0xFF};
+  ent->nssai = (nssai) ? *nssai : (nssai_t){.sST = 0xFF, .sD[0] = 0xFF};
 }
 
 static void nr_rlc_entity_get_stats(
@@ -95,7 +95,7 @@ nr_rlc_entity_t *new_nr_rlc_entity_am(
     int poll_byte,
     int max_retx_threshold,
     int sn_field_length,
-    const ngap_allowed_NSSAI_t *nssai)
+    const nssai_t *nssai)
 {
   nr_rlc_entity_am_t *ret;
 
@@ -163,7 +163,7 @@ nr_rlc_entity_t *new_nr_rlc_entity_um(
     void *deliver_sdu_data,
     int t_reassembly,
     int sn_field_length,
-    const ngap_allowed_NSSAI_t *nssai)
+    const nssai_t *nssai)
 {
   nr_rlc_entity_um_t *ret;
 

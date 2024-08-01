@@ -551,8 +551,6 @@ typedef struct nr_lc_config {
   NR_QoS_config_t qos_config[NR_MAX_NUM_QFI];
 } nr_lc_config_t;
 
-typedef ngap_allowed_NSSAI_t nr_mac_nssai_t;
-
 typedef struct NR_slice_prb_ratio_t{
 	uint8_t min_ratio; // 0 to 100
 	uint8_t max_ratio; // MAx value = 100

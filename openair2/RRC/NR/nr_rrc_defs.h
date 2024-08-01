@@ -234,7 +234,7 @@ typedef struct drb_s {
   } pdcp_config;
   // F1-U
   f1u_tunnel_t f1u_tunnel_config;
-  ngap_allowed_NSSAI_t nssai;
+  nssai_t nssai;
 } drb_t;
 
 typedef enum {
