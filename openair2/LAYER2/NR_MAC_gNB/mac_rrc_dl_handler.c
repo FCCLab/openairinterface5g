@@ -227,7 +227,7 @@ static int handle_ue_context_drbs_setup(NR_UE_info_t *UE,
     const f1ap_drb_to_be_setup_t *drb = &req_drbs[i];
     f1ap_drb_to_be_setup_t *resp_drb = &(*resp_drbs)[i];
     NR_RLC_BearerConfig_t *rlc_BearerConfig = get_bearerconfig_from_drb(drb);
-    nr_rlc_add_drb(UE->rnti, drb->drb_id, rlc_BearerConfig);
+    nr_rlc_add_drb(rnti, drb->drb_id, rlc_BearerConfig, &drb->nssai);
 
     nr_lc_config_t c = {.lcid = rlc_BearerConfig->logicalChannelIdentity, .nssai = drb->nssai};
     int prio = 100;

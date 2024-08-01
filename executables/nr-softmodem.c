@@ -83,6 +83,9 @@ unsigned short config_frames[4] = {2,9,11,13};
 #ifdef ENABLE_AERIAL
 #include "nfapi/oai_integration/aerial/fapi_nvIPC.h"
 #endif
+#include "openair2/E1AP/e1ap_api.h"
+#include "openair2/SLICING/ue_slice_manager.h"
+
 #ifdef E2_AGENT
 #include "openair2/E2AP/flexric/src/agent/e2_agent_api.h"
 #include "openair2/E2AP/RAN_FUNCTION/init_ran_func.h"
@@ -103,6 +106,7 @@ volatile int             start_gNB = 0;
 int oai_exit = 0;
 
 int NB_UE_INST = 0;
+nr_nas_msg_snssai_t nas_allowed_nssai[8];
 
 static int wait_for_sync = 0;
 

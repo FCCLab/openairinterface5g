@@ -405,6 +405,7 @@ typedef struct f1ap_drb_to_be_setup_s {
   f1ap_drb_information_t drb_info;
   rlc_mode_t     rlc_mode;
   nssai_t nssai;
+  ngap_allowed_NSSAI_t nssai;
 } f1ap_drb_to_be_setup_t;
 
 typedef struct f1ap_srb_to_be_setup_s {

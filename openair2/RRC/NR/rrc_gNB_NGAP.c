@@ -827,7 +827,78 @@ void rrc_gNB_process_NGAP_PDUSESSION_SETUP_REQ(MessageDef *msg_p, instance_t ins
 
   AssertFatal(UE->rrc_ue_id == msg->gNB_ue_ngap_id, "logic bug\n");
   UE->amf_ue_ngap_id = msg->amf_ue_ngap_id;
-  trigger_bearer_setup(rrc, UE, msg->nb_pdusessions_tosetup, msg->pdusession_setup_params, msg->ueAggMaxBitRateDownlink);
+  e1ap_bearer_setup_req_t bearer_req = {0};
+
+  for (int i = 0; i < msg->nb_pdusessions_tosetup; i++) {
+    rrc_pdu_session_param_t *pduSession = find_pduSession(UE, msg->pdusession_setup_params[i].pdusession_id, true);
+    pdusession_t *session = &pduSession->param;
+    session->pdusession_id = msg->pdusession_setup_params[i].pdusession_id;
+    LOG_I(NR_RRC, "Adding pdusession %d, total nb of sessions %d\n", session->pdusession_id, UE->nb_of_pdusessions);
+    session->pdu_session_type = msg->pdusession_setup_params[i].pdu_session_type;
+    session->nas_pdu = msg->pdusession_setup_params[i].nas_pdu;
+    session->pdusessionTransfer = msg->pdusession_setup_params[i].pdusessionTransfer;
+    session->nssai = msg->pdusession_setup_params[i].nssai;
+    decodePDUSessionResourceSetup(session);
+    bearer_req.gNB_cu_cp_ue_id = msg->gNB_ue_ngap_id;
+    bearer_req.rnti = UE->rnti;
+    bearer_req.cipheringAlgorithm = UE->ciphering_algorithm;
+    bearer_req.integrityProtectionAlgorithm = UE->integrity_algorithm;
+    nr_derive_key(UP_ENC_ALG, UE->ciphering_algorithm, UE->kgnb, (uint8_t *)bearer_req.encryptionKey);
+    nr_derive_key(UP_INT_ALG, UE->integrity_algorithm, UE->kgnb, (uint8_t *)bearer_req.integrityProtectionKey);
+    bearer_req.ueDlAggMaxBitRate = msg->ueAggMaxBitRateDownlink;
+    pdu_session_to_setup_t *pdu = bearer_req.pduSession + bearer_req.numPDUSessions;
+    bearer_req.numPDUSessions++;
+    pdu->sessionId = session->pdusession_id;
+    pdu->sst = msg->pdusession_setup_params[i].nssai.sST;
+    memcpy(pdu->sd, msg->pdusession_setup_params[i].nssai.sD, 3);
+    pdu->integrityProtectionIndication = rrc->security.do_drb_integrity ? E1AP_IntegrityProtectionIndication_required : E1AP_IntegrityProtectionIndication_not_needed;
+
+    pdu->confidentialityProtectionIndication = rrc->security.do_drb_ciphering ? E1AP_ConfidentialityProtectionIndication_required : E1AP_ConfidentialityProtectionIndication_not_needed;
+    pdu->teId = session->gtp_teid;
+    memcpy(&pdu->tlAddress, session->upf_addr.buffer, 4); // Fixme: dirty IPv4 target
+    pdu->numDRB2Setup = 1; // One DRB per PDU Session. TODO: Remove hardcoding
+    for (int j=0; j < pdu->numDRB2Setup; j++) {
+      DRB_nGRAN_to_setup_t *drb = pdu->DRBnGRanList + j;
+
+      drb->id = i + j + UE->nb_of_pdusessions;
+
+      drb->defaultDRB = E1AP_DefaultDRB_true;
+
+      drb->sDAP_Header_UL = !(rrc->configuration.enable_sdap);
+      drb->sDAP_Header_DL = !(rrc->configuration.enable_sdap);
+
+      drb->pDCP_SN_Size_UL = E1AP_PDCP_SN_Size_s_18;
+      drb->pDCP_SN_Size_DL = E1AP_PDCP_SN_Size_s_18;
+
+      drb->discardTimer = E1AP_DiscardTimer_infinity;
+      drb->reorderingTimer = E1AP_T_Reordering_ms0;
+
+      drb->rLC_Mode = E1AP_RLC_Mode_rlc_am;
+
+      drb->numCellGroups = 1; // assume one cell group associated with a DRB
+
+      for (int k=0; k < drb->numCellGroups; k++) {
+        cell_group_t *cellGroup = drb->cellGroupList + k;
+        cellGroup->id = 0; // MCG
+      }
+
+      drb->numQosFlow2Setup = session->nb_qos;
+      for (int k=0; k < drb->numQosFlow2Setup; k++) {
+        qos_flow_to_setup_t *qos = drb->qosFlows + k;
+
+        qos->id = session->qos[k].qfi;
+        qos->fiveQI = session->qos[k].fiveQI;
+        qos->fiveQI_type = session->qos[k].fiveQI_type;
+
+        qos->qoSPriorityLevel = session->qos[k].allocation_retention_priority.priority_level;
+        qos->pre_emptionCapability = session->qos[k].allocation_retention_priority.pre_emp_capability;
+        qos->pre_emptionVulnerability = session->qos[k].allocation_retention_priority.pre_emp_vulnerability;
+      }
+    }
+  }
+  int xid = rrc_gNB_get_next_transaction_identifier(instance);
+  UE->xids[xid] = RRC_PDUSESSION_ESTABLISH;
+  rrc->cucp_cuup.bearer_context_setup(&bearer_req, instance);
   return;
 }
 

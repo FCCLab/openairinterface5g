@@ -141,6 +141,26 @@ static void freeDRBlist(NR_DRB_ToAddModList_t *list)
   return;
 }
 
+static drb_t *find_DRB(const drb_t *drb_list, const int drb_id)
+{
+  if (drb_list == NULL) return NULL;
+  for (int i = 0; i < NGAP_MAX_DRBS_PER_UE; i++) {
+    if (drb_list[i].status != DRB_INACTIVE &&
+        drb_list[i].drb_id == drb_id) {
+      return (drb_t*)(drb_list + i);
+    }
+  }
+  return NULL;
+}
+
+static void nr_rrc_addmod_srbs(int rnti,
+                               const NR_SRB_INFO_TABLE_ENTRY *srb_list,
+                               const int nb_srb,
+                               const struct NR_CellGroupConfig__rlc_BearerToAddModList *bearer_list)
+{
+  if (srb_list == NULL || bearer_list == NULL)
+    return;
+
 const neighbour_cell_configuration_t *get_neighbour_config(int serving_cell_nr_cellid)
 {
   const gNB_RRC_INST *rrc = RC.nrrrc[0];
@@ -175,6 +195,25 @@ const nr_neighbour_gnb_configuration_t *get_neighbour_cell_information(int servi
     }
   }
   return NULL;
+}
+
+static void nr_rrc_addmod_drbs(int rnti,
+                               const NR_DRB_ToAddModList_t *drb_list,
+                               const struct NR_CellGroupConfig__rlc_BearerToAddModList *bearer_list,
+                               const drb_t *drbs)
+{
+  for (int i = 0; i < drb_list->list.count; i++) {
+    const NR_DRB_ToAddMod_t *drb = drb_list->list.array[i];
+    for (int j = 0; j < bearer_list->list.count; j++) {
+      const NR_RLC_BearerConfig_t *bearer = bearer_list->list.array[j];
+      if (bearer->servedRadioBearer != NULL
+          && bearer->servedRadioBearer->present == NR_RLC_BearerConfig__servedRadioBearer_PR_drb_Identity
+          && drb->drb_Identity == bearer->servedRadioBearer->choice.drb_Identity) {
+        const drb_t *estDRB = find_DRB(drbs, drb->drb_Identity);
+        nr_rlc_add_drb(rnti, drb->drb_Identity, bearer, estDRB ? &estDRB->nssai : NULL);
+      }
+    }
+  }
 }
 
 typedef struct deliver_dl_rrc_message_data_s {
@@ -373,13 +412,14 @@ static void freeSRBlist(NR_SRB_ToAddModList_t *l)
 
 static void activate_srb(gNB_RRC_UE_t *UE, int srb_id)
 {
-  AssertFatal(srb_id == 1 || srb_id == 2, "handling only SRB 1 or 2\n");
-  if (UE->Srb[srb_id].Active == 1) {
-    LOG_W(RRC, "UE %d SRB %d already activated\n", UE->rrc_ue_id, srb_id);
-    return;
-  }
-  LOG_I(RRC, "activate SRB %d of UE %d\n", srb_id, UE->rrc_ue_id);
-  UE->Srb[srb_id].Active = 1;
+  NR_CellGroupConfig_t *cgc = get_softmodem_params()->sa ? ue_context_pP->ue_context.masterCellGroup : NULL;
+  gNB_RRC_UE_t *ue_p = &ue_context_pP->ue_context;
+  nr_rrc_mac_update_cellgroup(ue_p->rnti, cgc);
+  nr_rrc_addmod_srbs(ctxt_pP->rntiMaybeUEid, ue_p->Srb, maxSRBs, cgc->rlc_BearerToAddModList);
+  NR_DRB_ToAddModList_t *DRBs = fill_DRB_configList(ue_p);
+  nr_rrc_addmod_drbs(ctxt_pP->rntiMaybeUEid, DRBs, cgc->rlc_BearerToAddModList, ue_p->established_drbs);
+  freeDRBlist(DRBs);
+}
 
   NR_SRB_ToAddModList_t *list = CALLOC(sizeof(*list), 1);
   asn1cSequenceAdd(list->list, NR_SRB_ToAddMod_t, srb);
@@ -819,29 +859,31 @@ static void cuup_notify_reestablishment(gNB_RRC_INST *rrc, gNB_RRC_UE_t *ue_p)
       LOG_E(RRC, "UE %d: E1 Bearer Context Modification: no PDU session for DRB ID %d\n", ue_p->rrc_ue_id, drb_id);
       continue;
     }
-    /* Get pointer to existing (or new one) PDU session to modify in E1 */
-    pdu_session_to_mod_t *pdu_e1 = find_or_next_pdu_session(&req, pdu->param.pdusession_id);
-    AssertError(pdu != NULL,
-                continue,
-                "UE %u: E1 Bearer Context Modification: PDU session %d to setup is null\n",
-                ue_p->rrc_ue_id,
-                pdu->param.pdusession_id);
-    /* Prepare PDU for E1 Bearear Context Modification Request */
-    pdu_e1->sessionId = pdu->param.pdusession_id;
-    /* Fill DRB to setup with ID, DL TL and DL TEID */
-    DRB_nGRAN_to_mod_t *drb_e1 = &pdu_e1->DRBnGRanModList[pdu_e1->numDRB2Modify];
-    drb_e1->id = drb_id;
-    drb_e1->numDlUpParam = 1;
-    drb_t *drbs = &ue_p->established_drbs[drb_id];
-    memcpy(&drb_e1->DlUpParamList[0].tlAddress, &drbs->f1u_tunnel_config.cuup_addr_f1u.buffer, sizeof(uint8_t) * 4);
-    drb_e1->DlUpParamList[0].teId = drbs->f1u_tunnel_config.cuup_teid_f1u;
-    /* PDCP configuration */
-    bearer_context_pdcp_config_t *pdcp_config = &drb_e1->pdcp_config;
-    drb_t *rrc_drb = get_drb(ue_p, drb_id);
-    set_bearer_context_pdcp_config(pdcp_config, rrc_drb, rrc->configuration.um_on_default_drb);
-    pdcp_config->pDCP_Reestablishment = true;
-    /* increase DRB to modify counter */
-    pdu_e1->numDRB2Modify += 1;
+  }
+  NR_SRB_ToAddModList_t *SRBs = createSRBlist(ue_p, false);
+
+  nr_pdcp_add_srbs(ctxt_pP->enb_flag,
+                   ctxt_pP->rntiMaybeUEid,
+                   SRBs,
+                   (ue_p->integrity_algorithm << 4) | ue_p->ciphering_algorithm,
+                   kRRCenc,
+                   kRRCint);
+  freeSRBlist(SRBs);
+  nr_pdcp_add_drbs(ctxt_pP->enb_flag,
+                   ctxt_pP->rntiMaybeUEid,
+                   reestablish_ue_id,
+                   DRB_configList,
+                   (ue_p->integrity_algorithm << 4) | ue_p->ciphering_algorithm,
+                   kUPenc,
+                   kUPint,
+                   get_softmodem_params()->sa ? ue_p->masterCellGroup->rlc_BearerToAddModList : NULL);
+
+  /* Refresh DRBs */
+  if (!NODE_IS_CU(RC.nrrrc[ctxt_pP->module_id]->node_type)) {
+    LOG_D(NR_RRC,"Configuring RLC DRBs/SRBs for UE %04x\n",ue_context_pP->ue_context.rnti);
+    const struct NR_CellGroupConfig__rlc_BearerToAddModList *bearer_list =
+        ue_context_pP->ue_context.masterCellGroup->rlc_BearerToAddModList;
+    nr_rrc_addmod_drbs(ctxt_pP->rntiMaybeUEid, DRB_configList, bearer_list, ue_p->established_drbs);
   }
 
   req.cipheringAlgorithm = rrc->security.do_drb_ciphering ? ue_p->ciphering_algorithm : 0;
@@ -2152,52 +2194,19 @@ void rrc_gNB_process_e1_bearer_context_setup_resp(e1ap_bearer_setup_resp_t *resp
   }
 
   /* Instruction towards the DU for DRB configuration and tunnel creation */
-  f1ap_drb_to_be_setup_t drbs[32]; // maximum DRB can be 32
-  int nb_drb = 0;
-  for (int p = 0; p < resp->numPDUSessions; ++p) {
-    rrc_pdu_session_param_t *RRC_pduSession = find_pduSession(UE, resp->pduSession[p].id, false);
+  int nb_drb = e1ap_resp->pduSession[0].numDRBSetup;
+  f1ap_drb_to_be_setup_t drbs[nb_drb];
+  for (int i = 0; i < nb_drb; i++) {
+    drbs[i].drb_id = e1ap_resp->pduSession[0].DRBnGRanList[i].id;
+    drbs[i].rlc_mode = rrc->um_on_default_drb ? RLC_MODE_UM : RLC_MODE_AM;
+    drbs[i].up_ul_tnl[0].tl_address = e1ap_resp->pduSession[0].DRBnGRanList[i].UpParamList[0].tlAddress;
+    drbs[i].up_ul_tnl[0].port = rrc->eth_params_s.my_portd;
+    drbs[i].up_ul_tnl[0].teid = e1ap_resp->pduSession[0].DRBnGRanList[i].UpParamList[0].teId;
+    drbs[i].up_ul_tnl_length = 1;
+    /* pass NSSAI info to RLC */
+    rrc_pdu_session_param_t *RRC_pduSession = find_pduSession(UE, e1ap_resp->pduSession[0].id, false);
     DevAssert(RRC_pduSession);
-    for (int i = 0; i < resp->pduSession[p].numDRBSetup; i++) {
-      DRB_nGRAN_setup_t *drb_config = &resp->pduSession[p].DRBnGRanList[i];
-      f1ap_drb_to_be_setup_t *drb = &drbs[nb_drb];
-      drb->drb_id = resp->pduSession[p].DRBnGRanList[i].id;
-      drb->rlc_mode = rrc->configuration.um_on_default_drb ? RLC_MODE_UM : RLC_MODE_AM;
-      drb->up_ul_tnl[0].tl_address = drb_config->UpParamList[0].tlAddress;
-      drb->up_ul_tnl[0].port = rrc->eth_params_s.my_portd;
-      drb->up_ul_tnl[0].teid = drb_config->UpParamList[0].teId;
-      drb->up_ul_tnl_length = 1;
-
-      drb->nssai = RRC_pduSession->param.nssai;
-
-      /* pass QoS info to MAC */
-      int nb_qos_flows = drb_config->numQosFlowSetup;
-      AssertFatal(nb_qos_flows > 0, "must map at least one flow to a DRB\n");
-      drb->drb_info.flows_to_be_setup_length = nb_qos_flows;
-      drb->drb_info.flows_mapped_to_drb = calloc(nb_qos_flows, sizeof(f1ap_flows_mapped_to_drb_t));
-      AssertFatal(drb->drb_info.flows_mapped_to_drb, "could not allocate memory\n");
-      for (int j = 0; j < nb_qos_flows; j++) {
-        drb->drb_info.flows_mapped_to_drb[j].qfi = drb_config->qosFlows[j].qfi;
-
-        pdusession_level_qos_parameter_t *in_qos_char = get_qos_characteristics(drb_config->qosFlows[j].qfi, RRC_pduSession);
-        f1ap_qos_characteristics_t *qos_char = &drb->drb_info.flows_mapped_to_drb[j].qos_params.qos_characteristics;
-        if (in_qos_char->fiveQI_type == dynamic) {
-          qos_char->qos_type = dynamic;
-          qos_char->dynamic.fiveqi = in_qos_char->fiveQI;
-          qos_char->dynamic.qos_priority_level = in_qos_char->qos_priority;
-        } else {
-          qos_char->qos_type = non_dynamic;
-          qos_char->non_dynamic.fiveqi = in_qos_char->fiveQI;
-          qos_char->non_dynamic.qos_priority_level = in_qos_char->qos_priority;
-        }
-      }
-      /* the DRB QoS parameters: we just reuse the ones from the first flow */
-      drb->drb_info.drb_qos = drb->drb_info.flows_mapped_to_drb[0].qos_params;
-
-      /* pass NSSAI info to MAC */
-      drb->nssai = RRC_pduSession->param.nssai;
-
-      nb_drb++;
-    }
+    drbs[i].nssai = RRC_pduSession->param.nssai;
   }
 
   AssertFatal(UE->as_security_active, "logic bug: security should be active when activating DRBs\n");

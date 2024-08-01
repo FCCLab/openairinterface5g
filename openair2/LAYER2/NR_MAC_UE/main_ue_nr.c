@@ -46,11 +46,55 @@ void send_srb0_rrc(int ue_id, const uint8_t *sdu, sdu_size_t sdu_len, void *data
 {
   AssertFatal(sdu_len > 0 && sdu_len < CCCH_SDU_SIZE, "invalid CCCH SDU size %d\n", sdu_len);
 
-  MessageDef *message_p = itti_alloc_new_message(TASK_MAC_UE, 0, NR_RRC_MAC_CCCH_DATA_IND);
-  memset(NR_RRC_MAC_CCCH_DATA_IND(message_p).sdu, 0, sdu_len);
-  memcpy(NR_RRC_MAC_CCCH_DATA_IND(message_p).sdu, sdu, sdu_len);
-  NR_RRC_MAC_CCCH_DATA_IND(message_p).sdu_size = sdu_len;
-  itti_send_msg_to_task(TASK_RRC_NRUE, ue_id, message_p);
+    //LOG_I(MAC, "[MAIN] MAC_INIT_GLOBAL_PARAM IN...\n");
+
+    //LOG_I(MAC, "[MAIN] init UE MAC functions \n");
+    
+    //init mac here
+    nr_ue_mac_inst = (NR_UE_MAC_INST_t *)calloc(sizeof(NR_UE_MAC_INST_t), NB_NR_UE_MAC_INST);
+
+    for (int j = 0; j < NB_NR_UE_MAC_INST; j++)
+      nr_ue_init_mac(j);
+
+    int scs = get_softmodem_params()->sa ?
+              get_softmodem_params()->numerology :
+              rrc_inst ?
+              *rrc_inst->scell_group_config->spCellConfig->reconfigurationWithSync->spCellConfigCommon->ssbSubcarrierSpacing :
+              - 1;
+    if (scs > -1)
+      ue_init_config_request(nr_ue_mac_inst, scs);
+
+    if (rrc_inst && rrc_inst->scell_group_config) {
+
+      nr_rrc_mac_config_req_scg(0, 0, rrc_inst->scell_group_config);
+      AssertFatal(rlc_module_init(0) == 0, "%s: Could not initialize RLC layer\n", __FUNCTION__);
+      if (IS_SOFTMODEM_NOS1){
+        // get default noS1 configuration
+        NR_RadioBearerConfig_t *rbconfig = NULL;
+        NR_RLC_BearerConfig_t *rlc_rbconfig = NULL;
+        fill_nr_noS1_bearer_config(&rbconfig, &rlc_rbconfig);
+        struct NR_CellGroupConfig__rlc_BearerToAddModList rlc_bearer_list = {
+          .list = { .array = &rlc_rbconfig, .count = 1, .size = 1, }
+        };
+
+        // set up PDCP, RLC, MAC
+        nr_pdcp_layer_init();
+        nr_pdcp_add_drbs(ENB_FLAG_NO, nr_ue_mac_inst->crnti, 0, rbconfig->drb_ToAddModList, 0, NULL, NULL, &rlc_bearer_list);
+        nr_rlc_add_drb(nr_ue_mac_inst->crnti, rbconfig->drb_ToAddModList->list.array[0]->drb_Identity, rlc_rbconfig, NULL);
+        nr_ue_mac_inst->logicalChannelBearer_exist[0] = true;
+
+        // free memory
+        free_nr_noS1_bearer_config(&rbconfig, &rlc_rbconfig);
+      }
+    }
+    else {
+      LOG_I(MAC,"Running without CellGroupConfig\n");
+      if(get_softmodem_params()->sa == 1) {
+        AssertFatal(rlc_module_init(0) == 0, "%s: Could not initialize RLC layer\n", __FUNCTION__);
+      }
+    }
+
+    return (nr_ue_mac_inst);
 }
 
 void nr_ue_init_mac(NR_UE_MAC_INST_t *mac)

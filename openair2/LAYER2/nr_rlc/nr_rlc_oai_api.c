@@ -310,16 +310,69 @@ rlc_buffer_occupancy_t mac_rlc_get_buffer_occupancy_ind(const module_id_t module
   return ret;
 }
 
-rlc_op_status_t rlc_data_req(const protocol_ctxt_t *const ctxt_pP,
-                             const srb_flag_t srb_flagP,
-                             const MBMS_flag_t MBMS_flagP,
-                             const rb_id_t rb_idP,
-                             const mui_t muiP,
-                             confirm_t confirmP,
-                             sdu_size_t sdu_sizeP,
-                             uint8_t *sdu_pP,
-                             const uint32_t *const sourceL2Id,
-                             const uint32_t *const destinationL2Id)
+ngap_allowed_NSSAI_t mac_rlc_get_nssai(const rnti_t rntiP,
+                                       const logical_chan_id_t channel_idP)
+{
+  nr_rlc_ue_t *ue;
+  nr_rlc_entity_t *rb;
+  ngap_allowed_NSSAI_t ret;
+
+  nr_rlc_manager_lock(nr_rlc_ue_manager);
+  ue = nr_rlc_manager_get_ue(nr_rlc_ue_manager, rntiP);
+
+  switch (channel_idP) {
+  case 4 ... NGAP_MAX_DRBS_PER_UE: rb = ue->drb[channel_idP - 4]; break;
+  default:                         rb = NULL;                     break;
+  }
+
+  if (rb != NULL) {
+    ret = rb->nssai;
+  } else {
+    ret.sST = -1;
+  }
+
+  nr_rlc_manager_unlock(nr_rlc_ue_manager);
+  return ret;
+}
+
+//slice_info_mac_t mac_rlc_get_nssai(const rnti_t rntiP,
+//                                       const logical_chan_id_t channel_idP)
+//{
+//  nr_rlc_ue_t *ue;
+//  nr_rlc_entity_t *rb;
+//  //ngap_allowed_NSSAI_t ret;
+//  slice_info_mac_t ret;
+//
+//  nr_rlc_manager_lock(nr_rlc_ue_manager);
+//  ue = nr_rlc_manager_get_ue(nr_rlc_ue_manager, rntiP);
+//
+//  switch (channel_idP) {
+//  case 4 ... NGAP_MAX_DRBS_PER_UE: rb = ue->drb[channel_idP - 4]; break;
+//  default:                         rb = NULL;                     break;
+//  }
+//
+//  if (rb != NULL) {
+//    ret->nssai_config = rb->nssai;
+//  } else {
+//    ret.s_id =0;
+//  }
+//
+//  nr_rlc_manager_unlock(nr_rlc_ue_manager);
+//  return ret;
+//}
+
+
+rlc_op_status_t rlc_data_req     (const protocol_ctxt_t *const ctxt_pP,
+			const srb_flag_t   srb_flagP,
+			const MBMS_flag_t  MBMS_flagP,
+			const rb_id_t      rb_idP,
+			const mui_t        muiP,
+			confirm_t    confirmP,
+			sdu_size_t   sdu_sizeP,
+			mem_block_t *sdu_pP,
+                        const uint32_t *const sourceL2Id,
+                        const uint32_t *const destinationL2Id
+			)
 {
   int ue_id = ctxt_pP->rntiMaybeUEid;
   nr_rlc_ue_t *ue;
@@ -770,29 +823,16 @@ void nr_rlc_add_srb(int ue_id, int srb_id, const NR_RLC_BearerConfig_t *rlc_Bear
     poll_byte = -1;
     max_retx_threshold = 8;
     sn_field_length = 12;
-  }
-
-  nr_rlc_manager_lock(nr_rlc_ue_manager);
-  nr_rlc_ue_t *ue = nr_rlc_manager_get_ue(nr_rlc_ue_manager, ue_id);
-  AssertFatal(rlc_BearerConfig->servedRadioBearer &&
-              (rlc_BearerConfig->servedRadioBearer->present ==
-              NR_RLC_BearerConfig__servedRadioBearer_PR_srb_Identity),
-              "servedRadioBearer for SRB mandatory present when setting up an SRB RLC entity\n");
-  int local_id = rlc_BearerConfig->logicalChannelIdentity - 1; // LCID 0 for SRB 0 not mapped
-  ue->lcid2rb[local_id].type = NR_RLC_SRB;
-  ue->lcid2rb[local_id].choice.srb_id = rlc_BearerConfig->servedRadioBearer->choice.srb_Identity;
-  if (ue->srb[srb_id-1] != NULL) {
-    LOG_E(RLC, "SRB %d already exists for UE %d, do nothing\n", srb_id, ue_id);
-  } else {
-    nr_rlc_entity_t *nr_rlc_am = new_nr_rlc_entity_am(RLC_RX_MAXSIZE,
-                                                      RLC_TX_MAXSIZE,
-                                                      deliver_sdu, ue,
-                                                      successful_delivery, ue,
-                                                      max_retx_reached, ue,
-                                                      t_poll_retransmit,
-                                                      t_reassembly, t_status_prohibit,
-                                                      poll_pdu, poll_byte, max_retx_threshold,
-                                                      sn_field_length);
+    nr_rlc_am = new_nr_rlc_entity_am(RLC_RX_MAXSIZE,
+                                     RLC_TX_MAXSIZE,
+                                     deliver_sdu, ue,
+                                     successful_delivery, ue,
+                                     max_retx_reached, ue,
+                                     t_poll_retransmit,
+                                     t_reassembly, t_status_prohibit,
+                                     poll_pdu, poll_byte, max_retx_threshold,
+                                     sn_field_length,
+                                     NULL);
     nr_rlc_ue_add_srb_rlc_entity(ue, srb_id, nr_rlc_am);
 
     LOG_I(RLC, "Added srb %d to UE %d\n", srb_id, ue_id);
@@ -800,7 +840,7 @@ void nr_rlc_add_srb(int ue_id, int srb_id, const NR_RLC_BearerConfig_t *rlc_Bear
   nr_rlc_manager_unlock(nr_rlc_ue_manager);
 }
 
-static void add_drb_am(int ue_id, int drb_id, const NR_RLC_BearerConfig_t *rlc_BearerConfig)
+static void add_drb_am(int rnti, int drb_id, const NR_RLC_BearerConfig_t *rlc_BearerConfig, const ngap_allowed_NSSAI_t *nssai)
 {
   struct NR_RLC_Config *r = rlc_BearerConfig->rlc_Config;
 
@@ -849,15 +889,16 @@ static void add_drb_am(int ue_id, int drb_id, const NR_RLC_BearerConfig_t *rlc_B
   if (ue->drb[drb_id-1] != NULL) {
     LOG_E(RLC, "DRB %d already exists for UE %d, do nothing\n", drb_id, ue_id);
   } else {
-    nr_rlc_entity_t *nr_rlc_am = new_nr_rlc_entity_am(RLC_RX_MAXSIZE,
-                                                      RLC_TX_MAXSIZE,
-                                                      deliver_sdu, ue,
-                                                      successful_delivery, ue,
-                                                      max_retx_reached, ue,
-                                                      t_poll_retransmit,
-                                                      t_reassembly, t_status_prohibit,
-                                                      poll_pdu, poll_byte, max_retx_threshold,
-                                                      sn_field_length);
+    nr_rlc_am = new_nr_rlc_entity_am(RLC_RX_MAXSIZE,
+                                     RLC_TX_MAXSIZE,
+                                     deliver_sdu, ue,
+                                     successful_delivery, ue,
+                                     max_retx_reached, ue,
+                                     t_poll_retransmit,
+                                     t_reassembly, t_status_prohibit,
+                                     poll_pdu, poll_byte, max_retx_threshold,
+                                     sn_field_length,
+                                     nssai);
     nr_rlc_ue_add_drb_rlc_entity(ue, drb_id, nr_rlc_am);
 
     LOG_I(RLC, "Added drb %d to UE %d\n", drb_id, ue_id);
@@ -865,7 +906,7 @@ static void add_drb_am(int ue_id, int drb_id, const NR_RLC_BearerConfig_t *rlc_B
   nr_rlc_manager_unlock(nr_rlc_ue_manager);
 }
 
-static void add_drb_um(int ue_id, int drb_id, const NR_RLC_BearerConfig_t *rlc_BearerConfig)
+static void add_drb_um(int rnti, int drb_id, const NR_RLC_BearerConfig_t *rlc_BearerConfig, const ngap_allowed_NSSAI_t *nssai)
 {
   struct NR_RLC_Config *r = rlc_BearerConfig->rlc_Config;
 
@@ -904,11 +945,12 @@ static void add_drb_um(int ue_id, int drb_id, const NR_RLC_BearerConfig_t *rlc_B
   if (ue->drb[drb_id-1] != NULL) {
     LOG_E(RLC, "DEBUG add_drb_um: warning DRB %d already exist for ue %d, do nothing\n", drb_id, ue_id);
   } else {
-    nr_rlc_entity_t *nr_rlc_um = new_nr_rlc_entity_um(RLC_RX_MAXSIZE,
-                                                      RLC_TX_MAXSIZE,
-                                                      deliver_sdu, ue,
-                                                      t_reassembly,
-                                                      sn_field_length);
+    nr_rlc_um = new_nr_rlc_entity_um(RLC_RX_MAXSIZE,
+                                     RLC_TX_MAXSIZE,
+                                     deliver_sdu, ue,
+                                     t_reassembly,
+                                     sn_field_length,
+                                     nssai);
     nr_rlc_ue_add_drb_rlc_entity(ue, drb_id, nr_rlc_um);
 
     LOG_D(RLC, "Added drb %d to UE %d\n", drb_id, ue_id);
@@ -916,14 +958,14 @@ static void add_drb_um(int ue_id, int drb_id, const NR_RLC_BearerConfig_t *rlc_B
   nr_rlc_manager_unlock(nr_rlc_ue_manager);
 }
 
-void nr_rlc_add_drb(int ue_id, int drb_id, const NR_RLC_BearerConfig_t *rlc_BearerConfig)
+void nr_rlc_add_drb(int rnti, int drb_id, const NR_RLC_BearerConfig_t *rlc_BearerConfig, const ngap_allowed_NSSAI_t *nssai)
 {
   switch (rlc_BearerConfig->rlc_Config->present) {
   case NR_RLC_Config_PR_am:
-    add_drb_am(ue_id, drb_id, rlc_BearerConfig);
+    add_drb_am(rnti, drb_id, rlc_BearerConfig, nssai);
     break;
   case NR_RLC_Config_PR_um_Bi_Directional:
-    add_drb_um(ue_id, drb_id, rlc_BearerConfig);
+    add_drb_um(rnti, drb_id, rlc_BearerConfig, nssai);
     break;
   default:
     LOG_E(RLC, "Fatal: unhandled DRB type\n");

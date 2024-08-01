@@ -41,8 +41,8 @@
 struct NR_RLC_Config;
 struct NR_LogicalChannelConfig;
 
-void nr_rlc_add_srb(int ue_id, int srb_id, const NR_RLC_BearerConfig_t *rlc_BearerConfig);
-void nr_rlc_add_drb(int ue_id, int drb_id, const NR_RLC_BearerConfig_t *rlc_BearerConfig);
+void nr_rlc_add_srb(int rnti, int srb_id, const NR_RLC_BearerConfig_t *rlc_BearerConfig);
+void nr_rlc_add_drb(int rnti, int drb_id, const NR_RLC_BearerConfig_t *rlc_BearerConfig, const ngap_allowed_NSSAI_t *nssai);
 
 logical_chan_id_t nr_rlc_get_lcid_from_rb(int ue_id, bool is_srb, int rb_id);
 void nr_rlc_reestablish_entity(int ue_id, int lc_id);
@@ -56,14 +56,14 @@ void nr_rlc_release_entity(int ue_id, logical_chan_id_t channel_id);
 
 void nr_rlc_reconfigure_entity(int ue_id, int lc_id, NR_RLC_Config_t *rlc_Config);
 
-int nr_rlc_get_available_tx_space(const int ue_id, const logical_chan_id_t channel_idP);
+struct gNB_MAC_INST_s;
+void nr_rlc_activate_srb0(int rnti, struct gNB_MAC_INST_s *mac, void *rawUE,
+                          void (*send_initial_ul_rrc_message)(
+                                     struct gNB_MAC_INST_s *mac,
+                                     int                    rnti,
+                                     const uint8_t         *sdu,
+                                     sdu_size_t             sdu_len,
+                                     void                  *rawUE));
 
-void nr_rlc_activate_avg_time_to_tx(const int ue_id, const logical_chan_id_t channel_id, const bool is_on);
-
-void nr_rlc_srb_recv_sdu(const int ue_id, const logical_chan_id_t channel_id, unsigned char *buf, int size);
-
-void nr_rlc_activate_srb0(int ue_id,
-                          void *data,
-                          void (*send_initial_ul_rrc_message)(int rnti, const uint8_t *sdu, sdu_size_t sdu_len, void *data));
-
-bool nr_rlc_get_statistics(int ue_id, int srb_flag, int rb_id, nr_rlc_statistics_t *out);
+ngap_allowed_NSSAI_t mac_rlc_get_nssai(const rnti_t rntiP,
+                                       const logical_chan_id_t channel_idP);

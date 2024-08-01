@@ -290,6 +290,8 @@ typedef struct DRB_nGRAN_failed_s {
 
 typedef struct pdu_session_setup_s {
   long id;
+  uint8_t sst;
+  uint8_t sd[3];
   in_addr_t tlAddress;
   long teId;
   int numDRBSetup;

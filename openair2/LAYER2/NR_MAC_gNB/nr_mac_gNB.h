@@ -446,6 +446,8 @@ typedef struct NR_sched_pdsch {
   // time_domain_allocation is the index of a list of tda
   int time_domain_allocation;
   NR_tda_info_t tda_info;
+  int8_t slice_id_dlsch;
+
 } NR_sched_pdsch_t;
 
 typedef struct NR_UE_harq {
@@ -549,6 +551,38 @@ typedef struct nr_lc_config {
   NR_QoS_config_t qos_config[NR_MAX_NUM_QFI];
 } nr_lc_config_t;
 
+typedef ngap_allowed_NSSAI_t nr_mac_nssai_t;
+
+typedef struct NR_slice_prb_ratio_t{
+	uint8_t min_ratio; // 0 to 100
+	uint8_t max_ratio; // MAx value = 100
+}NR_slice_prb_ratio_t;
+
+
+typedef struct NR_mac_slice_s{
+	int8_t id;
+	nr_mac_nssai_t nssai_config;
+	uint32_t bytes;
+}NR_mac_slice_t;
+
+
+typedef struct NR_slice_info_s {
+	/// id used internally: -1 => not a valid slice,0 => default slice for SRB
+	int8_t s_id;
+	NR_mac_slice_t conf;
+	NR_slice_prb_ratio_t policy;
+} NR_slice_info_t;
+
+
+
+typedef struct {
+  /// scheduling control info
+  // last element always NULL
+  pthread_mutex_t mutex;
+  NR_slice_info_t *list[MAX_NUM_SLICE+1];
+} NR_Slices_t;
+
+
 /*! \brief scheduling control information set through an API */
 #define MAX_CSI_REPORTS 48
 typedef struct {
@@ -640,6 +674,22 @@ typedef struct {
   /// UL HARQ processes that await retransmission
   NR_list_t retrans_ul_harq;
   NR_UE_mac_ce_ctrl_t UE_mac_ce_ctrl; // MAC CE related information
+  /// number of active DL LCs
+  uint8_t dl_lc_num;
+  /// order in which DLSCH scheduler should allocate LCs
+  uint8_t dl_lc_ids[NR_MAX_NUM_LCID];
+  /// NSSAIs
+  //nr_mac_nssai_t nssai[NR_MAX_NUM_LCID];
+  //slice_info_mac_t sl_config[NR_MAX_NUM_LCID];
+
+  NR_mac_slice_t dl_sl_info[NR_MAX_NUM_LCID];
+
+  NR_mac_slice_t avail_slice_list[MAX_NUM_PDU_SESSION+1];
+
+  uint8_t num_slice_d;
+  uint32_t num_total_bytes_slice[MAX_NUM_PDU_SESSION+1];
+  int8_t slice_for_this_sched;
+  int8_t alreadySched;
 
   /// Timer for RRC processing procedures
   uint32_t rrc_processing_timer;
@@ -650,6 +700,9 @@ typedef struct {
   /// per-LC configuration
   seq_arr_t lc_config;
 } NR_UE_sched_ctrl_t;
+
+
+
 
 typedef struct {
   uicc_t *uicc;
@@ -873,6 +926,18 @@ typedef struct gNB_MAC_INST_s {
   int16_t frame;
 
   pthread_mutex_t sched_lock;
+  /*
+   * Slice list assosiated with this gNB
+   *
+   */
+
+  uint8_t dl_num_slice;
+  // slice info
+  //nr_slice_policy_t nr_slice_info[MAX_NUM_SLICE+1];
+
+  //NR_slice_info_t nr_slice[MAX_NUM_SLICE+1];
+
+  NR_Slices_t SLI_info;
 
 } gNB_MAC_INST;
 

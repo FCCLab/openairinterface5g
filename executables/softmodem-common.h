@@ -112,6 +112,10 @@ extern "C"
 #define CONFIG_HLP_TADV                                                                                                      \
   "Set RF board timing_advance to compensate fix delay inside the RF board between Rx and Tx timestamps (RF board internal " \
   "issues)\n"
+#define CONFIG_HLP_SYNC_REF      "Sync Reference in Sidelink\n"
+#define CONFIG_HLP_NID1          "Set NID1 value in Sidelink\n"
+#define CONFIG_HLP_NID2          "Set NID2 value in Sidelink\n"
+#define CONFIG_HLP_NETSLICE      "Enable network slicing: Manage PDU sessions from external socket.\n"
 
 /*-----------------------------------------------------------------------------------------------------------------------------------------------------*/
 /*                                            command line parameters common to eNodeB and UE                                                          */
@@ -144,6 +148,9 @@ extern "C"
 #define CONTINUOUS_TX       softmodem_params.continuous_tx
 #define SYNC_REF            softmodem_params.sync_ref
 #define LDPC_OFFLOAD_FLAG   softmodem_params.ldpc_offload_flag
+#define NID1                softmodem_params.nid1
+#define NID2                softmodem_params.nid2
+#define NET_SLICE           softmodem_params.network_slicing
 
 #define DEFAULT_RFCONFIG_FILE    "/usr/local/etc/syriq/ue.band7.tm1.PRB100.NR40.dat";
 
@@ -190,6 +197,9 @@ extern int usrp_tx_thread;
   {"sync-ref",              CONFIG_HLP_SYNC_REF,      0,              .uptr=&SYNC_REF,                        .defintval=0,             TYPE_UINT,   0},  \
   {"A" ,                    CONFIG_HLP_TADV,          0,             .iptr=&softmodem_params.command_line_sample_advance,.defintval=0,            TYPE_INT,   0},  \
   {"E" ,                    CONFIG_HLP_TQFS,          PARAMFLAG_BOOL, .iptr=&softmodem_params.threequarter_fs, .defintval=0,            TYPE_INT,    0}, \
+  {"nid1",                  CONFIG_HLP_NID1,          0,              .iptr=&NID1,                            .defintval=10,            TYPE_INT,    0},  \
+  {"nid2",                  CONFIG_HLP_NID2,          0,              .iptr=&NID2,                            .defintval=1,             TYPE_INT,    0},  \
+  {"net-slice",             CONFIG_HLP_NETSLICE,      PARAMFLAG_BOOL, .iptr=&NET_SLICE,                       .defintval=0,             TYPE_INT,    0},  \
 }
 // clang-format on
 
@@ -229,6 +239,7 @@ extern int usrp_tx_thread;
                {"MONOLITHIC", "PNF", "VNF", "AERIAL","UE_STUB_PNF","UE_STUB_OFFNET","STANDALONE_PNF"}, \
                {NFAPI_MONOLITHIC, NFAPI_MODE_PNF, NFAPI_MODE_VNF, NFAPI_MODE_AERIAL,NFAPI_UE_STUB_PNF,NFAPI_UE_STUB_OFFNET,NFAPI_MODE_STANDALONE_PNF}, \
                7 } }, \
+    { .s5 = { NULL } },                     \
     { .s5 = { NULL } },                     \
     { .s5 = { NULL } },                     \
     { .s5 = { NULL } },                     \
@@ -346,6 +357,9 @@ typedef struct {
   int no_itti;
   int ldpc_offload_flag;
   int threequarter_fs;
+  int            nid1;
+  int            nid2;
+  int            network_slicing;
 } softmodem_params_t;
 
 uint64_t get_softmodem_optmask(void);

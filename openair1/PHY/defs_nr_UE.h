@@ -603,6 +603,10 @@ typedef struct PHY_VARS_NR_UE_s {
   // Sidelink parameters
   sl_nr_sidelink_mode_t sl_mode;
   sl_nr_ue_phy_params_t SL_UE_PHY_PARAMS;
+  notifiedFIFO_t phy_config_ind;
+
+  int tx_wait_for_dlsch[NR_MAX_SLOTS_PER_FRAME];
+  int network_slicing;
 } PHY_VARS_NR_UE;
 
 typedef struct {
