@@ -1,0 +1,1 @@
+/usr/bin/cc -O3 -DNDEBUG CMakeFiles/sched_fifo_poll.dir/sched_fifo_poll.c.o -o sched_fifo_poll  -pthread 

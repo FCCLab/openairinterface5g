@@ -1,0 +1,1 @@
+/usr/bin/cc -O3 -DNDEBUG -rdynamic CMakeFiles/example-reformatter-alt.dir/example-reformatter-alt.c.o -o ../example-reformatter-alt  ../libyaml.a 

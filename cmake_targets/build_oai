@@ -412,6 +412,8 @@ function main() {
    esac
   done
 
+   CMAKE_CMD="$CMAKE_CMD -DKPM_VERSION=KPM_V2_03 -DE2AP_VERSION=E2AP_V2"
+
   #######################################################
   # Setting and printing OAI envs, we should check here #
   #######################################################

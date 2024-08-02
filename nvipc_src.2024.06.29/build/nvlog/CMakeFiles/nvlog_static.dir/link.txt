@@ -1,0 +1,2 @@
+/usr/bin/ar qc libnvlog_static.a CMakeFiles/nvlog_static.dir/src/nv_utils.c.o CMakeFiles/nvlog_static.dir/src/nvlog.c.o CMakeFiles/nvlog_static.dir/src/stat_log.c.o CMakeFiles/nvlog_static.dir/src/aerial_event_code.c.o CMakeFiles/nvlog_static.dir/src/exit_handler.cpp.o CMakeFiles/nvlog_static.dir/src/nvlog.cpp.o
+/usr/bin/ranlib libnvlog_static.a

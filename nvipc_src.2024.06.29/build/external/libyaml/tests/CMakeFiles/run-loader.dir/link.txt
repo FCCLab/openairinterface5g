@@ -1,0 +1,1 @@
+/usr/bin/cc -O3 -DNDEBUG -rdynamic CMakeFiles/run-loader.dir/run-loader.c.o -o ../run-loader  ../libyaml.a 

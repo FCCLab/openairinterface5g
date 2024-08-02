@@ -1,0 +1,1 @@
+/usr/bin/cc -O3 -DNDEBUG -rdynamic CMakeFiles/test-reader.dir/test-reader.c.o -o ../test-reader  ../libyaml.a 

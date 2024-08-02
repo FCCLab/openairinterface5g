@@ -1,0 +1,1 @@
+/usr/bin/cc -O3 -DNDEBUG -rdynamic CMakeFiles/run-parser-test-suite.dir/run-parser-test-suite.c.o -o ../run-parser-test-suite  ../libyaml.a 

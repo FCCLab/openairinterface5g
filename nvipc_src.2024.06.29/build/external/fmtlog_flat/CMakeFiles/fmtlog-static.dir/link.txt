@@ -1,0 +1,2 @@
+/usr/bin/ar qc libfmtlog-static.a CMakeFiles/fmtlog-static.dir/fmtlog.cc.o
+/usr/bin/ranlib libfmtlog-static.a

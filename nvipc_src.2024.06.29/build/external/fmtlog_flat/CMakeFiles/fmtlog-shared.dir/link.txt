@@ -1,0 +1,1 @@
+/usr/bin/c++ -fPIC -O3 -DNDEBUG -shared -Wl,-soname,libfmtlog-shared.so -o libfmtlog-shared.so CMakeFiles/fmtlog-shared.dir/fmtlog.cc.o   -L/home/vantuan_ngo/openairinterface5g/nvipc_src.2024.06.29/external/fmtlog_flat/.  -Wl,-rpath,/home/vantuan_ngo/openairinterface5g/nvipc_src.2024.06.29/external/fmtlog_flat/.: -lpthread 

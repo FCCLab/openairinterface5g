@@ -1,0 +1,20 @@
+{
+    "scope": {
+      "sliceId": {
+        "sst": 1,
+        "sd": "123456",
+        "plmnId": {
+          "mcc": "001",
+          "mnc": "01"
+        }
+      }
+    },
+
+    "sliceSlaObjectives": {
+      "maxNumberOfUes": 1,
+      "maxNumberOfPduSessions": 2,
+      "maxDlThptPerUe": 5,
+      "guaDlThptPerSlice": 10,
+      "maxDlThptPerSlice": 100
+    }
+}

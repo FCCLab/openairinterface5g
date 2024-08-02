@@ -30,6 +30,37 @@ sm_ag_if_ans_t write_ctrl_slice_sm(void const* data)
 
   if(msg->type == SLICE_CTRL_SM_V0_ADD){
     printf("[E2 Agent]: SLICE CONTROL ADD rx\n");
+    printf("slice_ctrl_msg_t: {\n");
+    printf("  .type = %u\n", msg->type);
+    printf("  .u.add_mod_slice = {\n");
+    printf("    .dl = {\n");
+    printf("      .len_slices = %u\n", msg->u.add_mod_slice.dl.len_slices);
+    printf("      .slices = {\n");
+    for(uint32_t i = 0; i < msg->u.add_mod_slice.dl.len_slices; ++i){
+      printf("        {%u, {%u, %u, %u}}\n", msg->u.add_mod_slice.dl.slices[i].id,
+             msg->u.add_mod_slice.dl.slices[i].params.type,
+             msg->u.add_mod_slice.dl.slices[i].params.u.sta.pos_low,
+             msg->u.add_mod_slice.dl.slices[i].params.u.sta.pos_high
+             );
+    }
+    printf("      }\n");
+    printf("      .len_sched_name = %u\n", msg->u.add_mod_slice.dl.len_sched_name);
+    printf("      .sched_name = %s\n", msg->u.add_mod_slice.dl.sched_name);
+    printf("    }\n");
+    printf("    .ul = {\n");
+    printf("      .len_slices = %u\n", msg->u.add_mod_slice.ul.len_slices);
+    printf("      .slices = {\n");
+    for(uint32_t i = 0; i < msg->u.add_mod_slice.ul.len_slices; ++i){
+      printf("        {%u, {%u, %u}}\n", msg->u.add_mod_slice.ul.slices[i].id,
+             msg->u.add_mod_slice.ul.slices[i].params.type,
+             msg->u.add_mod_slice.ul.slices[i].params.u.sta.pos_low);
+    }
+    printf("      }\n");
+    printf("      .len_sched_name = %u\n", msg->u.add_mod_slice.ul.len_sched_name);
+    printf("      .sched_name = %s\n", msg->u.add_mod_slice.ul.sched_name);
+    printf("    }\n");
+    printf("  }\n");
+    printf("}\n");
   } else if (msg->type == SLICE_CTRL_SM_V0_DEL){
     printf("[E2 Agent]: SLICE CONTROL DEL rx\n");
   } else if (msg->type == SLICE_CTRL_SM_V0_UE_SLICE_ASSOC){

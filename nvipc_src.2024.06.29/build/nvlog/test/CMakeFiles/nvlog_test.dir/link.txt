@@ -1,0 +1,1 @@
+/usr/bin/c++ -O3 -DNDEBUG CMakeFiles/nvlog_test.dir/nvlog_test.cpp.o -o nvlog_test  ../libnvlog_static.a -lrt -pthread ../../external/libyaml/libyaml.a ../../external/fmtlog_flat/libfmtlog-static.a ../../external/fmtlog_flat/fmt/libfmt.a -lpthread 
