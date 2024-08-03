@@ -350,7 +350,15 @@ void nr_update_slice_policy(module_id_t module_id,
     printf("[SL Policy]: Error in json file array format\n");
 	return;
   }
-
+  
+  // printf("json s_array : \n");
+  // for (int i = 0; i < json_object_array_length(s_array); i++) {
+  //   s_array_obj = json_object_array_get_idx(s_array, i);
+  //   printf("s_array_obj %d : \n", i);
+  //   json_object_object_foreach(s_array_obj, key, val) {
+  //     printf("key %s, val %s \n", key, json_object_get_string(val));
+  //   }
+  // }
 
   for (int i = 0; i < json_object_array_length(s_array); i++) {
     s_array_obj = json_object_array_get_idx(s_array, i);
@@ -385,8 +393,15 @@ void nr_update_slice_policy(module_id_t module_id,
   if(sum>100) {
 		 AssertFatal(1==0,"Not valid PRB ratio \n");
   }
-  for (int i = 0; i < mac->dl_num_slice; i++) {
-		 printf("SLI_info->list[%d]->policy.min_ratio %d, SLI_info->list[%d]->policy.max_ratio %d \n",i, SLI_info->list[i]->policy.min_ratio, i,SLI_info->list[i]->policy.max_ratio);
+
+  printf("SLI_info : \n");
+  for (int i=0; i<mac->dl_num_slice; i++) {
+    printf("[%d] : ", i);
+    printf("sST : %d, ", SLI_info->list[i]->conf.nssai_config.sST);
+    printf("sD_flag : %d, ", SLI_info->list[i]->conf.nssai_config.sD_flag);
+    printf("sD : %d %d %d, ", SLI_info->list[i]->conf.nssai_config.sD[0], SLI_info->list[i]->conf.nssai_config.sD[1], SLI_info->list[i]->conf.nssai_config.sD[2]);
+    printf("min_ratio : %d, ", SLI_info->list[i]->policy.min_ratio);
+    printf("max_ratio : %d\n", SLI_info->list[i]->policy.max_ratio);
   }
 
 }
