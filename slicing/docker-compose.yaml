@@ -1,0 +1,51 @@
+services:
+    oai-cu-cp:
+        container_name: "oai-cu-cp"
+        image: oai-nr-softmodem:latest
+        expose:
+            - 80/tcp
+            - 8080/tcp
+        volumes:
+            - ./gnb-cucp.sa.f1.conf:/opt/oai-gnb/etc/gnb.conf
+        environment:
+            - TZ=Europe/Paris
+        networks:
+            public_net:
+                ipv4_address: 192.168.71.10
+        tty: true
+    # oai-cu-up:
+    #     container_name: "oai-cu-up"
+    #     image: oai-nr-cuup:latest
+    #     expose:
+    #         - 80/tcp
+    #         - 8080/tcp
+    #     volumes:
+    #         - ./gnb-cuup.sa.f1.conf:/opt/oai-gnb/etc/gnb.conf
+    #     environment:
+    #         - TZ=Europe/Paris
+    #     networks:
+    #         public_net:
+    #             ipv4_address: 192.168.71.20
+    #     tty: true
+    # oai-du:
+    #     container_name: "oai-du"
+    #     image: oai-nr-softmodem:latest
+    #     expose:
+    #         - 80/tcp
+    #         - 8080/tcp
+    #     volumes:
+    #         - ./gnb-du.sa.conf:/opt/oai-gnb/etc/gnb.conf
+    #     environment:
+    #         - TZ=Europe/Paris
+    #     networks:
+    #         public_net:
+    #             ipv4_address: 192.168.71.30
+    #     tty: true
+
+networks:
+    public_net:
+        driver: bridge
+        name: oai-cucp-cuup-du-split
+        ipam:
+            config:
+                - subnet: 192.168.71.0/24
