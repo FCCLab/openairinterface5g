@@ -21,46 +21,30 @@
 #---------------------------------------------------------------------
 #
 # Dockerfile for the Open-Air-Interface BUILD service
-#   Valid for Ubuntu 20.04
+#   Valid for Ubuntu 22.04
 #
 #---------------------------------------------------------------------
 
+FROM ran-base:ubuntu22 as ran-build
+ARG BUILD_OPTION
 
-FROM ubuntu:focal AS ran-base
-ARG NEEDED_GIT_PROXY
-ENV DEBIAN_FRONTEND=noninteractive
-ENV TZ=Europe/Paris
-ENV BUILD_UHD_FROM_SOURCE=True
-ENV UHD_VERSION=4.6.0.0
-
-#install developers pkg/repo
-RUN apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get upgrade --yes && \
-    DEBIAN_FRONTEND=noninteractive apt-get install --yes \
-       #gcc needed for build_oai
-       build-essential \
-       psmisc \
-       git \
-       xxd \
-       # python3-pip for conf template generation
-       python3-pip && \
-    pip3 install --ignore-installed pyyaml
-
-# Add "Tini - A tiny but valid init for containers", https://github.com/krallin/tini
-# it will be copied into target containers, to print exit numbers and handle signals properly
-ENV TINI_VERSION v0.19.0
-ADD https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini /tini
-RUN chmod +x /tini
-
-# In some network environments, GIT proxy is required
-RUN /bin/bash -c "if [[ -v NEEDED_GIT_PROXY ]]; then git config --global http.proxy $NEEDED_GIT_PROXY; fi"
-
-#create the WORKDIR
+RUN rm -Rf /oai-ran
 WORKDIR /oai-ran
 COPY . .
 
-#run build_oai -I to get the builder image
-RUN /bin/sh oaienv && \ 
+# build all targets so final targets can be created afterwards
+RUN /bin/sh oaienv && \
     cd cmake_targets && \
     mkdir -p log && \
-    ./build_oai -I -w USRP --install-optional-packages
+    ./build_oai -c --ninja \
+      --eNB --gNB --RU --UE --nrUE \
+      --build-lib "telnetsrv enbscope uescope nrscope" \
+      -w USRP -t Ethernet \
+      --build-e2 --cmake-opt -DXAPP_MULTILANGUAGE=OFF \
+      --noavx512 \
+      $BUILD_OPTION && \
+    # Mainly to see if the sanitize option was perfectly executed
+    echo "---- ldd on executables ----" && \
+    ldd ran_build/build/*softmodem* ran_build/build/nr-cuup ran_build/build/oairu && \
+    echo "---- ldd on shared libraries ----" && \
+    ldd ran_build/build/*.so

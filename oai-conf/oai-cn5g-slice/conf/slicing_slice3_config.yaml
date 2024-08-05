@@ -46,7 +46,7 @@ http_version: 2
 ############## SBI Interfaces
 nfs:
   smf:
-    host: oai-smf-slice3
+    host: oai-smf-slice1
     sbi:
       port: 8080
       api_version: v1
@@ -55,17 +55,34 @@ nfs:
       interface_name: eth0
       port: 8805
   nrf:
-    host: oai-nrf-slice3
+    host: oai-nrf-slice12
     sbi:
       port: 8080
       api_version: v1
       interface_name: eth0
+  upf:
+    host: oai-upf
+    sbi:
+      port: 8080
+      api_version: v1
+      interface_name: eth0
+    n3:
+      interface_name: eth0
+      port: 2152
+    n4:
+      interface_name: eth0
+      port: 8805
+    n6:
+      interface_name: eth0
+    n9:
+      interface_name: eth0
+      port: 2152
 
 # anchor is set to re-use slice config in SMF
 snssais:
   - &slice3
-    sst: 130
-    sd: 000082 # in hex
+    sst: 1
+    sd: 000003 # in hex
 
 smf:
   support_features:
@@ -80,17 +97,28 @@ smf:
     sNssaiSmfInfoList:
       - sNssai: *slice3
         dnnSmfInfoList:
-          - dnn: "oai.ipv4"
+          - dnn: "oai3"
   local_subscription_infos:
     - single_nssai: *slice3
-      dnn: "oai.ipv4"
+      dnn: "oai3"
       qos_profile:
         5qi: 5
-        session_ambr_ul: "100Mbps"
-        session_ambr_dl: "200Mbps"
+        session_ambr_ul: "50Mbps"
+        session_ambr_dl: "400Mbps"
+
+upf:
+  support_features:
+    enable_bpf_datapath: no    # If "on": BPF is used as datapath else simpleswitch is used, DEFAULT= off
+    enable_snat: yes           # If "on": Source natting is done for UE, DEFAULT= off
+  remote_n6_gw: 127.0.0.1      # Dummy host since simple-switch does not use N6 GW
+  upf_info:
+    sNssaiUpfInfoList:
+      - sNssai: *slice3
+        dnnUpfInfoList:
+          - dnn: "oai3"
 
 ## DNN configuration
 dnns:
-  - dnn: "oai.ipv4"
-    pdu_session_type: "IPV4"
-    ipv4_subnet: "12.1.1.0/25"
+  - dnn: "oai3"
+    pdu_session_type: "IPV4V6"
+    ipv4_subnet: "10.0.3.0/24"

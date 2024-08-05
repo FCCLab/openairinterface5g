@@ -82,7 +82,7 @@ nfs:
 snssais:
   - &slice2
     sst: 1
-    sd: 000005
+    sd: 000002
 
 smf:
   support_features:
@@ -120,5 +120,5 @@ upf:
 ## DNN configuration
 dnns:
   - dnn: "oai2"
-    pdu_session_type: "IPV4"
-    ipv4_subnet: "12.1.1.128/25"
+    pdu_session_type: "IPV4V6"
+    ipv4_subnet: "10.0.2.0/24"

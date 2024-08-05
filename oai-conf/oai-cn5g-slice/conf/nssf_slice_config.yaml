@@ -53,13 +53,16 @@ configuration:
   taInfoList:
     - tai:
         plmnId:
-          mcc: '208'
-          mnc: '95'
-        tac: '33456'
+          mcc: '001'
+          mnc: '01'
+        tac: '0x0001'
       supportedSnssaiList:
-      - sst: 222
-        sd: '123'
-      - sst: 128
+      - sst: 1
+        sd: 000001
+      - sst: 1
+        sd: 000002
+      - sst: 1
+        sd: 000003
   amfInfoList:
     - targetAmfSet: oai5gcn.mcc208.mnc95.regionid128.setid1.3gppnetwork.org
       nrfAmfSet: http://oai-cn5g-nrf.fr:8080/nnrf-disc/v1/nf-instances'
@@ -69,15 +72,16 @@ configuration:
           supportedNssaiAvailabilityData:
               tai:
                 plmnId:
-                  mcc: 208
-                  mnc: 95
-                tac: 33456
+                  mcc: 001
+                  mnc: 01
+                tac: 0x0001
               supportedSnssaiList:
-                - sst: 128
-                  sd: 128
                 - sst: 1
-                - sst: 130
-                  sd: 130
+                  sd: 000001
+                - sst: 1
+                  sd: 000002
+                - sst: 1
+                  sd: 000003
         - nfId: 405e8251-cc5a-45dd-a494-efb9eaf1cd68
           supportedNssaiAvailabilityData:
               tai:
@@ -106,8 +110,13 @@ configuration:
           supportedNssaiAvailabilityData:
               tai:
                 plmnId:
-                  mcc: 208
-                  mnc: 95
-                tac: 33460
+                  mcc: 001
+                  mnc: 01
+                tac: 0x0001
               supportedSnssaiList:
-                - sst: 133
+                - sst: 1
+                  sd: 000001
+                - sst: 1
+                  sd: 000002
+                - sst: 1
+                  sd: 000003

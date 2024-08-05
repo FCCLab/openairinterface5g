@@ -1,51 +1,125 @@
 services:
+    nearRT-RIC:
+        container_name: "oai-flexric"
+        image: oai-nr-flexric:ubuntu22
+        privileged: true
+        ulimits:
+          core: -1 # for core dumps
+        volumes:
+            - ./flexric.conf:/usr/local/etc/flexric/flexric.conf
+        networks:
+            public_net:
+                ipv4_address: 192.168.71.5
+        tty: true
+
     oai-cu-cp:
         container_name: "oai-cu-cp"
-        image: oai-nr-softmodem:latest
-        expose:
-            - 80/tcp
-            - 8080/tcp
+        image: oai-nr-softmodem:ubuntu22
+        privileged: true
+        ulimits:
+          core: -1 # for core dumps
+        environment:
+            USE_ADDITIONAL_OPTIONS: --sa --telnetsrv --telnetsrv.shrmod ci --log_config.global_log_options level,nocolor,time,line_num,function
         volumes:
             - ./gnb-cucp.sa.f1.conf:/opt/oai-gnb/etc/gnb.conf
-        environment:
-            - TZ=Europe/Paris
+        # entrypoint: /bin/bash -c "sleep infinity"
+        healthcheck:
+            # pgrep does NOT work
+            test: /bin/bash -c "ps aux | grep -v grep | grep -c softmodem"
+            interval: 10s
+            timeout: 5s
+            retries: 5
         networks:
             public_net:
                 ipv4_address: 192.168.71.10
         tty: true
-    # oai-cu-up:
-    #     container_name: "oai-cu-up"
-    #     image: oai-nr-cuup:latest
-    #     expose:
-    #         - 80/tcp
-    #         - 8080/tcp
-    #     volumes:
-    #         - ./gnb-cuup.sa.f1.conf:/opt/oai-gnb/etc/gnb.conf
-    #     environment:
-    #         - TZ=Europe/Paris
-    #     networks:
-    #         public_net:
-    #             ipv4_address: 192.168.71.20
-    #     tty: true
-    # oai-du:
-    #     container_name: "oai-du"
-    #     image: oai-nr-softmodem:latest
-    #     expose:
-    #         - 80/tcp
-    #         - 8080/tcp
-    #     volumes:
-    #         - ./gnb-du.sa.conf:/opt/oai-gnb/etc/gnb.conf
-    #     environment:
-    #         - TZ=Europe/Paris
-    #     networks:
-    #         public_net:
-    #             ipv4_address: 192.168.71.30
-    #     tty: true
+
+    oai-cu-up-1:
+        container_name: "oai-cu-up-1"
+        image: oai-nr-cuup:ubuntu22
+        privileged: true
+        ulimits:
+          core: -1 # for core dumps
+        environment:
+            USE_ADDITIONAL_OPTIONS: --sa
+        volumes:
+            - ./gnb-cuup.sa.f1.slice1.conf:/opt/oai-gnb/etc/gnb.conf
+        networks:
+            public_net:
+                ipv4_address: 192.168.71.21
+        tty: true
+        depends_on:
+            - oai-cu-cp
+    oai-cu-up-2:
+        container_name: "oai-cu-up-2"
+        image: oai-nr-cuup:ubuntu22
+        privileged: true
+        environment:
+            USE_ADDITIONAL_OPTIONS: --sa
+        ulimits:
+          core: -1 # for core dumps
+        volumes:
+            - ./gnb-cuup.sa.f1.slice2.conf:/opt/oai-gnb/etc/gnb.conf
+        networks:
+            public_net:
+                ipv4_address: 192.168.71.22
+        tty: true
+        depends_on:
+            - oai-cu-cp
+    oai-cu-up-3:
+        container_name: "oai-cu-up-3"
+        image: oai-nr-cuup:ubuntu22
+        privileged: true
+        environment:
+            USE_ADDITIONAL_OPTIONS: --sa
+        ulimits:
+          core: -1 # for core dumps
+        volumes:
+            - ./gnb-cuup.sa.f1.slice3.conf:/opt/oai-gnb/etc/gnb.conf
+        networks:
+            public_net:
+                ipv4_address: 192.168.71.23
+        tty: true
+        depends_on:
+            - oai-cu-cp
+
+    oai-du:
+        container_name: "oai-du"
+        image: oai-nr-softmodem:ubuntu22
+        privileged: true
+        ulimits:
+          core: -1 # for core dumps
+        volumes:
+            - ./gnb-du.sa.conf:/opt/oai-gnb/etc/gnb.conf
+            - ./gnb_entrypoint.sh:/opt/oai-gnb/bin/entrypoint.sh
+        environment:
+            # USE_ADDITIONAL_OPTIONS: --sa --tune-offset 20000000 -A 45 --log_config.global_log_options level,nocolor,time
+            USE_ADDITIONAL_OPTIONS: --sa
+        networks:
+            public_net:
+                ipv4_address: 192.168.71.30
+            usrp_net:
+                # ipv4_address: 192.168.10.100 # Replace with your desired IP address
+        tty: true
+        cap_add:
+            - NET_ADMIN
+        depends_on:
+            - oai-cu-cp
 
 networks:
     public_net:
         driver: bridge
-        name: oai-cucp-cuup-du-split
+        name: oai-cucp-cuup-du
         ipam:
             config:
                 - subnet: 192.168.71.0/24
+        driver_opts:
+            com.docker.network.bridge.name: "oai-cu-cp-up-du"
+    usrp_net:
+        driver: macvlan
+        ipam:
+            driver: default
+            config:
+              - subnet: 192.168.10.0/24
+        driver_opts:
+            parent: ens1f0

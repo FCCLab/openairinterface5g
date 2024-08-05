@@ -25,42 +25,21 @@
 #
 #---------------------------------------------------------------------
 
+FROM ran-base:ubuntu22 as ran-build
+ARG BUILD_OPTION
 
-FROM ubuntu:focal AS ran-base
-ARG NEEDED_GIT_PROXY
-ENV DEBIAN_FRONTEND=noninteractive
-ENV TZ=Europe/Paris
-ENV BUILD_UHD_FROM_SOURCE=True
-ENV UHD_VERSION=4.6.0.0
+WORKDIR /
 
-#install developers pkg/repo
+RUN git clone https://github.com/swig/swig.git
+RUN cd swig && git checkout release-4.1
+RUN cd swig && ./autogen.sh && ./configure && make && make install
+
+RUN git clone https://gitlab.eurecom.fr/mosaic5g/flexric.git
+RUN cd flexric && git checkout slicing-spring-of-code
+RUN cd flexric && mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release && make -j`nproc` && make install
+
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get upgrade --yes && \
     DEBIAN_FRONTEND=noninteractive apt-get install --yes \
-       #gcc needed for build_oai
-       build-essential \
-       psmisc \
-       git \
-       xxd \
-       # python3-pip for conf template generation
-       python3-pip && \
-    pip3 install --ignore-installed pyyaml
-
-# Add "Tini - A tiny but valid init for containers", https://github.com/krallin/tini
-# it will be copied into target containers, to print exit numbers and handle signals properly
-ENV TINI_VERSION v0.19.0
-ADD https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini /tini
-RUN chmod +x /tini
-
-# In some network environments, GIT proxy is required
-RUN /bin/bash -c "if [[ -v NEEDED_GIT_PROXY ]]; then git config --global http.proxy $NEEDED_GIT_PROXY; fi"
-
-#create the WORKDIR
-WORKDIR /oai-ran
-COPY . .
-
-#run build_oai -I to get the builder image
-RUN /bin/sh oaienv && \ 
-    cd cmake_targets && \
-    mkdir -p log && \
-    ./build_oai -I -w USRP --install-optional-packages
+    net-tools \
+    iputils-ping 
