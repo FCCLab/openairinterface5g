@@ -55,7 +55,7 @@ nfs:
       interface_name: eth0
       port: 8805
   nrf:
-    host: oai-nrf-slice12
+    host: oai-nrf-slice123
     sbi:
       port: 8080
       api_version: v1
@@ -89,8 +89,8 @@ smf:
     use_local_subscription_info: yes # Use infos from local_subscription_info or from UDM
     use_local_pcc_rules: yes # Use infos from local_pcc_rules or from PCF
   ue_dns:
-    primary_ipv4: "172.21.3.100"
-    secondary_ipv4: "8.8.8.8"
+    primary_ipv4: "8.8.8.8"
+    secondary_ipv4: "8.8.4.4"
   # the DNN you configure here should be configured in "dnns"
   # follows the SmfInfo datatype from 3GPP TS 29.510
   smf_info:
