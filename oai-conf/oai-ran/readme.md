@@ -49,20 +49,22 @@ sudo ip address add  192.168.71.103/24 dev lo
 
 ## CU-CP
 ```
-sudo ./nr-softmodem -O ../../../oai-conf/slicing/gnb-cucp.sa.f1.conf --sa
+sudo ./nr-softmodem -O ../../../oai-conf/oai-ran/gnb-cucp.sa.f1.conf --sa
 ```
 
 ## CU-UP
 ```
-sudo ./nr-cuup -O ../../../oai-conf/slicing/gnb-cuup.sa.f1.slice1.conf --sa
-sudo ./nr-cuup -O ../../../oai-conf/slicing/gnb-cuup.sa.f1.slice2.conf --sa
-sudo ./nr-cuup -O ../../../oai-conf/slicing/gnb-cuup.sa.f1.slice3.conf --sa
+sudo ./nr-cuup -O ../../../oai-conf/oai-ran/gnb-cuup.sa.f1.slice1.conf --sa
+sudo ./nr-cuup -O ../../../oai-conf/oai-ran/gnb-cuup.sa.f1.slice2.conf --sa
+sudo ./nr-cuup -O ../../../oai-conf/oai-ran/gnb-cuup.sa.f1.slice3.conf --sa
 ```
 
 ## DU-UP
 ```
-sudo ./nr-softmodem -O /home/vantuan_ngo/oai-conf/slicing/gnb-du.sa.conf --sa
+sudo ./nr-softmodem -O ../../../oai-conf/oai-ran/gnb-du.sa.conf --sa
 ```
+
+sudo ./nr-softmodem -O  ../../../oai-conf/oai-ran/gnb.sa.band78.fr1.106PRB.2x2.usrpx410.352501.conf --sa --usrp-tx-thread-config 1
 
 ## Connection between subnets'
 ```
