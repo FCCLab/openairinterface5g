@@ -127,7 +127,7 @@ services:
             - oai-amf
         networks:
             public_net:
-                ipv4_address: 192.168.70.201
+                ipv4_address: 192.168.70.251
     oai-upf:
         container_name: "oai-upf"
         image: oaisoftwarealliance/oai-upf:develop
@@ -149,7 +149,7 @@ services:
         privileged: true
         networks:
             public_net:
-                ipv4_address: 192.168.70.211
+                ipv4_address: 192.168.70.201
 networks:
     public_net:
         driver: bridge

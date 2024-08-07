@@ -5,51 +5,23 @@ info:
 configuration:
   nsiInfoList:
     - snssai:
-        sst: 128
-        sd: '128'
+        sst: 1
+        sd: 000001
       nsiInformationList:
-        nrfId: http://192.168.70.136:8080/nnrf-disc/v1/nf-instances
+        nrfId: http://oai-nrf-slice123:8080/nnrf-disc/v1/nf-instances
         nsiId: '11'
     - snssai:
         sst: 1
+        sd: 000002
       nsiInformationList:
-        nrfId: http://192.168.70.136:8080/nnrf-disc/v1/nf-instances
+        nrfId: http://oai-nrf-slice123:8080/nnrf-disc/v1/nf-instances
         nsiId: '12'
     - snssai:
-        sst: 130
-        sd: '130'
+        sst: 1
+        sd: 000003
       nsiInformationList:
-        nrfId: http://192.168.70.137:8080/nnrf-disc/v1/nf-instances
-        nsiId: '12'
-    - snssai:
-        sst: 222
-        sd: '123'
-      nsiInformationList:
-        nrfId: http://oai-cn5g-nrf-10.fr:8080/nnrf-disc/v1/nf-instances
-        nsiId: '11'
-    - snssai:
-        sst: 130
-      nsiInformationList:
-        nrfId: http://oai-cn5g-nrf-20.fr:8080/nnrf-disc/v1/nf-instances
-        nsiId: '20'
-        nrfNfMgtUri: http://oai-cn5g-nrf-10.fr:8080/nnrf-nfm/v1/nf-instances
-    - snssai:
-        sst: 131
-        sd: '131'
-      nsiInformationList:
-        nrfId: http://oai-cn5g-nrf-20.fr:8080/nnrf-disc/v1/nf-instances
-        nsiId: '20'
-    - snssai:
-        sst: 132
-        sd: '132'
-      nsiInformationList:
-        nrfId: http://oai-cn5g-nrf-20.fr:8080/nnrf-disc/v1/nf-instances
-        nsiId: '20'
-    - snssai:
-        sst: 133
-      nsiInformationList:
-        nrfId: http://oai-cn5g-nrf-20.fr:8080/nnrf-disc/v1/nf-instances
-        nsiId: '20'
+        nrfId: http://oai-nrf-slice123:8080/nnrf-disc/v1/nf-instances
+        nsiId: '13'
   taInfoList:
     - tai:
         plmnId:
@@ -82,26 +54,6 @@ configuration:
                   sd: 000002
                 - sst: 1
                   sd: 000003
-        - nfId: 405e8251-cc5a-45dd-a494-efb9eaf1cd68
-          supportedNssaiAvailabilityData:
-              tai:
-                plmnId:
-                  mcc: 208
-                  mnc: 95
-                tac: 33457
-              supportedSnssaiList:
-                - sst: 130
-                - sst: 131
-                  sd: 131
-              taiList:
-                - tai:
-                    plmnId:
-                      mcc: 208
-                      mnc: 95
-                    tac: 33458
-                  supportedSnssaiList:
-                    - sst: 132
-                      sd: 132
     - targetAmfSet: oai5gcn.mcc208.mnc95.regionid128.setid2.3gppnetwork.org
       nrfAmfSet: http://oai-cn5g-nrf.fr:8080/nnrf-disc/v1/nf-instances
       nrfAmfSetNfMgtUri: http://oai-cn5g-nrf.fr:8080/nnrf-nfm/v1/nf-instances

@@ -50,7 +50,7 @@ services:
             - mysql
         networks:
             public_net:
-                ipv4_address: 192.168.70.133
+                ipv4_address: 192.168.70.136
     oai_udm:
         container_name: "oai-udm"
         image: oaisoftwarealliance/oai-udm:develop
@@ -63,7 +63,7 @@ services:
             - oai_udr
         networks:
             public_net:
-                ipv4_address: 192.168.70.134
+                ipv4_address: 192.168.70.137
     oai_ausf:
         container_name: "oai-ausf"
         image: oaisoftwarealliance/oai-ausf:develop
@@ -76,7 +76,7 @@ services:
             - oai_udm
         networks:
             public_net:
-                ipv4_address: 192.168.70.101
+                ipv4_address: 192.168.70.138
     oai_nrf_slice123:
         container_name: "oai-nrf-slice123"
         image: oaisoftwarealliance/oai-nrf:develop
@@ -87,7 +87,7 @@ services:
             - ./conf/slicing_slice1_config.yaml:/openair-nrf/etc/config.yaml
         networks:
             public_net:
-                ipv4_address: 192.168.70.136
+                ipv4_address: 192.168.70.130
     oai_amf:
         container_name: "oai-amf"
         image: oaisoftwarealliance/oai-amf:develop
@@ -119,7 +119,7 @@ services:
             - oai_nrf_slice123
         networks:
             public_net:
-                ipv4_address: 192.168.70.201
+                ipv4_address: 192.168.70.251
     oai_smf_slice2:
         container_name: "oai-smf-slice2"
         image: oaisoftwarealliance/oai-smf:develop
@@ -134,7 +134,7 @@ services:
             - oai_nrf_slice123
         networks:
             public_net:
-                ipv4_address: 192.168.70.202
+                ipv4_address: 192.168.70.252
     oai_smf_slice3:
         container_name: "oai-smf-slice3"
         image: oaisoftwarealliance/oai-smf:develop
@@ -149,7 +149,7 @@ services:
             - oai_nrf_slice123
         networks:
             public_net:
-                ipv4_address: 192.168.70.203
+                ipv4_address: 192.168.70.253
 
     oai_upf_slice1:
         container_name: "oai-upf-slice1"
@@ -173,10 +173,10 @@ services:
             - ALL
         privileged: true
         networks:
-            oai-n6:
-                ipv4_address: 192.168.80.211
             public_net:
-                ipv4_address: 192.168.70.211
+                ipv4_address: 192.168.70.201
+            oai-n6:
+                ipv4_address: 192.168.80.201
         command: ["/bin/bash", "/entrypoint.sh"]
 
     oai_upf_slice2:
@@ -201,10 +201,10 @@ services:
             - ALL
         privileged: true
         networks:
-            oai-n6:
-                ipv4_address: 192.168.80.212
             public_net:
-                ipv4_address: 192.168.70.212
+                ipv4_address: 192.168.70.202
+            oai-n6:
+                ipv4_address: 192.168.80.202
         command: ["/bin/bash", "/entrypoint.sh"]
 
     oai_upf_slice3:
@@ -229,10 +229,10 @@ services:
             - ALL
         privileged: true
         networks:
-            oai-n6:
-                ipv4_address: 192.168.80.213
             public_net:
-                ipv4_address: 192.168.70.213
+                ipv4_address: 192.168.70.203
+            oai-n6:
+                ipv4_address: 192.168.80.203
         command: ["/bin/bash", "/entrypoint.sh"]
 
 networks:
