@@ -73,7 +73,7 @@ nfs:
       interface_name: eth0
       port: 8805
     n6:
-      interface_name: eth0
+      interface_name: eth1
     n9:
       interface_name: eth0
       port: 2152

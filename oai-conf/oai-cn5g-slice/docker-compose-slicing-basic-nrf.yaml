@@ -76,7 +76,7 @@ services:
             - oai_udm
         networks:
             public_net:
-                ipv4_address: 192.168.70.135
+                ipv4_address: 192.168.70.101
     oai_nrf_slice123:
         container_name: "oai-nrf-slice123"
         image: oaisoftwarealliance/oai-nrf:develop
@@ -119,7 +119,7 @@ services:
             - oai_nrf_slice123
         networks:
             public_net:
-                ipv4_address: 192.168.70.139
+                ipv4_address: 192.168.70.201
     oai_smf_slice2:
         container_name: "oai-smf-slice2"
         image: oaisoftwarealliance/oai-smf:develop
@@ -134,7 +134,7 @@ services:
             - oai_nrf_slice123
         networks:
             public_net:
-                ipv4_address: 192.168.70.140
+                ipv4_address: 192.168.70.202
     oai_smf_slice3:
         container_name: "oai-smf-slice3"
         image: oaisoftwarealliance/oai-smf:develop
@@ -149,7 +149,8 @@ services:
             - oai_nrf_slice123
         networks:
             public_net:
-                ipv4_address: 192.168.70.141
+                ipv4_address: 192.168.70.203
+
     oai_upf_slice1:
         container_name: "oai-upf-slice1"
         image: oaisoftwarealliance/oai-upf:develop
@@ -158,6 +159,7 @@ services:
             - 8805/udp
             - 8080/tcp
         volumes:
+            - ./entrypoint.sh:/entrypoint.sh:ro
             - ./conf/slicing_slice1_config.yaml:/openair-upf/etc/config.yaml
         environment:
             - TZ=Europe/Paris
@@ -171,8 +173,12 @@ services:
             - ALL
         privileged: true
         networks:
+            oai-n6:
+                ipv4_address: 192.168.80.211
             public_net:
-                ipv4_address: 192.168.70.142
+                ipv4_address: 192.168.70.211
+        command: ["/bin/bash", "/entrypoint.sh"]
+
     oai_upf_slice2:
         container_name: "oai-upf-slice2"
         image: oaisoftwarealliance/oai-upf:develop
@@ -181,6 +187,7 @@ services:
             - 8805/udp
             - 8080/tcp
         volumes:
+            - ./entrypoint.sh:/entrypoint.sh:ro   
             - ./conf/slicing_slice2_config.yaml:/openair-upf/etc/config.yaml
         environment:
             - TZ=Europe/Paris
@@ -194,8 +201,12 @@ services:
             - ALL
         privileged: true
         networks:
+            oai-n6:
+                ipv4_address: 192.168.80.212
             public_net:
-                ipv4_address: 192.168.70.143
+                ipv4_address: 192.168.70.212
+        command: ["/bin/bash", "/entrypoint.sh"]
+
     oai_upf_slice3:
         container_name: "oai-upf-slice3"
         image: oaisoftwarealliance/oai-upf:develop
@@ -204,6 +215,7 @@ services:
             - 8805/udp
             - 8080/tcp
         volumes:
+            - ./entrypoint.sh:/entrypoint.sh:ro
             - ./conf/slicing_slice3_config.yaml:/openair-upf/etc/config.yaml
         environment:
             - TZ=Europe/Paris
@@ -217,15 +229,28 @@ services:
             - ALL
         privileged: true
         networks:
+            oai-n6:
+                ipv4_address: 192.168.80.213
             public_net:
-                ipv4_address: 192.168.70.144
+                ipv4_address: 192.168.70.213
+        command: ["/bin/bash", "/entrypoint.sh"]
 
 networks:
+    oai-n6:
+        driver: bridge
+        name: oai-n6
+        ipam:
+            config:
+                - subnet: 192.168.80.0/24
+                  gateway: 192.168.80.1
+        driver_opts:
+            com.docker.network.bridge.name: "oai-n6"
     public_net:
         driver: bridge
-        name: demo-oai-public-net
+        name: oai-cn5g
         ipam:
             config:
                 - subnet: 192.168.70.0/24
+                  gateway: 192.168.70.1
         driver_opts:
             com.docker.network.bridge.name: "oai-cn5g"
