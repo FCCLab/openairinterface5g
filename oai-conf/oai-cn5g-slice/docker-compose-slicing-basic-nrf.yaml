@@ -90,7 +90,7 @@ services:
                 ipv4_address: 192.168.70.130
     oai_amf:
         container_name: "oai-amf"
-        image: oaisoftwarealliance/oai-amf:develop
+        image: oai-amf-hardcoded-configured-slice:latest
         expose:
             - 80/tcp
             - 8080/tcp

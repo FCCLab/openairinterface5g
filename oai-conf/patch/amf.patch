@@ -1,0 +1,22 @@
+diff --git a/src/amf-app/amf_n1.cpp b/src/amf-app/amf_n1.cpp
+index b4ca7614..f4e29e9e 100644
+--- a/src/amf-app/amf_n1.cpp
++++ b/src/amf-app/amf_n1.cpp
+@@ -4857,7 +4857,16 @@ void amf_n1::initialize_registration_accept(
+     } else {
+       snssai.length = SST_LENGTH + SD_LENGTH;
+     }
+-    Logger::amf_n1().debug("Allowed S-NSSAI (SST 0x%x, SD 0x%x)", s.sst, s.sd);
++
++    Logger::amf_n1().debug("May allowed S-NSSAI (SST 0x%x, SD 0x%x) for IMSI %s", s.sst, s.sd, nc->imsi.c_str());
++    if (nc->imsi == std::string("001010000000001") && (snssai.sst != 1 || snssai.sd != 1))
++      continue;;
++    if (nc->imsi == std::string("001010000000002") && (snssai.sst != 1 || snssai.sd != 2))
++      continue;
++    if (nc->imsi == std::string("001010000000003") && (snssai.sst != 1 || snssai.sd != 3))
++      continue;
++    Logger::amf_n1().debug("Allowed S-NSSAI (SST 0x%x, SD 0x%x) for IMSI %s", s.sst, s.sd, nc->imsi.c_str());
++
+     allowed_nssais.push_back(snssai);
+     // Store in the NAS context
+     nc->allowed_nssai.push_back(snssai);  // TODO: refactor NAS_Context

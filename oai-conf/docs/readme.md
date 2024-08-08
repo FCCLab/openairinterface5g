@@ -1,6 +1,21 @@
 # 5G Deployment Guide
 
+
+![OAI E2E Network Slicing](./paper_nw_slicing/OAI_E2E_Network_Slicing.svg)
+
 ## 5G Core
+
+#### Patch AMF with hardcoded Configured Slice for UEs
+```
+cd ~/oai-cn5g-fed/component/oai-amf
+git checkout 21e6395b1f353e6cdd41f413e215daeb85732a26
+git apply ~/openairinterface5g/oai-conf/patch/amf.patch
+docker build -t oai-amf-hardcoded-configured-slice -f docker/Dockerfile.amf.ubuntu  .
+```
+With this patch:
+* UE `001010000000001` associate with slice `stt=1` `sd=000001` `DNN=oai1` 
+* UE `001010000000002` associate with slice `stt=2` `sd=000002` `DNN=oai2` 
+* UE `001010000000003` associate with slice `stt=3` `sd=000003` `DNN=oai3` 
 
 #### Deploy oai-cn5g WITHOUT network slicing feature at 5G Core (5GC) network
 ```
@@ -116,4 +131,14 @@ sudo ./nr-softmodem -O ../../../oai-conf/oai-ran/gnb-du.sa.conf --sa
 sudo iptables -S
 sudo iptables -t nat -S
 sudo iptables -t nat -L POSTROUTING -v -n
+```
+* Update submodule
+```
+git submodule init
+git submodule update
+```
+
+* oai-cn5g-fed branch
+```
+fdf2970a731fe47fbda82487a9f7cebbf4af8f4d
 ```
