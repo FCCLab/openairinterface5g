@@ -76,6 +76,26 @@ cd ~/openairinterface5g/oai-conf/oai-ran
 docker compose up -d
 ```
 
+# Results
+
+* UEs throughput
+
+<div style="display: flex; justify-content: center;">
+  <img src="./imgs/result_dl.png" alt="Downlink" title="Downlink" style="width:33%;">
+  <img src="./imgs/result_ul.png" alt="Uplink" title="Uplink" style="width:33%;">
+  <img src="./imgs/result_final.png" alt="Final" title="Final" style="width:33%;">
+</div>
+
+* Pcap file
+```
+oai-conf/docs/pcap/ngap_icmp_3_slices.pcapng
+```
+
+![Slice 1](./imgs/result_pcap_slice1.png)
+![Slice 2](./imgs/result_pcap_slice2.png)
+![Slice 3](./imgs/result_pcap_slice3.png)
+
+
 # Notes
 
 ### UHD_VERSION
