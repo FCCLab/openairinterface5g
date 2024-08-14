@@ -1,0 +1,375 @@
+
+services:
+    mysql:
+        container_name: "mysql"
+        image: mysql:8.0
+        volumes:
+            - ./database/oai_db2.sql:/docker-entrypoint-initdb.d/oai_db.sql
+            - ./healthscripts/mysql-healthcheck2.sh:/tmp/mysql-healthcheck.sh
+        environment:
+            - TZ=Europe/Paris
+            - MYSQL_DATABASE=oai_db
+            - MYSQL_USER=test
+            - MYSQL_PASSWORD=test
+            - MYSQL_ROOT_PASSWORD=linux
+        healthcheck:
+            test: /bin/bash -c "/tmp/mysql-healthcheck.sh"
+            interval: 10s
+            timeout: 5s
+            retries: 30
+        networks:
+            oai-cn5g:
+                ipv4_address: 10.1.20.131
+    oai-nssf:
+        container_name: "oai-nssf"
+        image: oaisoftwarealliance/oai-nssf:develop
+        expose:
+            - 80/tcp
+            - 8080/tcp
+        volumes:
+            - ./conf/slicing_base_config.yaml:/openair-nssf/etc/config.yaml
+            - ./conf/nssf_slice_config.yaml:/openair-nssf/etc/nssf_slice_config.yaml
+        cap_add:
+            - NET_ADMIN
+            - SYS_ADMIN
+        cap_drop:
+            - ALL
+        privileged: true
+        networks:
+            oai-cn5g:
+                ipv4_address: 10.1.20.132
+    oai_udr:
+        container_name: "oai-udr"
+        image: oaisoftwarealliance/oai-udr:develop
+        expose:
+            - 80/tcp
+            - 8080/tcp
+        volumes:
+            - ./conf/slicing_base_config.yaml:/openair-udr/etc/config.yaml
+        depends_on:
+            - mysql
+        networks:
+            oai-cn5g:
+                ipv4_address: 10.1.20.136
+    oai_udm:
+        container_name: "oai-udm"
+        image: oaisoftwarealliance/oai-udm:develop
+        expose:
+            - 80/tcp
+            - 8080/tcp
+        volumes:
+            - ./conf/slicing_base_config.yaml:/openair-udm/etc/config.yaml
+        depends_on:
+            - oai_udr
+        networks:
+            oai-cn5g:
+                ipv4_address: 10.1.20.137
+    oai_ausf:
+        container_name: "oai-ausf"
+        image: oaisoftwarealliance/oai-ausf:develop
+        expose:
+            - 80/tcp
+            - 8080/tcp
+        volumes:
+            - ./conf/slicing_base_config.yaml:/openair-ausf/etc/config.yaml
+        depends_on:
+            - oai_udm
+        networks:
+            oai-cn5g:
+                ipv4_address: 10.1.20.138
+    oai_nrf_slice123:
+        container_name: "oai-nrf-slice123"
+        image: oaisoftwarealliance/oai-nrf:develop
+        expose:
+            - 80/tcp
+            - 8080/tcp
+        volumes:
+            - ./conf/slicing_slice1_config.yaml:/openair-nrf/etc/config.yaml
+        networks:
+            oai-cn5g:
+                ipv4_address: 10.1.20.130
+    oai_amf:
+        container_name: "oai-amf"
+        image: oai-amf-hardcoded-configured-slice:latest
+        expose:
+            - 80/tcp
+            - 8080/tcp
+            - 38412/sctp
+        volumes:
+            - ./conf/slicing_base_config.yaml:/openair-amf/etc/config.yaml
+        depends_on:
+            - oai_nrf_slice123
+            - oai_ausf
+        networks:
+            oai-cn5g:
+                ipv4_address: 10.1.20.100
+            oai-n2:
+                ipv4_address: 10.1.202.40
+
+    oai_smf_slice1:
+        container_name: "oai-smf-slice1"
+        image: oaisoftwarealliance/oai-smf:develop
+        expose:
+            - 80/tcp
+            - 8080/tcp
+            - 8805/udp
+        volumes:
+            - ./conf/slicing_slice1_config.yaml:/openair-smf/etc/config.yaml
+        depends_on:
+            - oai_amf
+            - oai_nrf_slice123
+        networks:
+            oai-cn5g:
+                ipv4_address: 10.1.20.251
+    oai_smf_slice2:
+        container_name: "oai-smf-slice2"
+        image: oaisoftwarealliance/oai-smf:develop
+        expose:
+            - 80/tcp
+            - 8080/tcp
+            - 8805/udp
+        volumes:
+            - ./conf/slicing_slice2_config.yaml:/openair-smf/etc/config.yaml
+        depends_on:
+            - oai_amf
+            - oai_nrf_slice123
+        networks:
+            oai-cn5g:
+                ipv4_address: 10.1.20.252
+    oai_smf_slice3:
+        container_name: "oai-smf-slice3"
+        image: oaisoftwarealliance/oai-smf:develop
+        expose:
+            - 80/tcp
+            - 8080/tcp
+            - 8805/udp
+        volumes:
+            - ./conf/slicing_slice3_config.yaml:/openair-smf/etc/config.yaml
+        depends_on:
+            - oai_amf
+            - oai_nrf_slice123
+        networks:
+            oai-cn5g:
+                ipv4_address: 10.1.20.253
+
+    oai_upf_slice1:
+        container_name: "oai-upf-slice1"
+        image: oaisoftwarealliance/oai-upf:develop
+        expose:
+            - 2152/udp
+            - 8805/udp
+            - 8080/tcp
+        volumes:
+            - ./conf/slicing_slice1_config.yaml:/openair-upf/etc/config.yaml
+        environment:
+            - TZ=Europe/Paris
+        depends_on:
+            - oai_nrf_slice123
+            - oai_smf_slice1
+        cap_add:
+            - NET_ADMIN
+            - SYS_ADMIN
+        cap_drop:
+            - ALL
+        privileged: true
+        networks:
+            oai-cn5g:
+                ipv4_address: 10.1.20.201
+
+    oai_upf_slice2:
+        container_name: "oai-upf-slice2"
+        image: oaisoftwarealliance/oai-upf:develop
+        expose:
+            - 2152/udp
+            - 8805/udp
+            - 8080/tcp
+        volumes:
+            - ./conf/slicing_slice2_config.yaml:/openair-upf/etc/config.yaml
+        environment:
+            - TZ=Europe/Paris
+        depends_on:
+            - oai_nrf_slice123
+            - oai_smf_slice2
+        cap_add:
+            - NET_ADMIN
+            - SYS_ADMIN
+        cap_drop:
+            - ALL
+        privileged: true
+        networks:
+            oai-cn5g:
+                ipv4_address: 10.1.20.202
+
+    oai_upf_slice3:
+        container_name: "oai-upf-slice3"
+        image: oaisoftwarealliance/oai-upf:develop
+        expose:
+            - 2152/udp
+            - 8805/udp
+            - 8080/tcp
+        volumes:
+            - ./conf/slicing_slice3_config.yaml:/openair-upf/etc/config.yaml
+        environment:
+            - TZ=Europe/Paris
+        depends_on:
+            - oai_nrf_slice123
+            - oai_smf_slice3
+        cap_add:
+            - NET_ADMIN
+            - SYS_ADMIN
+        cap_drop:
+            - ALL
+        privileged: true
+        networks:
+            oai-cn5g:
+                ipv4_address: 10.1.20.203
+
+    oai-cu-cp:
+        container_name: "oai-cu-cp"
+        image: oai-nr-softmodem:ubuntu22
+        privileged: true
+        ulimits:
+          core: -1 # for core dumps
+        environment:
+            USE_ADDITIONAL_OPTIONS: --sa --telnetsrv --telnetsrv.shrmod ci --log_config.global_log_options level,nocolor,time,line_num,function
+        volumes:
+            - ./conf_ran/gnb-cucp.sa.f1.conf:/opt/oai-gnb/etc/gnb.conf
+        # entrypoint: /bin/bash -c "sleep infinity"
+        healthcheck:
+            # pgrep does NOT work
+            test: /bin/bash -c "ps aux | grep -v grep | grep -c softmodem"
+            interval: 10s
+            timeout: 5s
+            retries: 5
+        networks:
+            oai-n2:
+                ipv4_address: 10.1.202.10
+            oai-e1:
+                ipv4_address: 10.1.150.10
+            oai-f1uc:
+                ipv4_address: 10.1.100.10
+        tty: true
+
+    oai-cu-up-1:
+        container_name: "oai-cu-up-1"
+        image: oaisoftwarealliance/oai-nr-cuup:develop
+        privileged: true
+        ulimits:
+          core: -1 # for core dumps
+        environment:
+            USE_ADDITIONAL_OPTIONS: --sa
+        volumes:
+            - ./conf_ran/gnb-cuup.sa.f1.slice1.conf:/opt/oai-gnb/etc/gnb.conf
+        networks:
+            oai-e1:
+                ipv4_address: 10.1.150.31
+            oai-f1uc:
+                ipv4_address: 10.1.100.31
+            oai-cn5g:
+                ipv4_address: 10.1.20.31
+        tty: true
+
+    oai-cu-up-2:
+        container_name: "oai-cu-up-2"
+        image: oaisoftwarealliance/oai-nr-cuup:develop
+        privileged: true
+        environment:
+            USE_ADDITIONAL_OPTIONS: --sa
+        ulimits:
+          core: -1 # for core dumps
+        volumes:
+            - ./conf_ran/gnb-cuup.sa.f1.slice2.conf:/opt/oai-gnb/etc/gnb.conf
+        networks:
+            oai-e1:
+                ipv4_address: 10.1.150.32
+            oai-f1uc:
+                ipv4_address: 10.1.100.32
+            oai-cn5g:
+                ipv4_address: 10.1.20.32
+        tty: true
+
+    oai-cu-up-3:
+        container_name: "oai-cu-up-3"
+        image: oaisoftwarealliance/oai-nr-cuup:develop
+        privileged: true
+        environment:
+            USE_ADDITIONAL_OPTIONS: --sa
+        ulimits:
+          core: -1 # for core dumps
+        volumes:
+            - ./conf_ran/gnb-cuup.sa.f1.slice3.conf:/opt/oai-gnb/etc/gnb.conf
+        networks:
+            oai-e1:
+                ipv4_address: 10.1.150.33
+            oai-f1uc:
+                ipv4_address: 10.1.100.33
+            oai-cn5g:
+                ipv4_address: 10.1.20.33
+        tty: true
+
+    oai-du:
+        container_name: "oai-du"
+        image: oai-nr-softmodem:ubuntu22
+        privileged: true
+        ulimits:
+          core: -1 # for core dumps
+        volumes:
+            - ./conf_ran/gnb-du.sa.conf:/opt/oai-gnb/etc/gnb.conf
+            - ./gnb_entrypoint.sh:/opt/oai-gnb/bin/entrypoint.sh
+        environment:
+            # USE_ADDITIONAL_OPTIONS: --sa --tune-offset 20000000 -A 45 --log_config.global_log_options level,nocolor,time
+            USE_ADDITIONAL_OPTIONS: --sa
+        networks:
+            oai-f1uc:
+                ipv4_address: 10.1.100.20
+            oai-usrp:
+                ipv4_address: 192.168.10.100
+        tty: true
+        cap_add:
+            - NET_ADMIN
+
+networks:
+    oai-cn5g:
+        driver: bridge
+        name: oai-cn5g
+        ipam:
+            config:
+                - subnet: 10.1.20.0/24
+                  gateway: 10.1.20.1
+        driver_opts:
+            com.docker.network.bridge.name: "oai-cn5g"
+    oai-n2:
+        driver: bridge
+        name: oai-n2
+        ipam:
+            config:
+                - subnet: 10.1.202.0/24
+                  gateway: 10.1.202.1
+        driver_opts:
+            com.docker.network.bridge.name: "oai-n2"
+    oai-e1:
+        driver: bridge
+        name: oai-e1
+        ipam:
+            config:
+                - subnet: 10.1.150.0/24
+                  gateway: 10.1.150.1
+        driver_opts:
+            com.docker.network.bridge.name: "oai-e1"
+    oai-f1uc:
+        driver: bridge
+        name: oai-f1uc
+        ipam:
+            config:
+                - subnet: 10.1.100.0/24
+                  gateway: 10.1.100.1
+        driver_opts:
+            com.docker.network.bridge.name: "oai-f1uc"
+    oai-usrp:
+        driver: macvlan
+        ipam:
+            driver: default
+            config:
+              - subnet: 192.168.10.0/24
+        driver_opts:
+            parent: ens1f0
