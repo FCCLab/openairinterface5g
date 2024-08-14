@@ -46,7 +46,7 @@ http_version: 2
 ############## SBI Interfaces
 nfs:
   smf:
-    host: oai-smf-slice1
+    host: oai-smf-slice3
     sbi:
       port: 8080
       api_version: v1
