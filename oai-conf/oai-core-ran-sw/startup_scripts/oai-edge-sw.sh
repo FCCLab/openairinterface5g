@@ -42,12 +42,27 @@ brctl addif f1uc if-cu-up-1-f1u
 brctl addif f1uc if-du-f1uc
 ##################################### Add interfaces to Bridges ####################################
 
-# Up + Show + Loop
+# Up + Show
 ifconfig cn5g up
 ifconfig e1 up
 ifconfig f1uc up
+echo "### Interfaces ###"
 brctl show
+echo "### Interfaces ###"
+
+######################################## Simulate Throughput and Delay ###############################
+tc qdisc del dev if-edge-region root
+tc qdisc add dev if-edge-region root handle 1: netem delay 10ms
+tc qdisc add dev if-edge-region parent 1:1 handle 10: tbf rate 50mbit burst 32kbit latency 400ms
+echo "### Similated Throughput and Delay ###"
+tc qdisc show dev if-edge-region
+echo "### Similated Throughput and Delay ###"
+######################################## Simulate Throughput and Delay ###############################
+
+#################################### Loop #########################################
 while true
 do
     sleep 1
 done
+#################################### Loop #########################################
+
