@@ -1,0 +1,49 @@
+services:
+    oai-du:
+        image: oaisoftwarealliance/oai-gnb:2024.w30
+        privileged: true
+        container_name: oai-du
+        environment:
+            ASAN_OPTIONS: detect_leaks=0
+        networks:
+            oai-du-uesim:
+                ipv4_address: 10.1.50.20
+        volumes:
+            - ./conf/gnb-du.sa.band78.106prb.rfsim.conf:/opt/oai-gnb/etc/gnb.conf
+            - ./startup_scripts:/startup_scripts
+        healthcheck:
+            test: /bin/bash -c "pgrep nr-softmodem"
+            interval: 10s
+            timeout: 5s
+            retries: 5
+        entrypoint: ["bash", "-c", "/startup_scripts/du.sh"]
+
+    oai-nr-ue:
+        image: oaisoftwarealliance/oai-nr-ue:2024.w30
+        privileged: true
+        container_name: oai-nr-ue
+        environment:
+            USE_ADDITIONAL_OPTIONS: --sa --rfsim --log_config.global_log_options level,nocolor,time
+                                    -r 106 --numerology 1 -C 3619200000
+                                    --uicc0.imsi 001010000000001
+                                    --rfsimulator.serveraddr 10.1.50.20
+        networks:
+            oai-du-uesim:
+                ipv4_address: 10.1.50.100
+        volumes:
+            - ./conf/nrue.uicc.conf:/opt/oai-nr-ue/etc/nr-ue.conf
+        healthcheck:
+            test: /bin/bash -c "pgrep nr-uesoftmodem"
+            interval: 10s
+            timeout: 5s
+            retries: 5
+
+networks:
+    oai-du-uesim:
+        driver: bridge
+        name: oai-du-uesim
+        ipam:
+            config:
+                - subnet: 10.1.50.0/24
+        driver_opts:
+            com.docker.network.bridge.name: "oai-du-uesim"

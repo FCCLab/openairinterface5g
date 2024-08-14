@@ -1,0 +1,18 @@
+services:
+    oai-cu-cp:
+        container_name: "oai-cu-cp"
+        image: oaisoftwarealliance/oai-gnb:2024.w30
+        privileged: true
+        ulimits:
+          core: -1 # for core dumps
+        volumes:
+            - ./conf/gnb-cucp.sa.f1.conf:/opt/oai-gnb/etc/gnb.conf
+            - ./startup_scripts:/startup_scripts
+        healthcheck:
+            # pgrep does NOT work
+            test: /bin/bash -c "ps aux | grep -v grep | grep -c softmodem"
+            interval: 10s
+            timeout: 5s
+            retries: 5
+        tty: true
+        entrypoint: ["bash", "-c", "/startup_scripts/cu-cp.sh"]

@@ -1,0 +1,155 @@
+services:
+    oai-mysql:
+        container_name: "oai-mysql"
+        image: mysql:8.0
+        volumes:
+            - ./database/oai_db.sql:/docker-entrypoint-initdb.d/oai_db.sql
+            - ./healthscripts/mysql-healthcheck.sh:/tmp/mysql-healthcheck.sh
+        environment:
+            - MYSQL_DATABASE=oai_db
+            - MYSQL_USER=test
+            - MYSQL_PASSWORD=test
+            - MYSQL_ROOT_PASSWORD=linux
+        healthcheck:
+            test: /bin/bash -c "/tmp/mysql-healthcheck.sh"
+            interval: 5s
+            timeout: 2s
+            retries: 10
+        privileged: true
+        networks:
+            oai-cn-cp:
+                ipv4_address: 10.1.20.16
+    oai-nrf:
+        container_name: "oai-nrf"
+        image: oaisoftwarealliance/oai-nrf:2024-june
+        expose:
+            - 80/tcp
+            - 8080/tcp
+        volumes:
+            - ./conf/config.yaml:/openair-nrf/etc/config.yaml
+        privileged: true
+        networks:
+            oai-cn-cp:
+                ipv4_address: 10.1.20.15
+    oai-udr:
+        container_name: "oai-udr"
+        image: oaisoftwarealliance/oai-udr:2024-june
+        expose:
+            - 80/tcp
+            - 8080/tcp
+        volumes:
+            - ./conf/config.yaml:/openair-udr/etc/config.yaml
+        depends_on:
+            - oai-mysql
+            - oai-nrf
+        privileged: true
+        networks:
+            oai-cn-cp:
+                ipv4_address: 10.1.20.14
+    oai-udm:
+        container_name: "oai-udm"
+        image: oaisoftwarealliance/oai-udm:2024-june
+        expose:
+            - 80/tcp
+            - 8080/tcp
+        volumes:
+            - ./conf/config.yaml:/openair-udm/etc/config.yaml
+        depends_on:
+            - oai-udr
+        privileged: true
+        networks:
+            oai-cn-cp:
+                ipv4_address: 10.1.20.13
+    oai-ausf:
+        container_name: "oai-ausf"
+        image: oaisoftwarealliance/oai-ausf:2024-june
+        expose:
+            - 80/tcp
+            - 8080/tcp
+        volumes:
+            - ./conf/config.yaml:/openair-ausf/etc/config.yaml
+        depends_on:
+            - oai-udm
+        privileged: true
+        networks:
+            oai-cn-cp:
+                ipv4_address: 10.1.20.12
+    oai-amf:
+        container_name: "oai-amf"
+        image: oaisoftwarealliance/oai-amf:2024-june
+        expose:
+            - 80/tcp
+            - 8080/tcp
+            - 38412/sctp
+        volumes:
+            - ./conf/config.yaml:/openair-amf/etc/config.yaml
+            - ./startup_scripts:/startup_scripts
+        depends_on:
+            - oai-mysql
+            - oai-nrf
+            - oai-ausf
+        privileged: true
+        networks:
+            oai-cn-cp:
+                ipv4_address: 10.1.20.10
+        entrypoint: ["bash", "-c", "/startup_scripts/amf.sh"]
+    oai-smf:
+        container_name: "oai-smf"
+        image: oaisoftwarealliance/oai-smf:2024-june
+        expose:
+            - 80/tcp
+            - 8080/tcp
+            - 8805/udp
+        volumes:
+            - ./conf/config.yaml:/openair-smf/etc/config.yaml
+            - ./startup_scripts:/startup_scripts
+        depends_on:
+            - oai-nrf
+            - oai-amf
+        privileged: true
+        networks:
+            oai-cn-cp:
+                ipv4_address: 10.1.20.11
+        entrypoint: ["bash", "-c", "/startup_scripts/smf.sh"]
+
+    oai-upf:
+        container_name: "oai-upf"
+        image: oaisoftwarealliance/oai-upf:2024-june
+        expose:
+            - 2152/udp
+            - 8805/udp
+        volumes:
+            - ./conf/config.yaml:/openair-upf/etc/config.yaml
+            - ./startup_scripts:/startup_scripts
+        cap_add:
+            - NET_ADMIN
+            - SYS_ADMIN
+        cap_drop:
+            - ALL
+        privileged: true
+        networks:
+            oai-n6:
+                ipv4_address: 10.100.0.100
+            oai-cn-cp:
+                ipv4_address: 10.1.20.100
+        entrypoint: ["bash", "-c", "/startup_scripts/upf.sh"]
+
+networks:
+    oai-cn-cp:
+        driver: bridge
+        name: oai-cn-cp
+        ipam:
+            config:
+                - subnet: 10.1.20.0/24
+        driver_opts:
+            com.docker.network.bridge.name: "oai-cn-cp"
+
+    oai-n6:
+        driver: bridge
+        name: oai-n6
+        ipam:
+            config:
+                - subnet: 10.100.0.0/24
+                  gateway: 10.100.0.1
+        driver_opts:
+            com.docker.network.bridge.name: "oai-n6"

@@ -1,0 +1,12 @@
+services:
+    oai-cu-up:
+        container_name: "oai-cu-up"
+        image: oaisoftwarealliance/oai-nr-cuup:2024.w30
+        privileged: true
+        ulimits:
+          core: -1 # for core dumps
+        volumes:
+            - ./conf/gnb-cuup.sa.f1.slice1.conf:/opt/oai-gnb/etc/gnb.conf
+            - ./startup_scripts:/startup_scripts
+        tty: true
+        entrypoint: ["bash", "-c", "/startup_scripts/cu-up.sh"]

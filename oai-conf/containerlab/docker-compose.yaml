@@ -1,0 +1,5 @@
+include:
+  - docker-compose-cn.yaml
+  - docker-compose-cu-cp.yaml
+  - docker-compose-cu-up.yaml
+  - docker-compose-du-ue.yaml

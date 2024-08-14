@@ -1,0 +1,79 @@
+name: oai
+
+topology:
+  nodes:
+    # L3 switch
+    srl:
+      kind: nokia_srlinux
+      image: ghcr.io/nokia/srlinux
+      startup-config: conf/l3switch.cfg
+    
+    # CN-CP
+    oai-mysql: 
+      kind: ext-container
+    oai-nrf:
+      kind: ext-container
+    oai-udr:
+      kind: ext-container
+    oai-udm:
+      kind: ext-container
+    oai-ausf:
+      kind: ext-container
+    oai-amf:
+      kind: ext-container
+      exec:
+        - ifconfig n2 10.1.202.1/24
+    oai-smf:
+      kind: ext-container
+
+    # CN-UP
+    oai-upf:
+      kind: ext-container
+      exec:
+        - ifconfig n3 10.1.203.2/24
+        # - ifconfig cn-cp 10.1.20.100/24
+    
+    # CU-CP
+    oai-cu-cp:
+      kind: ext-container
+      exec:
+        - ifconfig f1-c 10.1.100.10/24
+        - ifconfig e1   10.1.150.10/24
+        - ifconfig n2   10.1.202.10/24
+
+    oai-du:
+      kind: ext-container
+      exec:
+        - ifconfig f1 10.1.100.20/24
+        # - ifconfig f1-u 10.1.101.20/24
+
+    oai-cu-up:
+      kind: ext-container
+      exec:
+        - ifconfig f1-u 10.1.100.30/24
+        - ifconfig e1   10.1.150.30/24
+        - ifconfig n3   10.1.203.30/24
+
+    oai-cn-cp:
+      kind: bridge
+  
+  links:
+    # CN
+    - endpoints: ["srl:e1-4",  "oai-amf:n2"]
+    # - endpoints: ["srl:e1-5",  "oai-cn-cp:upf"]
+    - endpoints: ["srl:e1-11", "oai-upf:n3"]
+    # - endpoints: ["srl:e1-12", "oai-upf:cn-cp"]
+
+    # CU-CP
+    - endpoints: ["srl:e1-1",  "oai-cu-cp:f1-c"]
+    - endpoints: ["srl:e1-2",  "oai-cu-cp:e1"]
+    - endpoints: ["srl:e1-3",  "oai-cu-cp:n2"]
+
+    # DU
+    - endpoints: ["srl:e1-6",  "oai-du:f1"]
+    # - endpoints: ["srl:e1-7",  "oai-du:f1-u"]
+
+    # CU-UP
+    - endpoints: ["srl:e1-8",  "oai-cu-up:f1-u"]
+    - endpoints: ["srl:e1-9",  "oai-cu-up:e1"]
+    - endpoints: ["srl:e1-10", "oai-cu-up:n3"]
