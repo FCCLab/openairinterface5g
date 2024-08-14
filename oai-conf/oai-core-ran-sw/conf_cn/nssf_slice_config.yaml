@@ -8,19 +8,19 @@ configuration:
         sst: 1
         sd: 000001
       nsiInformationList:
-        nrfId: http://oai-nrf-slice123:8080/nnrf-disc/v1/nf-instances
+        nrfId: http://oai-nrf-slice:8080/nnrf-disc/v1/nf-instances
         nsiId: '11'
     - snssai:
         sst: 1
         sd: 000002
       nsiInformationList:
-        nrfId: http://oai-nrf-slice123:8080/nnrf-disc/v1/nf-instances
+        nrfId: http://oai-nrf-slice:8080/nnrf-disc/v1/nf-instances
         nsiId: '12'
     - snssai:
         sst: 1
         sd: 000003
       nsiInformationList:
-        nrfId: http://oai-nrf-slice123:8080/nnrf-disc/v1/nf-instances
+        nrfId: http://oai-nrf-slice:8080/nnrf-disc/v1/nf-instances
         nsiId: '13'
   taInfoList:
     - tai:

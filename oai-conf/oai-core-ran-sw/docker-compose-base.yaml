@@ -81,8 +81,8 @@ services:
             oai-cn5g:
                 ipv4_address: 10.1.20.12
         privileged: true
-    oai_nrf_slice123:
-        container_name: "oai-nrf-slice123"
+    oai_nrf_slice:
+        container_name: "oai-nrf-slice"
         image: oaisoftwarealliance/oai-nrf:develop
         expose:
             - 80/tcp
@@ -104,7 +104,7 @@ services:
         volumes:
             - ./conf_cn/slicing_base_config.yaml:/openair-amf/etc/config.yaml
         depends_on:
-            - oai_nrf_slice123
+            - oai_nrf_slice
             - oai_ausf
         networks:
             oai-cn5g:
@@ -122,7 +122,7 @@ services:
             - ./conf_cn/slicing_slice1_config.yaml:/openair-smf/etc/config.yaml
         depends_on:
             - oai_amf
-            - oai_nrf_slice123
+            - oai_nrf_slice
         networks:
             oai-cn5g:
                 ipv4_address: 10.1.20.51
@@ -139,7 +139,7 @@ services:
             - ./conf_cn/slicing_slice2_config.yaml:/openair-smf/etc/config.yaml
         depends_on:
             - oai_amf
-            - oai_nrf_slice123
+            - oai_nrf_slice
         networks:
             oai-cn5g:
                 ipv4_address: 10.1.20.52
@@ -156,7 +156,7 @@ services:
             - ./conf_cn/slicing_slice3_config.yaml:/openair-smf/etc/config.yaml
         depends_on:
             - oai_amf
-            - oai_nrf_slice123
+            - oai_nrf_slice
         networks:
             oai-cn5g:
                 ipv4_address: 10.1.20.53
@@ -175,7 +175,7 @@ services:
         environment:
             - TZ=Europe/Paris
         depends_on:
-            - oai_nrf_slice123
+            - oai_nrf_slice
             - oai_smf_slice1
         cap_add:
             - NET_ADMIN
@@ -200,7 +200,7 @@ services:
         environment:
             - TZ=Europe/Paris
         depends_on:
-            - oai_nrf_slice123
+            - oai_nrf_slice
             - oai_smf_slice2
         cap_add:
             - NET_ADMIN
@@ -225,7 +225,7 @@ services:
         environment:
             - TZ=Europe/Paris
         depends_on:
-            - oai_nrf_slice123
+            - oai_nrf_slice
             - oai_smf_slice3
         cap_add:
             - NET_ADMIN
