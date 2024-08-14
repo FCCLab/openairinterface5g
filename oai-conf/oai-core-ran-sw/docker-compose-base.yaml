@@ -305,24 +305,6 @@ services:
         tty: true
         entrypoint: ["bash", "-c", "/startup_scripts/oai-cu-up-3.sh"]
 
-    oai-du:
-        container_name: "oai-du"
-        image: oai-nr-softmodem:ubuntu22
-        privileged: true
-        ulimits:
-          core: -1 # for core dumps
-        volumes:
-            - ./conf_ran/gnb-du.sa.conf:/opt/oai-gnb/etc/gnb.conf
-            - ./startup_scripts/:/startup_scripts/
-        networks:
-            oai-ran-mplane:
-            oai-usrp:
-                ipv4_address: 192.168.10.100
-        tty: true
-        cap_add:
-            - NET_ADMIN
-        entrypoint: ["bash", "-c", "/startup_scripts/oai-du-x410.sh"]
-
 networks:
     # CN
     oai-cn5g:
@@ -357,12 +339,3 @@ networks:
         driver_opts:
             com.docker.network.bridge.name: "oai-ran-mplane"
 
-    # USRP
-    oai-usrp:
-        driver: macvlan
-        ipam:
-            driver: default
-            config:
-              - subnet: 192.168.10.0/24
-        driver_opts:
-            parent: ens1f0
