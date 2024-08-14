@@ -1,0 +1,76 @@
+
+name: oai
+prefix: ""
+
+topology:
+  nodes:
+    oai-sw-edge:
+      kind: linux
+      image: fcp-switch
+      binds:
+        - ./startup_scripts:/startup_scripts
+      cmd: bash /startup_scripts/oai-edge-sw.sh
+    oai-sw-regional:
+      kind: linux
+      image: fcp-switch
+      binds:
+        - ./startup_scripts:/startup_scripts
+      cmd: bash /startup_scripts/oai-regional-sw.sh
+    oai-sw-core:
+      kind: linux
+      image: fcp-switch
+      binds:
+        - ./startup_scripts:/startup_scripts
+      cmd: bash /startup_scripts/oai-core-sw.sh
+
+    oai-cn5g:
+      kind: bridge
+    oai-cu-cp:
+      kind: ext-container
+
+    oai-cu-up-3:
+      kind: ext-container
+    oai-upf-slice3:
+      kind: ext-container
+
+    oai-cu-up-2:
+      kind: ext-container
+    oai-upf-slice2:
+      kind: ext-container
+
+    oai-cu-up-1:
+      kind: ext-container
+    oai-upf-slice1:
+      kind: ext-container
+
+    oai-du:
+      kind: ext-container
+
+  links:
+    - endpoints: ["oai-sw-core:if-region-core",         "oai-sw-regional:if-region-core"]
+    - endpoints: ["oai-sw-regional:if-edge-region",     "oai-sw-edge:if-edge-region"]
+
+    - endpoints: ["oai-sw-core:if-oai-cn5g",            "oai-cn5g:if-oai-cn5g"]
+
+    - endpoints: ["oai-sw-core:if-cu-cp-cn",            "oai-cu-cp:if-cu-cp-cn"]
+    - endpoints: ["oai-sw-core:if-cu-cp-e1",            "oai-cu-cp:if-cu-cp-e1"]
+    - endpoints: ["oai-sw-core:if-cu-cp-f1c",           "oai-cu-cp:if-cu-cp-f1c"]
+
+    - endpoints: ["oai-sw-core:if-upf-3-cn",            "oai-upf-slice3:if-upf-3-cn"]
+    - endpoints: ["oai-sw-core:if-cu-up-3-cn",          "oai-cu-up-3:if-cu-up-3-cn"]
+    - endpoints: ["oai-sw-core:if-cu-up-3-e1",          "oai-cu-up-3:if-cu-up-3-e1"]
+    - endpoints: ["oai-sw-core:if-cu-up-3-f1u",         "oai-cu-up-3:if-cu-up-3-f1u"]
+
+    - endpoints: ["oai-sw-regional:if-upf-2-cn",        "oai-upf-slice2:if-upf-2-cn"]
+    - endpoints: ["oai-sw-regional:if-cu-up-2-cn",      "oai-cu-up-2:if-cu-up-2-cn"]
+    - endpoints: ["oai-sw-regional:if-cu-up-2-e1",      "oai-cu-up-2:if-cu-up-2-e1"]
+    - endpoints: ["oai-sw-regional:if-cu-up-2-f1u",     "oai-cu-up-2:if-cu-up-2-f1u"]
+
+    - endpoints: ["oai-sw-edge:if-upf-1-cn",            "oai-upf-slice1:if-upf-1-cn"]
+    - endpoints: ["oai-sw-edge:if-cu-up-1-cn",          "oai-cu-up-1:if-cu-up-1-cn"]
+    - endpoints: ["oai-sw-edge:if-cu-up-1-e1",          "oai-cu-up-1:if-cu-up-1-e1"]
+    - endpoints: ["oai-sw-edge:if-cu-up-1-f1u",         "oai-cu-up-1:if-cu-up-1-f1u"]
+
+    - endpoints: ["oai-sw-edge:if-du-f1uc",              "oai-du:if-du-f1uc"]
+
+
