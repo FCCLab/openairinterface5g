@@ -1,0 +1,25 @@
+services:
+  client1:
+    image: fcp-switch
+    container_name: client1
+    tty: true
+    privileged: true
+    networks:
+      - client1-net
+  client2:
+    image: fcp-switch
+    container_name: client2
+    tty: true
+    privileged: true
+    networks:
+      - client2-net
+
+networks:
+  client1-net:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.name: "client1-net"
+  client2-net:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.name: "client2-net"

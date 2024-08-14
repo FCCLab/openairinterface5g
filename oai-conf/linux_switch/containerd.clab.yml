@@ -1,0 +1,15 @@
+# a simple topo of two alpine containers connected with each other
+name: demo
+
+topology:
+  nodes:
+    client1:
+      kind: ext-container
+    client2:
+      kind: ext-container
+    switch:
+      kind: linux
+      image: fcp-switch
+  links:
+    - endpoints: ["client1:client1","switch:client1"]
+    - endpoints: ["client2:client2","switch:client2"]
