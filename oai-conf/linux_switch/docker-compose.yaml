@@ -1,0 +1,93 @@
+services:
+  client1:
+    image: fcp-switch
+    container_name: client1
+    restart: always
+    #command: /bin/bash
+    #command: sleep infinity
+    logging:
+      driver: "json-file"
+      options:
+          max-size: "100m"
+    networks:
+      client1-net:
+        # ipv4_address: 192.168.0.100
+    tty: true
+
+  client2:
+    image: fcp-switch
+    container_name: client2
+    restart: always
+    #command: /bin/bash
+    #command: sleep infinity
+    logging:
+      driver: "json-file"
+      options:
+          max-size: "100m"
+    networks:
+      client2-net:
+        # ipv4_address: 192.168.0.200
+    tty: true
+
+  switch1:
+    image: fcp-switch
+    container_name: switch1
+    restart: always
+    #command: /bin/bash
+    #command: sleep infinity
+    logging:
+      driver: "json-file"
+      options:
+          max-size: "100m"
+    networks:
+      sw-1-2-net:
+      client1-net:
+    tty: true
+
+  switch2:
+    image: fcp-switch
+    container_name: switch2
+    restart: always
+    #command: /bin/bash
+    #command: sleep infinity
+    logging:
+      driver: "json-file"
+      options:
+          max-size: "100m"
+    networks:
+      sw-1-2-net:
+      sw-2-3-net:
+    tty: true
+
+  switch3:
+    image: fcp-switch
+    container_name: switch3
+    restart: always
+    #command: /bin/bash
+    #command: sleep infinity
+    logging:
+      driver: "json-file"
+      options:
+          max-size: "100m"
+    networks:
+      client2-net:
+      sw-1-2-net:
+    tty: true
+
+networks:
+  sw-1-2-net:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.name: "sw-1-2-net"
+  sw-2-3-net:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.name: "sw-2-3-net"
+  client1-net:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.name: "client1-net"
+  client2-net:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.name: "client2-net"
