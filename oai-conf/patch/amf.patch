@@ -1,8 +1,8 @@
 diff --git a/src/amf-app/amf_n1.cpp b/src/amf-app/amf_n1.cpp
-index b4ca7614..f4e29e9e 100644
+index b4ca7614..d82fd823 100644
 --- a/src/amf-app/amf_n1.cpp
 +++ b/src/amf-app/amf_n1.cpp
-@@ -4857,7 +4857,16 @@ void amf_n1::initialize_registration_accept(
+@@ -4857,7 +4857,30 @@ void amf_n1::initialize_registration_accept(
      } else {
        snssai.length = SST_LENGTH + SD_LENGTH;
      }
@@ -14,6 +14,20 @@ index b4ca7614..f4e29e9e 100644
 +    if (nc->imsi == std::string("001010000000002") && (snssai.sst != 1 || snssai.sd != 2))
 +      continue;
 +    if (nc->imsi == std::string("001010000000003") && (snssai.sst != 1 || snssai.sd != 3))
++      continue;
++    if (nc->imsi == std::string("001010000000004") && (snssai.sst != 1 || snssai.sd != 4))
++      continue;
++    if (nc->imsi == std::string("001010000000005") && (snssai.sst != 1 || snssai.sd != 5))
++      continue;
++    if (nc->imsi == std::string("001010000000006") && (snssai.sst != 1 || snssai.sd != 6))
++      continue;
++    if (nc->imsi == std::string("001010000000007") && (snssai.sst != 1 || snssai.sd != 7))
++      continue;
++    if (nc->imsi == std::string("001010000000008") && (snssai.sst != 1 || snssai.sd != 8))
++      continue;
++    if (nc->imsi == std::string("001010000000009") && (snssai.sst != 1 || snssai.sd != 9))
++      continue;
++    if (nc->imsi == std::string("001010000000010") && (snssai.sst != 1 || snssai.sd != 10))
 +      continue;
 +    Logger::amf_n1().debug("Allowed S-NSSAI (SST 0x%x, SD 0x%x) for IMSI %s", s.sst, s.sd, nc->imsi.c_str());
 +

@@ -43,6 +43,11 @@ topology:
     oai-upf-slice1:
       kind: ext-container
 
+    oai-cu-up-4:
+      kind: ext-container
+    oai-upf-slice4:
+      kind: ext-container
+
     oai-du:
       kind: ext-container
 
@@ -70,6 +75,11 @@ topology:
     - endpoints: ["oai-sw-edge:if-cu-up-1-cn",          "oai-cu-up-1:if-cu-up-1-cn"]
     - endpoints: ["oai-sw-edge:if-cu-up-1-e1",          "oai-cu-up-1:if-cu-up-1-e1"]
     - endpoints: ["oai-sw-edge:if-cu-up-1-f1u",         "oai-cu-up-1:if-cu-up-1-f1u"]
+
+    - endpoints: ["oai-sw-edge:if-upf-4-cn",            "oai-upf-slice4:if-upf-4-cn"]
+    - endpoints: ["oai-sw-edge:if-cu-up-4-cn",          "oai-cu-up-4:if-cu-up-4-cn"]
+    - endpoints: ["oai-sw-edge:if-cu-up-4-e1",          "oai-cu-up-4:if-cu-up-4-e1"]
+    - endpoints: ["oai-sw-edge:if-cu-up-4-f1u",         "oai-cu-up-4:if-cu-up-4-f1u"]
 
     - endpoints: ["oai-sw-edge:if-du-f1uc",              "oai-du:if-du-f1uc"]
 

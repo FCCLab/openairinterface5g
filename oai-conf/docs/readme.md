@@ -8,7 +8,7 @@
 #### Patch AMF with hardcoded Configured Slice for UEs
 ```
 cd ~/oai-cn5g-fed/component/oai-amf
-git checkout 21e6395b1f353e6cdd41f413e215daeb85732a26
+git checkout -f 21e6395b1f353e6cdd41f413e215daeb85732a26
 git apply ~/openairinterface5g/oai-conf/patch/amf.patch
 docker build -t oai-amf-hardcoded-configured-slice -f docker/Dockerfile.amf.ubuntu  .
 ```
