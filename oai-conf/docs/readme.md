@@ -145,6 +145,36 @@ sudo ./nr-cuup -O ../../../oai-conf/oai-ran/gnb-cuup.sa.f1.slice3.conf --sa
 sudo ./nr-softmodem -O ../../../oai-conf/oai-ran/gnb-du.sa.conf --sa
 ```
 
+### uhd::op_timeout
+```
+TYPE <CTRL-C> TO TERMINATE
+got sync (ru_thread)
+got sync (L1_stats_thread)
+[HW]   current pps at 1.000000, starting streaming at 2.000000
+[PHY]   RU 0 rf device ready
+[PHY]   RU 0 RF started opp_enabled 0
+sleep...
+sleep...
+sleep...
+sleep...
+sleep...
+sleep...
+sleep...
+sleep...
+OOterminate called after throwing an instance of 'uhd::op_timeout'
+  what():  RfnocError: OpTimeout: Control operation timed out waiting for ACK
+[INFO  tini (1)] Main child exited with signal (with signal 'Aborted')
+[INFO  tini (1)] Spawned child process '/opt/oai-gnb/bin/entrypoint.sh' with pid '7'
+```
+
+Issue these comands in the host OS (outside container)
+```
+sudo sysctl -w net.core.wmem_max=62500000
+sudo sysctl -w net.core.rmem_max=62500000
+sudo sysctl -w net.core.wmem_default=62500000
+sudo sysctl -w net.core.rmem_default=62500000
+```
+
 ### Miscellanious
 * Print iptables 
 ```
