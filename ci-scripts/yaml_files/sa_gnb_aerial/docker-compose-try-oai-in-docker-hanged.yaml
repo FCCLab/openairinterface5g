@@ -9,7 +9,7 @@ services:
               count: all
               capabilities:
                 - gpu
-    network_mode: "host"
+    network_mode: aerial0.d9 
     shm_size: 4096m
     privileged: true
     stdin_open: true
@@ -26,7 +26,7 @@ services:
       - /dev/mst/mt4125_pciconf0.1:/dev/mst/mt4125_pciconf0.1
     working_dir: /opt/nvidia/cuBB-dev
     userns_mode: host
-    ipc: "host"
+    ipc: "shareable"
     image: nvcr.io/qhrjhjrvlsbu/aerial-cuda-accelerated-ran:24-1-cubb
     environment:
       - cuBB_SDK=/opt/nvidia/cuBB-dev
@@ -34,5 +34,39 @@ services:
     healthcheck:
       test: ["CMD-SHELL",'grep -q "L1 is ready!" /tmp/phy.log && echo 0 || echo 1']
       interval: 20s
+      timeout: 5s
+      retries: 5
+  oai-gnb-aerial:
+    cpuset: "13-20"
+    image: oai-gnb-aerial:latest
+    depends_on:
+      iq-cubb:
+        condition: service_healthy
+    cap_drop:
+      - ALL
+    cap_add:
+      - SYS_NICE
+      - IPC_LOCK
+    ipc: "container:iq-cubb"
+    environment:
+      USE_ADDITIONAL_OPTIONS: --log_config.global_log_options level,nocolor,time
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities:
+                - gpu
+    network_mode: host 
+    shm_size: 4096m
+    stdin_open: true
+    tty: true
+    volumes:
+      - ../../conf_files/gnb-vnf.sa.band78.273prb.aerial.conf:/opt/oai-gnb/etc/gnb.conf
+    container_name: oai-gnb-aerial
+    healthcheck:
+      test: /bin/bash -c "ps aux | grep -v grep | grep -c softmodem"
+      interval: 10s
       timeout: 5s
       retries: 5
