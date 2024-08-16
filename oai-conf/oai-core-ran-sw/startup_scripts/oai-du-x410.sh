@@ -28,7 +28,7 @@ sysctl -w net.core.wmem_max=62500000
 sysctl -w net.core.rmem_max=62500000
 sysctl -w net.core.wmem_default=62500000
 sysctl -w net.core.rmem_default=62500000
-ethtool -G eth1 tx 9000 rx 9000
+ethtool -G eth0 tx 9000 rx 9000
 
 
 # Load the USRP binaries
