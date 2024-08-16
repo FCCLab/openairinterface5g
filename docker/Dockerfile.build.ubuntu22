@@ -41,7 +41,6 @@ RUN /bin/sh oaienv && \
       --build-lib "telnetsrv enbscope uescope nrscope" \
       -w USRP -t Ethernet \
       --build-e2 --cmake-opt -DXAPP_MULTILANGUAGE=OFF \
-      --noavx512 \
       $BUILD_OPTION && \
     # Mainly to see if the sanitize option was perfectly executed
     echo "---- ldd on executables ----" && \

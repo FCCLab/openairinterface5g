@@ -281,7 +281,7 @@ services:
 
     oai-cu-cp:
         container_name: "oai-cu-cp"
-        image: oai-nr-softmodem:ubuntu22
+        image: oai-nr-softmodem:ubuntu22-test
         privileged: true
         ulimits:
           core: -1 # for core dumps
@@ -362,6 +362,19 @@ services:
             oai-ran-mplane:
         tty: true
         entrypoint: ["bash", "-c", "/startup_scripts/oai-cu-up-4.sh"]
+
+    nearRT-RIC:
+        container_name: "oai-flexric"
+        image: oai-nr-flexric:ubuntu22
+        privileged: true
+        ulimits:
+          core: -1 # for core dumps
+        volumes:
+            - ./conf_ran/flexric.conf:/usr/local/etc/flexric/flexric.conf
+        networks:
+            oai-ran-mplane:
+                ipv4_address: 172.60.0.100
+        tty: true
 
 networks:
     # CN

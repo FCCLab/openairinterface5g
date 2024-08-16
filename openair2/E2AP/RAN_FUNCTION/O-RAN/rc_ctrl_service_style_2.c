@@ -13,11 +13,12 @@ static int add_mod_dl_slice(int mod_id,
 {
   nr_pp_impl_param_dl_t *dl = &RC.nrmac[mod_id]->pre_processor_dl;
   char *slice_algo = NULL;
+  nvs_nr_slice_param_t * nvs_params = (nvs_nr_slice_param_t *)params;
+  float remain_pct = 1-((nvs_nr_slice_param_t *)dl->slices->s[0]->algo_data)->pct_reserved;
+  
   if (current_algo == NVS_SLICING) {
-    nvs_nr_slice_param_t * nvs_params = (nvs_nr_slice_param_t *)params;
     if (!nvs_params) return -1;
     slice_algo = strdup("NVS_CAPACITY");
-    float remain_pct = 1-((nvs_nr_slice_param_t *)dl->slices->s[0]->algo_data)->pct_reserved;
     nvs_params->pct_reserved = nvs_params->pct_reserved/100.0*remain_pct;
   } else {
     assert(0 != 0 && "Unknow current_algo");
@@ -27,7 +28,7 @@ static int add_mod_dl_slice(int mod_id,
   char *l = NULL;
   if (label)
     l = strdup(label);
-  LOG_W(NR_MAC, "add DL slice id %d, label %s, slice sched algo %s, pct_reserved %.2f, ue sched algo %s\n", id, l, slice_algo, ((nvs_nr_slice_param_t *)params)->pct_reserved, dl->dl_algo.name);
+  LOG_W(NR_MAC, "add DL slice id %d, label %s, slice sched algo %s, pct_reserved %.2f/remain_pct %.2f, ue sched algo %s\n", id, l, slice_algo, ((nvs_nr_slice_param_t *)params)->pct_reserved, remain_pct, dl->dl_algo.name);
   return dl->addmod_slice(dl->slices, id, nssai, l, algo, params);
 }
 
@@ -206,20 +207,23 @@ bool add_mod_rc_slice(int mod_id, size_t slices_len, ran_param_list_t* lst)
     nr_pp_impl_param_dl_t *dl = &RC.nrmac[mod_id]->pre_processor_dl;
     NR_UEs_t *UE_info = &RC.nrmac[mod_id]->UE_info;
     UE_iterator(UE_info->list, UE) {
+      LOG_I(NR_MAC, "UE %04x --- start \n", UE->rnti);
       rnti_t rnti = UE->rnti;
       NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
       long lcid = 0;
       for (int l = 0; l < sched_ctrl->dl_lc_num; ++l) {
         lcid = sched_ctrl->dl_lc_ids[l];
-        LOG_D(NR_MAC, "l %d, lcid %ld, sst %d, sd %d\n", l, lcid, sched_ctrl->dl_lc_nssai[lcid].sst, sched_ctrl->dl_lc_nssai[lcid].sd);
+        LOG_I(NR_MAC, "l %d, lcid %ld, sst %d, sd %d\n", l, lcid, sched_ctrl->dl_lc_nssai[lcid].sst, sched_ctrl->dl_lc_nssai[lcid].sd);
         if (nssai_matches(sched_ctrl->dl_lc_nssai[lcid], RC_nssai.sst, &RC_nssai.sd)) {
           rrc_gNB_ue_context_t* rrc_ue_context_list = rrc_gNB_get_ue_context_by_rnti_any_du(RC.nrrrc[mod_id], rnti);
+          if (!rrc_ue_context_list)
+            continue;
           uint16_t UE_mcc = rrc_ue_context_list->ue_context.ue_guami.mcc;
           uint16_t UE_mnc = rrc_ue_context_list->ue_context.ue_guami.mnc;
 
           uint8_t UE_sst = sched_ctrl->dl_lc_nssai[lcid].sst;
           uint32_t UE_sd = sched_ctrl->dl_lc_nssai[lcid].sd;
-          LOG_D(NR_MAC, "UE: mcc %d mnc %d, sst %d sd %d, RC: mcc %d mnc %d, sst %d sd %d\n",
+          LOG_I(NR_MAC, "UE: mcc %d mnc %d, sst %d sd %d, RC: mcc %d mnc %d, sst %d sd %d\n",
                 UE_mcc, UE_mnc, UE_sst, UE_sd, RC_mcc, RC_mnc, RC_nssai.sst, RC_nssai.sd);
 
           if (UE_mcc == RC_mcc && UE_mnc == RC_mnc && UE_sst == RC_nssai.sst && UE_sd == RC_nssai.sd) {
@@ -230,6 +234,7 @@ bool add_mod_rc_slice(int mod_id, size_t slices_len, ran_param_list_t* lst)
           }
         }
       }
+      LOG_I(NR_MAC, "UE %04x --- stop \n", UE->rnti);
     }
 
   }

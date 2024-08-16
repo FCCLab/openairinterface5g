@@ -4,24 +4,6 @@ source $(dirname $0)/utils.sh
 
 echo "##### Linux Simple Switch #####"
 
-######################################### Wait Interfaces #########################################
-wait_interface_up if-region-core
-
-# CN5G
-wait_interface_up if-oai-cn5g
-
-# CU-CP
-wait_interface_up if-cu-cp-cn
-wait_interface_up if-cu-cp-e1
-wait_interface_up if-cu-cp-f1c
-
-# UPF + CU-UP 3
-wait_interface_up if-upf-3-cn
-wait_interface_up if-cu-up-3-cn
-wait_interface_up if-cu-up-3-e1
-wait_interface_up if-cu-up-3-f1u
-######################################### Wait Interfaces #########################################
-
 # Create 3 Bridges
 brctl addbr cn5g
 brctl addbr e1

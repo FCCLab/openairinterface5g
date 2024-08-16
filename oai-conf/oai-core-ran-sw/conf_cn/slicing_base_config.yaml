@@ -108,6 +108,9 @@ amf:
       tac: 0x0001
       nssai:
         - sst: 1
+        - sst: 1
+          sd: 000000 # in hex
+        - sst: 1
           sd: 000001 # in hex
         - sst: 1
           sd: 000002 # in hex

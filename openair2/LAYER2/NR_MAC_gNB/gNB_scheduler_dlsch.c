@@ -353,7 +353,9 @@ static void nr_store_dlsch_buffer(module_id_t module_id, frame_t frame, sub_fram
       sched_ctrl->sliceInfo[sched_ctrl->last_sched_slice].dl_pdus_total += sched_ctrl->rlc_status[lcid].pdus_in_buffer;
       sched_ctrl->sliceInfo[sched_ctrl->last_sched_slice].num_total_bytes += sched_ctrl->rlc_status[lcid].bytes_in_buffer;
       add_nr_list(&sched_ctrl->sliceInfo[sched_ctrl->last_sched_slice].lcid, lcid);
-      LOG_D(MAC,
+      
+      if (!(frame%127) && slot == 0)
+      LOG_I(MAC,
             "[gNB %d][%4d.%2d] %s%d->DLSCH, RLC status for UE %d: %d bytes in buffer, total DL buffer size = %d bytes, %d total "
             "PDU bytes, %s TA command\n",
             module_id,
@@ -973,7 +975,10 @@ void nr_schedule_ue_spec(module_id_t module_id,
   NR_UEs_t *UE_info = &gNB_mac->UE_info;
   nfapi_nr_dl_tti_request_body_t *dl_req = &DL_req->dl_tti_request_body;
 
+  int ue_count = 0;
   UE_iterator(UE_info->list, UE) {
+    ue_count ++;
+
     NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
     NR_UE_DL_BWP_t *current_BWP = &UE->current_DL_BWP;
 
@@ -1033,8 +1038,10 @@ void nr_schedule_ue_spec(module_id_t module_id,
     harq->feedback_slot = pucch->ul_slot;
     harq->is_waiting = true;
     UE->mac_stats.dl.rounds[harq->round]++;
-    LOG_D(NR_MAC,
-          "%4d.%2d [DLSCH/PDSCH/PUCCH] RNTI %04x DCI L %d start %3d RBs %3d startSymbol %2d nb_symbol %2d dmrspos %x MCS %2d nrOfLayers %d TBS %4d HARQ PID %2d round %d RV %d NDI %d dl_data_to_ULACK %d (%d.%d) PUCCH allocation %d TPC %d\n",
+
+    if ((frame & 127) == 0)
+    LOG_I(NR_MAC,
+          "------- %4d.%2d [DLSCH/PDSCH/PUCCH] RNTI %04x DCI L %d start %3d RBs %3d startSymbol %2d nb_symbol %2d dmrspos %x MCS %2d nrOfLayers %d TBS %4d HARQ PID %2d round %d RV %d NDI %d dl_data_to_ULACK %d (%d.%d) PUCCH allocation %d TPC %d\n",
           frame,
           slot,
           rnti,
@@ -1441,4 +1448,7 @@ void nr_schedule_ue_spec(module_id_t module_id,
     /* mark UE as scheduled */
     sched_pdsch->rbSize = 0;
   }
+
+  if ((frame & 127) == 0)
+    LOG_I(NR_MAC, "------- %4d.%2d Number of UEs %d\n", frame, slot, ue_count);
 }

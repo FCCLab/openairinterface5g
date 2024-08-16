@@ -1,0 +1,40 @@
+name: oai-three-vms
+prefix: ""
+
+topology:
+  nodes:
+    oai-sw-edge:
+      kind: linux
+      image: fcp-switch
+      binds:
+        - ./startup_scripts:/startup_scripts
+      cmd: bash /startup_scripts/oai-edge-sw.sh
+    oai-sw-regional:
+      kind: linux
+      image: fcp-switch
+      binds:
+        - ./startup_scripts:/startup_scripts
+      cmd: bash /startup_scripts/oai-regional-sw.sh
+    oai-sw-core:
+      kind: linux
+      image: fcp-switch
+      binds:
+        - ./startup_scripts:/startup_scripts
+      cmd: bash /startup_scripts/oai-core-sw.sh
+
+    oai-br-edge:
+      kind: bridge
+
+    oai-br-regional:
+      kind: bridge
+
+    oai-br-core:
+      kind: bridge
+
+  links:
+    - endpoints: ["oai-sw-core:if-region-core",         "oai-sw-regional:if-region-core"]
+    - endpoints: ["oai-sw-regional:if-edge-region",     "oai-sw-edge:if-edge-region"]
+
+    - endpoints: ["oai-sw-edge:if-edge",                "oai-br-edge:if-edge"]
+    - endpoints: ["oai-sw-regional:if-regional",        "oai-br-regional:if-regional"]
+    - endpoints: ["oai-sw-core:if-core",                "oai-br-core:if-core"]

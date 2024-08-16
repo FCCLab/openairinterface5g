@@ -101,11 +101,11 @@ void nr_slicing_add_UE(nr_slice_info_t *si, NR_UE_info_t *new_ue)
       if (nssai_matches(sched_ctrl->dl_lc_nssai[lcid], si->s[i]->nssai.sst, &si->s[i]->nssai.sd)) {
 
         add_nr_list(&new_ue->UE_sched_ctrl.sliceInfo[i].lcid, lcid);
-        LOG_D(NR_MAC, "add lcid %ld to slice idx %d\n", lcid, i);
+        LOG_I(NR_MAC, "add lcid %ld to slice idx %d new UE rnti %d\n", lcid, i,  new_ue->rnti);
 
         if (!check_nr_list(&new_ue->dl_id, si->s[i]->id)) {
           add_nr_list(&new_ue->dl_id, si->s[i]->id);
-          LOG_D(NR_MAC, "add dl id %d to new UE rnti %x\n", si->s[i]->id, new_ue->rnti);
+          LOG_I(NR_MAC, "add dl id %d to new UE rnti %x\n", si->s[i]->id, new_ue->rnti);
         }
 
         UE_iterator(si->s[i]->UE_list, UE) {
@@ -248,7 +248,7 @@ int _nvs_nr_admission_control(const nr_slice_info_t *si,
     } else {
       sum_req += sp->pct_reserved;
     }
-    LOG_D(NR_MAC, "slice idx %d, sum_req %.2f\n", i, sum_req);
+    LOG_I(NR_MAC, "slice idx %d, sum_req %.2f\n", i, sum_req);
   }
   if (idx < 0) { /* not an existing slice */
     if (p->type == NVS_RATE)
@@ -256,7 +256,7 @@ int _nvs_nr_admission_control(const nr_slice_info_t *si,
     else
       sum_req += p->pct_reserved;
   }
-  LOG_D(NR_MAC, "slice idx %u, pct_reserved %.2f, sum_req %.2f\n", idx, p->pct_reserved, sum_req);
+  LOG_I(NR_MAC, "slice idx %d, pct_reserved %.2f, sum_req %.2f\n", idx, p->pct_reserved, sum_req);
   if (sum_req > 1.0)
     RET_FAIL(-3,
              "%s(): admission control failed: sum of resources is %f > 1.0\n",
@@ -520,6 +520,8 @@ void nvs_nr_dl(module_id_t mod_id,
   if (maxidx < 0)
     return;
 
+  maxidx = 2;
+
   ((_nvs_int_t *)si->s[maxidx]->int_data)->rb = n_rb_sched;
 
   UE_iterator (si->s[maxidx]->UE_list, UE) {
@@ -535,7 +537,12 @@ void nvs_nr_dl(module_id_t mod_id,
                                           n_rb_sched,
                                           rballoc_mask,
                                           si->s[maxidx]->dl_algo.data);
-  LOG_D(NR_MAC, "%4d.%2d schedule %d RBs at slice idx %d ID %d \n", frame, slot, n_rb_sched - rb_rem, maxidx, si->s[maxidx]->id);
+
+  if ((frame & 127) == 0)
+    LOG_I(NR_MAC, "------- %4d.%2d sst %d sd %d schedule %d RBs at slice idx %d ID %d \n", frame, slot, 
+                  si->s[maxidx]->nssai.sst, si->s[maxidx]->nssai.sd, 
+                  n_rb_sched - rb_rem, maxidx, si->s[maxidx]->id
+    );
 
   if (rb_rem == n_rb_sched) // if no RBs have been used mark as inactive
     ((_nvs_int_t *)si->s[maxidx]->int_data)->active = 0;

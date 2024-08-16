@@ -257,7 +257,7 @@ static void set_nssaiConfig(const int srb_len,
       nssai_t nssai = {.sst = 0, .sd = 0};
       sched_ctrl->dl_lc_nssai[lcid] = nssai;
     }
-    LOG_I(NR_MAC, "Setting NSSAI sst: %d, sd: %d for SRB: %ld\n", sched_ctrl->dl_lc_nssai[lcid].sst, sched_ctrl->dl_lc_nssai[lcid].sd, srb->srb_id);
+    LOG_I(NR_MAC, "Setting NSSAI lcid:%ld sst: %d, sd: %d for SRB: %ld\n", lcid, sched_ctrl->dl_lc_nssai[lcid].sst, sched_ctrl->dl_lc_nssai[lcid].sd, srb->srb_id);
   }
 
   for (int i = 0; i < drb_len; i++) {
@@ -265,7 +265,9 @@ static void set_nssaiConfig(const int srb_len,
 
     long lcid = get_lcid_from_drbid(drb->drb_id);
     sched_ctrl->dl_lc_nssai[lcid] = drb->nssai;
-    LOG_I(NR_MAC, "Setting NSSAI sst: %d, sd: %d for DRB: %ld\n", drb->nssai.sst, drb->nssai.sd, drb->drb_id);
+    // sched_ctrl->dl_lc_nssai[lcid].sd = 1;
+    LOG_I(NR_MAC, "Setting NSSAI lcid:%ld sst: %d, sd: %d for DRB: %ld\n", lcid, drb->nssai.sst, drb->nssai.sd, drb->drb_id);
+    LOG_I(NR_MAC, "Setting NSSAI lcid:%ld sst: %d, sd: %d for DRB: %ld\n", lcid, sched_ctrl->dl_lc_nssai[lcid].sst, sched_ctrl->dl_lc_nssai[lcid].sd, drb->drb_id);
   }
 }
 
@@ -381,6 +383,7 @@ void ue_context_setup_request(const f1ap_ue_context_setup_t *req)
   set_QoSConfig(req, &UE->UE_sched_ctrl);
 
   /* Set NSSAI config in MAC for each active DRB */
+  LOG_I(NR_MAC, "Setting NSSAI for UE %04x\n", UE->rnti);
   set_nssaiConfig(req->srbs_to_be_setup_length,
                   req->srbs_to_be_setup,
                   req->drbs_to_be_setup_length,

@@ -986,7 +986,10 @@ int DU_handle_UE_CONTEXT_MODIFICATION_REQUEST(instance_t instance, sctp_assoc_t 
             /* S-NSSAI */
             OCTET_STRING_TO_INT8(&dRB_Info->sNSSAI.sST, drb_p->nssai.sst);
             if (dRB_Info->sNSSAI.sD != NULL)
-              memcpy((uint8_t *)&drb_p->nssai.sd, dRB_Info->sNSSAI.sD->buf, 3);
+            {
+              OCTET_STRING_TO_INT24(dRB_Info->sNSSAI.sD, drb_p->nssai.sd);
+              // memcpy((uint8_t *)&drb_p->nssai.sd, dRB_Info->sNSSAI.sD->buf, 3);
+            }
             else
               drb_p->nssai.sd = 0xffffff;
           }

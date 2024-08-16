@@ -452,12 +452,12 @@ static void process_rlcBearerConfig(struct NR_CellGroupConfig__rlc_BearerToAddMo
       if (!found) {
         sched_ctrl->dl_lc_num++;
         sched_ctrl->dl_lc_ids[sched_ctrl->dl_lc_num - 1] = lcid;
-        LOG_D(NR_MAC, "Adding LCID %d (%s %d)\n", lcid, lcid < 4 ? "SRB" : "DRB", lcid);
+        LOG_I(NR_MAC, "Adding LCID %d (%s %d)\n", lcid, lcid < 4 ? "SRB" : "DRB", lcid);
       }
     }
   }
 
-  LOG_D(NR_MAC, "In %s: total num of active bearers %d) \n",
+  LOG_I(NR_MAC, "In %s: total num of active bearers %d) \n",
       __FUNCTION__,
       sched_ctrl->dl_lc_num);
 

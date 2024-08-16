@@ -3,14 +3,17 @@ include:
 
 services:
     oai-du:
-        image: oaisoftwarealliance/oai-gnb:develop
+        image: oai-nr-softmodem:ubuntu22-test
         privileged: true
         container_name: oai-du
         environment:
             ASAN_OPTIONS: detect_leaks=0
         networks:
+            oai-ran-mplane:
             oai-du-uesim:
                 ipv4_address: 10.1.50.10
+            # oai-du-f1uc:
+            #     ipv4_address: 10.1.100.10
         volumes:
             - ./conf_ran/gnb-du.sa.band78.106prb.rfsim.conf:/opt/oai-gnb/etc/gnb.conf
             - ./startup_scripts:/startup_scripts
@@ -22,7 +25,7 @@ services:
         entrypoint: ["bash", "-c", "/startup_scripts/oai-du-rfsim.sh"]
 
     oai-nr-ue-1:
-        image: oaisoftwarealliance/oai-nr-ue:develop
+        image: oai-nr-ue:ubuntu22
         privileged: true
         container_name: oai-nr-ue-1
         environment:
@@ -33,19 +36,22 @@ services:
                                     --uicc0.nssai_sst 1
                                     --uicc0.nssai_sd 1
                                     --rfsimulator.serveraddr 10.1.50.10
+            HOSTNAME: oai-nr-ue-1
         networks:
             oai-du-uesim:
                 ipv4_address: 10.1.50.101
         volumes:
+            - ./startup_scripts:/startup_scripts
             - ./conf_ran/nrue.uicc.conf:/opt/oai-nr-ue/etc/nr-ue.conf
         healthcheck:
             test: /bin/bash -c "pgrep nr-uesoftmodem"
             interval: 10s
             timeout: 5s
             retries: 5
+        entrypoint: ["bash", "-c", "/startup_scripts/oai-nr-ue-rfsim.sh"]
 
     oai-nr-ue-2:
-        image: oaisoftwarealliance/oai-nr-ue:develop
+        image: oai-nr-ue:ubuntu22
         privileged: true
         container_name: oai-nr-ue-2
         environment:
@@ -56,19 +62,21 @@ services:
                                     --uicc0.nssai_sst 1
                                     --uicc0.nssai_sd 2
                                     --rfsimulator.serveraddr 10.1.50.10
+            HOSTNAME: oai-nr-ue-2
         networks:
             oai-du-uesim:
-                ipv4_address: 10.1.50.102
         volumes:
+            - ./startup_scripts:/startup_scripts
             - ./conf_ran/nrue.uicc.conf:/opt/oai-nr-ue/etc/nr-ue.conf
         healthcheck:
             test: /bin/bash -c "pgrep nr-uesoftmodem"
             interval: 10s
             timeout: 5s
             retries: 5
+        entrypoint: ["bash", "-c", "/startup_scripts/oai-nr-ue-rfsim.sh"]
 
     oai-nr-ue-3:
-        image: oaisoftwarealliance/oai-nr-ue:develop
+        image: oai-nr-ue:ubuntu22
         privileged: true
         container_name: oai-nr-ue-3
         environment:
@@ -79,19 +87,22 @@ services:
                                     --uicc0.nssai_sst 1
                                     --uicc0.nssai_sd 3
                                     --rfsimulator.serveraddr 10.1.50.10
+            HOSTNAME: oai-nr-ue-3
         networks:
             oai-du-uesim:
                 ipv4_address: 10.1.50.103
         volumes:
+            - ./startup_scripts:/startup_scripts
             - ./conf_ran/nrue.uicc.conf:/opt/oai-nr-ue/etc/nr-ue.conf
         healthcheck:
             test: /bin/bash -c "pgrep nr-uesoftmodem"
             interval: 10s
             timeout: 5s
             retries: 5
+        entrypoint: ["bash", "-c", "/startup_scripts/oai-nr-ue-rfsim.sh"]
 
     oai-nr-ue-4:
-        image: oaisoftwarealliance/oai-nr-ue:develop
+        image: oai-nr-ue:ubuntu22
         privileged: true
         container_name: oai-nr-ue-4
         environment:
@@ -102,16 +113,19 @@ services:
                                     --uicc0.nssai_sst 1
                                     --uicc0.nssai_sd 4
                                     --rfsimulator.serveraddr 10.1.50.10
+            HOSTNAME: oai-nr-ue-4
         networks:
             oai-du-uesim:
                 ipv4_address: 10.1.50.104
         volumes:
+            - ./startup_scripts:/startup_scripts
             - ./conf_ran/nrue.uicc.conf:/opt/oai-nr-ue/etc/nr-ue.conf
         healthcheck:
             test: /bin/bash -c "pgrep nr-uesoftmodem"
             interval: 10s
             timeout: 5s
             retries: 5
+        entrypoint: ["bash", "-c", "/startup_scripts/oai-nr-ue-rfsim.sh"]
 
 networks:
     oai-du-uesim:
@@ -122,3 +136,12 @@ networks:
                 - subnet: 10.1.50.0/24
         driver_opts:
             com.docker.network.bridge.name: "oai-du-uesim"
+
+    # oai-du-f1uc:
+    #     driver: bridge
+    #     name: oai-du-f1uc
+    #     ipam:
+    #         config:
+    #             - subnet: 10.1.100.0/24
+    #     driver_opts:
+    #         com.docker.network.bridge.name: "oai-du-f1uc"

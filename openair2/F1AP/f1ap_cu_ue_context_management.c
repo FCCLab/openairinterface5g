@@ -1323,10 +1323,26 @@ int CU_send_UE_CONTEXT_MODIFICATION_REQUEST(sctp_assoc_t assoc_id, f1ap_ue_conte
           /* sST */
           OCTET_STRING_fromBuf(&DRB_Information->sNSSAI.sST, (char *)&f1ap_ue_context_modification_req->drbs_to_be_setup[i].nssai.sst, 1);
 
+          LOG_E(F1AP, "-------- sst = %d, sd= %d\n", (char *)&f1ap_ue_context_modification_req->drbs_to_be_setup[i].nssai.sst,
+            f1ap_ue_context_modification_req->drbs_to_be_setup[i].nssai.sd
+          );
+
           /* OPTIONAL */
           const uint32_t sd = (f1ap_ue_context_modification_req->drbs_to_be_setup[i].nssai.sd & 0xffffff);
           if (sd != 0xffffff)
-            OCTET_STRING_fromBuf(DRB_Information->sNSSAI.sD, (char *)&sd, 3);
+          {
+            char buffer[3];
+            INT24_TO_BUFFER(sd, buffer);
+            DRB_Information->sNSSAI.sD = (OCTET_STRING_t *)calloc(1, sizeof(OCTET_STRING_t));
+            LOG_E(F1AP, "--------4 sst = %d, sd= %d\n", f1ap_ue_context_modification_req->drbs_to_be_setup[i].nssai.sst,
+              f1ap_ue_context_modification_req->drbs_to_be_setup[i].nssai.sd
+            );
+            OCTET_STRING_fromBuf(DRB_Information->sNSSAI.sD, buffer, 3);
+            LOG_E(F1AP, "-------- DRB_Information->sNSSAI.sD: size:%d %04x %04x %04x\n", DRB_Information->sNSSAI.sD->size,
+                DRB_Information->sNSSAI.sD->buf[0], DRB_Information->sNSSAI.sD->buf[1],
+                DRB_Information->sNSSAI.sD->buf[2]
+            );
+          }
         }
 
         /* OPTIONAL */

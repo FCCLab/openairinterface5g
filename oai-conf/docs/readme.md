@@ -57,6 +57,7 @@ docker build -t ran-build-flexric:ubuntu22 -f docker/Dockerfile.build.flexric.ub
 docker build -t oai-nr-softmodem:ubuntu22 -f docker/Dockerfile.gNB.ubuntu22 .
 docker build -t oai-nr-cuup:ubuntu22 -f docker/Dockerfile.nr-cuup.ubuntu22 .
 docker build -t oai-nr-flexric:ubuntu22 -f docker/Dockerfile.flexric.ubuntu22 .
+docker build -t oai-nr-ue:ubuntu22 -f docker/Dockerfile.nrUE.ubuntu22 .
 ```
 
 * Allow routing between subnets

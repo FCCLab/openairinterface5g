@@ -13,7 +13,7 @@ ifconfig if-cu-cp-f1c 10.1.100.50/24
 /tini -v -- /opt/oai-gnb/bin/entrypoint.sh \ 
 /opt/oai-gnb/bin/nr-softmodem -O /opt/oai-gnb/etc/gnb.conf --sa --telnetsrv --telnetsrv.shrmod ci --log_config.global_log_options level,nocolor,time,line_num,function
 
-# while true
-# do
-#     sleep 1s
-# done
+while true
+do
+    sleep 1s
+done

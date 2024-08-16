@@ -2116,6 +2116,7 @@ void rrc_gNB_process_e1_bearer_context_setup_resp(e1ap_bearer_setup_resp_t *resp
   f1ap_drb_to_be_setup_t drbs[32]; // maximum DRB can be 32
   int nb_drb = 0;
   for (int p = 0; p < resp->numPDUSessions; ++p) {
+    LOG_I (RRC, "Find PDU session ID %d in UE %d %d %04x\n", resp->pduSession[p].id, UE->rrc_ue_id, UE->rnti);
     rrc_pdu_session_param_t *RRC_pduSession = find_pduSession(UE, resp->pduSession[p].id, false);
     DevAssert(RRC_pduSession);
     for (int i = 0; i < resp->pduSession[p].numDRBSetup; i++) {
@@ -2157,6 +2158,7 @@ void rrc_gNB_process_e1_bearer_context_setup_resp(e1ap_bearer_setup_resp_t *resp
       /* pass NSSAI info to MAC */
       drb->nssai = RRC_pduSession->param.nssai;
 
+      LOG_I (RRC, "DRB NSSAI %d %d\n", drb->nssai.sst, drb->nssai.sd);
       nb_drb++;
     }
   }
@@ -2291,12 +2293,15 @@ static const char *get_pdusession_status_text(pdu_session_status_t status)
 
 static void write_rrc_stats(const gNB_RRC_INST *rrc)
 {
+  static int write_counter = 0;
+
   const char *filename = "nrRRC_stats.log";
   FILE *f = fopen(filename, "w");
   if (f == NULL) {
     LOG_E(NR_RRC, "cannot open %s for writing\n", filename);
     return;
   }
+  fprintf(f, "Counter %d\n", write_counter++);
 
   int i = 0;
   rrc_gNB_ue_context_t *ue_context_p = NULL;
@@ -2323,7 +2328,10 @@ static void write_rrc_stats(const gNB_RRC_INST *rrc)
       fprintf(f, "    (no PDU sessions)\n");
     for (int nb_pdu = 0; nb_pdu < ue_ctxt->nb_of_pdusessions; ++nb_pdu) {
       const rrc_pdu_session_param_t *pdu = &ue_ctxt->pduSession[nb_pdu];
-      fprintf(f, "    PDU session %d ID %d status %s\n", nb_pdu, pdu->param.pdusession_id, get_pdusession_status_text(pdu->status));
+      fprintf(f, "    PDU session %d: ID %d sst %d sd %d status %s\n", nb_pdu, 
+        pdu->param.pdusession_id,
+        pdu->param.nssai.sst, pdu->param.nssai.sd,
+        get_pdusession_status_text(pdu->status));
     }
 
     fprintf(f, "    associated DU: ");
