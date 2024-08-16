@@ -1165,7 +1165,8 @@ static void rrc_handle_RRCSetupRequest(gNB_RRC_INST *rrc,
      */
     if ((ue_context_p = rrc_gNB_ue_context_random_exist(rrc, random_value))) {
       LOG_W(NR_RRC, "new UE rnti (coming with random value) is already there, removing UE %x from MAC/PHY\n", msg->crnti);
-      AssertFatal(false, "not implemented\n");
+      // AssertFatal(false, "not implemented\n");
+      return;
     }
 
     ue_context_p = rrc_gNB_create_ue_context(assoc_id, msg->crnti, rrc, random_value, msg->gNB_DU_ue_id);
