@@ -193,3 +193,7 @@ git submodule update
 ```
 fdf2970a731fe47fbda82487a9f7cebbf4af8f4d
 ```
+
+### 3 Regions Results
+![Throughput](./imgs/Throughput.png)
+![RTT](./imgs/RTT.png)

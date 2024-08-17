@@ -64,12 +64,12 @@ brctl show
 echo "### Interfaces ###"
 
 ######################################## Simulate Throughput and Delay ###############################
-# tc qdisc del dev if-region-core root
-# tc qdisc add dev if-region-core root handle 1: netem delay 10ms
+tc qdisc del dev if-region-core root
+tc qdisc add dev if-region-core root handle 1: netem delay 10ms
 # tc qdisc add dev if-region-core parent 1:1 handle 10: tbf rate 100mbit burst 32kbit latency 400ms
-# echo "### Similated Throughput and Delay ###"
-# tc qdisc show dev if-region-core
-# echo "### Similated Throughput and Delay ###"
+echo "### Similated Throughput and Delay ###"
+tc qdisc show dev if-region-core
+echo "### Similated Throughput and Delay ###"
 ######################################## Simulate Throughput and Delay ###############################
 
 python3 /startup_scripts/oai-sw-report.py
