@@ -3,7 +3,7 @@ include:
 
 services:
     oai-du:
-        image: oai-nr-softmodem:ubuntu22-test
+        image: oai-nr-softmodem:ubuntu22
         privileged: true
         container_name: oai-du
         environment:

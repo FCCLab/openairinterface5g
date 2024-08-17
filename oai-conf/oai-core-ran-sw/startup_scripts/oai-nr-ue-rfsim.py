@@ -1,6 +1,5 @@
 import subprocess
 import re
-from influxdb_client import InfluxDBClient, Point, WritePrecision
 
 import influxdb_client, os, time
 from influxdb_client import InfluxDBClient, Point, WritePrecision
@@ -73,7 +72,7 @@ def main():
                 interface_ip = matches[0]
                 break
         time.sleep(1)
-    
+
     HOSTNAME = os.getenv("HOSTNAME")
     print(f"{HOSTNAME} oaitun_ue1 IP address: {interface_ip}")
 

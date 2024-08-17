@@ -6,19 +6,19 @@ topology:
   nodes:
     oai-sw-edge:
       kind: linux
-      image: fcp-switch
+      image: simple-linux-switch
       binds:
         - ./startup_scripts:/startup_scripts
       cmd: bash /startup_scripts/oai-edge-sw.sh
     oai-sw-regional:
       kind: linux
-      image: fcp-switch
+      image: simple-linux-switch
       binds:
         - ./startup_scripts:/startup_scripts
       cmd: bash /startup_scripts/oai-regional-sw.sh
     oai-sw-core:
       kind: linux
-      image: fcp-switch
+      image: simple-linux-switch
       binds:
         - ./startup_scripts:/startup_scripts
       cmd: bash /startup_scripts/oai-core-sw.sh
@@ -48,8 +48,16 @@ topology:
     oai-upf-slice4:
       kind: ext-container
 
+    # oai-du-1:
+    #   kind: ext-container
+    # oai-du-2:
+    #   kind: ext-container
+    # oai-du-3:
+    #   kind: ext-container
+    # oai-du-4:
+    #   kind: ext-container
     oai-du:
-      kind: ext-container
+      kind: bridge
 
   links:
     - endpoints: ["oai-sw-core:if-region-core",         "oai-sw-regional:if-region-core"]
@@ -83,4 +91,7 @@ topology:
 
     - endpoints: ["oai-sw-edge:if-du-f1uc",              "oai-du:if-du-f1uc"]
 
-
+    # - endpoints: ["oai-sw-edge:if-du-f1uc-1",              "oai-du-1:if-du-f1uc"]
+    # - endpoints: ["oai-sw-edge:if-du-f1uc-2",              "oai-du-2:if-du-f1uc"]
+    # - endpoints: ["oai-sw-edge:if-du-f1uc-3",              "oai-du-3:if-du-f1uc"]
+    # - endpoints: ["oai-sw-edge:if-du-f1uc-4",              "oai-du-4:if-du-f1uc"]

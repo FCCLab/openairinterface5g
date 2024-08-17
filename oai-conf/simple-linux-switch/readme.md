@@ -27,3 +27,7 @@ brctl addif br0 client2
 ifconfig br0 up
 brctl show
 ```
+
+```
+docker build -t simple-linux-switch .
+```

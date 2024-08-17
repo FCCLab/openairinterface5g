@@ -71,6 +71,8 @@ echo "### Interfaces ###"
 # echo "### Similated Throughput and Delay ###"
 ######################################## Simulate Throughput and Delay ###############################
 
+python3 /startup_scripts/oai-sw-report.py
+
 #################################### Loop #########################################
 while true
 do

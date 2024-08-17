@@ -281,7 +281,7 @@ services:
 
     oai-cu-cp:
         container_name: "oai-cu-cp"
-        image: oai-nr-softmodem:ubuntu22-test
+        image: oai-nr-softmodem:ubuntu22
         privileged: true
         ulimits:
           core: -1 # for core dumps
