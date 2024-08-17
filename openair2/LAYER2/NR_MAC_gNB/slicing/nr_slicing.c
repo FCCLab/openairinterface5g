@@ -520,7 +520,7 @@ void nvs_nr_dl(module_id_t mod_id,
   if (maxidx < 0)
     return;
 
-  maxidx = 2;
+  // maxidx = 2;
 
   ((_nvs_int_t *)si->s[maxidx]->int_data)->rb = n_rb_sched;
 
