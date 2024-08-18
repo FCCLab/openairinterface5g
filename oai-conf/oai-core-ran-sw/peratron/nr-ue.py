@@ -136,7 +136,7 @@ def main():
                 while process.poll() is None:
                     line = process.stdout.readline()
                     # print(line, end="")	
-                    (data_transferred, bandwidth) = parse_line(line)
+                    (data_transferred, bandwidth) = parse_iperf3_line(line)
                     if (data_transferred is None) or (bandwidth is None):
                         continue
 
