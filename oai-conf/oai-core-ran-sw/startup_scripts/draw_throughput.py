@@ -3,6 +3,7 @@
 import matplotlib.pyplot as plt
 from datetime import datetime, timezone, timedelta
 from influxdb_client import InfluxDBClient, Point, QueryApi
+import matplotlib.ticker as ticker
 import numpy as np
 
 from oai_config import *
@@ -15,6 +16,7 @@ client = InfluxDBClient(url=INFLUXDB_URL, token=INFLUXDB_TOKEN, org=INFLUXDB_ORG
 # Instantiate the Query API
 query_api = client.query_api()
 
+REGION_LABEL_Y_POSE = -6
 
 query_template = f"""
 from(bucket: "{INFLUXDB_BUCKET}")
@@ -24,6 +26,7 @@ from(bucket: "{INFLUXDB_BUCKET}")
   |> yield(name: "last")
 """
 
+fig, ax = plt.subplots()
 
 ############################################ SCENARIO 1 ############################################
 SCENARIO_START = 0
@@ -41,9 +44,16 @@ for idx, record in enumerate(table.records):
         time_axis_ue13.append(SCENARIO_START + 1)
     else:
         time_axis_ue13.append(time_axis_ue13[-1] + 1)
-    bandwidth_ue13.append(record.get_value())
+    bandwidth_ue13.append(record.get_value()/1e6)
 print(time_axis_ue13)
 print(bandwidth_ue13)
+
+x_start = SCENARIO_START
+x_end   = time_axis_ue13[-1]
+SCENARIO_END_S1 = x_end
+label_x = (x_start + x_end) / 2  # Position the label in the middle of the shaded region
+label_y = REGION_LABEL_Y_POSE                 # Position the label above the plot data
+ax.text(label_x, label_y, '{S1}', fontsize=8, color='darkred', ha='center', va='center')
 
 ########################################## SCENARIO 2 ############################################
 SCENARIO_START = time_axis_ue13[-1]
@@ -62,7 +72,7 @@ for idx, record in enumerate(table.records):
         time_axis_ue13.append(SCENARIO_START + 1)
     else:
         time_axis_ue13.append(time_axis_ue13[-1] + 1)
-    bandwidth_ue13.append(record.get_value())
+    bandwidth_ue13.append(record.get_value()/1e6)
 print(bandwidth_ue13)
 
 query = query_template % (*SCENARIO, "oai-nr-ue-12")
@@ -74,9 +84,15 @@ for idx, record in enumerate(table.records):
         time_axis_ue12.append(SCENARIO_START + 1)
     else:
         time_axis_ue12.append(time_axis_ue12[-1] + 1)
-    bandwidth_ue12.append(record.get_value())
+    bandwidth_ue12.append(record.get_value()/1e6)
 print(bandwidth_ue12)
 
+x_start = SCENARIO_START
+x_end   = max(time_axis_ue13[-1], time_axis_ue12[-1])
+SCENARIO_END_S2 = x_end
+label_x = (x_start + x_end) / 2  # Position the label in the middle of the shaded region
+label_y = REGION_LABEL_Y_POSE                  # Position the label above the plot data
+ax.text(label_x, label_y, '{S1, S2}', fontsize=8, color='darkred', ha='center', va='center')
 
 ############################################ SCENARIO 3 ############################################
 SCENARIO_START = max(time_axis_ue13[-1], time_axis_ue12[-1])
@@ -95,7 +111,7 @@ for idx, record in enumerate(table.records):
         time_axis_ue13.append(SCENARIO_START + 1)
     else:
         time_axis_ue13.append(time_axis_ue13[-1] + 1)
-    bandwidth_ue13.append(record.get_value())
+    bandwidth_ue13.append(record.get_value()/1e6)
 print(bandwidth_ue13)
 
 query = query_template % (*SCENARIO, "oai-nr-ue-12")
@@ -107,7 +123,7 @@ for idx, record in enumerate(table.records):
         time_axis_ue12.append(SCENARIO_START + 1)
     else:
         time_axis_ue12.append(time_axis_ue12[-1] + 1)
-    bandwidth_ue12.append(record.get_value())
+    bandwidth_ue12.append(record.get_value()/1e6)
 print(bandwidth_ue12)
 
 query = query_template % (*SCENARIO, "oai-nr-ue-11")
@@ -119,8 +135,15 @@ for idx, record in enumerate(table.records):
         time_axis_ue11.append(SCENARIO_START + 1)
     else:
         time_axis_ue11.append(time_axis_ue11[-1] + 1)
-    bandwidth_ue11.append(record.get_value())
+    bandwidth_ue11.append(record.get_value()/1e6)
 print(bandwidth_ue11)
+
+x_start = SCENARIO_START
+x_end   = max(time_axis_ue13[-1], time_axis_ue12[-1], time_axis_ue11[-1])
+SCENARIO_END_S3 = x_end
+label_x = (x_start + x_end) / 2  # Position the label in the middle of the shaded region
+label_y = REGION_LABEL_Y_POSE             # Position the label above the plot data
+ax.text(label_x, label_y, '{S1, S2, S3}', fontsize=8, color='darkred', ha='center', va='center')
 
 ############################################ SCENARIO 4 ############################################
 SCENARIO_START = max(time_axis_ue13[-1], time_axis_ue12[-1], time_axis_ue11[-1])
@@ -140,7 +163,7 @@ for idx, record in enumerate(table.records):
         time_axis_ue13.append(SCENARIO_START + 1)
     else:
         time_axis_ue13.append(time_axis_ue13[-1] + 1)
-    bandwidth_ue13.append(record.get_value())
+    bandwidth_ue13.append(record.get_value()/1e6)
 print(bandwidth_ue13)
 
 query = query_template % (*SCENARIO, "oai-nr-ue-12")
@@ -153,7 +176,7 @@ for idx, record in enumerate(table.records):
         time_axis_ue12.append(SCENARIO_START + 1)
     else:
         time_axis_ue12.append(time_axis_ue12[-1] + 1)
-    bandwidth_ue12.append(record.get_value())
+    bandwidth_ue12.append(record.get_value()/1e6)
 print(bandwidth_ue12)
 
 query = query_template % (*SCENARIO, "oai-nr-ue-11")
@@ -166,7 +189,7 @@ for idx, record in enumerate(table.records):
         time_axis_ue11.append(SCENARIO_START + 1)
     else:
         time_axis_ue11.append(time_axis_ue11[-1] + 1)
-    bandwidth_ue11.append(record.get_value())
+    bandwidth_ue11.append(record.get_value()/1e6)
 print(bandwidth_ue11)
 
 query = query_template % (*SCENARIO, "oai-nr-ue-14")
@@ -179,23 +202,42 @@ for idx, record in enumerate(table.records):
         time_axis_ue14.append(SCENARIO_START + 1)
     else:
         time_axis_ue14.append(time_axis_ue14[-1] + 1)
-    bandwidth_ue14.append(record.get_value())
+    bandwidth_ue14.append(record.get_value()/1e6)
 print(bandwidth_ue14)
 
+x_start = SCENARIO_START
+x_end   = max(time_axis_ue13[-1], time_axis_ue12[-1], time_axis_ue11[-1], time_axis_ue14[-1])
+SCENARIO_END_S4 = x_end
+label_x = (x_start + x_end) / 2  # Position the label in the middle of the shaded region
+label_y = REGION_LABEL_Y_POSE                 # Position the label above the plot data
+ax.text(label_x, label_y, '{S1, S2, S3, S4}', fontsize=8, color='darkred', ha='center', va='center')
 
 ############################################ Plot ############################################
-plt.plot(time_axis_ue13, bandwidth_ue13, label="UE3 Slice: SST=1, SD=3")
-plt.plot(time_axis_ue12, bandwidth_ue12, label="UE2 Slice: SST=1, SD=2")
-plt.plot(time_axis_ue11, bandwidth_ue11, label="UE1 Slice: SST=1, SD=1")
-plt.plot(time_axis_ue14, bandwidth_ue14, label="UE4 Slice: SST=1, SD=4")
 
-np.save('BW.npy', ((time_axis_ue13, bandwidth_ue13), (time_axis_ue12, bandwidth_ue12), (time_axis_ue11, bandwidth_ue11), (time_axis_ue14, bandwidth_ue14)))
+ax.plot(time_axis_ue13, bandwidth_ue13, label="UE1 of S1 (SST=1, SD=1)")
+ax.plot(time_axis_ue12, bandwidth_ue12, label="UE2 of S2 (SST=1, SD=2)")
+ax.plot(time_axis_ue11, bandwidth_ue11, label="UE3 of S3 (SST=1, SD=3)")
+ax.plot(time_axis_ue14, bandwidth_ue14, label="UE4 of S4 (SST=1, SD=4)")
 
-plt.xlabel('Time')
-plt.ylabel('Bandwidth x100 Mbps')
-plt.title("UEs' Bandwidth Over Time")
-plt.legend(loc='upper right', frameon=False, fontsize='large')
+ax.axvline(SCENARIO_END_S1, color='black', linestyle='--')
+ax.axvline(SCENARIO_END_S2, color='black', linestyle='--')
+ax.axvline(SCENARIO_END_S3, color='black', linestyle='--')
+
+# np.save('BW.npy', ((time_axis_ue13, bandwidth_ue13), (time_axis_ue12, bandwidth_ue12), (time_axis_ue11, bandwidth_ue11), (time_axis_ue14, bandwidth_ue14)))
+
+plt.xlabel('Time (seconds)')
+plt.ylabel('Throughput (Mbps)')
+# plt.title("UEs' Throughput over Time")
+legend = plt.legend(loc='upper right', fontsize='large', frameon=True)
+legend.get_frame().set_alpha(0.95)
+# legend.get_frame().set_facecolor('black')  # Set the background color of the legend
+# for text in legend.get_texts():
+#     text.set_color('lightgrey')
+
+# Save the plot to a PDF file
+plt.savefig('Throughput.pdf', format='pdf')
 plt.show()
+
 
 # Close the client
 client.close()
