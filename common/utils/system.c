@@ -238,10 +238,17 @@ void threadCreate(pthread_t* t, void * (*func)(void*), void * param, char* name,
     if (checkIfGenericKernelOnFedora())
       if (checkIfInsideContainer())
         settingPriority = 0;
-  
+
+  if (getenv("CUUP"))
+  {
+    settingPriority = 0;
+    LOG_I(UTIL,"threadCreate %s Sched SCHED_OTHER\n", name);
+  }
+
   if (settingPriority) {
     ret=pthread_attr_setinheritsched(&attr, PTHREAD_EXPLICIT_SCHED);
     AssertFatal(ret == 0, "Error in pthread_attr_setinheritsched(): ret: %d, errno: %d\n", ret, errno);
+    LOG_I(UTIL,"threadCreate %s Sched SCHED_OAI %d\n", name, SCHED_OAI);
     ret=pthread_attr_setschedpolicy(&attr, SCHED_OAI);
     AssertFatal(ret == 0, "Error in pthread_attr_setschedpolicy(): ret: %d, errno: %d\n", ret, errno);
     if(priority<sched_get_priority_min(SCHED_OAI) || priority>sched_get_priority_max(SCHED_OAI)) {

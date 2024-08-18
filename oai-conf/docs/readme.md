@@ -54,10 +54,10 @@ docker build -t ran-base:ubuntu22 -f docker/Dockerfile.base.ubuntu22 .
 docker build -t ran-build:ubuntu22 -f docker/Dockerfile.build.ubuntu22 .
 docker build -t ran-build-flexric:ubuntu22 -f docker/Dockerfile.build.flexric.ubuntu22 .
 
-docker build -t oai-nr-softmodem:ubuntu22 -f docker/Dockerfile.gNB.ubuntu22 .
-docker build -t oai-nr-cuup:ubuntu22 -f docker/Dockerfile.nr-cuup.ubuntu22 .
-docker build -t oai-nr-flexric:ubuntu22 -f docker/Dockerfile.flexric.ubuntu22 .
-docker build -t oai-nr-ue:ubuntu22 -f docker/Dockerfile.nrUE.ubuntu22 .
+docker build -t oai-nr-softmodem:ubuntu22 -f docker/Dockerfile.gNB.ubuntu22 --no-cache .
+docker build -t oai-nr-cuup:ubuntu22 -f docker/Dockerfile.nr-cuup.ubuntu22 --no-cache .
+docker build -t oai-nr-flexric:ubuntu22 -f docker/Dockerfile.flexric.ubuntu22 --no-cache .
+docker build -t oai-nr-ue:ubuntu22 -f docker/Dockerfile.nrUE.ubuntu22 --no-cache .
 ```
 
 * Allow routing between subnets

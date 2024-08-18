@@ -62,6 +62,18 @@ COPY --from=gnb-build \
 
 RUN ldconfig && ldd /opt/oai-gnb/bin/nr-cuup
 
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get upgrade --yes && \
+    DEBIAN_FRONTEND=noninteractive apt-get install --yes \
+    python3 \
+    python3-pip \
+    stress \
+    ping \
+    && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN pip3 install influxdb_client psutil 
+
 # Create directory for configuration files
 WORKDIR /opt/oai-gnb/etc
 
