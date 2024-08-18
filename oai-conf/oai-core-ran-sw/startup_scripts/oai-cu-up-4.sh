@@ -13,7 +13,7 @@ ifconfig if-cu-up-4-f1u 10.1.100.204/24
 /tini -v -- /opt/oai-gnb/bin/entrypoint.sh \ 
 /opt/oai-gnb/bin/nr-cuup -O /opt/oai-gnb/etc/gnb.conf --sa &
 
-nice -n -19 python3 /startup_scripts/cpu-time.py
+nice -n -19 python3 /startup_scripts/oai-cu-up-stats.py
 
 while true
 do
