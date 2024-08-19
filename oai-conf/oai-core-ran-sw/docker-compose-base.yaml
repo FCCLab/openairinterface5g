@@ -179,6 +179,23 @@ services:
                 ipv4_address: 10.1.20.54
         privileged: true
 
+    oai_smf_slice5:
+        container_name: "oai-smf-slice5"
+        image: oaisoftwarealliance/oai-smf:develop
+        expose:
+            - 80/tcp
+            - 8080/tcp
+            - 8805/udp
+        volumes:
+            - ./conf_cn/slicing_slice5_config.yaml:/openair-smf/etc/config.yaml
+        depends_on:
+            - oai_amf
+            - oai_nrf_slice
+        networks:
+            oai-cn5g:
+                ipv4_address: 10.1.20.55
+        privileged: true
+
     oai_upf_slice1:
         container_name: "oai-upf-slice1"
         image: oaisoftwarealliance/oai-upf:develop
@@ -279,6 +296,31 @@ services:
             oai-n6:
         entrypoint: ["bash", "-c", "/startup_scripts/oai-upf-4.sh"]
 
+    oai_upf_slice5:
+        container_name: "oai-upf-slice5"
+        image: oaisoftwarealliance/oai-upf:develop
+        expose:
+            - 2152/udp
+            - 8805/udp
+            - 8080/tcp
+        volumes:
+            - ./conf_cn/slicing_slice5_config.yaml:/openair-upf/etc/config.yaml
+            - ./startup_scripts:/startup_scripts
+        environment:
+            - TZ=Europe/Paris
+        depends_on:
+            - oai_nrf_slice
+            - oai_smf_slice5
+        cap_add:
+            - NET_ADMIN
+            - SYS_ADMIN
+        cap_drop:
+            - ALL
+        privileged: true
+        networks:
+            oai-n6:
+        entrypoint: ["bash", "-c", "/startup_scripts/oai-upf-5.sh"]
+
     oai-cu-cp:
         container_name: "oai-cu-cp"
         image: oai-nr-softmodem:ubuntu22
@@ -370,6 +412,24 @@ services:
             oai-ran-mplane:
         tty: true
         entrypoint: ["bash", "-c", "/startup_scripts/oai-cu-up-4.sh"]
+
+    oai-cu-up-5:
+        container_name: "oai-cu-up-5"
+        hostname: oai-cu-up-5
+        image: oai-nr-cuup:ubuntu22
+        privileged: true
+        environment:
+            USE_ADDITIONAL_OPTIONS: --sa
+            CUUP: ON
+        ulimits:
+          core: -1 # for core dumps
+        volumes:
+            - ./conf_ran/gnb-cuup.sa.f1.slice5.conf:/opt/oai-gnb/etc/gnb.conf
+            - ./startup_scripts:/startup_scripts
+        networks:
+            oai-ran-mplane:
+        tty: true
+        entrypoint: ["bash", "-c", "/startup_scripts/oai-cu-up-5.sh"]
 
     nearRT-RIC:
         container_name: "oai-flexric"

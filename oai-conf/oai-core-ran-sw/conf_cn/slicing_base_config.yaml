@@ -118,6 +118,8 @@ amf:
           sd: 000003 # in hex
         - sst: 1
           sd: 000004 # in hex
+        - sst: 1
+          sd: 000005 # in hex
   supported_integrity_algorithms:
     - "NIA1"
     - "NIA2"

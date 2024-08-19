@@ -28,6 +28,12 @@ configuration:
       nsiInformationList:
         nrfId: http://oai-nrf-slice:8080/nnrf-disc/v1/nf-instances
         nsiId: '14'
+    - snssai:
+        sst: 1
+        sd: 000005
+      nsiInformationList:
+        nrfId: http://oai-nrf-slice:8080/nnrf-disc/v1/nf-instances
+        nsiId: '15'
   taInfoList:
     - tai:
         plmnId:
@@ -43,6 +49,8 @@ configuration:
         sd: 000003
       - sst: 1
         sd: 000004
+      - sst: 1
+        sd: 000005
   amfInfoList:
     - targetAmfSet: oai5gcn.mcc208.mnc95.regionid128.setid1.3gppnetwork.org
       nrfAmfSet: http://oai-cn5g-nrf.fr:8080/nnrf-disc/v1/nf-instances'
@@ -64,6 +72,8 @@ configuration:
                   sd: 000003
                 - sst: 1
                   sd: 000004
+                - sst: 1
+                  sd: 000005
     - targetAmfSet: oai5gcn.mcc208.mnc95.regionid128.setid2.3gppnetwork.org
       nrfAmfSet: http://oai-cn5g-nrf.fr:8080/nnrf-disc/v1/nf-instances
       nrfAmfSetNfMgtUri: http://oai-cn5g-nrf.fr:8080/nnrf-nfm/v1/nf-instances
@@ -84,3 +94,5 @@ configuration:
                   sd: 000003
                 - sst: 1
                   sd: 000004
+                - sst: 1
+                  sd: 000005

@@ -18,6 +18,12 @@ wait_interface_up if-upf-4-cn
 wait_interface_up if-cu-up-4-cn
 wait_interface_up if-cu-up-4-e1
 wait_interface_up if-cu-up-4-f1u
+
+# UPF + CU-UP 5
+wait_interface_up if-upf-5-cn
+wait_interface_up if-cu-up-5-cn
+wait_interface_up if-cu-up-5-e1
+wait_interface_up if-cu-up-5-f1u
 ######################################### Wait Interfaces #########################################
 
 # Create 3 Bridges
@@ -49,6 +55,12 @@ brctl addif cn5g if-upf-4-cn
 brctl addif cn5g if-cu-up-4-cn
 brctl addif e1 if-cu-up-4-e1
 brctl addif f1uc if-cu-up-4-f1u
+
+# UPF + CU-UP 5
+brctl addif cn5g if-upf-5-cn
+brctl addif cn5g if-cu-up-5-cn
+brctl addif e1 if-cu-up-5-e1
+brctl addif f1uc if-cu-up-5-f1u
 
 # DU
 brctl addif f1uc if-du-f1uc
