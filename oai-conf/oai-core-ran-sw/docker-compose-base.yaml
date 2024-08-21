@@ -198,7 +198,8 @@ services:
 
     oai_upf_slice1:
         container_name: "oai-upf-slice1"
-        image: oaisoftwarealliance/oai-upf:develop
+        image: oai-upf-fcclab
+        hostname: oai-upf-slice-1
         expose:
             - 2152/udp
             - 8805/udp
@@ -220,10 +221,12 @@ services:
         networks:
             oai-n6:
         entrypoint: ["bash", "-c", "/startup_scripts/oai-upf-1.sh"]
+        cgroup_parent: oai_cgroup_edge.slice
 
     oai_upf_slice2:
         container_name: "oai-upf-slice2"
-        image: oaisoftwarealliance/oai-upf:develop
+        image: oai-upf-fcclab
+        hostname: oai-upf-slice-2
         expose:
             - 2152/udp
             - 8805/udp
@@ -248,7 +251,8 @@ services:
 
     oai_upf_slice3:
         container_name: "oai-upf-slice3"
-        image: oaisoftwarealliance/oai-upf:develop
+        image: oai-upf-fcclab
+        hostname: oai-upf-slice-3
         expose:
             - 2152/udp
             - 8805/udp
@@ -273,7 +277,8 @@ services:
 
     oai_upf_slice4:
         container_name: "oai-upf-slice4"
-        image: oaisoftwarealliance/oai-upf:develop
+        image: oai-upf-fcclab
+        hostname: oai-upf-slice-4
         expose:
             - 2152/udp
             - 8805/udp
@@ -295,10 +300,12 @@ services:
         networks:
             oai-n6:
         entrypoint: ["bash", "-c", "/startup_scripts/oai-upf-4.sh"]
+        cgroup_parent: oai_cgroup_edge.slice
 
     oai_upf_slice5:
         container_name: "oai-upf-slice5"
-        image: oaisoftwarealliance/oai-upf:develop
+        image: oai-upf-fcclab
+        hostname: oai-upf-slice-5
         expose:
             - 2152/udp
             - 8805/udp
@@ -320,6 +327,7 @@ services:
         networks:
             oai-n6:
         entrypoint: ["bash", "-c", "/startup_scripts/oai-upf-5.sh"]
+        cgroup_parent: oai_cgroup_edge.slice
 
     oai-cu-cp:
         container_name: "oai-cu-cp"
@@ -358,6 +366,7 @@ services:
             oai-ran-mplane:
         tty: true
         entrypoint: ["bash", "-c", "/startup_scripts/oai-cu-up-1.sh"]
+        cgroup_parent: oai_cgroup_edge.slice
 
     oai-cu-up-2:
         container_name: "oai-cu-up-2"
@@ -412,6 +421,7 @@ services:
             oai-ran-mplane:
         tty: true
         entrypoint: ["bash", "-c", "/startup_scripts/oai-cu-up-4.sh"]
+        cgroup_parent: oai_cgroup_edge.slice
 
     oai-cu-up-5:
         container_name: "oai-cu-up-5"
@@ -430,6 +440,7 @@ services:
             oai-ran-mplane:
         tty: true
         entrypoint: ["bash", "-c", "/startup_scripts/oai-cu-up-5.sh"]
+        cgroup_parent: oai_cgroup_edge.slice
 
     nearRT-RIC:
         container_name: "oai-flexric"

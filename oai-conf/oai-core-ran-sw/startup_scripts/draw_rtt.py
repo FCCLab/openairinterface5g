@@ -227,6 +227,7 @@ plt.axvline(SCENARIO_END_S3, color='black', linestyle='--')
 
 # np.save('RTT.npy', ((time_axis_ue13, rtt_ue13), (time_axis_ue12, rtt_ue12), (time_axis_ue11, rtt_ue11), (time_axis_ue14, rtt_ue14)))
 
+
 plt.xlabel('Time (seconds)')
 plt.ylabel('Round Trip Time (ms)')
 legend = plt.legend(loc='upper right', fontsize='large', frameon=True)
@@ -235,7 +236,8 @@ legend.get_frame().set_alpha(0.95)
 plt.ylim([-5, 135])
 
 # Save the plot to a PDF file
-plt.savefig('RTT.pdf', format='pdf')
+plt.tight_layout()
+plt.savefig('Exp1_RTT.pdf', format='pdf', bbox_inches='tight')
 plt.show()
 
 # Close the client

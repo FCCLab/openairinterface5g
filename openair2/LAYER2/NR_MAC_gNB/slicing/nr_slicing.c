@@ -139,7 +139,7 @@ void nr_slicing_remove_UE(nr_slice_info_t *si, NR_UE_info_t* rm_ue, int idx)
       if (si->s[idx]->UE_list[i]->rnti == rm_ue->rnti) {
         si->s[idx]->UE_list[i] = NULL;
         si->s[idx]->num_UEs -= 1;
-        remove_nr_list(&rm_ue->dl_id, si->s[idx]->id);
+        // remove_nr_list(&rm_ue->dl_id, si->s[idx]->id);
         break;
       }
     }

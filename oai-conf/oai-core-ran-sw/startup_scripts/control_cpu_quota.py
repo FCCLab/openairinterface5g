@@ -26,8 +26,6 @@ def main():
     write_api = write_client.write_api(write_options=SYNCHRONOUS)
     current_cpu_quota = initial_cpu_quota
     while True:
-        if current_cpu_quota < 5000:
-            break
         point = (
             Point(container_name)
             .field("cpu_quota", current_cpu_quota)
@@ -35,8 +33,12 @@ def main():
         write_api.write(bucket=INFLUXDB_BUCKET, org=INFLUXDB_ORG, record=point)       
         update_cpu_quota(current_cpu_quota)
         print(f'Updated CPU quota to {current_cpu_quota}')
+        if current_cpu_quota < 0:
+            break
+        if current_cpu_quota < 10000:
+            decrement_step = 1000
         current_cpu_quota -= decrement_step
-        time.sleep(40)
+        time.sleep(60)
 
 if __name__ == "__main__":
     while True:
