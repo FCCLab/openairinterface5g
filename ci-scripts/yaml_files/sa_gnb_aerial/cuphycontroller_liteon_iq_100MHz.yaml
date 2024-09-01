@@ -51,7 +51,7 @@ cuphydriver_config:
   nics:
     - nic: 0000:2a:00.1
       # mtu: 8192
-      mtu: 1500
+      mtu: 9600
       cpu_mbufs: 196608
       uplane_tx_handles: 64
       txq_count: 48
@@ -110,7 +110,7 @@ cuphydriver_config:
       # src_mac_addr: 9c:63:c0:a7:08:32 
       # DU mac in Liteon RU
       src_mac_addr: 68:05:ca:fb:95:70 
-      dst_mac_addr: e8:c7:4f:25:89:45 # MAC address of Liteon RU
+      dst_mac_addr: e8:c7:4f:25:89:40 # MAC address of Liteon RU
       nic: 0000:2a:00.1
       vlan: 201
       pcp: 7
@@ -126,7 +126,7 @@ cuphydriver_config:
       dl_iq_data_fmt: {comp_meth: 1, bit_width: 9}
       ul_iq_data_fmt: {comp_meth: 1, bit_width: 9}
       section_3_time_offset: 484
-      fs_offset_dl: 15
+      fs_offset_dl: 12
       exponent_dl: 4
       ref_dl: 0
       fs_offset_ul: -5
@@ -134,7 +134,7 @@ cuphydriver_config:
       max_amp_ul: 65504
       mu: 1
       T1a_max_up_ns: 280000
-      T1a_max_cp_ul_ns: 405000
+      T1a_max_cp_ul_ns: 305000
       Ta4_min_ns: 50000
       Ta4_max_ns: 331000
       Tcp_adv_dl_ns: 125000
