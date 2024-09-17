@@ -139,9 +139,10 @@ cuphydriver_config:
       Ta4_max_ns: 331000
       Tcp_adv_dl_ns: 125000
       fh_len_range: 0
-      pusch_prb_stride: 273
+      pusch_prb_stride: 133
       prach_prb_stride: 12
-      srs_prb_stride: 273
+      srs_prb_stride: 133
+      pusch_nMaxPrb: 133
       pusch_ldpc_max_num_itr_algo_type: 1
       pusch_fixed_max_num_ldpc_itrs: 10
       pusch_ldpc_n_iterations: 10
