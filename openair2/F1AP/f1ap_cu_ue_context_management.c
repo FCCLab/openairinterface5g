@@ -109,7 +109,12 @@ static void f1ap_write_drb_nssai(const nssai_t *nssai, F1AP_SNSSAI_t *asn1_nssai
 
   /* OPTIONAL */
   if (nssai->sd != 0xffffff)
-    OCTET_STRING_fromBuf(asn1_nssai->sD, (char *)&nssai->sd, 3);
+  {
+    char sd_buffer[3];
+    INT24_TO_BUFFER(nssai->sd, sd_buffer);
+    asn1cCalloc(asn1_nssai->sD, sD);
+    OCTET_STRING_fromBuf(sD, sd_buffer, 3);
+  }
 }
 
 static void f1ap_write_flows_mapped(const f1ap_flows_mapped_to_drb_t *flows_mapped, F1AP_Flows_Mapped_To_DRB_List_t *asn1_flows_mapped, int n)
