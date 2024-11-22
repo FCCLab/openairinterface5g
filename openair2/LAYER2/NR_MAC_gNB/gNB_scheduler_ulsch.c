@@ -200,6 +200,8 @@ static int estimate_ul_buffer_long_bsr(const NR_BSR_LONG *bsr)
 //  F: length of L is 0:8 or 1:16 bits wide
 //  R: Reserved bit, set to zero.
 
+
+// Thanh Long: This function sends out the MAC PDU to wireshark
 static int nr_process_mac_pdu(instance_t module_idP,
                               NR_UE_info_t *UE,
                               uint8_t CC_id,
@@ -1303,7 +1305,7 @@ void handle_nr_srs_measurements(const module_id_t module_id,
 {
   gNB_MAC_INST *nrmac = RC.nrmac[module_id];
   NR_SCHED_LOCK(&nrmac->sched_lock);
-  LOG_D(NR_MAC, "(%d.%d) Received SRS indication for UE %04x\n", frame, slot, srs_ind->rnti);
+  LOG_I(NR_MAC, "(%d.%d) Received SRS indication for UE %04x\n", frame, slot, srs_ind->rnti);
 
 #ifdef SRS_IND_DEBUG
   LOG_I(NR_MAC, "frame = %i\n", frame);
@@ -2215,6 +2217,7 @@ nr_pp_impl_ul nr_init_fr1_ulsch_preprocessor(int CC_id)
   return nr_fr1_ulsch_preprocessor;
 }
 
+// Thanh Long: This function is called from gnb scheduler
 void nr_schedule_ulsch(module_id_t module_id, frame_t frame, sub_frame_t slot, nfapi_nr_ul_dci_request_t *ul_dci_req)
 {
   gNB_MAC_INST *nr_mac = RC.nrmac[module_id];

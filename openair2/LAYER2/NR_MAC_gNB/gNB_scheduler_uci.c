@@ -470,10 +470,14 @@ static int checkTargetSSBInTCIStates_pdcchConfig(int ssb_index_t, NR_UE_info_t *
 static bool get_measured_rsrp(uint8_t index, int *rsrp)
 {
   //if index is invalid returning minimum rsrp -140
-  if (index <= 15)
+  if (index <= 15){
+    LOG_I(NR_MAC, "get_measured_rsrp index: %d\n", index);
     return false;
-  if (index >= 114)
+  }
+  if (index >= 114){
+    LOG_I(NR_MAC, "get_measured_rsrp index: %d\n", index);
     return false;
+  }
 
   *rsrp = L1_SSB_CSI_RSRP_measReport_mapping_38133_10_1_6_1_1[index];
   return true;

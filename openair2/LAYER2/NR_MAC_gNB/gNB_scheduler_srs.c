@@ -37,7 +37,7 @@
 #include <math.h>
 #include "PHY/sse_intrin.h"
 
-//#define SRS_DEBUG
+#define SRS_DEBUG
 
 extern RAN_CONTEXT_t RC;
 
@@ -526,6 +526,10 @@ void nr_schedule_srs(int module_id, frame_t frame, int slot)
     NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
     NR_UE_UL_BWP_t *current_BWP = &UE->current_UL_BWP;
 
+    if (UE->current_UL_BWP.mcs_table == 1) {
+        sched_ctrl->srs_feedback.ul_ri = 1;
+    }
+
     if(sched_ctrl->sched_srs.srs_scheduled && sched_ctrl->sched_srs.frame == frame && sched_ctrl->sched_srs.slot == slot) {
       sched_ctrl->sched_srs.frame = -1;
       sched_ctrl->sched_srs.slot = -1;
@@ -589,7 +593,8 @@ void nr_schedule_srs(int module_id, frame_t frame, int slot)
       // Check if UE will transmit the SRS in this frame
       if ((sched_frame * n_slots_frame + sched_slot - offset) % period == 0) {
         LOG_D(NR_MAC," %d.%d Scheduling SRS reception for %d.%d\n", frame, slot, sched_frame, sched_slot);
-        nr_fill_nfapi_srs(module_id, CC_id, UE, sched_frame, sched_slot, srs_resource_set, srs_resource);
+        // comment to ignore the srs part
+        // nr_fill_nfapi_srs(module_id, CC_id, UE, sched_frame, sched_slot, srs_resource_set, srs_resource);
         sched_ctrl->sched_srs.frame = sched_frame;
         sched_ctrl->sched_srs.slot = sched_slot;
         sched_ctrl->sched_srs.srs_scheduled = true;

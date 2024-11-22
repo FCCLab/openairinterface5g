@@ -22,7 +22,7 @@
 #include "PHY/MODULATION/nr_modulation.h"
 #include "PHY/NR_REFSIG/nr_refsig.h"
 
-//#define NR_CSIRS_DEBUG
+#define NR_CSIRS_DEBUG
 
 
 void nr_init_csi_rs(const NR_DL_FRAME_PARMS *fp, uint32_t ***csi_rs, uint32_t Nid)

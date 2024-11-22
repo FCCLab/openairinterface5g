@@ -43,7 +43,7 @@
 /*Softmodem params*/
 #include "executables/softmodem-common.h"
 #include "../../../nfapi/oai_integration/vendor_ext.h"
-
+#include <openair2/UTIL/OPT/opt.h>
 ////////////////////////////////////////////////////////
 /////* DLSCH MAC PDU generation (6.1.2 TS 38.321) */////
 ////////////////////////////////////////////////////////
@@ -317,6 +317,7 @@ int nr_write_ce_dlsch_pdu(module_id_t module_idP,
   // compute final offset
   offset = ((unsigned char *) mac_pdu_ptr - mac_pdu);
   //printf("Offset %d \n", ((unsigned char *) mac_pdu_ptr - mac_pdu));
+  // TODO: Try to probe here
   return offset;
 }
 
@@ -1415,7 +1416,7 @@ void nr_schedule_ue_spec(module_id_t module_id,
       T(T_GNB_MAC_DL_PDU_WITH_DATA, T_INT(module_id), T_INT(CC_id), T_INT(rnti),
         T_INT(frame), T_INT(slot), T_INT(current_harq_pid), T_BUFFER(harq->transportBlock, TBS));
     }
-
+          // Thanh Long: This function sends out the MAC PDU to wireshark
     const int ntx_req = TX_req->Number_of_PDUs;
     nfapi_nr_pdu_t *tx_req = &TX_req->pdu_list[ntx_req];
     tx_req->PDU_index  = pduindex;
@@ -1428,5 +1429,16 @@ void nr_schedule_ue_spec(module_id_t module_id,
     TX_req->Slot = slot;
     /* mark UE as scheduled */
     sched_pdsch->rbSize = 0;
+    trace_NRpdu(
+      DIRECTION_DOWNLINK, 
+      tx_req->TLVs[0].value.direct, 
+      TBS, 
+      WS_C_RNTI,  
+      rnti, 
+      frame, 
+      slot, 
+      0, 
+      0
+    );
   }
 }

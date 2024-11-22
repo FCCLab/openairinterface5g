@@ -110,9 +110,9 @@ cuphydriver_config:
       # src_mac_addr: 9c:63:c0:a7:08:32 
       # DU mac in Liteon RU
       src_mac_addr: 68:05:ca:fb:95:70 
-      dst_mac_addr: e8:c7:4f:25:89:40 # MAC address of Liteon RU
+      dst_mac_addr: e8:c7:4f:25:89:45 # MAC address of Liteon RU
       nic: 0000:2a:00.1
-      vlan: 201
+      vlan: 564
       pcp: 7
       txq_count_uplane: 1
       eAxC_id_ssb_pbch: [0, 1, 2, 3]
