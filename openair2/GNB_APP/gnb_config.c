@@ -1366,6 +1366,8 @@ void RCconfig_nr_macrlc(configmodule_interface_t *cfg)
         RC.nrmac[j]->nvipc_params_s.nvipc_shm_prefix =
             strdup(*(MacRLC_ParamList.paramarray[j][MACRLC_TRANSPORT_S_SHM_PREFIX].strptr));
         RC.nrmac[j]->nvipc_params_s.nvipc_poll_core = *(MacRLC_ParamList.paramarray[j][MACRLC_TRANSPORT_S_POLL_CORE].i8ptr);
+        printf("Configuring VNF for Aerial connection with prefix %s\n", RC.nrmac[j]->nvipc_params_s.nvipc_shm_prefix);
+        printf("Configuring VNF for Aerial connection with poll core %d\n", RC.nrmac[j]->nvipc_params_s.nvipc_poll_core);
         printf("Configuring VNF for Aerial connection with prefix %s\n", RC.nrmac[j]->eth_params_s.local_if_name);
         aerial_configure_nr_fapi_vnf();
 #endif
