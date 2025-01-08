@@ -60,8 +60,10 @@ bool read_gtp_sm(void * data)
 
   for (size_t i = 0; i < num_ues; i++) {
     rrc_gNB_ue_context_t *ue_context_p = rrc_gNB_get_ue_context(RC.nrrrc[0], ue_id_list[i]);
-
-    gtp->msg.ngut[i].rnti = ue_id_list[i];
+    gtp->msg.ngut[i].amf_ue_ngap_id = ue_context_p->ue_context.amf_ue_ngap_id;
+    // printf("UE %ld: amf_ue_ngap_id = %ld\n", i, gtp->msg.ngut[i].amf_ue_ngap_id);
+    // gtp->msg.ngut[i].rnti = ue_id_list[i];
+    gtp->msg.ngut[i].rnti = ue_context_p->ue_context.rnti;
     int nb_pdu_session = ue_context_p->ue_context.nb_of_pdusessions;
     if (nb_pdu_session > 0) {
       int nb_pdu_idx = nb_pdu_session - 1;
