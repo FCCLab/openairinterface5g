@@ -1,3 +1,4 @@
 [submodule "openair2/E2AP/flexric"]
 	path = openair2/E2AP/flexric
 	url = git@github.com:FCCLab/flexric-fcc.git
+        branch = service-models-integration-fcc
