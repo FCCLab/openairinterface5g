@@ -28,38 +28,41 @@
  * @ingroup _ngap
  */
 
-
-#include <pthread.h>
+#include <openair3/NGAP/ngap_gNB.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdint.h>
-#include "openair3/SECU/kdf.h"
-
-#include "tree.h"
-#include "queue.h"
-
+#include <string.h>
+#include <unistd.h>
+#include "BIT_STRING.h"
+#include "ngap_msg_includes.h"
+#include "OCTET_STRING.h"
+#include "PHY/defs_common.h"
+#include "T.h"
+#include "asn_internal.h"
+#include "assertions.h"
+#include "common/utils/T/T.h"
+#include "conversions.h"
+#include "ds/byte_array.h"
 #include "intertask_interface.h"
-
-#include "ngap_gNB_default_values.h"
-
 #include "ngap_common.h"
-
-#include "ngap_gNB_defs.h"
 #include "ngap_gNB.h"
+#include "ngap_gNB_context_management_procedures.h"
+#include "ngap_gNB_default_values.h"
+#include "ngap_gNB_defs.h"
 #include "ngap_gNB_encoder.h"
 #include "ngap_gNB_handlers.h"
-#include "ngap_gNB_nnsf.h"
-
-#include "ngap_gNB_nas_procedures.h"
-#include "ngap_gNB_management_procedures.h"
-#include "ngap_gNB_context_management_procedures.h"
-
 #include "ngap_gNB_itti_messaging.h"
+#include "ngap_gNB_management_procedures.h"
+#include "ngap_gNB_nas_procedures.h"
+#include "ngap_messages_types.h"
+#include "oai_asn1.h"
+#include "openair3/SECU/kdf.h"
+#include "queue.h"
+#include "s1ap_messages_types.h"
+#include "sctp_messages_types.h"
+#include "tree.h"
 
-#include "ngap_gNB_ue_context.h" // test, to be removed
-
-#include "assertions.h"
-#include "conversions.h"
 #if defined(TEST_S1C_AMF)
   #include "oaisim_amf_test_s1c.h"
 #endif
@@ -254,6 +257,7 @@ void ngap_gNB_handle_sctp_association_resp(instance_t instance, sctp_new_associa
   ngap_amf_data_p->in_streams  = sctp_new_association_resp->in_streams;
   ngap_amf_data_p->out_streams = sctp_new_association_resp->out_streams;
   /* Prepare new NG Setup Request */
+  LOG_A(NGAP, "Send NGSetupRequest to AMF\n");
   ngap_gNB_generate_ng_setup_request(instance_p, ngap_amf_data_p);
 }
 
@@ -322,6 +326,10 @@ void *ngap_gNB_process_itti_msg(void *notUsed) {
 
       case NGAP_INITIAL_CONTEXT_SETUP_RESP:
         ngap_gNB_initial_ctxt_resp(instance, &NGAP_INITIAL_CONTEXT_SETUP_RESP(received_msg));
+        break;
+
+      case NGAP_INITIAL_CONTEXT_SETUP_FAIL:
+        ngap_gNB_initial_ctxt_fail(instance, &NGAP_INITIAL_CONTEXT_SETUP_FAIL(received_msg));
         break;
 
       case NGAP_PDUSESSION_SETUP_RESP:

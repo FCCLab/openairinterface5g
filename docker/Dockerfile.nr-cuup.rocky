@@ -33,7 +33,7 @@ FROM ran-build:latest AS gnb-build
 RUN cp /oai-ran/docker/scripts/gnb_entrypoint.sh /oai-ran/docker/scripts/entrypoint.sh
 
 #start from scratch for target executable
-FROM $BASE_IMAGE as oai-nr-cuup
+FROM $BASE_IMAGE AS oai-nr-cuup
 ENV TZ=Europe/Paris
 
 RUN yum repolist --disablerepo=* && \

@@ -26,11 +26,10 @@
  * \version 0.1
  * \email: yoshio.inoue@fujitsu.com,masayuki.harada@fujitsu.com (yoshio.inoue%40fujitsu.com%2cmasayuki.harada%40fujitsu.com)
  */
- 
-#include "tree.h"
-#include "queue.h"
 
+#include <stdint.h>
 #include "ngap_gNB_defs.h"
+#include "tree.h"
 
 #ifndef NGAP_GNB_UE_CONTEXT_H_
 #define NGAP_GNB_UE_CONTEXT_H_

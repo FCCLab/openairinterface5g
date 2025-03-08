@@ -567,7 +567,7 @@ void help (void)
 int main(int argc,char **argv)
 {
 
-  char c,smbv_ip[16],smbv_fname[256];
+  char smbv_ip[16], smbv_fname[256];
   extern char *optarg;
   int i;
 
@@ -575,6 +575,7 @@ int main(int argc,char **argv)
   strcpy(smbv_ip,DEFAULT_SMBV_IP);
   strcpy(smbv_fname,DEFAULT_SMBV_FNAME);
 
+  int c;
   while ((c = getopt (argc, argv, "hW:")) != -1) {
     switch (c) {
     case 'W':

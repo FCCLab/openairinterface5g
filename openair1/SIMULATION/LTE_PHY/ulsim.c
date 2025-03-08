@@ -380,7 +380,6 @@ int main(int argc, char **argv) {
   int sf;
   static int threequarter_fs=0;
   int ndi;
-  opp_enabled=1; // to enable the time meas
   sched_resp.DL_req = &DL_req;
   sched_resp.UL_req = &UL_req;
   sched_resp.HI_DCI0_req = &HI_DCI0_req;
@@ -568,7 +567,7 @@ int main(int argc, char **argv) {
 
       case 'P':
         dump_perf=1;
-        opp_enabled=1;
+        cpu_meas_enabled = 1;
         break;
 
       case 'L':
@@ -939,7 +938,7 @@ int main(int argc, char **argv) {
       ndi=0;
       phy_reset_ue(0,0,0);
       UE->UE_mode[eNB_id]=PUSCH;
-      SET_LOG_DEBUG(UE_TIMING);
+      set_log_debug("UE_TIMING", true);
 
       for (trials = 0; trials<n_frames; trials++) {
         //      printf("*");
@@ -1519,8 +1518,8 @@ int main(int argc, char **argv) {
 
   return(0);
 }
-
-/* temporary dummy implem of get_softmodem_optmask, till basic simulators implemented as device */
-uint64_t get_softmodem_optmask(void) {
-  return 0;
+static softmodem_params_t softmodem_params;
+softmodem_params_t *get_softmodem_params(void)
+{
+  return &softmodem_params;
 }

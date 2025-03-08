@@ -37,10 +37,7 @@
 #include <math.h>
 #include "PHY/sse_intrin.h"
 
-#define SRS_DEBUG
-
-extern RAN_CONTEXT_t RC;
-
+// #define SRS_DEBUG
 const uint16_t m_SRS[64] = { 4, 8, 12, 16, 16, 20, 24, 24, 28, 32, 36, 40, 48, 48, 52, 56, 60, 64, 72, 72, 76, 80, 88,
                              96, 96, 104, 112, 120, 120, 120, 128, 128, 128, 132, 136, 144, 144, 144, 144, 152, 160,
                              160, 160, 168, 176, 184, 192, 192, 192, 192, 208, 216, 224, 240, 240, 240, 240, 256, 256,
@@ -410,14 +407,16 @@ void nr_srs_ri_computation(const nfapi_nr_srs_normalized_channel_iq_matrix_t *nr
   }
 }
 
-static void nr_configure_srs(nfapi_nr_srs_pdu_t *srs_pdu,
+static void nr_configure_srs(gNB_MAC_INST *nrmac,
+                             nfapi_nr_srs_pdu_t *srs_pdu,
+                             int frame,
                              int slot,
-                             int module_id,
                              int CC_id,
                              NR_UE_info_t *UE,
                              NR_SRS_ResourceSet_t *srs_resource_set,
                              NR_SRS_Resource_t *srs_resource,
-                             int buffer_index)
+                             int buffer_index,
+                             int slots_per_frame)
 {
   NR_UE_UL_BWP_t *current_BWP = &UE->current_UL_BWP;
 
@@ -430,7 +429,7 @@ static void nr_configure_srs(nfapi_nr_srs_pdu_t *srs_pdu,
   srs_pdu->num_ant_ports = srs_resource->nrofSRS_Ports;
   srs_pdu->num_symbols = srs_resource->resourceMapping.nrofSymbols;
   srs_pdu->num_repetitions = srs_resource->resourceMapping.repetitionFactor;
-  srs_pdu->time_start_position = srs_resource->resourceMapping.startPosition;
+  srs_pdu->time_start_position = NR_NUMBER_OF_SYMBOLS_PER_SLOT - 1 - srs_resource->resourceMapping.startPosition;
   srs_pdu->config_index = srs_resource->freqHopping.c_SRS;
   srs_pdu->sequence_id = srs_resource->sequenceId;
   srs_pdu->bandwidth_index = srs_resource->freqHopping.b_SRS;
@@ -463,20 +462,22 @@ static void nr_configure_srs(nfapi_nr_srs_pdu_t *srs_pdu,
   srs_pdu->srs_parameters_v4.report_type[0] = 1;
   srs_pdu->srs_parameters_v4.iq_representation = 1;
   srs_pdu->srs_parameters_v4.prg_size = 1;
-  srs_pdu->srs_parameters_v4.num_total_ue_antennas = 1<<srs_pdu->num_ant_ports;
+  srs_pdu->srs_parameters_v4.num_total_ue_antennas = 1 << srs_pdu->num_ant_ports;
   if (srs_resource_set->usage == NR_SRS_ResourceSet__usage_beamManagement) {
     srs_pdu->beamforming.trp_scheme = 0;
     srs_pdu->beamforming.num_prgs = m_SRS[srs_pdu->config_index];
     srs_pdu->beamforming.prg_size = 1;
   }
-
-  uint16_t *vrb_map_UL = &RC.nrmac[module_id]->common_channels[CC_id].vrb_map_UL[buffer_index * MAX_BWP_SIZE];
-  uint64_t mask = SL_to_bitmap(13 - srs_pdu->time_start_position, srs_pdu->num_symbols);
+  srs_pdu->beamforming.prgs_list[0].dig_bf_interface_list[0].beam_idx = UE->UE_beam_index;
+  NR_beam_alloc_t beam = beam_allocation_procedure(&nrmac->beam_info, frame, slot, UE->UE_beam_index, slots_per_frame);
+  AssertFatal(beam.idx >= 0, "Cannot allocate SRS in any available beam\n");
+  uint16_t *vrb_map_UL = &nrmac->common_channels[CC_id].vrb_map_UL[beam.idx][buffer_index * MAX_BWP_SIZE];
+  uint64_t mask = SL_to_bitmap(srs_pdu->time_start_position, srs_pdu->num_symbols);
   for (int i = 0; i < srs_pdu->bwp_size; ++i)
     vrb_map_UL[i + srs_pdu->bwp_start] |= mask;
 }
 
-static void nr_fill_nfapi_srs(int module_id,
+static void nr_fill_nfapi_srs(gNB_MAC_INST *nrmac,
                               int CC_id,
                               NR_UE_info_t *UE,
                               int frame,
@@ -484,9 +485,9 @@ static void nr_fill_nfapi_srs(int module_id,
                               NR_SRS_ResourceSet_t *srs_resource_set,
                               NR_SRS_Resource_t *srs_resource)
 {
-
-  int index = ul_buffer_index(frame, slot, UE->current_UL_BWP.scs, RC.nrmac[module_id]->UL_tti_req_ahead_size);
-  nfapi_nr_ul_tti_request_t *future_ul_tti_req = &RC.nrmac[module_id]->UL_tti_req_ahead[0][index];
+  int slots_frame = nrmac->frame_structure.numb_slots_frame;
+  int index = ul_buffer_index(frame, slot, slots_frame, nrmac->UL_tti_req_ahead_size);
+  nfapi_nr_ul_tti_request_t *future_ul_tti_req = &nrmac->UL_tti_req_ahead[0][index];
   AssertFatal(future_ul_tti_req->n_pdus <
               sizeof(future_ul_tti_req->pdus_list) / sizeof(future_ul_tti_req->pdus_list[0]),
               "Invalid future_ul_tti_req->n_pdus %d\n", future_ul_tti_req->n_pdus);
@@ -495,8 +496,8 @@ static void nr_fill_nfapi_srs(int module_id,
   nfapi_nr_srs_pdu_t *srs_pdu = &future_ul_tti_req->pdus_list[future_ul_tti_req->n_pdus].srs_pdu;
   memset(srs_pdu, 0, sizeof(nfapi_nr_srs_pdu_t));
   future_ul_tti_req->n_pdus += 1;
-  index = ul_buffer_index(frame, slot, UE->current_UL_BWP.scs, RC.nrmac[module_id]->vrb_map_UL_size);
-  nr_configure_srs(srs_pdu, slot, module_id, CC_id, UE, srs_resource_set, srs_resource, index);
+  index = ul_buffer_index(frame, slot, slots_frame, nrmac->vrb_map_UL_size);
+  nr_configure_srs(nrmac, srs_pdu, frame, slot, CC_id, UE, srs_resource_set, srs_resource, index, slots_frame);
 }
 
 /*******************************************************************
@@ -526,17 +527,13 @@ void nr_schedule_srs(int module_id, frame_t frame, int slot)
     NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
     NR_UE_UL_BWP_t *current_BWP = &UE->current_UL_BWP;
 
-    // if (UE->current_UL_BWP.mcs_table == 1) {
-    //     sched_ctrl->srs_feedback.ul_ri = 1;
-    // }
-
     if(sched_ctrl->sched_srs.srs_scheduled && sched_ctrl->sched_srs.frame == frame && sched_ctrl->sched_srs.slot == slot) {
       sched_ctrl->sched_srs.frame = -1;
       sched_ctrl->sched_srs.slot = -1;
       sched_ctrl->sched_srs.srs_scheduled = false;
     }
 
-    if ((sched_ctrl->ul_failure && !get_softmodem_params()->phy_test) || sched_ctrl->rrc_processing_timer > 0) {
+    if ((sched_ctrl->ul_failure && !get_softmodem_params()->phy_test) || nr_timer_is_active(&sched_ctrl->transm_interrupt)) {
       continue;
     }
 
@@ -583,7 +580,7 @@ void nr_schedule_srs(int module_id, frame_t frame, int slot)
       }
 
       // we are sheduling SRS max_k2 slot in advance for the presence of SRS to be taken into account when scheduling PUSCH
-      const int n_slots_frame = nr_slots_per_frame[current_BWP->scs];
+      const int n_slots_frame = nrmac->frame_structure.numb_slots_frame;
       const int sched_slot = (slot + max_k2) % n_slots_frame;
       const int sched_frame = (frame + (slot + max_k2) / n_slots_frame) % MAX_FRAME_NUMBER;
 
@@ -593,8 +590,7 @@ void nr_schedule_srs(int module_id, frame_t frame, int slot)
       // Check if UE will transmit the SRS in this frame
       if ((sched_frame * n_slots_frame + sched_slot - offset) % period == 0) {
         LOG_D(NR_MAC," %d.%d Scheduling SRS reception for %d.%d\n", frame, slot, sched_frame, sched_slot);
-        // comment to ignore the srs part
-        nr_fill_nfapi_srs(module_id, CC_id, UE, sched_frame, sched_slot, srs_resource_set, srs_resource);
+        nr_fill_nfapi_srs(nrmac, CC_id, UE, sched_frame, sched_slot, srs_resource_set, srs_resource);
         sched_ctrl->sched_srs.frame = sched_frame;
         sched_ctrl->sched_srs.slot = sched_slot;
         sched_ctrl->sched_srs.srs_scheduled = true;

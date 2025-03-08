@@ -37,7 +37,7 @@
 #include <sys/types.h>
 #include <openair1/PHY/TOOLS/tools_defs.h>
 #include "record_player.h"
-#include <common/utils/threadPool/thread-pool.h>
+#include "common/utils/threadPool/notified_fifo.h"
 
 /* default name of shared library implementing the radio front end */
 #define OAI_RF_LIBNAME        "oai_device"
@@ -174,6 +174,7 @@ typedef struct {
 } udp_ctx_t;
 
 typedef enum {
+  RU_GPIO_CONTROL_NONE,
   RU_GPIO_CONTROL_GENERIC,
   RU_GPIO_CONTROL_INTERDIGITAL,
 } gpio_control_t;
@@ -335,11 +336,6 @@ typedef struct {
   //! compression enable (0: No comp/ 1: A-LAW)
   uint8_t if_compress;
 } eth_params_t;
-
-typedef struct {
-  char *nvipc_shm_prefix;
-  int8_t nvipc_poll_core;
-} nvipc_params_t;
 
 typedef struct {
   //! Tx buffer for if device, keep one per subframe now to allow multithreading

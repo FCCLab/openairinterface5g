@@ -63,9 +63,6 @@ static const short primary_synch2[144] = {
     -13477, 29867,  -7292,  -31946, -29523, -14218, 25100,  -21063, -16384, -28378, 27073,  -18459, -26120, -19785, 2448,   -32676,
     -24020, 22287,  -31754, 8085,   32767,  -1,     0,      0,      0,      0,      0,      0,      0,      0,      0,      0};
 
-extern unsigned char NB_RU;
-
-
 static const char NB_functions[7][20] = {
     "eNodeB_3GPP",
     "eNodeB_3GPP_BBU",

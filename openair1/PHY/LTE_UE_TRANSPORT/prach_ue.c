@@ -325,138 +325,49 @@ int32_t generate_prach( PHY_VARS_UE *ue, uint8_t eNB_id, uint8_t subframe, uint1
   prach2 = prach+(Ncp<<1);
 
   // do IDFT
+  idft_size_idx_t len = 0;
   switch (ue->frame_parms.N_RB_UL) {
     case 6:
-      if (prach_fmt == 4) {
-        idft(IDFT_256,prachF,prach2,1);
-        memmove( prach, prach+512, Ncp<<2 );
-        prach_len = 256+Ncp;
-      } else {
-        idft(IDFT_1536,prachF,prach2,1);
-        memmove( prach, prach+3072, Ncp<<2 );
-        prach_len = 1536+Ncp;
-
-        if (prach_fmt>1) {
-          memmove( prach2+3072, prach2, 6144 );
-          prach_len = 2*1536+Ncp;
-        }
-      }
-
+      len = prach_fmt == 4 ? 256 : 1536;
       break;
 
     case 15:
-      if (prach_fmt == 4) {
-        idft(IDFT_512,prachF,prach2,1);
-        //TODO: account for repeated format in dft output
-        memmove( prach, prach+1024, Ncp<<2 );
-        prach_len = 512+Ncp;
-      } else {
-        idft(IDFT_3072,prachF,prach2,1);
-        memmove( prach, prach+6144, Ncp<<2 );
-        prach_len = 3072+Ncp;
-
-        if (prach_fmt>1) {
-          memmove( prach2+6144, prach2, 12288 );
-          prach_len = 2*3072+Ncp;
-        }
-      }
-
+      len = prach_fmt == 4 ? 512 : 3072;
       break;
 
     case 25:
     default:
-      if (prach_fmt == 4) {
-        idft(IDFT_1024,prachF,prach2,1);
-        memmove( prach, prach+2048, Ncp<<2 );
-        prach_len = 1024+Ncp;
-      } else {
-        idft(IDFT_6144,prachF,prach2,1);
-        /*for (i=0;i<6144*2;i++)
-        prach2[i]<<=1;*/
-        memmove( prach, prach+12288, Ncp<<2 );
-        prach_len = 6144+Ncp;
-
-        if (prach_fmt>1) {
-          memmove( prach2+12288, prach2, 24576 );
-          prach_len = 2*6144+Ncp;
-        }
-      }
-
+      len = prach_fmt == 4 ? 1024 : 6144;
       break;
 
     case 50:
-      if (prach_fmt == 4) {
-        idft(IDFT_2048,prachF,prach2,1);
-        memmove( prach, prach+4096, Ncp<<2 );
-        prach_len = 2048+Ncp;
-      } else {
-        idft(IDFT_12288,prachF,prach2,1);
-        memmove( prach, prach+24576, Ncp<<2 );
-        prach_len = 12288+Ncp;
-
-        if (prach_fmt>1) {
-          memmove( prach2+24576, prach2, 49152 );
-          prach_len = 2*12288+Ncp;
-        }
-      }
-
+      len = prach_fmt == 4 ? 2048 : 12288;
       break;
 
     case 75:
-      if (prach_fmt == 4) {
-        idft(IDFT_3072,prachF,prach2,1);
-        //TODO: account for repeated format in dft output
-        memmove( prach, prach+6144, Ncp<<2 );
-        prach_len = 3072+Ncp;
-      } else {
-        idft(IDFT_18432,prachF,prach2,1);
-        memmove( prach, prach+36864, Ncp<<2 );
-        prach_len = 18432+Ncp;
-
-        if (prach_fmt>1) {
-          memmove( prach2+36834, prach2, 73728 );
-          prach_len = 2*18432+Ncp;
-        }
-      }
-
+      len = prach_fmt == 4 ? 3072 : 18432;
       break;
 
     case 100:
-      if (ue->frame_parms.threequarter_fs == 0) {
-        if (prach_fmt == 4) {
-          idft(IDFT_4096,prachF,prach2,1);
-          memmove( prach, prach+8192, Ncp<<2 );
-          prach_len = 4096+Ncp;
-        } else {
-          idft(IDFT_24576,prachF,prach2,1);
-          memmove( prach, prach+49152, Ncp<<2 );
-          prach_len = 24576+Ncp;
-
-          if (prach_fmt>1) {
-            memmove( prach2+49152, prach2, 98304 );
-            prach_len = 2* 24576+Ncp;
-          }
-        }
-      } else {
-        if (prach_fmt == 4) {
-          idft(IDFT_3072,prachF,prach2,1);
-          //TODO: account for repeated format in dft output
-          memmove( prach, prach+6144, Ncp<<2 );
-          prach_len = 3072+Ncp;
-        } else {
-          idft(IDFT_18432,prachF,prach2,1);
-          memmove( prach, prach+36864, Ncp<<2 );
-          prach_len = 18432+Ncp;
-          printf("Generated prach for 100 PRB, 3/4 sampling\n");
-
-          if (prach_fmt>1) {
-            memmove( prach2+36834, prach2, 73728 );
-            prach_len = 2*18432+Ncp;
-          }
-        }
-      }
-
+      if (ue->frame_parms.threequarter_fs == 0)
+        len = prach_fmt == 4 ? 4096 : 24576;
+      else
+        len = prach_fmt == 4 ? 3072 : 18432;
       break;
+  }
+  if (prach_fmt == 4) {
+    idft(get_idft(len), prachF, prach2, 1);
+    // TODO: account for repeated format in dft output
+    memmove(prach, prach + 2 * len, Ncp << 2);
+    prach_len = len + Ncp;
+  } else {
+    idft(get_idft(len), prachF, prach2, 1);
+    memmove(prach, prach + 2 * len, Ncp << 2);
+    prach_len = len + Ncp;
+    if (prach_fmt > 1) {
+      memmove(prach2 + 2 * len, prach2, 73728);
+      prach_len = 2 * len + Ncp;
+    }
   }
 
   //LOG_I(PHY,"prach_len=%d\n",prach_len);

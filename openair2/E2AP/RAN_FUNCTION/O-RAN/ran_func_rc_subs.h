@@ -22,35 +22,74 @@
 #ifndef RAN_FUNC_SM_RAN_CTRL_SUBSCRIPTION_AGENT_H
 #define RAN_FUNC_SM_RAN_CTRL_SUBSCRIPTION_AGENT_H
 
-#include "common/utils/hashtable/hashtable.h"
-#include "common/utils/collection/tree.h"
+#include "openair2/E2AP/flexric/src/sm/rc_sm/ie/rc_data_ie.h"
+#include "common/utils/ds/seq_arr.h"
 
-typedef enum {
-  RRC_STATE_CHANGED_TO_E2SM_RC_RAN_PARAM_ID = 202,   // 8.2.4  RAN Parameters for Report Service Style 4
+typedef enum {    // 8.2.1 RAN Parameters for Report Service Style 1
+  E2SM_RC_RS1_UE_EVENT_ID = 1,
+  E2SM_RC_RS1_NI_MESSAGE = 2,
+  E2SM_RC_RS1_RRC_MESSAGE = 3,
+  E2SM_RC_RS1_UE_ID = 4,
+  E2SM_RC_RS1_OLD_AMF_UE_NGAP_ID = 5,
+  E2SM_RC_RS1_CELL_GLOBAL_ID = 6,
 
-  END_E2SM_RC_RAN_PARAM_ID
-} ran_param_id_e;
+  END_E2SM_RC_RS1_RAN_PARAM_ID
+} report_style_1_ran_param_id_e;
 
-typedef struct{
-  size_t len;
-  ran_param_id_e* ran_param_id;
-} arr_ran_param_id_t;
+typedef enum {    // 8.2.2 RAN Parameters for Report Service Style 2
+  E2SM_RC_RS2_CURRENT_UE_ID = 1,
+  E2SM_RC_RS2_OLD_UE_ID = 2,
+  E2SM_RC_RS2_CURRENT_RRC_STATE = 3,
+  E2SM_RC_RS2_OLD_RRC_STATE = 4,
+  E2SM_RC_RS2_UE_CONTEXT_INFORMATION_CONTAINER = 5,
+  E2SM_RC_RS2_CELL_GLOBAL_ID = 6,
+  E2SM_RC_RS2_UE_INFORMATION = 7,
 
-typedef struct ric_req_id_s {
-  RB_ENTRY(ric_req_id_s) entries;
+  END_E2SM_RC_RS2_RAN_PARAM_ID
+} report_style_2_ran_param_id_e;
+
+typedef enum {    // 8.2.3 RAN Parameters for Report Service Style 3
+  E2SM_RC_RS3_CELL_CONTEXT_INFORMATION = 1,
+  E2SM_RC_RS3_CELL_DELETED = 2,
+  E2SM_RC_RS3_NEIGHBOUR_RELATION_TABLE = 3,
+
+  END_E2SM_RC_RS3_RAN_PARAM_ID
+} report_style_3_ran_param_id_e;
+
+typedef enum {    // 8.2.4 RAN Parameters for Report Service Style 4
+  E2SM_RC_RS4_UL_MAC_CE = 100,
+  E2SM_RC_RS4_DL_MAC_CE = 101,
+  E2SM_RC_RS4_DL_BUFFER_OCCUPANCY = 102,
+  E2SM_RC_RS4_CURRENT_RRC_STATE = 201,
+  E2SM_RC_RS4_RRC_STATE_CHANGED_TO = 202,
+  E2SM_RC_RS4_RRC_MESSAGE = 203,
+  E2SM_RC_RS4_OLD_UE_ID = 300,
+  E2SM_RC_RS4_CURRENT_UE_ID = 301,
+  E2SM_RC_RS4_NI_MESSAGE = 302,
+  E2SM_RC_RS4_CELL_GLOBAL_ID = 400,
+
+  END_E2SM_RC_RS4_RAN_PARAM_ID
+} report_style_4_ran_param_id_e;
+
+typedef enum {    // 8.2.5 RAN Parameters for Report Service Style 5
+  E2SM_RC_RS5_UE_CONTEXT_INFORMATION = 1,
+  E2SM_RC_RS5_CELL_CONTEXT_INFORMATION = 2,
+  E2SM_RC_RS5_NEIGHBOUR_RELATION_TABLE = 3,
+
+  END_E2SM_RC_RS5_RAN_PARAM_ID
+} report_style_5_ran_param_id_e;
+
+typedef struct ran_param_data {
   uint32_t ric_req_id;
-} rb_ric_req_id_t;
+  e2sm_rc_event_trigger_t ev_tr;
+} ran_param_data_t;
 
 typedef struct {
-  RB_HEAD(ric_id_2_param_id_trees, ric_req_id_s) rb[END_E2SM_RC_RAN_PARAM_ID];  //  1 RB tree = (1 RAN Parameter ID) : (n RIC Request ID) => m RB tree = (m RAN Parameter ID) : (n RIC Request ID)
-  hash_table_t* htable;    // 1 Hash table = (n RIC Request ID) : (m RAN Parameter ID)
+  seq_arr_t rs4_param202; // E2SM_RC_RS4_RRC_STATE_CHANGED_TO
 } rc_subs_data_t;
 
-
-int cmp_ric_req_id(struct ric_req_id_s *c1, struct ric_req_id_s *c2);
-
-void init_rc_subs_data(rc_subs_data_t* rc_subs_data);
-void insert_rc_subs_data(rc_subs_data_t* rc_subs_data, uint32_t ric_req_id, arr_ran_param_id_t* arr_ran_param_id);
-void remove_rc_subs_data(rc_subs_data_t* rc_subs_data, uint32_t ric_req_id);
+void init_rc_subs_data(rc_subs_data_t *rc_subs_data);
+void insert_rc_subs_data(seq_arr_t *seq_arr, ran_param_data_t *data);
+void remove_rc_subs_data(rc_subs_data_t *rc_subs_data, uint32_t ric_req_id);
 
 #endif

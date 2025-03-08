@@ -31,7 +31,7 @@ FROM ran-build:latest AS lte-ue-build
 
 
 #start from scratch for target executable
-FROM ubuntu:jammy as oai-lte-ue
+FROM ubuntu:jammy AS oai-lte-ue
 ARG BUILD_OPTION
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Europe/Paris

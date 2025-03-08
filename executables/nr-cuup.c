@@ -19,6 +19,7 @@
  *      contact@openairinterface.org
  */
 
+#include "common/oai_version.h"
 #include "common/utils/simple_executable.h"
 #include "executables/softmodem-common.h"
 #include "common/utils/ocp_itti/intertask_interface.h"
@@ -122,11 +123,6 @@ int nr_rlc_get_available_tx_space(const rnti_t rntiP, const logical_chan_id_t ch
   return 0;
 }
 
-void rrc_gNB_generate_dedicatedRRCReconfiguration(const protocol_ctxt_t *const ctxt_pP, rrc_gNB_ue_context_t *ue_context_pP)
-{
-  abort();
-}
-
 void nr_rlc_add_drb(int rnti, int drb_id, const NR_RLC_BearerConfig_t *rlc_BearerConfig)
 {
   abort();
@@ -149,6 +145,9 @@ f1ap_cudu_inst_t *getCxt(instance_t instanceP)
   return &fake;
 }
 configmodule_interface_t *uniqCfg = NULL;
+
+void rrc_gNB_send_NGAP_UE_CONTEXT_RELEASE_COMPLETE(instance_t instance, uint32_t gNB_ue_ngap_id) { };
+
 int main(int argc, char **argv)
 {
   /// static configuration for NR at the moment
@@ -156,11 +155,8 @@ int main(int argc, char **argv)
     exit_fun("[SOFTMODEM] Error, configuration module init failed\n");
   }
   logInit();
-#ifndef PACKAGE_VERSION
-#define PACKAGE_VERSION "UNKNOWN-EXPERIMENTAL"
-#endif
   // strdup to put the sring in the core file for post mortem identification
-  LOG_I(HW, "Version: %s\n", strdup(PACKAGE_VERSION));
+  LOG_I(HW, "Version: %s\n", strdup(OAI_PACKAGE_VERSION));
   set_softmodem_sighandler();
   itti_init(TASK_MAX, tasks_info);
   int rc;
@@ -170,12 +166,13 @@ int main(int argc, char **argv)
   AssertFatal(rc >= 0, "Create task for GTPV1U failed\n");
   rc = itti_create_task(TASK_CUUP_E1, E1AP_CUUP_task, NULL);
   AssertFatal(rc >= 0, "Create task for CUUP E1 failed\n");
-  nr_pdcp_layer_init(true);
+  nr_pdcp_layer_init();
   cu_init_f1_ue_data(); // for CU-UP/CP mapping: we use the same
   E1_t e1type = UPtype;
   MessageDef *msg = RCconfig_NR_CU_E1(&e1type);
   AssertFatal(msg != NULL, "Send init to task for E1AP UP failed\n");
   itti_send_msg_to_task(TASK_CUUP_E1, 0, msg);
+  LOG_D(E1AP, "Send E1AP REGISTER REQ to TASK_CUUP_E1\n");
 
   #ifdef E2_AGENT
   //////////////////////////////////

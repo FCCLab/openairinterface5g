@@ -32,7 +32,9 @@
 
 #ifndef __RAN_CONTEXT_H__
 #define __RAN_CONTEXT_H__
-
+#ifdef __cplusplus
+extern "C" {
+#endif
 #include <pthread.h>
 #include <stdint.h>
 
@@ -111,6 +113,8 @@ typedef struct {
 } RAN_CONTEXT_t;
 
 extern RAN_CONTEXT_t RC;
-
 #define NB_eNB_INST RC.nb_inst
+#ifdef __cplusplus
+}
+#endif
 #endif

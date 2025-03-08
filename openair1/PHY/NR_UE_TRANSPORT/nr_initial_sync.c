@@ -71,7 +71,6 @@ static bool nr_pbch_detection(const UE_nr_rxtx_proc_t *proc,
                               int *ssb_index,
                               int *symbol_offset,
                               fapiPbch_t *result,
-                              const uint32_t nr_gold_pbch_ref[2][64][NR_PBCH_DMRS_LENGTH_DWORD],
                               const c16_t rxdataF[][frame_parms->samples_per_slot_wCP])
 {
   const int N_L = (frame_parms->Lmax == 4) ? 4 : 8;
@@ -90,7 +89,7 @@ static bool nr_pbch_detection(const UE_nr_rxtx_proc_t *proc,
                                               i - pbch_initial_symbol,
                                               Nid_cell,
                                               ssb_start_subcarrier,
-                                              nr_gold_pbch_ref[hf][l],
+                                              nr_gold_pbch(frame_parms->Lmax, Nid_cell, hf, l),
                                               rxdataF);
         csum(cumul, cumul, meas);
       }
@@ -110,7 +109,6 @@ static bool nr_pbch_detection(const UE_nr_rxtx_proc_t *proc,
     for(int i=pbch_initial_symbol; i<pbch_initial_symbol+3;i++)
       nr_pbch_channel_estimation(frame_parms,
                                  NULL,
-                                 nr_gold_pbch_ref,
                                  estimateSz,
                                  dl_ch_estimates,
                                  dl_ch_estimates_time,
@@ -204,7 +202,7 @@ void nr_scan_ssb(void *arg)
     /* process pss search on received buffer */
     ssbInfo->syncRes.frame_id = frame_id;
     int nid2;
-    int freq_offset_pss;
+    int freq_offset_pss = 0;
     const int sync_pos = pss_synchro_nr((const c16_t **)rxdata,
                                         fp,
                                         pssTime,
@@ -246,12 +244,7 @@ void nr_scan_ssb(void *arg)
     const uint32_t rxdataF_sz = fp->samples_per_slot_wCP;
     __attribute__((aligned(32))) c16_t rxdataF[fp->nb_antennas_rx][rxdataF_sz];
     for (int i = 0; i < NR_N_SYMBOLS_SSB; i++)
-      nr_slot_fep_init_sync(fp,
-                            i,
-                            frame_id * fp->samples_per_frame + ssbInfo->ssbOffset,
-                            (const c16_t **)rxdata,
-                            rxdataF,
-                            link_type_dl);
+      nr_slot_fep(NULL, fp, 0, i, rxdataF, link_type_dl, frame_id * fp->samples_per_frame + ssbInfo->ssbOffset, (c16_t **)rxdata);
 
     int freq_offset_sss = 0;
     int32_t metric_tdd_ncp = 0;
@@ -277,9 +270,7 @@ void nr_scan_ssb(void *arg)
 #endif
     ssbInfo->freqOffset = freq_offset_pss + freq_offset_sss;
 
-    uint32_t nr_gold_pbch_ref[2][64][NR_PBCH_DMRS_LENGTH_DWORD];
     if (ssbInfo->syncRes.cell_detected) { // we got sss channel
-      nr_gold_pbch(nr_gold_pbch_ref, ssbInfo->nidCell, fp->Lmax);
       ssbInfo->syncRes.cell_detected = nr_pbch_detection(ssbInfo->proc,
                                                          ssbInfo->fp,
                                                          ssbInfo->nidCell,
@@ -289,10 +280,16 @@ void nr_scan_ssb(void *arg)
                                                          &ssbInfo->ssbIndex,
                                                          &ssbInfo->symbolOffset,
                                                          &ssbInfo->pbchResult,
-                                                         nr_gold_pbch_ref,
                                                          rxdataF); // start pbch detection at first symbol after pss
+      if (ssbInfo->syncRes.cell_detected) {
+        int rsrp_db_per_re = nr_ue_calculate_ssb_rsrp(ssbInfo->fp, ssbInfo->proc, rxdataF, 0, ssbInfo->gscnInfo.ssbFirstSC);
+        ssbInfo->adjust_rxgain = TARGET_RX_POWER - rsrp_db_per_re;
+        LOG_I(PHY, "pbch rx ok. rsrp:%d dB/RE, adjust_rxgain:%d dB\n", rsrp_db_per_re, ssbInfo->adjust_rxgain);
+      }
     }
   }
+
+  completed_task_ans(ssbInfo->ans);
 }
 
 nr_initial_sync_t nr_initial_sync(UE_nr_rxtx_proc_t *proc,
@@ -304,18 +301,18 @@ nr_initial_sync_t nr_initial_sync(UE_nr_rxtx_proc_t *proc,
 {
   NR_DL_FRAME_PARMS *fp = &ue->frame_parms;
 
-  notifiedFIFO_t nf;
-  initNotifiedFIFO(&nf);
-
   // Perform SSB scanning in parallel. One GSCN per thread.
   LOG_I(NR_PHY,
         "Starting cell search with center freq: %ld, bandwidth: %d. Scanning for %d number of GSCN.\n",
         fp->dl_CarrierFreq,
         fp->N_RB_DL,
         numGscn);
+
+  task_ans_t ans;
+  init_task_ans(&ans, numGscn);
+  nr_ue_ssb_scan_t ssb_info[numGscn];
   for (int s = 0; s < numGscn; s++) {
-    notifiedFIFO_elt_t *req = newNotifiedFIFO_elt(sizeof(nr_ue_ssb_scan_t), gscnInfo[s].gscn, &nf, &nr_scan_ssb);
-    nr_ue_ssb_scan_t *ssbInfo = (nr_ue_ssb_scan_t *)NotifiedFifoData(req);
+    nr_ue_ssb_scan_t *ssbInfo = &ssb_info[s];
     *ssbInfo = (nr_ue_ssb_scan_t){.gscnInfo = gscnInfo[s],
                                   .fp = &ue->frame_parms,
                                   .proc = proc,
@@ -334,32 +331,34 @@ nr_initial_sync_t nr_initial_sync(UE_nr_rxtx_proc_t *proc,
           ssbInfo->gscnInfo.gscn,
           ssbInfo->gscnInfo.ssbFirstSC,
           ssbInfo->gscnInfo.ssRef);
-    pushTpool(&get_nrUE_params()->Tpool, req);
+    ssbInfo->ans = &ans;
+    task_t t = {.func = nr_scan_ssb, .args = ssbInfo};
+    pushTpool(&get_nrUE_params()->Tpool, t);
   }
 
   // Collect the scan results
   nr_ue_ssb_scan_t res = {0};
-  while (numGscn) {
-    notifiedFIFO_elt_t *req = pullTpool(&nf, &get_nrUE_params()->Tpool);
-    nr_ue_ssb_scan_t *ssbInfo = (nr_ue_ssb_scan_t *)NotifiedFifoData(req);
-    if (ssbInfo->syncRes.cell_detected) {
-      LOG_A(NR_PHY,
-            "Cell Detected with GSCN: %d, SSB SC offset: %d, SSB Ref: %lf, PSS Corr peak: %d dB, PSS Corr Average: %d\n",
-            ssbInfo->gscnInfo.gscn,
-            ssbInfo->gscnInfo.ssbFirstSC,
-            ssbInfo->gscnInfo.ssRef,
-            ssbInfo->pssCorrPeakPower,
-            ssbInfo->pssCorrAvgPower);
-      if (!res.syncRes.cell_detected) { // take the first cell detected
-        res = *ssbInfo;
+  if (numGscn > 0) {
+    join_task_ans(&ans);
+    for (int i = 0; i < numGscn; i++) {
+      nr_ue_ssb_scan_t *ssbInfo = &ssb_info[i];
+      if (ssbInfo->syncRes.cell_detected) {
+        LOG_I(NR_PHY,
+              "Cell Detected with GSCN: %d, SSB SC offset: %d, SSB Ref: %lf, PSS Corr peak: %d dB, PSS Corr Average: %d\n",
+              ssbInfo->gscnInfo.gscn,
+              ssbInfo->gscnInfo.ssbFirstSC,
+              ssbInfo->gscnInfo.ssRef,
+              ssbInfo->pssCorrPeakPower,
+              ssbInfo->pssCorrAvgPower);
+        if (!res.syncRes.cell_detected) { // take the first cell detected
+          res = *ssbInfo;
+        }
       }
+      for (int ant = 0; ant < fp->nb_antennas_rx; ant++) {
+        free(ssbInfo->rxdata[ant]);
+      }
+      free(ssbInfo->rxdata);
     }
-    for (int ant = 0; ant < fp->nb_antennas_rx; ant++) {
-      free(ssbInfo->rxdata[ant]);
-    }
-    free(ssbInfo->rxdata);
-    delNotifiedFIFO_elt(req);
-    numGscn--;
   }
 
   // Set globals based on detected cell
@@ -370,6 +369,7 @@ nr_initial_sync_t nr_initial_sync(UE_nr_rxtx_proc_t *proc,
     fp->ssb_index = res.ssbIndex;
     ue->symbol_offset = res.symbolOffset;
     ue->common_vars.freq_offset = res.freqOffset;
+    ue->adjust_rxgain = res.adjust_rxgain;
   }
 
   // In initial sync, we indicate PBCH to MAC after the scan is complete.
@@ -400,7 +400,6 @@ nr_initial_sync_t nr_initial_sync(UE_nr_rxtx_proc_t *proc,
       // and we do not know yet in which slot it goes.
       compensate_freq_offset(ue->common_vars.rxdata, fp, res.freqOffset, res.syncRes.frame_id);
     }
-    nr_gold_pbch(ue->nr_gold_pbch, fp->Nid_cell, fp->Lmax);
     // sync at symbol ue->symbol_offset
     // computing the offset wrt the beginning of the frame
     int mu = fp->numerology_index;
@@ -412,24 +411,6 @@ nr_initial_sync_t nr_initial_sync(UE_nr_rxtx_proc_t *proc,
     // for a correct computation of frame number to sync with the one decoded at MIB we need to take into account in which of
     // the n_frames we got sync
     ue->init_sync_frame = n_frames - 1 - res.syncRes.frame_id;
-
-    // compute the scramblingID_pdcch and the gold pdcch
-    ue->scramblingID_pdcch = fp->Nid_cell;
-    nr_gold_pdcch(ue, fp->Nid_cell);
-
-    // compute the scrambling IDs for PDSCH DMRS
-    for (int i = 0; i < NR_NB_NSCID; i++) {
-      ue->scramblingID_dlsch[i] = fp->Nid_cell;
-      nr_gold_pdsch(ue, i, ue->scramblingID_dlsch[i]);
-    }
-
-    nr_init_csi_rs(fp, ue->nr_csi_info->nr_gold_csi_rs, fp->Nid_cell);
-
-    // initialize the pusch dmrs
-    for (int i = 0; i < NR_NB_NSCID; i++) {
-      ue->scramblingID_ulsch[i] = fp->Nid_cell;
-      nr_init_pusch_dmrs(ue, ue->scramblingID_ulsch[i], i);
-    }
 
     // we also need to take into account the shift by samples_per_frame in case the if is true
     if (res.ssbOffset < sync_pos_frame) {

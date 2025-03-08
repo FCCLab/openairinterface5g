@@ -49,6 +49,7 @@
 #include "common/utils/LOG/log.h"
 #include "common_lib.h"
 #include "assertions.h"
+#include "system.h"
 
 #include "common/utils/LOG/vcd_signal_dumper.h"
 
@@ -313,6 +314,8 @@ static int trx_usrp_start(openair0_device *device) {
 #endif
 
   switch (device->openair0_cfg->gpio_controller) {
+    case RU_GPIO_CONTROL_NONE:
+      break;
     case RU_GPIO_CONTROL_GENERIC:
       trx_usrp_start_generic_gpio(device, s);
       break;
@@ -643,6 +646,8 @@ void *trx_usrp_write_thread(void * arg){
       ret = (int)s->tx_stream->send(&(((int16_t *)buff_tx[0])[0]), nsamps, s->tx_md);
     }
 
+    T(T_USRP_TX_ANT0, T_INT(timestamp), T_BUFFER(buff_tx[0], nsamps*4));
+
     if (ret != nsamps) LOG_E(HW,"[xmit] tx samples %d != %d\n",ret,nsamps);
     VCD_SIGNAL_DUMPER_DUMP_VARIABLE_BY_NAME( VCD_SIGNAL_DUMPER_VARIABLES_USRP_SEND_RETURN, ret );
     VCD_SIGNAL_DUMPER_DUMP_FUNCTION_BY_NAME( VCD_SIGNAL_DUMPER_FUNCTIONS_TRX_WRITE_THREAD, 0 );
@@ -869,7 +874,8 @@ int trx_usrp_set_gains(openair0_device *device,
   if (openair0_cfg[0].rx_gain[0]-openair0_cfg[0].rx_gain_offset[0] > gain_range.stop()) {
     LOG_E(HW,"RX Gain 0 too high, reduce by %f dB\n",
           openair0_cfg[0].rx_gain[0]-openair0_cfg[0].rx_gain_offset[0] - gain_range.stop());
-    exit(-1);
+    int gain_diff = gain_range.stop() - (openair0_cfg[0].rx_gain[0] - openair0_cfg[0].rx_gain_offset[0]);
+    return gain_diff;
   }
 
   s->usrp->set_rx_gain(openair0_cfg[0].rx_gain[0]-openair0_cfg[0].rx_gain_offset[0]);
@@ -1424,25 +1430,27 @@ extern "C" {
   }
 
   for(int i=0; i<((int) s->usrp->get_rx_num_channels()); i++) {
-    if (i<openair0_cfg[0].rx_num_channels) {
-      s->usrp->set_rx_rate(openair0_cfg[0].sample_rate,i+choffset);
-      uhd::tune_request_t rx_tune_req(openair0_cfg[0].rx_freq[i],
-                                      openair0_cfg[0].tune_offset);
+    openair0_config_t *cfg = &openair0_cfg[0];
+    if (i < cfg->rx_num_channels) {
+      s->usrp->set_rx_rate(cfg->sample_rate, i + choffset);
+      uhd::tune_request_t rx_tune_req(cfg->rx_freq[i], cfg->tune_offset);
       s->usrp->set_rx_freq(rx_tune_req, i+choffset);
-      set_rx_gain_offset(&openair0_cfg[0],i,bw_gain_adjust);
+      set_rx_gain_offset(cfg, i, bw_gain_adjust);
       ::uhd::gain_range_t gain_range = s->usrp->get_rx_gain_range(i+choffset);
       // limit to maximum gain
-      double gain=openair0_cfg[0].rx_gain[i]-openair0_cfg[0].rx_gain_offset[i];
+      double gain = cfg->rx_gain[i] - cfg->rx_gain_offset[i];
       if ( gain > gain_range.stop())  {
-                   LOG_E(HW,"RX Gain too high, lower by %f dB\n",
-                   gain - gain_range.stop());
-               gain=gain_range.stop();
+        LOG_E(HW, "RX Gain too high, lower by %f dB\n", gain - gain_range.stop());
+        gain = gain_range.stop();
       }
-
       s->usrp->set_rx_gain(gain,i+choffset);
-      LOG_I(HW,"RX Gain %d %f (%f) => %f (max %f)\n",i,
-            openair0_cfg[0].rx_gain[i],openair0_cfg[0].rx_gain_offset[i],
-            openair0_cfg[0].rx_gain[i]-openair0_cfg[0].rx_gain_offset[i],gain_range.stop());
+      LOG_I(HW,
+            "RX Gain %d %f (%f) => %f (max %f)\n",
+            i,
+            cfg->rx_gain[i],
+            cfg->rx_gain_offset[i],
+            cfg->rx_gain[i] - cfg->rx_gain_offset[i],
+            gain_range.stop());
     }
   }
 

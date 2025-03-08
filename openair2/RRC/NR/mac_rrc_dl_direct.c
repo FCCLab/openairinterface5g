@@ -19,10 +19,26 @@
  *      contact@openairinterface.org
  */
 
-#include "nr_rrc_defs.h"
-
+#include <netinet/in.h>
+#include <netinet/sctp.h>
+#include <stdbool.h>
+#include "assertions.h"
+#include "f1ap_messages_types.h"
 #include "mac_rrc_dl.h"
+#include "nr_rrc_defs.h"
 #include "openair2/LAYER2/NR_MAC_gNB/mac_rrc_dl_handler.h"
+
+static void f1_reset_cu_initiated_direct(sctp_assoc_t assoc_id, const f1ap_reset_t *reset)
+{
+  AssertFatal(assoc_id == -1, "illegal assoc_id %d\n", assoc_id);
+  f1_reset_cu_initiated(reset);
+}
+
+static void f1_reset_acknowledge_du_initiated_direct(sctp_assoc_t assoc_id, const f1ap_reset_ack_t *ack)
+{
+  (void)ack;
+  AssertFatal(false, "%s() not implemented yet\n", __func__);
+}
 
 static void f1_setup_response_direct(sctp_assoc_t assoc_id, const f1ap_setup_resp_t *resp)
 {
@@ -80,6 +96,8 @@ static void dl_rrc_message_transfer_direct(sctp_assoc_t assoc_id, const f1ap_dl_
 
 void mac_rrc_dl_direct_init(nr_mac_rrc_dl_if_t *mac_rrc)
 {
+  mac_rrc->f1_reset = f1_reset_cu_initiated_direct;
+  mac_rrc->f1_reset_acknowledge = f1_reset_acknowledge_du_initiated_direct;
   mac_rrc->f1_setup_response = f1_setup_response_direct;
   mac_rrc->f1_setup_failure = f1_setup_failure_direct;
   mac_rrc->gnb_du_configuration_update_acknowledge = gnb_du_configuration_update_ack_direct;

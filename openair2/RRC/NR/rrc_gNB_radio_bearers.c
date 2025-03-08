@@ -20,8 +20,17 @@
  */
 
 #include "rrc_gNB_radio_bearers.h"
+#include <stddef.h>
+#include "E1AP_RLC-Mode.h"
+#include "PHY/defs_common.h"
+#include "RRC/NR/nr_rrc_defs.h"
+#include "T.h"
+#include "asn_internal.h"
+#include "assertions.h"
+#include "common/platform_constants.h"
+#include "common/utils/T/T.h"
+#include "ngap_messages_types.h"
 #include "oai_asn1.h"
-#include "openair2/E1AP/e1ap.h"
 
 rrc_pdu_session_param_t *find_pduSession(gNB_RRC_UE_t *ue, int id, bool create)
 {
@@ -49,9 +58,15 @@ rrc_pdu_session_param_t *find_pduSession_from_drbId(gNB_RRC_UE_t *ue, int drb_id
   return find_pduSession(ue, id, false);
 }
 
+void get_pduSession_array(gNB_RRC_UE_t *ue, uint32_t pdu_sessions[NGAP_MAX_PDU_SESSION])
+{
+  for (int i = 0; i < ue->nb_of_pdusessions && i < NGAP_MAX_PDU_SESSION; ++i)
+    pdu_sessions[i] = ue->pduSession[i].param.pdusession_id;
+}
+
 drb_t *get_drb(gNB_RRC_UE_t *ue, uint8_t drb_id)
 {
-  DevAssert(drb_id > 0 && drb_id < 32);
+  DevAssert(drb_id > 0 && drb_id <= 32);
   DevAssert(ue != NULL);
 
   return &ue->established_drbs[drb_id - 1];
@@ -96,10 +111,7 @@ drb_t *generateDRB(gNB_RRC_UE_t *ue,
 
   est_drb->status = DRB_ACTIVE;
   est_drb->drb_id = drb_id;
-  est_drb->reestablishPDCP = -1;
-  est_drb->recoverPDCP = -1;
   est_drb->cnAssociation.sdap_config.defaultDRB = true;
-  est_drb->defaultDRBid = drb_id;
 
   /* SDAP Configuration */
   est_drb->cnAssociation.present = NR_DRB_ToAddMod__cnAssociation_PR_sdap_Config;
@@ -182,6 +194,15 @@ uint8_t get_next_available_drb_id(gNB_RRC_UE_t *ue)
   /* From this point, we need to handle the case that all DRBs are already used by the UE. */
   LOG_E(RRC, "Error - All the DRBs are used - Handle this\n");
   return DRB_INACTIVE;
+}
+
+int get_number_active_drbs(gNB_RRC_UE_t *ue)
+{
+  int n = 0;
+  for (int i = 0; i < MAX_DRBS_PER_UE; ++i)
+    if (ue->established_drbs[i].status != DRB_INACTIVE)
+      n++;
+  return n;
 }
 
 bool drb_is_active(gNB_RRC_UE_t *ue, uint8_t drb_id)

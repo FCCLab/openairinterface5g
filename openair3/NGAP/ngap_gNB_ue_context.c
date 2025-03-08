@@ -27,18 +27,14 @@
  * \email: yoshio.inoue@fujitsu.com,masayuki.harada@fujitsu.com (yoshio.inoue%40fujitsu.com%2cmasayuki.harada%40fujitsu.com)
  */ 
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdint.h>
-
-#include "tree.h"
-
-#include "intertask_interface.h"
-
-#include "ngap_common.h"
-#include "ngap_gNB_defs.h"
 #include "ngap_gNB_ue_context.h"
+#include <stdint.h>
+#include <stdio.h>
+#include "PHY/defs_common.h"
+#include "T.h"
+#include "common/utils/T/T.h"
+#include "ngap_common.h"
+#include "tree.h"
 
 /* Tree of UE ordered by gNB_ue_ngap_id's
  * NO INSTANCE, the 32 bits id is large enough to handle all UEs, regardless the cell, gNB, ...

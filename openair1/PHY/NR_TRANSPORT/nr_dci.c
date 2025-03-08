@@ -36,47 +36,27 @@
 #include "nr_sch_dmrs.h"
 #include "PHY/MODULATION/nr_modulation.h"
 #include "common/utils/nr/nr_common.h"
+#include "SCHED_NR/sched_nr.h"
 
 //#define DEBUG_PDCCH_DMRS
 //#define DEBUG_DCI
 //#define DEBUG_CHANNEL_CODING
 
-void nr_pdcch_scrambling(uint32_t *in,
-                         uint32_t size,
-                         uint32_t Nid,
-                         uint32_t scrambling_RNTI,
-                         uint32_t *out) {
-  uint8_t reset;
-  uint32_t x1 = 0, x2 = 0, s = 0;
-  reset = 1;
-  x2 = (scrambling_RNTI<<16) + Nid;
-  LOG_D(NR_PHY_DCI, "PDCCH Scrambling x2 %x : scrambling_RNTI %x \n", x2, scrambling_RNTI);
-  for (int i=0; i<size; i++) {
-    if ((i&0x1f)==0) {
-      s = lte_gold_generic(&x1, &x2, reset);
-      reset = 0;
-
-      if (i) {
-        in++;
-        out++;
-      }
-    }
-
-    (*out) ^= ((((*in)>>(i&0x1f))&1) ^ ((s>>(i&0x1f))&1))<<(i&0x1f);
-  }
+static void nr_pdcch_scrambling(uint32_t *in, uint32_t size, uint32_t Nid, uint32_t scrambling_RNTI, uint32_t *out)
+{
+  int roundedSz = ((size + 31) / 32);
+  uint32_t *seq = gold_cache((scrambling_RNTI << 16) + Nid, roundedSz);
+  LOG_D(NR_PHY_DCI, "PDCCH scrambling_RNTI %x \n", scrambling_RNTI);
+  for (int i = 0; i < roundedSz; i++)
+    out[i] = in[i] ^ seq[i];
 }
 
-void nr_generate_dci(PHY_VARS_gNB *gNB,
-                     nfapi_nr_dl_tti_pdcch_pdu_rel15_t *pdcch_pdu_rel15,
-                     int32_t *txdataF,
-                     int16_t amp,
-                     NR_DL_FRAME_PARMS *frame_parms,
-                     int slot) {
-
-  uint16_t cset_start_sc;
-  uint8_t cset_start_symb, cset_nsymb;
-  int k,l,k_prime,dci_idx, dmrs_idx;
-
+static void nr_generate_dci(PHY_VARS_gNB *gNB,
+                            nfapi_nr_dl_tti_pdcch_pdu_rel15_t *pdcch_pdu_rel15,
+                            int txdataF_offset,
+                            NR_DL_FRAME_PARMS *frame_parms,
+                            int slot)
+{
   // fill reg list per symbol
   int reg_list[MAX_DCI_CORESET][NR_MAX_PDCCH_AGG_LEVEL * NR_NB_REG_PER_CCE];
   nr_fill_reg_list(reg_list, pdcch_pdu_rel15);
@@ -84,27 +64,29 @@ void nr_generate_dci(PHY_VARS_gNB *gNB,
   int rb_offset;
   int n_rb;
   get_coreset_rballoc(pdcch_pdu_rel15->FreqDomainResource,&n_rb,&rb_offset);
-  cset_start_sc = frame_parms->first_carrier_offset + (pdcch_pdu_rel15->BWPStart + rb_offset) * NR_NB_SC_PER_RB;
+  uint16_t cset_start_sc = frame_parms->first_carrier_offset + (pdcch_pdu_rel15->BWPStart + rb_offset) * NR_NB_SC_PER_RB;
+  int idx1 = pdcch_pdu_rel15->StartSymbolIndex+pdcch_pdu_rel15->DurationSymbols;
+  int idx2 = (((n_rb + rb_offset + pdcch_pdu_rel15->BWPStart) * 3) + 15) & ~15;
+  c16_t mod_dmrs[idx1][idx2] __attribute__((aligned(16)));
 
-  int16_t mod_dmrs[pdcch_pdu_rel15->StartSymbolIndex+pdcch_pdu_rel15->DurationSymbols][(((n_rb+rb_offset+pdcch_pdu_rel15->BWPStart)*6+15)>>4)<<4] __attribute__((aligned(16))); // 3 for the max coreset duration
-
-  for (int d=0;d<pdcch_pdu_rel15->numDlDci;d++) {
+  for (int d = 0; d < pdcch_pdu_rel15->numDlDci; d++) {
     /*The coreset is initialised
      * in frequency: the first subcarrier is obtained by adding the first CRB overlapping the SSB and the rb_offset for coreset 0
      * or the rb_offset for other coresets
      * in time: by its first slot and its first symbol*/
     const nfapi_nr_dl_dci_pdu_t *dci_pdu = &pdcch_pdu_rel15->dci_pdu[d];
 
-    if(dci_pdu->ScramblingId != gNB->pdcch_gold_init) {
-      gNB->pdcch_gold_init = dci_pdu->ScramblingId;
-      nr_init_pdcch_dmrs(gNB, dci_pdu->ScramblingId);
-    }
+    uint32_t cset_start_symb = pdcch_pdu_rel15->StartSymbolIndex;
+    uint32_t cset_nsymb = pdcch_pdu_rel15->DurationSymbols;
+    int dci_idx = 0;
+    // multi-beam number (for concurrent beams)
+    int bitmap = SL_to_bitmap(cset_start_symb, pdcch_pdu_rel15->DurationSymbols);
+    int beam_nb = beam_index_allocation(dci_pdu->precodingAndBeamforming.prgs_list[0].dig_bf_interface_list[0].beam_idx,
+                                        &gNB->common_vars,
+                                        slot,
+                                        frame_parms->symbols_per_slot,
+                                        bitmap);
 
-    uint32_t **gold_pdcch_dmrs = gNB->nr_gold_pdcch_dmrs[slot];
-
-    cset_start_symb = pdcch_pdu_rel15->StartSymbolIndex;
-    cset_nsymb = pdcch_pdu_rel15->DurationSymbols;
-    dci_idx = 0;
     LOG_D(NR_PHY_DCI, "pdcch: Coreset rb_offset %d, nb_rb %d BWP Start %d\n", rb_offset, n_rb, pdcch_pdu_rel15->BWPStart);
     LOG_D(NR_PHY_DCI,
           "pdcch: Coreset starting subcarrier %d on symbol %d (%d symbols)\n",
@@ -117,7 +99,7 @@ void nr_generate_dci(PHY_VARS_gNB *gNB,
     if (dci_pdu->RNTI != 0xFFFF)
       LOG_D(NR_PHY_DCI,
             "DL_DCI : rb_offset %d, nb_rb %d, DMRS length per symbol %d\t DCI encoded length %d (precoder_granularity %d, "
-            "reg_mapping %d), Scrambling_Id %d, ScramblingRNTI %x, PayloadSizeBits %d\n",
+            "reg_mapping %d), Scrambling_Id %d, ScramblingRNTI %x, PayloadSizeBits %d AggregationLevel %d\n",
             rb_offset,
             n_rb,
             dmrs_length,
@@ -126,19 +108,25 @@ void nr_generate_dci(PHY_VARS_gNB *gNB,
             pdcch_pdu_rel15->CceRegMappingType,
             dci_pdu->ScramblingId,
             dci_pdu->ScramblingRNTI,
-            dci_pdu->PayloadSizeBits);
+            dci_pdu->PayloadSizeBits,
+            dci_pdu->AggregationLevel);
     dmrs_length += rb_offset*6; // To accommodate more DMRS symbols in case of rb offset
       
     /// DMRS QPSK modulation
-    for (int symb=cset_start_symb; symb<cset_start_symb + pdcch_pdu_rel15->DurationSymbols; symb++) {
+    for (int symb = cset_start_symb; symb < cset_start_symb + pdcch_pdu_rel15->DurationSymbols; symb++) {
+      const uint32_t *gold = nr_gold_pdcch(frame_parms->N_RB_DL, frame_parms->symbols_per_slot, dci_pdu->ScramblingId, slot, symb);
+      nr_modulation(gold, dmrs_length, DMRS_MOD_ORDER, (int16_t *)mod_dmrs[symb]); // Qm = 2 as DMRS is QPSK modulated
 
-      nr_modulation(gold_pdcch_dmrs[symb], dmrs_length, DMRS_MOD_ORDER, mod_dmrs[symb]); //Qm = 2 as DMRS is QPSK modulated
-      
 #ifdef DEBUG_PDCCH_DMRS
       if(dci_pdu->RNTI!=0xFFFF) {
         for (int i=0; i<dmrs_length>>1; i++)
-          printf("symb %d i %d %p gold seq 0x%08x mod_dmrs %d %d\n", symb, i,
-                 &gold_pdcch_dmrs[symb][i>>5],gold_pdcch_dmrs[symb][i>>5], mod_dmrs[symb][i<<1], mod_dmrs[symb][(i<<1)+1]);
+          printf("symb %d i %d %p gold seq 0x%08x mod_dmrs %d %d\n",
+                 symb,
+                 i,
+                 &gold_pdcch_dmrs[symb][i >> 5],
+                 gold_pdcch_dmrs[symb][i >> 5],
+                 mod_dmrs[symb][i].r,
+                 mod_dmrs[symb][i].i);
       }
 #endif
     }
@@ -175,17 +163,18 @@ void nr_generate_dci(PHY_VARS_gNB *gNB,
 	   scrambled_output[6], scrambled_output[7], scrambled_output[8], scrambled_output[9], scrambled_output[10],scrambled_output[11] );
 #endif
     /// QPSK modulation
-    int16_t mod_dci[NR_MAX_DCI_SIZE>>1] __attribute__((aligned(16)));
-    nr_modulation(scrambled_output, encoded_length, DMRS_MOD_ORDER, mod_dci); //Qm = 2 as DMRS is QPSK modulated
+    c16_t mod_dci[NR_MAX_DCI_SIZE / 2] __attribute__((aligned(16)));
+    nr_modulation(scrambled_output, encoded_length, DMRS_MOD_ORDER, (int16_t *)mod_dci); // Qm = 2 as DMRS is QPSK modulated
 #ifdef DEBUG_DCI
     
     for (int i=0; i<encoded_length>>1; i++)
-      printf("i %d mod_dci %d %d\n", i, mod_dci[i<<1], mod_dci[(i<<1)+1] );
-    
+      printf("i %d mod_dci %d %d\n", i, mod_dci[i].r, mod_dci[i].i);
+
 #endif
 
     /// Resource mapping
-
+    uint16_t amp = gNB->TX_AMP;
+    c16_t *txdataF = gNB->common_vars.txdataF[beam_nb][0] + txdataF_offset;
     if (cset_start_sc >= frame_parms->ofdm_symbol_size)
       cset_start_sc -= frame_parms->ofdm_symbol_size;
 
@@ -194,25 +183,25 @@ void nr_generate_dci(PHY_VARS_gNB *gNB,
     for(int symbol_idx = 0; symbol_idx < pdcch_pdu_rel15->DurationSymbols; symbol_idx++) {
       // allocating rbs per symbol
       for (int reg_count = 0; reg_count < num_regs; reg_count++) {
-        k = cset_start_sc + reg_list[d][reg_count] * NR_NB_SC_PER_RB;
+        int k = cset_start_sc + reg_list[d][reg_count] * NR_NB_SC_PER_RB;
         LOG_D(NR_PHY_DCI, "REG %d k %d\n", reg_list[d][reg_count], k);
         if (k >= frame_parms->ofdm_symbol_size)
           k -= frame_parms->ofdm_symbol_size;
 
-        l = cset_start_symb + symbol_idx;
+        int l = cset_start_symb + symbol_idx;
 
         // dmrs index depends on reference point for k according to 38.211 7.4.1.3.2
+        int dmrs_idx;
         if (pdcch_pdu_rel15->CoreSetType == NFAPI_NR_CSET_CONFIG_PDCCH_CONFIG)
           dmrs_idx = (reg_list[d][reg_count] + pdcch_pdu_rel15->BWPStart) * 3;
         else
           dmrs_idx = (reg_list[d][reg_count] + rb_offset) * 3;
 
-        k_prime = 0;
+        int k_prime = 0;
 
         for (int m = 0; m < NR_NB_SC_PER_RB; m++) {
           if (m == (k_prime << 2) + 1) { // DMRS if not already mapped
-            ((int16_t *)txdataF)[(l * frame_parms->ofdm_symbol_size + k) << 1] = (amp * mod_dmrs[l][dmrs_idx << 1]) >> 15;
-            ((int16_t *)txdataF)[((l * frame_parms->ofdm_symbol_size + k) << 1) + 1] = (amp * mod_dmrs[l][(dmrs_idx << 1) + 1]) >> 15;
+            txdataF[l * frame_parms->ofdm_symbol_size + k] = c16mulRealShift(mod_dmrs[l][dmrs_idx], amp, 15);
 
 #ifdef DEBUG_PDCCH_DMRS
             LOG_I(NR_PHY_DCI,
@@ -220,23 +209,22 @@ void nr_generate_dci(PHY_VARS_gNB *gNB,
                   dmrs_idx,
                   l,
                   k,
-                  ((int16_t *)txdataF)[(l * frame_parms->ofdm_symbol_size + k) << 1],
-                  ((int16_t *)txdataF)[((l * frame_parms->ofdm_symbol_size + k) << 1) + 1]);
+                  txdataF[l * frame_parms->ofdm_symbol_size + k].r,
+                  txdataF[l * frame_parms->ofdm_symbol_size + k].i);
 #endif
 
             dmrs_idx++;
             k_prime++;
 
           } else { // DCI payload
-            ((int16_t *)txdataF)[(l * frame_parms->ofdm_symbol_size + k) << 1] = (amp * mod_dci[dci_idx << 1]) >> 15;
-            ((int16_t *)txdataF)[((l * frame_parms->ofdm_symbol_size + k) << 1) + 1] = (amp * mod_dci[(dci_idx << 1) + 1]) >> 15;
+            txdataF[l * frame_parms->ofdm_symbol_size + k] = c16mulRealShift(mod_dci[dci_idx], amp, 15);
 #ifdef DEBUG_DCI
             LOG_I(NR_PHY_DCI,
                   "PDCCH: l %d position %d => (%d,%d)\n",
                   l,
                   k,
-                  ((int16_t *)txdataF)[(l * frame_parms->ofdm_symbol_size + k) << 1],
-                  ((int16_t *)txdataF)[((l * frame_parms->ofdm_symbol_size + k) << 1) + 1]);
+		  		  txdataF[l * frame_parms->ofdm_symbol_size + k].r,
+		  txdataF[l * frame_parms->ofdm_symbol_size + k].i;
 #endif
 
             dci_idx++;
@@ -257,16 +245,15 @@ void nr_generate_dci(PHY_VARS_gNB *gNB,
   } // for (int d=0;d<pdcch_pdu_rel15->numDlDci;d++)
 }
 
-void nr_generate_dci_top(processingData_L1tx_t *msgTx,
-                         int slot,
-                         int32_t *txdataF,
-                         int16_t amp,
-                         NR_DL_FRAME_PARMS *frame_parms) {
-
-  for (int i=0; i<msgTx->num_ul_pdcch; i++)
-    nr_generate_dci(msgTx->gNB,&msgTx->ul_pdcch_pdu[i].pdcch_pdu.pdcch_pdu_rel15,txdataF,amp,frame_parms,slot);
-  for (int i=0; i<msgTx->num_dl_pdcch; i++)
-    nr_generate_dci(msgTx->gNB,&msgTx->pdcch_pdu[i].pdcch_pdu_rel15,txdataF,amp,frame_parms,slot);
-
+void nr_generate_dci_top(processingData_L1tx_t *msgTx, int slot, int txdataF_offset)
+{
+  PHY_VARS_gNB *gNB = msgTx->gNB;
+  NR_DL_FRAME_PARMS *frame_parms = &gNB->frame_parms;
+  start_meas(&gNB->dci_generation_stats);
+  for (int i = 0; i < msgTx->num_ul_pdcch; i++)
+    nr_generate_dci(msgTx->gNB, &msgTx->ul_pdcch_pdu[i].pdcch_pdu.pdcch_pdu_rel15, txdataF_offset, frame_parms, slot);
+  for (int i = 0; i < msgTx->num_dl_pdcch; i++)
+    nr_generate_dci(msgTx->gNB, &msgTx->pdcch_pdu[i].pdcch_pdu_rel15, txdataF_offset, frame_parms, slot);
+  stop_meas(&gNB->dci_generation_stats);
 }
 

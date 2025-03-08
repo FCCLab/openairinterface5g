@@ -26,6 +26,7 @@
 #include <string.h>
 
 #include "nr_pdcp_security_nea2.h"
+#include "nr_pdcp_security_nea1.h"
 #include "nr_pdcp_integrity_nia2.h"
 #include "nr_pdcp_integrity_nia1.h"
 #include "nr_pdcp_sdu.h"
@@ -373,16 +374,21 @@ static void nr_pdcp_entity_set_security(struct nr_pdcp_entity_t *entity,
   }
 
   if (parameters->ciphering_algorithm != 0 && parameters->ciphering_algorithm != -1) {
-    if (parameters->ciphering_algorithm != 2) {
-      LOG_E(PDCP, "FATAL: only nea2 supported for the moment\n");
-      exit(1);
-    }
     entity->has_ciphering = 1;
     if (entity->free_security != NULL)
       entity->free_security(entity->security_context);
-    entity->security_context = nr_pdcp_security_nea2_init(entity->security_keys_and_algos.ciphering_key);
-    entity->cipher = nr_pdcp_security_nea2_cipher;
-    entity->free_security = nr_pdcp_security_nea2_free_security;
+    if (parameters->ciphering_algorithm == 2) {
+      entity->security_context = nr_pdcp_security_nea2_init(entity->security_keys_and_algos.ciphering_key);
+      entity->cipher = nr_pdcp_security_nea2_cipher;
+      entity->free_security = nr_pdcp_security_nea2_free_security;
+    } else if (parameters->ciphering_algorithm == 1) {
+      entity->security_context = nr_pdcp_security_nea1_init(entity->security_keys_and_algos.ciphering_key);
+      entity->cipher = nr_pdcp_security_nea1_cipher;
+      entity->free_security = nr_pdcp_security_nea1_free_security;
+    } else {
+      LOG_E(PDCP, "FATAL: only nea1 and nea2 supported for the moment\n");
+      exit(1);
+    }
   }
 }
 

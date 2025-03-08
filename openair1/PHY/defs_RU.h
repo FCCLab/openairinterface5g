@@ -39,8 +39,8 @@
 #include "time_meas.h"
 #include "defs_common.h"
 #include "nfapi_nr_interface_scf.h"
-#include <common/utils/threadPool/thread-pool.h>
-#include <executables/rt_profiling.h>
+#include "common/utils/threadPool/task_ans.h"
+#include "common/utils/threadPool/thread-pool.h"
 
 #define MAX_BANDS_PER_RRU 4
 #define MAX_RRU_CONFIG_SIZE 1024
@@ -130,9 +130,9 @@ typedef struct {
   /// - third index: frequency [0..]
   int32_t **tdd_calib_coeffs;
   /// \brief Anaglogue beam ID for each OFDM symbol (used when beamforming not done in RU)
-  /// - first index: antenna port
+  /// - first index: concurrent beam
   /// - second index: beam_id [0.. symbols_per_frame[
-  uint8_t **beam_id;
+  int **beam_id;
 } RU_COMMON;
 
 
@@ -175,7 +175,8 @@ typedef struct {
  struct RU_t_s *ru;
  int startSymbol;
  int endSymbol;
- int slot; 
+ int slot;
+ task_ans_t *ans;
 } feprx_cmd_t;
 
 typedef struct {
@@ -184,6 +185,7 @@ typedef struct {
  int slot; 
  int startSymbol;
  int numSymbols;
+ task_ans_t *ans;
 } feptx_cmd_t;
 
 typedef struct {
@@ -193,6 +195,7 @@ typedef struct {
   int numRA;
   int prachStartSymbol;
   int num_prach_ocas;
+  int num_slots;
 } RU_PRACH_list_t;
 
 #define NUMBER_OF_NR_RU_PRACH_MAX 8
@@ -424,9 +427,8 @@ typedef enum {
   WAIT_RESYNCH     = 3
 } rru_cmd_t;
 
-
 typedef struct RU_t_s {
-  /// ThreadPool for RU	
+  /// ThreadPool for RU        
   tpool_t *threadPool;
   /// index of this ru
   uint32_t idx;
@@ -660,8 +662,7 @@ typedef struct RU_t_s {
   int tpcores[16];
   /// number of cores for RU ThreadPool
   int num_tpcores;
-  /// structure for analyzing high-level RT measurements
-  rt_ru_profiling_t rt_ru_profiling; 
+  void* scopeData;
 } RU_t;
 
 

@@ -21,7 +21,6 @@
 
 #include "tools_defs.h"
 #include "PHY/impl_defs_top.h"
-#include "PHY/sse_intrin.h"
 
 // Compute Energy of a complex signal vector, removing the DC component!
 // input  : points to vector
@@ -66,76 +65,32 @@ int32_t signal_energy(int32_t *input,uint32_t length)
   return temp;
 }
 
-int32_t signal_energy_amp_shift(int32_t *input,uint32_t length)
+uint32_t signal_energy_nodc(const c16_t *input, uint32_t length)
 {
+  // init
+  simde__m128 mm0 = simde_mm_setzero_ps();
 
-  int32_t i;
-  int32_t temp,temp2;
-  register simde__m64 mm0,mm1,mm2,mm3;
-  simde__m64 *in = (simde__m64 *)input;
-
-  mm0 = simde_mm_setzero_si64();
-  mm3 = simde_mm_setzero_si64();
-
-  for (i=0; i<length>>1; i++) {
-
-    mm1 = in[i];
-    mm2 = mm1;
-    mm1 = simde_m_pmaddwd(mm1,mm1);
-    mm1 = simde_m_psradi(mm1,AMP_SHIFT);// shift any 32 bits blocs of the word by the value shift_p9
-    mm0 = simde_m_paddd(mm0,mm1);// add the two 64 bits words 4 bytes by 4 bytes
-    mm3 = simde_m_paddw(mm3,mm2);// add the two 64 bits words 2 bytes by 2 bytes
-  }
-
-  mm1 = mm0;
-  mm0 = simde_m_psrlqi(mm0,32);
-  mm0 = simde_m_paddd(mm0,mm1);
-  temp = simde_m_to_int(mm0);
-  temp/=length; // this is the average of x^2
-
-
-  // now remove the DC component
-
-
-  mm2 = simde_m_psrlqi(mm3,32);
-  mm2 = simde_m_paddw(mm2,mm3);
-  mm2 = simde_m_pmaddwd(mm2,mm2);
-  mm2 = simde_m_psradi(mm2,AMP_SHIFT); // fixed point representation of elements
-  temp2 = simde_m_to_int(mm2);
-  temp2/=(length*length);
-
-  temp -= temp2;
-
-  simde_mm_empty();
-  simde_m_empty();
-
-  return((temp>0)?temp:1);
-}
-
-int32_t signal_energy_nodc(int32_t *input,uint32_t length)
-{
-  int32_t i;
-  int32_t temp;
-
-  simde__m128i in;
-  simde__m128  mm0;
-
-//init
-  mm0 = simde_mm_setzero_ps();
-//Acc
-  for (i=0; i<(length>>2); i++) {
-    in = simde_mm_loadu_si128((simde__m128i *)input);
-    mm0 = simde_mm_add_ps(mm0,simde_mm_cvtepi32_ps(simde_mm_madd_epi16(in,in)));
+  // Acc
+  for (int32_t i = 0; i < (length >> 2); i++) {
+    simde__m128i in = simde_mm_loadu_si128((simde__m128i *)input);
+    mm0 = simde_mm_add_ps(mm0, simde_mm_cvtepi32_ps(simde_mm_madd_epi16(in, in)));
     input += 4;
   }
-  //Ave
-  temp = (int)((((float*)&mm0)[0] +
-                 ((float*)&mm0)[1] +
-                 ((float*)&mm0)[2] +
-                 ((float*)&mm0)[3])/(float)length);
 
-  return temp;
+  // leftover
+  float leftover_sum = 0;
+  c16_t *leftover_input = (c16_t *)input;
+  uint16_t lefover_count = length - ((length >> 2) << 2);
+  for (int32_t i = 0; i < lefover_count; i++) {
+    leftover_sum += leftover_input[i].r * leftover_input[i].r + leftover_input[i].i * leftover_input[i].i;
+  }
+
+  // Ave
+  float sums[4];
+  simde_mm_store_ps(sums, mm0);
+  return (uint32_t)((sums[0] + sums[1] + sums[2] + sums[3] + leftover_sum) / (float)length);
 }
+
 double signal_energy_fp(double *s_re[2],double *s_im[2],uint32_t nb_antennas,uint32_t length,uint32_t offset)
 {
 
@@ -164,45 +119,6 @@ double signal_energy_fp2(struct complexd *s,uint32_t length)
   }
   return(V/length);
 }
-			  //
-#ifdef MAIN
-#define LENGTH 256
-#include <math.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-main(int argc,char **argv)
-{
-
-  int input[LENGTH];
-  int energy=0,dc_r=0,dc_i=0;
-  int16_t s=1,i;
-  int amp;
-
-  amp = atoi(argv[1]);// arguments to integer
-
-  if (argc>1)
-    printf("Amp = %d\n",amp);
-
-  for (i=0; i<LENGTH; i++) {
-    s = -s;
-    ((int16_t*)input)[2*i]     = 31 + (int16_t)(amp*sin(2*M_PI*i/LENGTH));
-    ((int16_t*)input)[1+(2*i)] = 30 + (int16_t)(amp*cos(2*M_PI*i/LENGTH));
-    energy += (((int16_t*)input)[2*i]*((int16_t*)input)[2*i]) + (((int16_t*)input)[1+(2*i)]*((int16_t*)input)[1+(2*i)]);
-    dc_r += ((int16_t*)input)[2*i];
-    dc_i += ((int16_t*)input)[1+(2*i)];
-
-
-  }
-
-  energy/=LENGTH;
-  dc_r/=LENGTH;
-  dc_i/=LENGTH;
-
-  printf("signal_energy = %d dB(%d,%d,%d,%d)\n",dB_fixed(signal_energy(input,LENGTH)),signal_energy(input,LENGTH),energy-(dc_r*dc_r+dc_i*dc_i),energy,(dc_r*dc_r+dc_i*dc_i));
-  printf("dc = (%d,%d)\n",dc_r,dc_i);
-}
-#endif
 
 int32_t signal_power(int32_t *input, uint32_t length)
 {

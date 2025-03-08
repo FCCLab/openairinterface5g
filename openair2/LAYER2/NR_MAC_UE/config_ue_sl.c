@@ -43,7 +43,7 @@ void sl_ue_mac_free(NR_UE_MAC_INST_t *mac)
   // @todo: maybe this should be done by phy
   if (tdd_list) {
     int mu = sl_config->sl_bwp_config.sl_scs;
-    int nb_slots_to_set = TDD_CONFIG_NB_FRAMES*(1<<mu)*NR_NUMBER_OF_SUBFRAMES_PER_FRAME;
+    int nb_slots_to_set = (1 << mu) * NR_NUMBER_OF_SUBFRAMES_PER_FRAME;
     for (int i=0; i<nb_slots_to_set; i++) {
       free_and_zero(tdd_list[i].max_num_of_symbol_per_slot_list);
     }
@@ -138,7 +138,8 @@ static void  sl_prepare_phy_config(int module_id,
 
   AssertFatal(carriercfg, "SCS_SpecificCarrier cannot be NULL");
 
-  phycfg->sl_carrier_config.sl_bandwidth = get_supported_bw_mhz(FR1, carriercfg->subcarrierSpacing, carriercfg->carrierBandwidth);
+  int bw_index = get_supported_band_index(carriercfg->subcarrierSpacing, FR1, carriercfg->carrierBandwidth);
+  phycfg->sl_carrier_config.sl_bandwidth = get_supported_bw_mhz(FR1, bw_index);
 
   phycfg->sl_carrier_config.sl_frequency =
               from_nrarfcn(sl_band,carriercfg->subcarrierSpacing,pointA_ARFCN); // freq in kHz

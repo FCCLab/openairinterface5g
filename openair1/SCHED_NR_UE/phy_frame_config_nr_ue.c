@@ -39,24 +39,18 @@
 *
 *********************************************************************/
 
-int nr_ue_slot_select(fapi_nr_config_request_t *cfg, int nr_slot)
+int nr_ue_slot_select(const fapi_nr_config_request_t *cfg, int nr_slot)
 {
   if (cfg->cell_config.frame_duplex_type == FDD)
     return NR_UPLINK_SLOT | NR_DOWNLINK_SLOT;
 
-  int period = cfg->tdd_table_1.tdd_period_in_slots +
-               (cfg->tdd_table_2 ? cfg->tdd_table_2->tdd_period_in_slots : 0);
-  int rel_slot = nr_slot % period;
-  fapi_nr_tdd_table_t *tdd_table = &cfg->tdd_table_1;
-  if (cfg->tdd_table_2 && rel_slot >= tdd_table->tdd_period_in_slots) {
-    rel_slot -= tdd_table->tdd_period_in_slots;
-    tdd_table = cfg->tdd_table_2;
-  }
+  const fapi_nr_tdd_table_t *tdd_table = &cfg->tdd_table;
+  int rel_slot = nr_slot % tdd_table->tdd_period_in_slots;
 
   if (tdd_table->max_tdd_periodicity_list == NULL) // this happens before receiving TDD configuration
     return NR_DOWNLINK_SLOT;
 
-  fapi_nr_max_tdd_periodicity_t *current_slot = &tdd_table->max_tdd_periodicity_list[rel_slot];
+  const fapi_nr_max_tdd_periodicity_t *current_slot = &tdd_table->max_tdd_periodicity_list[rel_slot];
 
   // if the 1st symbol is UL the whole slot is UL
   if (current_slot->max_num_of_symbol_per_slot_list[0].slot_config == 1)
@@ -109,7 +103,7 @@ uint8_t sl_determine_if_sidelink_slot(uint8_t sl_startsym, uint8_t sl_lensym, ui
  * Mixed Slot is a sidelink slot if the uplink symbols in Mixed slot
  * overlaps with Sidelink start symbol and number of symbols.
  */
-int sl_nr_ue_slot_select(sl_nr_phy_config_request_t *cfg, int slot, uint8_t frame_duplex_type)
+int sl_nr_ue_slot_select(const sl_nr_phy_config_request_t *cfg, int slot, uint8_t frame_duplex_type)
 {
   int ul_sym = 0, slot_type = 0;
 
@@ -122,9 +116,9 @@ int sl_nr_ue_slot_select(sl_nr_phy_config_request_t *cfg, int slot, uint8_t fram
 
   int period = cfg->tdd_table.tdd_period_in_slots;
   int rel_slot = slot % period;
-  fapi_nr_tdd_table_t *tdd_table = &cfg->tdd_table;
+  const fapi_nr_tdd_table_t *tdd_table = &cfg->tdd_table;
 
-  fapi_nr_max_tdd_periodicity_t *current_slot = &tdd_table->max_tdd_periodicity_list[rel_slot];
+  const fapi_nr_max_tdd_periodicity_t *current_slot = &tdd_table->max_tdd_periodicity_list[rel_slot];
 
   for (int symbol_count = 0; symbol_count < NR_NUMBER_OF_SYMBOLS_PER_SLOT; symbol_count++) {
     if (current_slot->max_num_of_symbol_per_slot_list[symbol_count].slot_config == 1) {

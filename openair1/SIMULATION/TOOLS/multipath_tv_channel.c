@@ -19,13 +19,10 @@
  *      contact@openairinterface.org
  */
 
-#include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
-#include <string.h>
-#include "sim.h"
-#include "SIMULATION/RF/rf.h"
 #include <complex.h>
+#include "sim.h"
 
 void tv_channel(channel_desc_t *desc,double complex ***H,uint32_t length);
 double frand_a_b(double a, double b);

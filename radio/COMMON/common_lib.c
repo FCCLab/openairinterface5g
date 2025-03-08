@@ -101,12 +101,12 @@ int load_lib(openair0_device *device,
   openair0_cfg->recplay_mode = read_recplayconfig(&(openair0_cfg->recplay_conf),&(device->recplay_state));
 
   if (openair0_cfg->recplay_mode == RECPLAY_RECORDMODE) {
-  	  set_softmodem_optmask(SOFTMODEM_RECRECORD_BIT);  // softmodem has to know we use the iqrecorder to workaround randomized algorithms
+    IS_SOFTMODEM_IQRECORDER = true; // softmodem has to know we use the iqrecorder to workaround randomized algorithms
   }
   if (openair0_cfg->recplay_mode == RECPLAY_REPLAYMODE) {
   	  deflibname=OAI_IQPLAYER_LIBNAME;
   	  shlib_fdesc[0].fname="device_init";
-  	  set_softmodem_optmask(SOFTMODEM_RECPLAY_BIT);  // softmodem has to know we use the iqplayer to workaround randomized algorithms
+      IS_SOFTMODEM_IQPLAYER = true; // softmodem has to know we use the iqplayer to workaround randomized algorithms
   } else if (IS_SOFTMODEM_RFSIM && flag == RAU_LOCAL_RADIO_HEAD) {
 	  deflibname=OAI_RFSIM_LIBNAME;
 	  shlib_fdesc[0].fname="device_init";
@@ -222,7 +222,7 @@ static void writerProcessWaitingQueue(openair0_device *device)
           if (wroteSamples != nsamps)
             LOG_E(HW, "Failed to write to rf\n");
         }
-        ctx->nextTS += nsamps;
+        ctx->nextTS = timestamp + nsamps;
         pthread_mutex_lock(&ctx->mutex_store);
       }
     }
@@ -253,7 +253,7 @@ int openair0_write_reorder(openair0_device *device, openair0_timestamp timestamp
         wroteSamples = device->trx_write_func(device, timestamp, txp, nsamps, nbAnt, flags);
       else
         wroteSamples = nsamps;
-      ctx->nextTS += nsamps;
+      ctx->nextTS = timestamp + nsamps;
 
     } else {
       writerEnqueue(ctx, timestamp, txp, nsamps, nbAnt, flags);

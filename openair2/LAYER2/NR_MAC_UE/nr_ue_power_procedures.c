@@ -66,16 +66,16 @@ static int get_deltatf(uint16_t nb_of_prbs,
                        int O_UCI);
 
 // ∆MPR according to Table 6.2.2-3 38.101-1
-static float get_delta_mpr(uint16_t nr_band, frame_type_t frame_type, int scs, int N_RB_UL, int n_prbs, int start_prb, int power_class)
+static float get_delta_mpr(uint16_t nr_band, frame_type_t frame_type, int scs, int channel_bandwidth, int n_prbs, int start_prb, int power_class)
 {
-  if (compare_relative_ul_channel_bw(nr_band, scs, N_RB_UL, frame_type)) {
+  if (compare_relative_ul_channel_bw(nr_band, scs, channel_bandwidth, frame_type)) {
     if (power_class == 3) {
-      if ((nr_band == 28 || nr_band == 83) && get_supported_bw_mhz(nr_band > 256 ? FR2 : FR1, scs, N_RB_UL) == 30) {
+      if ((nr_band == 28 || nr_band == 83) && channel_bandwidth == 30) {
         return 0.5f;
       }
     }
     if (power_class == 3 || power_class == 2) {
-      if ((nr_band == 40 || nr_band == 97) && get_supported_bw_mhz(nr_band > 256 ? FR2 : FR1, scs, N_RB_UL) == 100) {
+      if ((nr_band == 40 || nr_band == 97) && channel_bandwidth == 100) {
         return 1.0f;
       }
     }
@@ -168,6 +168,7 @@ float nr_get_Pcmax(int p_Max,
                    uint16_t nr_band,
                    frame_type_t frame_type,
                    frequency_range_t frequency_range,
+                   int channel_bandwidth,
                    int Qm,
                    bool powerBoostPi2BPSK,
                    int scs,
@@ -197,7 +198,7 @@ float nr_get_Pcmax(int p_Max,
     int delta_TC = 0;
 
     float MPR = get_mpr(Qm, N_RB_UL, is_transform_precoding, n_prbs, start_prb, power_class);
-    float delta_MPR = get_delta_mpr(nr_band, frame_type, scs, N_RB_UL, n_prbs, start_prb, power_class);
+    float delta_MPR = get_delta_mpr(nr_band, frame_type, scs, channel_bandwidth, n_prbs, start_prb, power_class);
     int A_MPR = 0; // TODO too complicated to implement for now (see 6.2.3 in 38.101-1)
     int delta_rx_SRS = 0; // TODO for SRS
     int P_MPR = 0; // to ensure compliance with applicable electromagnetic energy absorption requirements
@@ -216,7 +217,13 @@ float nr_get_Pcmax(int p_Max,
     }
     // TODO we need a strategy to select a value between minimum and maximum allowed PC_max
     float pcmax = (pcmax_low + pcmax_high) / 2;
-    LOG_D(MAC, "Configured maximum output power:  %f dBm <= PCMAX %f dBm <= %f dBm \n", pcmax_low, pcmax, pcmax_high);
+    LOG_D(MAC,
+          "Configured maximum output power:  %f dBm <= PCMAX %f dBm <= %f dBm MPR=%.2f deltaMPR=%.2f\n",
+          pcmax_low,
+          pcmax,
+          pcmax_high,
+          MPR,
+          delta_MPR);
     return pcmax;
   } else {
     // FR2 TODO it is even more complex because it is radiated power
@@ -224,12 +231,11 @@ float nr_get_Pcmax(int p_Max,
   }
 }
 
-float nr_get_Pcmin(int scs, int nr_band, int N_RB_UL) {
-  int band_index = get_supported_band_index(nr_band > 256 ? FR2 : FR1, scs, N_RB_UL);
+float nr_get_Pcmin(int bandwidth_index) {
   const float table_38101_6_3_1_1[] = {
-    -40, -40, -40, -40, -39, -38.2, -37.5, -37, -36.5, -35.2, -34.6, -34, -33.5, -33
+    -40, -40, -40, -40, -39, -38.2, -37.5, -37, -36.5, -36, -35.2, -34.6, -34, -33.5, -33
   };
-  return table_38101_6_3_1_1[band_index];
+  return table_38101_6_3_1_1[bandwidth_index];
 }
 
 // This is not entirely correct. In certain k2/k1/k0 settings we might postpone accumulating delta_PUCCH until next HARQ feedback
@@ -239,7 +245,9 @@ float nr_get_Pcmin(int scs, int nr_band, int N_RB_UL) {
 int get_sum_delta_pucch(NR_UE_MAC_INST_t *mac, int slot, frame_t frame)
 {
   int delta_tpc_sum = 0;
-  for (int i = 0; i < NR_MAX_HARQ_PROCESSES; i++) {
+  const int num_dl_harq = get_nrofHARQ_ProcessesForPDSCH(&mac->sc_info);
+
+  for (int i = 0; i < num_dl_harq; i++) {
     if (mac->dl_harq_info[i].active && mac->dl_harq_info[i].ul_slot == slot && mac->dl_harq_info[i].ul_frame == frame) {
       delta_tpc_sum += mac->dl_harq_info[i].delta_pucch;
       mac->dl_harq_info[i].delta_pucch = 0;
@@ -339,8 +347,9 @@ int16_t get_pucch_tx_power_ue(NR_UE_MAC_INST_t *mac,
   // modulated CP-OFDM of equivalent RB allocation.
   int P_CMAX = nr_get_Pcmax(mac->p_Max,
                             mac->nr_band,
-                            mac->frame_type,
+                            mac->frame_structure.frame_type,
                             mac->frequency_range,
+                            current_UL_BWP->channel_bandwidth,
                             2,
                             false,
                             mac->current_UL_BWP->scs,
@@ -348,7 +357,7 @@ int16_t get_pucch_tx_power_ue(NR_UE_MAC_INST_t *mac,
                             format_type == 2,
                             1,
                             start_prb);
-  int P_CMIN = nr_get_Pcmin(mac->current_UL_BWP->scs, mac->nr_band,  mac->current_UL_BWP->BWPSize);
+  float P_CMIN = current_UL_BWP->P_CMIN;
   int16_t pathloss = compute_nr_SSB_PL(mac, mac->ssb_measurements.ssb_rsrp_dBm);
 
   if (power_config->twoPUCCH_PC_AdjustmentStates && *power_config->twoPUCCH_PC_AdjustmentStates > 1) {
@@ -520,8 +529,9 @@ int get_pusch_tx_power_ue(NR_UE_MAC_INST_t *mac,
   int M_pusch_component = 10 * log10((pow(2, mu)) * num_rb);
   int P_CMAX = nr_get_Pcmax(mac->p_Max,
                             mac->nr_band,
-                            mac->frame_type,
+                            mac->frame_structure.frame_type,
                             mac->frequency_range,
+                            mac->current_UL_BWP->channel_bandwidth,
                             qm,
                             false,
                             mac->current_UL_BWP->scs,
@@ -553,7 +563,7 @@ int get_pusch_tx_power_ue(NR_UE_MAC_INST_t *mac,
 
   // TODO: compute pathoss using correct reference
   int16_t pathloss = compute_nr_SSB_PL(mac, mac->ssb_measurements.ssb_rsrp_dBm);
-  int P_CMIN = nr_get_Pcmin(mac->current_UL_BWP->scs, mac->nr_band,  mac->current_UL_BWP->BWPSize);
+  int P_CMIN = mac->current_UL_BWP->P_CMIN;
 
   float pusch_power_without_f_b_f_c = P_O_PUSCH + M_pusch_component + alpha * pathloss + DELTA_TF;
 
@@ -568,6 +578,7 @@ int get_pusch_tx_power_ue(NR_UE_MAC_INST_t *mac,
       DELTA_P_rampup = min(DELTA_P_rampup_requested, max(0, DELTA_P_rampup));
       mac->f_b_f_c = DELTA_P_rampup + delta_pusch;
       mac->pusch_power_control_initialized = true;
+      mac->delta_msg2 = delta_pusch;
     } else {
       if (!((pusch_power_without_f_b_f_c + mac->f_b_f_c >= P_CMAX && delta_pusch > 0) ||
         (pusch_power_without_f_b_f_c + mac->f_b_f_c <= P_CMIN && delta_pusch < 0))) {
@@ -584,4 +595,85 @@ int get_pusch_tx_power_ue(NR_UE_MAC_INST_t *mac,
         DELTA_TF,
         f_b_f_c);
   return min(P_CMAX, P_O_PUSCH + M_pusch_component + alpha * pathloss + DELTA_TF + f_b_f_c);
+}
+
+int get_srs_tx_power_ue(NR_UE_MAC_INST_t *mac,
+                        NR_SRS_Resource_t *srs_resource,
+                        NR_SRS_ResourceSet_t *srs_resource_set,
+                        int delta_srs,
+                        bool is_configured_for_pusch_on_current_bwp)
+{
+  NR_UE_UL_BWP_t *current_UL_BWP = mac->current_UL_BWP;
+  AssertFatal(current_UL_BWP, "Missing configuration: need UL_BWP to calculate SRS tx power\n");
+  AssertFatal(srs_resource_set->p0, "P0 mantatory present at configuration\n");
+  int P_0_SRS = *srs_resource_set->p0;
+
+  // alpha is optional, use same default as PUSCH
+  const float alpha_factor_table[8] = {0.0f, 0.4f, 0.5f, 0.6f, 0.7f, 0.8f, 0.9f, 1.0f};
+  float alpha = srs_resource_set->alpha ? alpha_factor_table[*srs_resource_set->alpha] : 1.0f;
+  int m_srs_component =
+      10 * log10(pow(2, current_UL_BWP->scs) * get_m_srs(srs_resource->freqHopping.c_SRS, srs_resource->freqHopping.b_SRS));
+
+  // The allowed MPR for SRS, PUCCH formats 0, 1, 3 and 4, and PRACH shall be as specified for QPSK modulated DFTs-OFDM of
+  // equivalent RB allocation. The allowed MPR for PUCCH format 2 shall be as specified for QPSK modulated CP-OFDM of equivalent RB
+  // allocation.
+  int P_CMAX = nr_get_Pcmax(mac->p_Max,
+                            mac->nr_band,
+                            mac->frame_structure.frame_type,
+                            mac->frequency_range,
+                            mac->current_UL_BWP->channel_bandwidth,
+                            2,
+                            false,
+                            mac->current_UL_BWP->scs,
+                            mac->current_UL_BWP->BWPSize,
+                            true,
+                            get_m_srs(srs_resource->freqHopping.c_SRS, srs_resource->freqHopping.b_SRS),
+                            0); // TODO: Determine SRS start RB
+
+  int16_t pathloss = compute_nr_SSB_PL(mac, mac->ssb_measurements.ssb_rsrp_dBm);
+
+  int srs_power_without_h_b_f_c = P_0_SRS + alpha * pathloss + m_srs_component;
+
+  // Power adjustment state
+  int h_b_f_c = 0;
+  bool use_pusch_power_adjustment_state = srs_resource_set->srs_PowerControlAdjustmentStates == NULL;
+  if (is_configured_for_pusch_on_current_bwp && use_pusch_power_adjustment_state) {
+    // Case 1: Use PUSCH power control adjustment state
+    h_b_f_c = mac->f_b_f_c;
+  } else {
+    // Case 2: Separate power control adjustment state
+    AssertFatal(srs_resource_set->srs_PowerControlAdjustmentStates == NULL
+                    || *srs_resource_set->srs_PowerControlAdjustmentStates
+                           != NR_SRS_ResourceSet__srs_PowerControlAdjustmentStates_sameAsFci2,
+                "Two PUSCH power adjustment states not supported");
+
+    bool is_tpc_accumulation_provided = current_UL_BWP->srs_Config != NULL && current_UL_BWP->srs_Config->tpc_Accumulation != NULL;
+    bool separate_pc_adjustment_state = srs_resource_set->srs_PowerControlAdjustmentStates
+                                        && *srs_resource_set->srs_PowerControlAdjustmentStates
+                                               == NR_SRS_ResourceSet__srs_PowerControlAdjustmentStates_separateClosedLoop;
+
+    if (!is_tpc_accumulation_provided && (!is_configured_for_pusch_on_current_bwp || separate_pc_adjustment_state)) {
+      if (!current_UL_BWP->srs_power_control_initialized) {
+        NR_PRACH_RESOURCES_t *prach_resources = &mac->ra.prach_resources;
+        float DELTA_P_rampup_requested =
+            (prach_resources->RA_PREAMBLE_POWER_RAMPING_COUNTER - 1) * prach_resources->RA_PREAMBLE_POWER_RAMPING_STEP;
+        float DELTA_P_rampup = P_CMAX - (P_0_SRS + m_srs_component + alpha * pathloss);
+        DELTA_P_rampup = min(DELTA_P_rampup_requested, max(0, DELTA_P_rampup));
+        current_UL_BWP->srs_power_control_initialized = true;
+        current_UL_BWP->h_b_f_c = DELTA_P_rampup + mac->delta_msg2;
+      } else {
+        int P_CMIN = mac->current_UL_BWP->P_CMIN;
+        if (!((srs_power_without_h_b_f_c + current_UL_BWP->h_b_f_c >= P_CMAX && delta_srs > 0)
+              || (srs_power_without_h_b_f_c + current_UL_BWP->h_b_f_c <= P_CMIN && delta_srs < 0))) {
+          current_UL_BWP->h_b_f_c += delta_srs;
+        }
+      }
+      h_b_f_c = current_UL_BWP->h_b_f_c;
+    } else {
+      // Case 3: No accumulation
+      h_b_f_c = delta_srs;
+    }
+  }
+
+  return min(P_CMAX, srs_power_without_h_b_f_c + h_b_f_c);
 }

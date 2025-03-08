@@ -25,7 +25,7 @@
 #
 #---------------------------------------------------------------------
 
-FROM ran-base:latest as ran-build
+FROM ran-base:latest AS ran-build
 
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get upgrade --yes && \
@@ -54,11 +54,12 @@ RUN /bin/sh oaienv && \
 RUN /bin/sh oaienv && \
     cd cmake_targets && \
     mkdir -p log && \
-    ./build_oai -w AERIAL --gNB --ninja
+    ./build_oai -c -w AERIAL --gNB --ninja --build-tool-opt -k10 \
+      --cmake-opt -DCMAKE_C_FLAGS="-Werror" --cmake-opt -DCMAKE_CXX_FLAGS="-Werror"
 
 
 #start from scratch for target executable
-FROM ubuntu:jammy as oai-gnb-aerial
+FROM ubuntu:jammy AS oai-gnb-aerial
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Europe
 
@@ -78,7 +79,8 @@ RUN apt-get update && \
         iputils-ping \
         gdb \
         moreutils \
-        libusb-1.0-0 && \
+        libusb-1.0-0 \
+        libyaml-cpp-dev && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt/oai-gnb/bin
@@ -86,7 +88,10 @@ COPY --from=ran-build \
     /oai-ran/cmake_targets/ran_build/build/nr-softmodem ./
 COPY ./docker/scripts/gnb_entrypoint.sh ./entrypoint.sh
 
-COPY --from=ran-build /oai-ran/cmake_targets/ran_build/build/libparams_libconfig.so /usr/local/lib/
+COPY --from=ran-build \
+  /oai-ran/cmake_targets/ran_build/build/libparams_libconfig.so \
+  /oai-ran/cmake_targets/ran_build/build/libparams_yaml.so \
+  /usr/local/lib/
 
 #copy files from nvIPC
 COPY --from=ran-build \
@@ -107,4 +112,4 @@ RUN ldconfig && \
 WORKDIR /opt/oai-gnb
 COPY --from=ran-build /tini /tini
 ENTRYPOINT ["/tini", "-v", "--", "/opt/oai-gnb/bin/entrypoint.sh"]
-CMD ["/opt/oai-gnb/bin/nr-softmodem", "-O", "/opt/oai-gnb/etc/gnb.conf"]
+CMD ["/opt/oai-gnb/bin/nr-softmodem"]

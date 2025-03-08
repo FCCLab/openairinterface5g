@@ -27,7 +27,7 @@
 
 typedef struct {
 	uint8_t* buffer;
-	uint16_t length;
+	uint32_t length;
 } vnf_p7_rx_message_segment_t;
 
 typedef struct vnf_p7_rx_message vnf_p7_rx_message_t;
@@ -91,6 +91,8 @@ typedef struct nfapi_vnf_p7_connection_info {
 	int sfn_sf;
 	int sfn;
 	int slot;
+  int mu; // some 5G slot calculations need the numerology to know the number
+          // of slots
 
 	int socket;
 	struct sockaddr_in local_addr;
@@ -137,7 +139,7 @@ nfapi_vnf_p7_connection_info_t* vnf_p7_connection_info_list_find(vnf_p7_t* vnf_p
 nfapi_vnf_p7_connection_info_t* vnf_p7_connection_info_list_delete(vnf_p7_t* vnf_p7, uint16_t phy_id);
 
 int vnf_p7_pack_and_send_p7_msg(vnf_p7_t* vnf_p7, nfapi_p7_message_header_t* header);
-int vnf_nr_p7_pack_and_send_p7_msg(vnf_p7_t* vnf_p7, nfapi_p7_message_header_t* header);
+int vnf_nr_p7_pack_and_send_p7_msg(vnf_p7_t* vnf_p7, nfapi_nr_p7_message_header_t* header);
 
 void vnf_p7_release_msg(vnf_p7_t* vnf_p7, nfapi_p7_message_header_t* header);
 void vnf_p7_release_pdu(vnf_p7_t* vnf_p7, void* pdu);

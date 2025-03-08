@@ -28,20 +28,18 @@
  * @ingroup _ngap
  */
 
+#include <netinet/in.h>
+#include <netinet/sctp.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdint.h>
-
-#include "intertask_interface.h"
-
+#include <string.h>
 #include "assertions.h"
-#include "conversions.h"
-
-#include "ngap_common.h"
 #include "ngap_gNB_defs.h"
-#include "ngap_gNB.h"
+#include "queue.h"
+#include "tree.h"
 
-ngap_gNB_internal_data_t ngap_gNB_internal_data;
+static ngap_gNB_internal_data_t ngap_gNB_internal_data;
 
 RB_GENERATE(ngap_amf_map, ngap_gNB_amf_data_s, entry, ngap_gNB_compare_assoc_id);
 

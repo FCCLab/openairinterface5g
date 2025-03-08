@@ -1481,8 +1481,6 @@ void dlsch_channel_compensation(int **rxdataF_ext,
     }
   }
 
-  simde_mm_empty();
-  simde_m_empty();
 }
 
 void dlsch_channel_compensation_core(int **rxdataF_ext,
@@ -1666,8 +1664,6 @@ void dlsch_channel_compensation_core(int **rxdataF_ext,
     }
   }
 
-  simde_mm_empty();
-  simde_m_empty();
 }
 
 
@@ -1706,8 +1702,6 @@ void prec2A_TM56_128(unsigned char pmi,simde__m128i *ch0,simde__m128i *ch1) {
 
   ch0[0] = simde_mm_mulhi_epi16(ch0[0],amp);
   ch0[0] = simde_mm_slli_epi16(ch0[0],1);
-  simde_mm_empty();
-  simde_m_empty();
 }
 // precoding is stream 0 .5(1,1)  .5(1,-1) .5(1,1)  .5(1,-1)
 //              stream 1 .5(1,-1) .5(1,1)  .5(1,-1) .5(1,1)
@@ -1740,8 +1734,6 @@ void prec2A_TM3_128(simde__m128i *ch0,simde__m128i *ch1) {
   //ch1[0] = simde_mm_srai_epi16(ch1[0],1);
   //  print_shorts("prec2A_TM3 ch0 (after):",ch0);
   //  print_shorts("prec2A_TM3 ch1 (after):",ch1);
-  simde_mm_empty();
-  simde_m_empty();
 }
 
 // pmi = 0 => stream 0 (1,1), stream 1 (1,-1)
@@ -1782,8 +1774,6 @@ void prec2A_TM4_128(int pmi,simde__m128i *ch0,simde__m128i *ch1) {
   // ch1[0] = simde_mm_srai_epi16(ch1[0],1); //divide by 2
   //print_shorts("prec2A_TM4 ch0 (end):",ch0);
   //print_shorts("prec2A_TM4 ch1 (end):",ch1);
-  simde_mm_empty();
-  simde_m_empty();
   // print_shorts("prec2A_TM4 ch0 (end):",ch0);
   //print_shorts("prec2A_TM4 ch1 (end):",ch1);
 }
@@ -1955,7 +1945,7 @@ void dlsch_channel_compensation_TM56(int **rxdataF_ext,
     }
 
     Nre = (pilots==0) ? 12 : 8;
-    precoded_signal_strength += ((signal_energy_nodc(&dl_ch_estimates_ext[aarx][symbol*frame_parms->N_RB_DL*Nre],
+    precoded_signal_strength += ((signal_energy_nodc((c16_t*)&dl_ch_estimates_ext[aarx][symbol*frame_parms->N_RB_DL*Nre],
                                   (nb_rb*Nre))) - (measurements->n0_power[aarx]));
   } // rx_antennas
 
@@ -2349,9 +2339,9 @@ void dlsch_channel_compensation_TM34(LTE_DL_FRAME_PARMS *frame_parms,
     } // rb loop
 
     Nre = (pilots==0) ? 12 : 8;
-    precoded_signal_strength0 += ((signal_energy_nodc(&dl_ch_estimates_ext[aarx][symbol*frame_parms->N_RB_DL*Nre],
+    precoded_signal_strength0 += ((signal_energy_nodc((c16_t*)&dl_ch_estimates_ext[aarx][symbol*frame_parms->N_RB_DL*Nre],
                                    (nb_rb*Nre))*rx_power_correction) - (measurements->n0_power[aarx]));
-    precoded_signal_strength1 += ((signal_energy_nodc(&dl_ch_estimates_ext[aarx+2][symbol*frame_parms->N_RB_DL*Nre],
+    precoded_signal_strength1 += ((signal_energy_nodc((c16_t*)&dl_ch_estimates_ext[aarx+2][symbol*frame_parms->N_RB_DL*Nre],
                                    (nb_rb*Nre))*rx_power_correction) - (measurements->n0_power[aarx]));
   } // rx_antennas
 
@@ -2359,8 +2349,6 @@ void dlsch_channel_compensation_TM34(LTE_DL_FRAME_PARMS *frame_parms,
   measurements->precoded_cqi_dB[eNB_id][1] = dB_fixed2(precoded_signal_strength1,measurements->n0_power_tot);
   // printf("eNB_id %d, symbol %d: precoded CQI %d dB\n",eNB_id,symbol,
   //  measurements->precoded_cqi_dB[eNB_id][0]);
-  simde_mm_empty();
-  simde_m_empty();
 }
 
 
@@ -2453,8 +2441,6 @@ void dlsch_dual_stream_correlation(LTE_DL_FRAME_PARMS *frame_parms,
     }
   }
 
-  simde_mm_empty();
-  simde_m_empty();
 }
 
 
@@ -2526,8 +2512,6 @@ void dlsch_detection_mrc(LTE_DL_FRAME_PARMS *frame_parms,
     }
   }
 
-  simde_mm_empty();
-  simde_m_empty();
 }
 
 void dlsch_detection_mrc_TM34(LTE_DL_FRAME_PARMS *frame_parms,
@@ -2651,8 +2635,6 @@ void dlsch_detection_mrc_TM34(LTE_DL_FRAME_PARMS *frame_parms,
     }
   }
 
-  simde_mm_empty();
-  simde_m_empty();
 }
 
 void dlsch_scale_channel(int **dl_ch_estimates_ext,
@@ -2765,8 +2747,6 @@ void dlsch_channel_level(int **dl_ch_estimates_ext,
           ((int32_t *)&avg128D)[3])/y;
     }
 
-  simde_mm_empty();
-  simde_m_empty();
 }
 
 void dlsch_channel_level_core(int **dl_ch_estimates_ext,
@@ -2809,8 +2789,6 @@ void dlsch_channel_level_core(int **dl_ch_estimates_ext,
       //printf("Channel level [%d]: %d\n",aatx*n_rx + aarx, avg[aatx*n_rx + aarx]);
     }
 
-  simde_mm_empty();
-  simde_m_empty();
   /* FIXME This part needs to be adapted like the one above */
 }
 
@@ -2857,8 +2835,6 @@ void dlsch_channel_level_median(int **dl_ch_estimates_ext,
     }
   }
 
-  simde_mm_empty();
-  simde_m_empty();
 }
 
 void mmse_processing_oai(LTE_UE_PDSCH *pdsch_vars,
@@ -3189,8 +3165,6 @@ void dlsch_channel_aver_band(int **dl_ch_estimates_ext,
     }
   }
 
-  simde_mm_empty();
-  simde_m_empty();
 }
 
 void rxdataF_to_float(int32_t **rxdataF_ext,
@@ -3558,8 +3532,6 @@ void dlsch_channel_level_TM34(int **dl_ch_estimates_ext,
   // printf("From Chan_level aver stream 1 final =%d\n", avg_1[0]);
   avg_0[0] = min (avg_0[0], avg_1[0]);
   avg_1[0] = avg_0[0];
-  simde_mm_empty();
-  simde_m_empty();
 }
 
 //compute average channel_level of effective (precoded) channel
@@ -3624,8 +3596,6 @@ void dlsch_channel_level_TM56(int **dl_ch_estimates_ext,
 
   // choose maximum of the 2 effective channels
   avg[0] = cmax(avg[0],avg[1]);
-  simde_mm_empty();
-  simde_m_empty();
 }
 
 //compute average channel_level for TM7
@@ -3684,8 +3654,6 @@ void dlsch_channel_level_TM7(int **dl_bf_ch_estimates_ext,
       //            printf("Channel level : %d\n",avg[(aatx<<1)+aarx]);
     }
 
-  simde_mm_empty();
-  simde_m_empty();
 }
 //#define ONE_OVER_2_Q15 16384
 void dlsch_alamouti(LTE_DL_FRAME_PARMS *frame_parms,
@@ -3753,8 +3721,6 @@ void dlsch_alamouti(LTE_DL_FRAME_PARMS *frame_parms,
     }
   }
 
-  simde_mm_empty();
-  simde_m_empty();
 }
 
 //==============================================================================================
@@ -5587,8 +5553,6 @@ unsigned short dlsch_extract_rbs_TM7(int **rxdataF,
     }
   }
   
-  simde_mm_empty();
-  simde_m_empty();
   return(nb_rb/frame_parms->nb_antennas_rx);
 }
 

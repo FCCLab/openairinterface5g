@@ -22,7 +22,8 @@
 #include <math.h>
 #include "PHY/CODING/nrPolar_tools/nr_polar_defs.h"
 
-void nr_polar_rate_matching_pattern(uint16_t *rmp, uint16_t *J, const uint8_t *P_i_, uint16_t K, uint16_t N, uint16_t E){
+void nr_polar_rate_matching_pattern(uint16_t *rmp, uint16_t *J, const uint8_t *P_i_, uint16_t K, uint16_t N, uint16_t E)
+{
   int d[N];
   int y[N];
 
@@ -53,8 +54,8 @@ void nr_polar_rate_matching_pattern(uint16_t *rmp, uint16_t *J, const uint8_t *P
   }
 }
 
-
-void nr_polar_rate_matching(double *input, double *output, uint16_t *rmp, uint16_t K, uint16_t N, uint16_t E){
+void nr_polar_rate_matching(double *input, double *output, uint16_t *rmp, uint16_t K, uint16_t N, uint16_t E)
+{
   if (E >= N) { // repetition
     for (int i = 0; i <= N - 1; i++)
       output[i] = 0;

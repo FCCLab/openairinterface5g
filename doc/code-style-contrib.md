@@ -110,7 +110,8 @@ people, in order to simplify the history, and allow the usage of tools such as
 `git bisect` to search for bugs.
 
 After some time, we make a stable release. For this, we simply merge develop
-into master, and give a semantic versioning number, e.g., `v1.1`.
+into master, and give a semantic versioning number, e.g., `v1.1`. We target to
+make releases bi-yearly.
 
 ## How to manage your own branch
 

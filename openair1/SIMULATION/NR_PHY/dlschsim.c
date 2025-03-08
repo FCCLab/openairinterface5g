@@ -35,6 +35,7 @@
 #include "PHY/defs_nr_common.h"
 #include "PHY/defs_nr_UE.h"
 #include "PHY/types.h"
+#include "PHY/CODING/nrLDPC_coding/nrLDPC_coding_interface.h"
 #include "PHY/INIT/nr_phy_init.h"
 #include "PHY/MODULATION/modulation_eNB.h"
 #include "PHY/MODULATION/modulation_UE.h"
@@ -71,8 +72,6 @@ const short conjugate2[8]__attribute__((aligned(16))) = {1,-1,1,-1,1,-1,1,-1};
 PHY_VARS_NR_UE *PHY_vars_UE_g[1][1] = { { NULL } };
 uint16_t n_rnti = 0x1234;
 openair0_config_t openair0_cfg[MAX_CARDS];
-
-uint64_t get_softmodem_optmask(void) {return 0;}
 static softmodem_params_t softmodem_params;
 softmodem_params_t *get_softmodem_params(void) {
   return &softmodem_params;
@@ -101,7 +100,6 @@ configmodule_interface_t *uniqCfg = NULL;
 
 int main(int argc, char **argv)
 {
-  char c;
   int i;
   double SNR, SNR_lin, snr0 = -2.0, snr1 = 2.0;
   double snr_step = 0.1;
@@ -146,6 +144,7 @@ int main(int argc, char **argv)
   // logInit();
   randominit(0);
 
+  int c;
   while ((c = getopt(argc, argv, "--:O:df:hpVg:i:j:n:l:m:r:s:S:y:z:M:N:F:R:P:L:X:")) != -1) {
 
     /* ignore long options starting with '--' and their arguments that are handled by configmodule */
@@ -380,7 +379,7 @@ int main(int argc, char **argv)
 	RC.gNB[0] = calloc(1, sizeof(PHY_VARS_gNB));
 	gNB = RC.gNB[0];
 	initNamedTpool(gNBthreads, &gNB->threadPool, true, "gNB-tpool");
-        initFloatingCoresTpool(dlsch_threads, &nrUE_params.Tpool, false, "UE-tpool");
+  initFloatingCoresTpool(dlsch_threads, &nrUE_params.Tpool, false, "UE-tpool");
 	//gNB_config = &gNB->gNB_config;
 	frame_parms = &gNB->frame_parms; //to be initialized I suppose (maybe not necessary for PBCH)
 	frame_parms->nb_antennas_tx = n_tx;
@@ -389,8 +388,9 @@ int main(int argc, char **argv)
 	frame_parms->Ncp = extended_prefix_flag ? EXTENDED : NORMAL;
 	crcTableInit();
 	nr_phy_config_request_sim(gNB, N_RB_DL, N_RB_DL, mu, Nid_cell,SSB_positions);
-        gNB->gNB_config.tdd_table.tdd_period.value = 6;
-        set_tdd_config_nr(&gNB->gNB_config, mu, 7, 6, 2, 4);
+    // TDD configuration
+    gNB->gNB_config.tdd_table.tdd_period.value = 6;
+    do_tdd_config_sim(gNB, mu);
 	phy_init_nr_gNB(gNB);
 	//init_eNB_afterRU();
 	frame_length_complex_samples = frame_parms->samples_per_subframe;
@@ -430,6 +430,8 @@ int main(int argc, char **argv)
 
 	//nr_init_frame_parms_ue(&UE->frame_parms);
 	//init_nr_ue_transport(UE, 0);
+  UE->nrLDPC_coding_interface = gNB->nrLDPC_coding_interface;
+
   NR_UE_DLSCH_t dlsch_ue[NR_MAX_NB_LAYERS > 4? 2:1] = {0};
   int num_codeword = NR_MAX_NB_LAYERS > 4? 2:1;
   nr_ue_dlsch_init(dlsch_ue, num_codeword, 5);
@@ -496,7 +498,8 @@ int main(int argc, char **argv)
   dlsch0_ue->dlsch_config.tbslbrm = Tbslbrm;
 	printf("harq process ue mcs = %d Qm = %d, symb %d\n", dlsch0_ue->dlsch_config.mcs, dlsch0_ue->dlsch_config.qamModOrder, nb_symb_sch);
 
-	unsigned char *test_input=dlsch->harq_process.pdu;
+  uint8_t test_input[TBS / 8 + 4]; // + 3 for CRC + 1 additional byte, see nr_dlsch_encoding()
+  dlsch->harq_process.pdu = test_input;
 	//unsigned char test_input[TBS / 8]  __attribute__ ((aligned(16)));
 	for (i = 0; i < TBS / 8; i++)
 		test_input[i] = (unsigned char) rand();
@@ -513,7 +516,8 @@ int main(int argc, char **argv)
         unsigned char output[rel15->rbSize * NR_SYMBOLS_PER_SLOT * NR_NB_SC_PER_RB * 8 * NR_MAX_NB_LAYERS] __attribute__((aligned(32)));
         bzero(output,rel15->rbSize * NR_SYMBOLS_PER_SLOT * NR_NB_SC_PER_RB * 8 * NR_MAX_NB_LAYERS);
 	if (input_fd == NULL) {
-	  nr_dlsch_encoding(gNB, frame, slot, &dlsch->harq_process, frame_parms,output,NULL,NULL,NULL,NULL,NULL,NULL,NULL);
+    msgDataTx.num_pdsch_slot = 1;
+	  nr_dlsch_encoding(gNB, &msgDataTx, frame, slot, frame_parms, output, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
 	}
 
 	for (SNR = snr0; SNR < snr1; SNR += snr_step) {
@@ -569,20 +573,18 @@ int main(int argc, char **argv)
       }
       uint32_t dlsch_bytes = a_segments*1056;  // allocated bytes per segment
       __attribute__ ((aligned(32))) uint8_t b[dlsch_bytes];
+      uint8_t DLSCH_ids[1] = {0};
+      short *p_channel_output_fixed = channel_output_fixed;
+      uint8_t *p_b = b;
+      int available_bits_array[1] = { available_bits };
       ret = nr_dlsch_decoding(UE,
                               &proc,
-                              0,
-                              channel_output_fixed,
-                              &UE->frame_parms,
                               dlsch0_ue,
-                              harq_process,
-                              frame,
-                              nb_symb_sch,
-                              slot,
-                              harq_pid,
-                              dlsch_bytes,
-                              b,
-                              available_bits);
+                              &p_channel_output_fixed,
+                              &p_b,
+                              available_bits_array,
+                              1,
+                              DLSCH_ids);
 
       vcd_signal_dumper_dump_function_by_name(VCD_SIGNAL_DUMPER_FUNCTIONS_DLSCH_DECODING0, VCD_FUNCTION_OUT);
 
@@ -619,47 +621,16 @@ int main(int argc, char **argv)
 		}
 	}
 
-	/*LOG_M("txsigF0.m","txsF0", gNB->common_vars.txdataF[0],frame_length_complex_samples_no_prefix,1,1);
-	 if (gNB->frame_parms.nb_antennas_tx>1)
-	 LOG_M("txsigF1.m","txsF1", gNB->common_vars.txdataF[1],frame_length_complex_samples_no_prefix,1,1);*/
-
-	//TODO: loop over slots
-	/*for (aa=0; aa<gNB->frame_parms.nb_antennas_tx; aa++) {
-	 if (gNB_config->subframe_config.dl_cyclic_prefix_type.value == 1) {
-	 PHY_ofdm_mod(gNB->common_vars.txdataF[aa],
-	 txdata[aa],
-	 frame_parms->ofdm_symbol_size,
-	 12,
-	 frame_parms->nb_prefix_samples,
-	 CYCLIC_PREFIX);
-	 } else {
-	 nr_normal_prefix_mod(gNB->common_vars.txdataF[aa],
-	 txdata[aa],
-	 14,
-	 frame_parms);
-	 }
-	 }
-
-	 LOG_M("txsig0.m","txs0", txdata[0],frame_length_complex_samples,1,1);
-	 if (gNB->frame_parms.nb_antennas_tx>1)
-	 LOG_M("txsig1.m","txs1", txdata[1],frame_length_complex_samples,1,1);
-
-
-	 for (i=0; i<frame_length_complex_samples; i++) {
-	 for (aa=0; aa<frame_parms->nb_antennas_tx; aa++) {
-	 r_re[aa][i] = ((double)(((short *)txdata[aa]))[(i<<1)]);
-	 r_im[aa][i] = ((double)(((short *)txdata[aa]))[(i<<1)+1]);
-	 }
-	 }*/
-
   free_channel_desc_scm(gNB2UE);
 
   reset_DLSCH_struct(gNB, &msgDataTx);
 
-  int nb_slots_to_set = TDD_CONFIG_NB_FRAMES * (1 << mu) * NR_NUMBER_OF_SUBFRAMES_PER_FRAME;
+  int nb_slots_to_set = (1 << mu) * NR_NUMBER_OF_SUBFRAMES_PER_FRAME;
   for (int i = 0; i < nb_slots_to_set; ++i)
     free(gNB->gNB_config.tdd_table.max_tdd_periodicity_list[i].max_num_of_symbol_per_slot_list);
   free(gNB->gNB_config.tdd_table.max_tdd_periodicity_list);
+
+  abortTpool(&gNB->threadPool);
 
   phy_free_nr_gNB(gNB);
   free(RC.gNB[0]);

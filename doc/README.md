@@ -12,6 +12,15 @@
   </tr>
 </table>
 
+This is the general overview page of the OpenAirInterface documentation.  
+This page groups links to general information, tutorials, design documents, radio integration, and special-purpose libraries.
+
+**IMPORTANT NOTE:**  
+Before reading this documentation, we strongly advise you to keep your own repository rebased on `develop`
+or at least to checkout the documentation on the version of the repository you are using.  
+Then the documentation will better reflect the features available in your repository so that you may avoid some errors.  
+Beware if you previously pulled the `develop` branch that your repository may be now behind `develop`.
+
 [[_TOC_]]
 
 # General
@@ -34,6 +43,7 @@ There is some general information in the [OpenAirInterface Gitlab Wiki](https://
   * [OAI 5GC](./NR_SA_Tutorial_OAI_CN5G.md)
   * [OAI gNB with COTS UE](./NR_SA_Tutorial_COTS_UE.md)
   * [OAI NR-UE](./NR_SA_Tutorial_OAI_nrUE.md)
+  * [Multiple OAI NR-UE with RFsimulator](./NR_SA_Tutorial_OAI_multi_UE.md)
 - [RUNMODEM.md](./RUNMODEM.md): Generic information on how to
   * Run simulators
   * Run with hardware
@@ -47,12 +57,16 @@ There is some general information in the [OpenAirInterface Gitlab Wiki](https://
 - [How to use the L2 simulator](./L2NFAPI.md)
 - [How to use the OAI channel simulator](../openair1/SIMULATION/TOOLS/DOC/channel_simulation.md)
 - [How to use multiple BWPs](./RUN_NR_multiple_BWPs.md)
-- [How to run OAI-VNF and OAI-PNF](./RUN_NR_NFAPI.md) _Note: does not work currently_
+- [How to run OAI-VNF and OAI-PNF](./nfapi.md): how to run the nFAPI split,
+  including some general remarks on FAPI/nFAPI.
 - [How to use the positioning reference signal (PRS)](./RUN_NR_PRS.md)
 - [How to use device-to-device communication (D2D, 4G)](./d2d_emulator_setup.txt)
 - [How to run with E2 agent](../openair2/E2AP/README.md)
 - [How to run the physical simulators](./physical-simulators.md)
 - [How to setup OAI with Nvidia Aerial and Foxconn](./Aerial_FAPI_Split_Tutorial.md)
+- [How to setup OAI with AMD T2 Telco card](./LDPC_T2_OFFLOAD_SETUP.md)
+- [How to do a handover](./handover-tutorial.md)
+- [How to setup gNB frequency](./gNB_frequency_setup.md)
 
 Legacy unmaintained files:
 - [`L2NFAPI_NOS1.md`](./L2NFAPI_NOS1.md), [`L2NFAPI_S1.md`](./L2NFAPI_S1.md):
@@ -65,10 +79,13 @@ Legacy unmaintained files:
 
 - General software architecture notes: [SW_archi.md](./SW_archi.md)
 - [Information on E1](./E1AP/E1-design.md)
-- [Information on F1](./F1-design.md)
+- [Information on F1](./F1AP/F1-design.md)
 - [Information on how NR nFAPI works](./NR_NFAPI_archi.md)
 - [Flow graph of the L1 in gNB](SW-archi-graph.md)
 - [L1 threads in NR-UE](./nr-ue-design.md)
+- [Information on gNB MAC](./MAC/mac-usage.md)
+- [Information on gNB RRC](./RRC/rrc-usage.md)
+- [Information on analog beamforming implementation](./analog_beamforming.md)
 
 Legacy unmaintained files:
 - [`5Gnas.md`](./5Gnas.md)
@@ -78,7 +95,6 @@ Legacy unmaintained files:
 - [How to build images](../docker/README.md)
 - [How to run 5G with the RFsimulator from images](../ci-scripts/yaml_files/5g_rfsimulator/README.md)
 - [How to run 4G with the RFsimulator from images](../ci-scripts/yaml_files/4g_rfsimulator_fdd_05MHz/README.md)
-- [How to run 5G with the L2simulator from images](../ci-scripts/yaml_files/5g_l2sim_tdd/README.md)
 - [How to run physical simulators in OpenShift](../openshift/README.md)
 
 # Libraries
@@ -106,7 +122,7 @@ The other SDRs (AW2S, LimeSDR, ...) have no READMEs.
 
 ## Special-purpose libraries
 
-- OAI has a scope based on Xforms, described in [this README](../openair1/PHY/TOOLS/readme.md)
+- OAI has two scopes: one based on Xforms and one based on imgui, described in [this README](../openair1/PHY/TOOLS/readme.md)
 - OAI comes with an integrated [telnet server](../common/utils/telnetsrv/DOC/telnethelp.md) to monitor and control
 - OAI comes with an integrated [web server](../common/utils/websrv/DOC/websrv.md)
 
@@ -114,3 +130,9 @@ The other SDRs (AW2S, LimeSDR, ...) have no READMEs.
 
 - [UnitTests.md](./UnitTests.md) explains the unit testing setup
 - [TESTBenches.md](./TESTBenches.md) lists the CI setup and links to pipelines
+
+# Developer tools
+
+- [formatting](../tools/formatting/README.md) is a clang-format error detection tool
+- [iwyu](../tools/iwyu/README.md) is a tool to detect `#include` errors
+- [docker-dev-env](../tools/docker-dev-env/README.md) is a ubuntu22 docker development environment

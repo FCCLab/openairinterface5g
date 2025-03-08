@@ -23,6 +23,7 @@
 #include "ran_func_kpm_subs.h"
 #include "ran_e2sm_ue_id.h"
 
+#include "common/utils/ds/byte_array.h"
 #include "openair2/E1AP/e1ap_common.h"
 #include "openair2/E2AP/flexric/src/util/time_now_us.h"
 #include "openair2/F1AP/f1ap_ids.h"
@@ -537,7 +538,7 @@ void read_kpm_setup_sm(void* e2ap)
 
 sm_ag_if_ans_t write_ctrl_kpm_sm(void const* src)
 {
-  assert(0 !=0 && "Not supported");
+  printf("write_ctrl callback for KPM SM: operation not supported\n");
   (void)src;
   sm_ag_if_ans_t ans = {0};
   return ans;

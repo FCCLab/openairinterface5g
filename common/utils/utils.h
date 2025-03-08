@@ -75,7 +75,7 @@ static inline void *calloc_or_fail(size_t nmemb, size_t size)
 
   if (ptr == NULL) {
     fprintf(stderr, "Failed to calloc() %zu elements of %zu bytes: out of memory", nmemb, size);
-    exit(EXIT_FAILURE);
+    abort();
   }
 
   return ptr;

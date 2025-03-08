@@ -7,9 +7,8 @@
     <a href="https://releases.ubuntu.com/20.04/"><img src="https://img.shields.io/badge/OS-Ubuntu20-Green" alt="Supported OS Ubuntu 20"></a>
     <a href="https://releases.ubuntu.com/22.04/"><img src="https://img.shields.io/badge/OS-Ubuntu22-Green" alt="Supported OS Ubuntu 22"></a>
     <a href="https://releases.ubuntu.com/24.04/"><img src="https://img.shields.io/badge/OS-Ubuntu24-Green" alt="Supported OS Ubuntu 24"></a>
-    <a href="https://www.redhat.com/en/technologies/linux-platforms/enterprise-linux"><img src="https://img.shields.io/badge/OS-RHEL8-Green" alt="Supported OS RHEL8"></a>
     <a href="https://www.redhat.com/en/technologies/linux-platforms/enterprise-linux"><img src="https://img.shields.io/badge/OS-RHEL9-Green" alt="Supported OS RELH9"></a>
-    <a href="https://getfedora.org/en/workstation/"><img src="https://img.shields.io/badge/OS-Fedore40-Green" alt="Supported OS Fedora 40"></a>
+    <a href="https://getfedora.org/en/workstation/"><img src="https://img.shields.io/badge/OS-Fedore41-Green" alt="Supported OS Fedora 41"></a>
 </p>
 
 <p align="center">
@@ -43,6 +42,7 @@ Please see [NOTICE](NOTICE.md) file for third party software that is included in
 
  *  [General overview of documentation](./doc/README.md)
  *  [The implemented features](./doc/FEATURE_SET.md)
+ *  [System Requirements for Using OAI Stack](./doc/system_requirements.md)
  *  [How to build](./doc/BUILD.md)
  *  [How to run the modems](./doc/RUNMODEM.md)
 
@@ -75,7 +75,8 @@ openairinterface5g
 ├── openair3          : Layer 3 (3GPP LTE Rel-10 S1AP/GTP, NR Rel-15 NGAP/GTP)
 ├── openshift         : OpenShift helm charts for some deployment options of OAI
 ├── radio             : Drivers for various radios such as USRP, AW2S, RFsim, 7.2 FHI, ...
-└── targets           : Some configuration files; only historical relevance, and might be deleted in the future
+├── targets           : Some configuration files; only historical relevance, and might be deleted in the future
+└── tools             : Tools for use by the developers/ci machines: code analysis and formatting
 ```
 
 # How to get support from the OAI Community # 

@@ -32,7 +32,7 @@ FROM ran-build:latest AS nr-ue-build
 
 
 #start from scratch for target executable
-FROM $BASE_IMAGE as oai-nr-ue
+FROM $BASE_IMAGE AS oai-nr-ue
 ENV TZ=Europe/Paris
 
 RUN dnf update -y && \
@@ -71,6 +71,7 @@ COPY --from=nr-ue-build \
     /oai-ran/cmake_targets/ran_build/build/libldpc*.so \
     /oai-ran/cmake_targets/ran_build/build/libtelnetsrv.so \
     /oai-ran/cmake_targets/ran_build/build/libtelnetsrv_5Gue.so \
+    /oai-ran/cmake_targets/ran_build/build/libparams_yaml.so \
     /usr/local/lib/
 
 COPY --from=nr-ue-base \
@@ -118,5 +119,5 @@ RUN /bin/bash -c "ln -s /usr/local/lib/liboai_usrpdevif.so /usr/local/lib/liboai
 
 WORKDIR /opt/oai-nr-ue
 COPY --from=nr-ue-base /tini /tini
-CMD ["/opt/oai-nr-ue/bin/nr-uesoftmodem", "-O", "/opt/oai-nr-ue/etc/nr-ue.conf"]
+CMD ["/opt/oai-nr-ue/bin/nr-uesoftmodem"]
 ENTRYPOINT ["/tini", "-v", "--", "/opt/oai-nr-ue/bin/entrypoint.sh"]

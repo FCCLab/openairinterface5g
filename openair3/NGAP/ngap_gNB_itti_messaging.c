@@ -26,10 +26,12 @@
  * \date 2020
  * \version 0.1
  */
- 
-#include "intertask_interface.h"
 
-#include "ngap_gNB_itti_messaging.h"
+#include <stdlib.h>
+#include <string.h>
+#include "intertask_interface.h"
+#include "ngap_messages_types.h"
+#include "sctp_messages_types.h"
 
 void ngap_gNB_itti_send_sctp_data_req(instance_t instance,
                                       sctp_assoc_t assoc_id,

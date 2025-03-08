@@ -104,6 +104,8 @@ typedef struct {
   uint8_t first_rx;
   /// DLSCH status flag indicating
   SCH_status_t status;
+  /// Pointer to the payload (38.212 V15.4.0 section 5.1)
+  uint8_t *b;
   /// Pointers to transport block segments
   uint8_t **c;
   /// soft bits for each received segment ("d"-sequence)(for definition see 36-212 V8.6 2009-03, p.15)
@@ -122,10 +124,12 @@ typedef struct {
   /// codeword this transport block is mapped to
   uint8_t codeword;
   /// HARQ-ACKs
-  uint8_t ack;
+  bool decodeResult;
   /// Last index of LLR buffer that contains information.
   /// Used for computing LDPC decoder R
   int llrLen;
+  /// Number of segments processed so far
+  uint32_t processedSegments;
   decode_abort_t abort_decode;
 } NR_DL_UE_HARQ_t;
 

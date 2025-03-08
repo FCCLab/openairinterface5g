@@ -12,7 +12,7 @@ uint32_t timing_advance;
 int8_t threequarter_fs;
 uint64_t downlink_frequency[MAX_NUM_CCs][4];
 int32_t uplink_frequency_offset[MAX_NUM_CCs][4];
-int opp_enabled;
+int cpu_meas_enabled;
 THREAD_STRUCT thread_struct;
 uint32_t target_ul_mcs = 9;
 uint32_t target_dl_mcs = 9;
@@ -41,7 +41,7 @@ int main(int argc, char **argv) {
    paramdef_t cmdline_params[] = CMDLINE_PARAMS_DESC_GNB ;
 
   CONFIG_SETRTFLAG(CONFIG_NOEXITONHELP);
-  get_common_options(uniqCfg, SOFTMODEM_GNB_BIT);
+  get_common_options(uniqCfg);
   config_process_cmdline(uniqCfg, cmdline_params, sizeofArray(cmdline_params), NULL);
   CONFIG_CLEARRTFLAG(CONFIG_NOEXITONHELP);
   lock_memory_to_ram();

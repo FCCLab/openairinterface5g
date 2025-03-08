@@ -30,7 +30,7 @@
 #ifdef ENABLE_AERIAL
 #include "nfapi/oai_integration/aerial/fapi_nvIPC.h"
 #include "nfapi/oai_integration/aerial/fapi_vnf_p5.h"
-#include "nr_fapi.h"
+#include "nr_fapi_p5.h"
 #endif
 #include "nfapi/oai_integration/vendor_ext.h"
 
@@ -93,20 +93,14 @@ nfapi_vnf_pnf_info_t* nfapi_vnf_pnf_list_find(nfapi_vnf_config_t* config, int p5
 	NFAPI_TRACE(NFAPI_TRACE_DEBUG, "config->pnf_list:%p\n", config->pnf_list);
 
 	nfapi_vnf_pnf_info_t* curr = config->pnf_list;
-	while(curr != 0)
-	{
-		if(curr->p5_idx == p5_idx)
-                {
-                  NFAPI_TRACE(NFAPI_TRACE_ERROR, "%s : curr->p5_idx:%d p5_idx:%d\n", __FUNCTION__, curr->p5_idx, p5_idx);
-			return curr;
-                        }
+  while (curr != 0) {
+    if (curr->p5_idx == p5_idx)
+      return curr;
+    curr = curr->next;
+  }
+  NFAPI_TRACE(NFAPI_TRACE_ERROR, "%s(): could not find P5 connection for p5_idx %d\n", __func__, p5_idx);
 
-                NFAPI_TRACE(NFAPI_TRACE_ERROR, "%s : curr->next:%p\n", __FUNCTION__, curr->next);
-
-		curr = curr->next;
-	}
-
-	return 0;
+  return 0;
 }
 
 void vnf_nr_handle_pnf_param_response(void *pRecvMsg, int recvMsgLen, nfapi_vnf_config_t* config, int p5_idx)
@@ -129,7 +123,9 @@ void vnf_nr_handle_pnf_param_response(void *pRecvMsg, int recvMsgLen, nfapi_vnf_
 			if(config->pnf_nr_param_resp)
 			{
 				(config->pnf_nr_param_resp)(config, p5_idx, &msg);
-			}
+			} else {
+        NFAPI_TRACE(NFAPI_TRACE_ERROR, "%s(): no pnf_nr_param_resp cb installed\n", __func__);
+      }
 		}	
 		else
 		{
@@ -162,7 +158,9 @@ void vnf_handle_pnf_param_response(void *pRecvMsg, int recvMsgLen, nfapi_vnf_con
 			if(config->pnf_param_resp)
 			{
 				(config->pnf_param_resp)(config, p5_idx, &msg);
-			}
+			} else {
+        NFAPI_TRACE(NFAPI_TRACE_ERROR, "%s(): no pnf_params_resp cb installed\n", __func__);
+      }
 		}	
 		else
 		{
@@ -196,7 +194,9 @@ void vnf_nr_handle_pnf_config_response(void *pRecvMsg, int recvMsgLen, nfapi_vnf
 			if(config->pnf_nr_config_resp)
 			{
 				(config->pnf_nr_config_resp)(config, p5_idx, &msg);
-			}
+			} else {
+        NFAPI_TRACE(NFAPI_TRACE_ERROR, "%s(): no pnf_nr_config_resp cb installed\n", __func__);
+      }
 		}
 		else
 		{
@@ -229,7 +229,9 @@ void vnf_handle_pnf_config_response(void *pRecvMsg, int recvMsgLen, nfapi_vnf_co
 			if(config->pnf_config_resp)
 			{
 				(config->pnf_config_resp)(config, p5_idx, &msg);
-			}
+			} else {
+        NFAPI_TRACE(NFAPI_TRACE_ERROR, "%s(): no pnf_config_resp cb installed\n", __func__);
+      }
 		}
 		else
 		{
@@ -261,7 +263,9 @@ void vnf_nr_handle_pnf_start_response(void *pRecvMsg, int recvMsgLen, nfapi_vnf_
 			if(config->pnf_nr_start_resp)
 			{
 				(config->pnf_nr_start_resp)(config, p5_idx, &msg);
-			}
+			} else {
+        NFAPI_TRACE(NFAPI_TRACE_ERROR, "%s(): no pnf_nr_start_resp cb installed\n", __func__);
+      }
 		}
 		else
 		{
@@ -293,7 +297,9 @@ void vnf_handle_pnf_start_response(void *pRecvMsg, int recvMsgLen, nfapi_vnf_con
 			if(config->pnf_start_resp)
 			{
 				(config->pnf_start_resp)(config, p5_idx, &msg);
-			}
+			} else {
+        NFAPI_TRACE(NFAPI_TRACE_ERROR, "%s(): no pnf_start_resp cb installed\n", __func__);
+      }
 		}
 		else
 		{
@@ -325,7 +331,9 @@ void vnf_handle_pnf_stop_response(void *pRecvMsg, int recvMsgLen, nfapi_vnf_conf
 			if(config->pnf_stop_resp)
 			{
 				(config->pnf_stop_resp)(config, p5_idx, &msg);
-			}
+			} else {
+        NFAPI_TRACE(NFAPI_TRACE_ERROR, "%s(): no pnf_stop_resp cb installed\n", __func__);
+      }
 		}
 		else
 		{
@@ -565,7 +573,9 @@ void vnf_handle_start_response(void *pRecvMsg, int recvMsgLen, nfapi_vnf_config_
 			if(config->start_resp)
 			{
 				(config->start_resp)(config, p5_idx, &msg);
-			}
+			} else {
+        NFAPI_TRACE(NFAPI_TRACE_ERROR, "%s(): no start_resp cb installed\n", __func__);
+      }
 		}
 		else
 		{
@@ -598,7 +608,9 @@ void vnf_nr_handle_start_response(void *pRecvMsg, int recvMsgLen, nfapi_vnf_conf
 				if(config->nr_start_resp)
 				{
 					(config->nr_start_resp)(config, p5_idx, &msg);
-				}
+				} else {
+        NFAPI_TRACE(NFAPI_TRACE_ERROR, "%s(): no nr_start_resp cb installed\n", __func__);
+      }
 			}
 		}
 		else
@@ -1063,7 +1075,7 @@ void vnf_handle_vendor_extension(void* pRecvMsg, int recvMsgLen, nfapi_vnf_confi
 
 void vnf_nr_handle_p4_p5_message(void *pRecvMsg, int recvMsgLen, int p5_idx, nfapi_vnf_config_t* config)
 {
-	nfapi_p4_p5_message_header_t messageHeader;
+	nfapi_nr_p4_p5_message_header_t messageHeader;
 
 	// validate the input params
 	if(pRecvMsg == NULL || recvMsgLen < NFAPI_HEADER_LENGTH || config == NULL)
@@ -1073,7 +1085,7 @@ void vnf_nr_handle_p4_p5_message(void *pRecvMsg, int recvMsgLen, int p5_idx, nfa
 	}
 
 	// unpack the message header
-	if (nfapi_p5_message_header_unpack(pRecvMsg, recvMsgLen, &messageHeader, sizeof(nfapi_p4_p5_message_header_t), &config->codec_config) < 0)
+	if (nfapi_nr_p5_message_header_unpack(pRecvMsg, recvMsgLen, &messageHeader, sizeof(nfapi_nr_p4_p5_message_header_t), &config->codec_config) < 0)
 	{
 		NFAPI_TRACE(NFAPI_TRACE_ERROR, "Unpack message header failed, ignoring\n");
 		return;
@@ -1255,7 +1267,7 @@ int vnf_nr_read_dispatch_message(nfapi_vnf_config_t* config, nfapi_vnf_pnf_info_
       // 3. Read the buffer
       // 4. Handle the p5 message
 
-      uint32_t header_buffer_size = NFAPI_HEADER_LENGTH;
+      uint32_t header_buffer_size = NFAPI_NR_P5_HEADER_LENGTH;
       uint8_t header_buffer[header_buffer_size];
 
       uint32_t stack_buffer_size = 32; // should it be the size of then sctp_notificatoin structure
@@ -1282,8 +1294,8 @@ int vnf_nr_read_dispatch_message(nfapi_vnf_config_t* config, nfapi_vnf_pnf_info_
           return 0;
         }
 
-        nfapi_p4_p5_message_header_t header;
-        int unpack_result = nfapi_p5_message_header_unpack(header_buffer, header_buffer_size, &header, sizeof(header), 0);
+        nfapi_nr_p4_p5_message_header_t header;
+        int unpack_result = nfapi_nr_p5_message_header_unpack(header_buffer, header_buffer_size, &header, sizeof(header), 0);
         if (unpack_result < 0) {
           NFAPI_TRACE(NFAPI_TRACE_INFO, "VNF Failed to decode message header %d\n", unpack_result);
           return 0;
@@ -1518,7 +1530,7 @@ static int vnf_send_p5_msg(nfapi_vnf_pnf_info_t* pnf, const void *msg, int len, 
 	return 0;
 }
 
-int vnf_nr_pack_and_send_p5_message(vnf_t* vnf, uint16_t p5_idx, nfapi_p4_p5_message_header_t* msg, uint16_t msg_len)
+int vnf_nr_pack_and_send_p5_message(vnf_t* vnf, uint16_t p5_idx, nfapi_nr_p4_p5_message_header_t* msg, uint16_t msg_len)
 {
 	nfapi_vnf_pnf_info_t* pnf = nfapi_vnf_pnf_list_find(&(vnf->_public), p5_idx);
 	
@@ -1547,7 +1559,7 @@ int vnf_nr_pack_and_send_p5_message(vnf_t* vnf, uint16_t p5_idx, nfapi_p4_p5_mes
                                                      &vnf->_public.codec_config);
 
       if (packedMessageLength < 0) {
-        NFAPI_TRACE(NFAPI_TRACE_ERROR, "nfapi_p5_message_pack failed with return %d\n", packedMessageLength);
+        NFAPI_TRACE(NFAPI_TRACE_ERROR, "nfapi_nr_p5_message_pack failed with return %d\n", packedMessageLength);
         return -1;
       }
       // printf("msg id = 0x%02x, entire message length: %d\n", msg->message_id, packedMessageLength);

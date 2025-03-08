@@ -30,16 +30,22 @@
 #ifndef RRC_GNB_INTERNODE_C
 #define RRC_GNB_INTERNODE_C
 
-#include "nr_rrc_defs.h"
-#include "NR_RRCReconfiguration.h"
-#include "NR_UE-NR-Capability.h"
-#include "NR_CG-ConfigInfo.h"
-#include "NR_UE-CapabilityRAT-ContainerList.h"
-#include "LTE_UE-CapabilityRAT-ContainerList.h"
-#include "NR_CG-Config.h"
-#include "uper_encoder.h"
-#include "uper_decoder.h"
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include "OCTET_STRING.h"
+#include "PHY/defs_common.h"
+#include "RRC/NR/nr_rrc_proto.h"
+#include "T.h"
+#include "asn_codecs.h"
+#include "assertions.h"
+#include "common/utils/T/T.h"
+#include "constr_TYPE.h"
 #include "executables/softmodem-common.h"
+#include "nr_rrc_defs.h"
+#include "uper_decoder.h"
+#include "uper_encoder.h"
+#include "x2ap_messages_types.h"
 
 int parse_CG_ConfigInfo(gNB_RRC_INST *rrc, NR_CG_ConfigInfo_t *CG_ConfigInfo, x2ap_ENDC_sgnb_addition_req_t *m) {
   if (CG_ConfigInfo->criticalExtensions.present == NR_CG_ConfigInfo__criticalExtensions_PR_c1) {
@@ -96,7 +102,7 @@ NR_CG_Config_t *generate_CG_Config(const NR_RRCReconfiguration_t *reconfig, cons
                        (enc_rval.encoded+7)>>3);
 
   FILE *fd; // file to be generated for nr-ue
-  if (get_softmodem_params()->phy_test==1 || get_softmodem_params()->do_ra > 0 || get_softmodem_params()->sa == 1) {
+  if (get_softmodem_params()->phy_test==1 || get_softmodem_params()->do_ra > 0) {
     // This is for phytest only, emulate first X2 message if uecap.raw file is present
     LOG_I(RRC,"Dumping NR_RRCReconfiguration message (%jd bytes)\n",(enc_rval.encoded+7)>>3);
     for (int i=0; i<(enc_rval.encoded+7)>>3; i++) {
@@ -121,7 +127,7 @@ NR_CG_Config_t *generate_CG_Config(const NR_RRCReconfiguration_t *reconfig, cons
 
 
   
-  if (get_softmodem_params()->phy_test==1 || get_softmodem_params()->do_ra > 0 || get_softmodem_params()->sa == 1) {
+  if (get_softmodem_params()->phy_test==1 || get_softmodem_params()->do_ra > 0) {
 
     LOG_I(RRC,"Dumping scg_RB_Config message (%jd bytes)\n",(enc_rval.encoded+7)>>3);
     for (int i=0; i<(enc_rval.encoded+7)>>3; i++) {

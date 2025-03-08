@@ -27,26 +27,31 @@
  * \version 0.1
  */
  
-#include <stdint.h>
-
-#include "intertask_interface.h"
-
-#include "ngap_common.h"
-// #include "ngap_gNB.h"
-#include "ngap_gNB_defs.h"
 #include "ngap_gNB_handlers.h"
-#include "ngap_gNB_decoder.h"
-
-#include "ngap_gNB_ue_context.h"
-#include "ngap_gNB_trace.h"
-#include "ngap_gNB_nas_procedures.h"
-#include "ngap_gNB_management_procedures.h"
-
-#include "ngap_gNB_default_values.h"
-
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+#include "INTEGER.h"
+#include "ngap_msg_includes.h"
+#include "OCTET_STRING.h"
+#include "PHY/defs_common.h"
+#include "T.h"
 #include "assertions.h"
+#include "common/utils/T/T.h"
+#include "constr_TYPE.h"
 #include "conversions.h"
-#include "NGAP_NonDynamic5QIDescriptor.h"
+#include "intertask_interface.h"
+#include "ngap_common.h"
+#include "ngap_gNB_decoder.h"
+#include "ngap_gNB_defs.h"
+#include "ngap_gNB_management_procedures.h"
+#include "ngap_gNB_nas_procedures.h"
+#include "ngap_gNB_trace.h"
+#include "ngap_gNB_ue_context.h"
+#include "ngap_messages_types.h"
+#include "oai_asn1.h"
+#include "queue.h"
 
 static void allocCopy(ngap_pdu_t *out, OCTET_STRING_t in)
 {
@@ -87,6 +92,7 @@ void ngap_handle_ng_setup_message(ngap_gNB_amf_data_t *amf_desc_p, int sctp_shut
       }
     }
   } else {
+    LOG_A(NGAP, "Received NGSetupResponse from AMF\n");
     /* Check that at least one setup message is pending */
     DevCheck(amf_desc_p->ngap_gNB_instance->ngap_amf_pending_nb > 0, amf_desc_p->ngap_gNB_instance->instance,
              amf_desc_p->ngap_gNB_instance->ngap_amf_pending_nb, 0);
@@ -1135,8 +1141,8 @@ static int ngap_gNB_handle_pdusession_modify_request(sctp_assoc_t assoc_id, uint
         item_p = (NGAP_PDUSessionResourceModifyItemModReq_t *)ie->value.choice.PDUSessionResourceModifyListModReq.list.array[nb_of_pdusessions_failed];
         pdusession_failed_t *tmp = &msg->pdusessions_failed[nb_of_pdusessions_failed];
         tmp->pdusession_id = item_p->pDUSessionID;
-        tmp->cause = NGAP_CAUSE_RADIO_NETWORK;
-        tmp->cause_value = NGAP_CauseRadioNetwork_unknown_local_UE_NGAP_ID;
+        tmp->cause.type = NGAP_CAUSE_RADIO_NETWORK;
+        tmp->cause.value = NGAP_CauseRadioNetwork_unknown_local_UE_NGAP_ID;
       }
     msg->nb_of_pdusessions_failed = ie->value.choice.PDUSessionResourceModifyListModReq.list.count;
     ngap_gNB_pdusession_modify_resp(amf_desc_p->ngap_gNB_instance->instance,msg);

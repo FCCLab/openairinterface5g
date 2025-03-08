@@ -71,6 +71,12 @@ event new_event(int type, int length, char *buffer, void *database)
   e.buffer = buffer;
 
   f = get_format(database, type);
+  if (f.count > T_MAX_ARGS) {
+    printf("fatal: the T trace %s is defined to take %d arguments, but T_MAX_ARGS is %d. "
+           "Increase T_MAX_ARGS in event.h and recompile all the tracers (make clean; make).\n",
+           event_name_from_id(database, type), f.count, T_MAX_ARGS);
+    exit(1);
+  }
 
   e.ecount = f.count;
 
@@ -88,6 +94,10 @@ event new_event(int type, int length, char *buffer, void *database)
       e.e[i].type = EVENT_ULONG;
       e.e[i].ul = *(unsigned long *)(&buffer[offset]);
       offset += sizeof(unsigned long);
+    } else if (!strcmp(f.type[i], "float")) {
+      e.e[i].type = EVENT_FLOAT;
+      e.e[i].f = *(float *)(&buffer[offset]);
+      offset += sizeof(float);
     } else if (!strcmp(f.type[i], "string")) {
       e.e[i].type = EVENT_STRING;
       e.e[i].s = &buffer[offset];

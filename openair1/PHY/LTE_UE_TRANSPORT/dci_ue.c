@@ -384,8 +384,6 @@ void pdcch_channel_level(int32_t **dl_ch_estimates_ext,
       //      printf("Channel level : %d\n",avg[(aatx<<1)+aarx]);
     }
 
-  simde_mm_empty();
-  simde_m_empty();
 
 }
 
@@ -433,8 +431,6 @@ void pdcch_detection_mrc_i(LTE_DL_FRAME_PARMS *frame_parms,
     }
   }
 
-  simde_mm_empty();
-  simde_m_empty();
 }
 
 
@@ -1078,8 +1074,6 @@ void pdcch_channel_compensation(int32_t **rxdataF_ext,
 
   }
 
-  simde_mm_empty();
-  simde_m_empty();
 }
 
 void pdcch_detection_mrc(LTE_DL_FRAME_PARMS *frame_parms,
@@ -1103,8 +1097,6 @@ void pdcch_detection_mrc(LTE_DL_FRAME_PARMS *frame_parms,
     }
   }
 
-  simde_mm_empty();
-  simde_m_empty();
 
 }
 

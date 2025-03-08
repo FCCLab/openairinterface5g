@@ -31,7 +31,7 @@ FROM ran-build:latest AS nr-ue-build
 
 
 #start from scratch for target executable
-FROM ubuntu:jammy as oai-nr-ue
+FROM ubuntu:jammy AS oai-nr-ue
 ARG BUILD_OPTION
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Europe/Paris
@@ -64,7 +64,8 @@ RUN apt-get update && \
         iputils-ping \
         iproute2 \
         iperf3 \
-        iperf && \
+        iperf \
+        libyaml-cpp-dev && \
 # if the --sanitize option was used to build, additional packages are required
     /bin/bash -c 'if [[ "$BUILD_OPTION" = "--sanitize" ]]; then DEBIAN_FRONTEND=noninteractive apt-get install --yes \
         #libasan5 \ # see below
@@ -97,6 +98,7 @@ COPY --from=nr-ue-build \
     /oai-ran/cmake_targets/ran_build/build/libtelnetsrv.so \
     /oai-ran/cmake_targets/ran_build/build/libtelnetsrv_ciUE.so \
     /oai-ran/cmake_targets/ran_build/build/libtelnetsrv_5Gue.so \
+    /oai-ran/cmake_targets/ran_build/build/libparams_yaml.so \
     /usr/local/lib/
 
 # Now we are copying from builder-image the UHD files.
@@ -123,5 +125,5 @@ RUN /bin/bash -c "ln -s /usr/local/lib/liboai_usrpdevif.so /usr/local/lib/liboai
 
 WORKDIR /opt/oai-nr-ue
 COPY --from=nr-ue-base /tini /tini
-CMD ["/opt/oai-nr-ue/bin/nr-uesoftmodem", "-O", "/opt/oai-nr-ue/etc/nr-ue.conf"]
+CMD ["/opt/oai-nr-ue/bin/nr-uesoftmodem"]
 ENTRYPOINT ["/tini", "-v", "--", "/opt/oai-nr-ue/bin/entrypoint.sh"]

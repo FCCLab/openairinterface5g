@@ -26,13 +26,13 @@
 #include <signal.h>
 
 #include "T.h"
+#include "common/oai_version.h"
 #include "assertions.h"
 #include "PHY/types.h"
 #include "PHY/defs_nr_UE.h"
 #include "SCHED_NR_UE/defs.h"
 #include "common/ran_context.h"
 #include "common/config/config_userapi.h"
-//#include "common/utils/threadPool/thread-pool.h"
 #include "common/utils/load_module_shlib.h"
 //#undef FRAME_LENGTH_COMPLEX_SAMPLES //there are two conflicting definitions, so we better make sure we don't use it at all
 #include "common/utils/nr/nr_common.h"
@@ -42,6 +42,7 @@
 
 //#undef FRAME_LENGTH_COMPLEX_SAMPLES //there are two conflicting definitions, so we better make sure we don't use it at all
 #include "openair1/PHY/MODULATION/nr_modulation.h"
+#include "PHY/CODING/nrLDPC_coding/nrLDPC_coding_interface.h"
 #include "PHY/phy_vars_nr_ue.h"
 #include "PHY/NR_UE_TRANSPORT/nr_transport_proto_ue.h"
 #include "PHY/NR_TRANSPORT/nr_dlsch.h"
@@ -51,6 +52,7 @@
 #include "PHY_INTERFACE/phy_interface_vars.h"
 #include "NR_IF_Module.h"
 #include "openair1/SIMULATION/TOOLS/sim.h"
+#include "openair2/RRC/NR_UE/L2_interface_ue.h"
 
 #ifdef SMBV
 #include "PHY/TOOLS/smbv.h"
@@ -83,19 +85,19 @@ unsigned short config_frames[4] = {2,9,11,13};
 #include "executables/softmodem-common.h"
 #include "executables/thread-common.h"
 
-#include "nr_nas_msg_sim.h"
+#include "nr_nas_msg.h"
 #include <openair1/PHY/MODULATION/nr_modulation.h>
 #include "openair2/GNB_APP/gnb_paramdef.h"
+#include "pdcp.h"
+#include "actor.h"
 
-extern const char *duplex_mode[];
 THREAD_STRUCT thread_struct;
-nrUE_params_t nrUE_params;
+nrUE_params_t nrUE_params = {0};
 
 // Thread variables
 pthread_cond_t nfapi_sync_cond;
 pthread_mutex_t nfapi_sync_mutex;
 int nfapi_sync_var=-1; //!< protected by mutex \ref nfapi_sync_mutex
-uint16_t sf_ahead=6; //??? value ???
 pthread_cond_t sync_cond;
 pthread_mutex_t sync_mutex;
 int sync_var=-1; //!< protected by mutex \ref sync_mutex.
@@ -113,30 +115,11 @@ int oai_exit = 0;
 
 static int      tx_max_power[MAX_NUM_CCs] = {0};
 
-int                 vcdflag = 0;
-
 double          rx_gain_off = 0.0;
-char             *usrp_args = NULL;
-char             *tx_subdev = NULL;
-char             *rx_subdev = NULL;
-char       *rrc_config_path = NULL;
-char *reconfig_file = NULL;
-char *rbconfig_file = NULL;
-char            *uecap_file = NULL;
 
 uint64_t        downlink_frequency[MAX_NUM_CCs][4];
 int32_t         uplink_frequency_offset[MAX_NUM_CCs][4];
 uint64_t        sidelink_frequency[MAX_NUM_CCs][4];
-
-#if MAX_NUM_CCs == 1
-rx_gain_t                rx_gain_mode[MAX_NUM_CCs][4] = {{max_gain,max_gain,max_gain,max_gain}};
-double tx_gain[MAX_NUM_CCs][4] = {{20,0,0,0}};
-double rx_gain[MAX_NUM_CCs][4] = {{110,0,0,0}};
-#else
-rx_gain_t                rx_gain_mode[MAX_NUM_CCs][4] = {{max_gain,max_gain,max_gain,max_gain},{max_gain,max_gain,max_gain,max_gain}};
-double tx_gain[MAX_NUM_CCs][4] = {{20,0,0,0},{20,0,0,0}};
-double rx_gain[MAX_NUM_CCs][4] = {{110,0,0,0},{20,0,0,0}};
-#endif
 
 // UE and OAI config variables
 
@@ -145,9 +128,6 @@ int16_t           node_synch_ref[MAX_NUM_CCs];
 int               otg_enabled;
 double            cpuf;
 uint32_t       N_RB_DL    = 106;
-
-// NTN cellSpecificKoffset-r17, but in slots for DL SCS
-unsigned int NTN_UE_Koffset = 0;
 
 int create_tasks_nrue(uint32_t ue_nb) {
   LOG_D(NR_RRC, "%s(ue_nb:%d)\n", __FUNCTION__, ue_nb);
@@ -221,10 +201,7 @@ static void get_options(configmodule_interface_t *cfg)
   paramdef_t cmdline_params[] =CMDLINE_NRUEPARAMS_DESC ;
   int numparams = sizeofArray(cmdline_params);
   config_get(cfg, cmdline_params, numparams, NULL);
-
-  AssertFatal(rrc_config_path == NULL, "the option \"rrc_config_path\" is deprecated. Please use --reconfig-file and --rbconfig-file separately to point to files reconfig.raw and rbconfig.raw\n");
-
-  if (vcdflag > 0)
+  if (nrUE_params.vcdflag > 0)
     ouput_vcd = 1;
 }
 
@@ -232,19 +209,13 @@ static void get_options(configmodule_interface_t *cfg)
 void set_options(int CC_id, PHY_VARS_NR_UE *UE){
   NR_DL_FRAME_PARMS *fp = &UE->frame_parms;
 
-  // Init power variables
-  tx_max_power[CC_id] = tx_max_power[0];
-  rx_gain[0][CC_id]   = rx_gain[0][0];
-  tx_gain[0][CC_id]   = tx_gain[0][0];
-
   // Set UE variables
-  UE->rx_total_gain_dB     = (int)rx_gain[CC_id][0] + rx_gain_off;
-  UE->tx_total_gain_dB     = (int)tx_gain[CC_id][0];
-  UE->tx_power_max_dBm     = tx_max_power[CC_id];
+  UE->rx_total_gain_dB     = (int)nrUE_params.rx_gain + rx_gain_off;
+  UE->tx_total_gain_dB     = (int)nrUE_params.tx_gain;
+  UE->tx_power_max_dBm     = nrUE_params.tx_max_power;
   UE->rf_map.card          = 0;
   UE->rf_map.chain         = CC_id + 0;
   UE->max_ldpc_iterations  = nrUE_params.max_ldpc_iterations;
-  UE->ldpc_offload_enable  = nrUE_params.ldpc_offload_flag;
   UE->UE_scan_carrier      = nrUE_params.UE_scan_carrier;
   UE->UE_fo_compensation   = nrUE_params.UE_fo_compensation;
   UE->if_freq              = nrUE_params.if_freq;
@@ -298,12 +269,13 @@ void init_openair0()
     openair0_cfg[card].tx_num_channels = min(4, frame_parms->nb_antennas_tx);
     openair0_cfg[card].rx_num_channels = min(4, frame_parms->nb_antennas_rx);
 
-    LOG_I(PHY, "HW: Configuring card %d, sample_rate %f, tx/rx num_channels %d/%d, duplex_mode %s\n",
-      card,
-      openair0_cfg[card].sample_rate,
-      openair0_cfg[card].tx_num_channels,
-      openair0_cfg[card].rx_num_channels,
-      duplex_mode[openair0_cfg[card].duplex_mode]);
+    LOG_I(PHY,
+          "HW: Configuring card %d, sample_rate %f, tx/rx num_channels %d/%d, duplex_mode %s\n",
+          card,
+          openair0_cfg[card].sample_rate,
+          openair0_cfg[card].tx_num_channels,
+          openair0_cfg[card].rx_num_channels,
+          duplex_mode_txt[openair0_cfg[card].duplex_mode]);
 
     if (is_sidelink) {
       dl_carrier = frame_parms->dl_CarrierFreq;
@@ -317,31 +289,34 @@ void init_openair0()
 
     openair0_cfg[card].configFilename = get_softmodem_params()->rf_config_file;
 
-    if (usrp_args) openair0_cfg[card].sdr_addrs = usrp_args;
-    if (tx_subdev) openair0_cfg[card].tx_subdev = tx_subdev;
-    if (rx_subdev) openair0_cfg[card].rx_subdev = rx_subdev;
+    if (get_nrUE_params()->usrp_args) openair0_cfg[card].sdr_addrs = get_nrUE_params()->usrp_args;
+    if (get_nrUE_params()->tx_subdev) openair0_cfg[card].tx_subdev = get_nrUE_params()->tx_subdev;
+    if (get_nrUE_params()->rx_subdev) openair0_cfg[card].rx_subdev = get_nrUE_params()->rx_subdev;
 
   }
 }
 
 static void init_pdcp(int ue_id)
 {
-  uint32_t pdcp_initmask = (!IS_SOFTMODEM_NOS1) ? LINK_ENB_PDCP_TO_GTPV1U_BIT : (LINK_ENB_PDCP_TO_GTPV1U_BIT | PDCP_USE_NETLINK_BIT | LINK_ENB_PDCP_TO_IP_DRIVER_BIT);
+  uint32_t pdcp_initmask = (!IS_SOFTMODEM_NOS1) ? LINK_ENB_PDCP_TO_GTPV1U_BIT : LINK_ENB_PDCP_TO_GTPV1U_BIT;
 
   /*if (IS_SOFTMODEM_RFSIM || (nfapi_getmode()==NFAPI_UE_STUB_PNF)) {
     pdcp_initmask = pdcp_initmask | UE_NAS_USE_TUN_BIT;
   }*/
 
-  if (IS_SOFTMODEM_NOKRNMOD) {
-    pdcp_initmask = pdcp_initmask | UE_NAS_USE_TUN_BIT;
-  }
+  // previous code was:
+  //   if (IS_SOFTMODEM_NOKRNMOD)
+  //     pdcp_initmask = pdcp_initmask | UE_NAS_USE_TUN_BIT;
+  // The kernel module (KRNMOD) has been removed from the project, so the 'if'
+  // was removed but the flag 'pdcp_initmask' was kept, as "no kernel module"
+  // was always set. further refactoring could take it out
+  pdcp_initmask = pdcp_initmask | UE_NAS_USE_TUN_BIT;
+
   if (get_softmodem_params()->nsa && rlc_module_init(0) != 0) {
     LOG_I(RLC, "Problem at RLC initiation \n");
   }
-  nr_pdcp_layer_init(false);
+  nr_pdcp_layer_init();
   nr_pdcp_module_init(pdcp_initmask, ue_id);
-  pdcp_set_rlc_data_req_func((send_rlc_data_req_func_t) rlc_data_req);
-  pdcp_set_pdcp_data_ind_func((pdcp_data_ind_func_t) pdcp_data_ind);
 }
 
 // Stupid function addition because UE itti messages queues definition is common with eNB
@@ -357,8 +332,8 @@ static void trigger_stop(int sig)
 }
 static void trigger_deregistration(int sig)
 {
-  if (!stop_immediately) {
-    MessageDef *msg = itti_alloc_new_message(TASK_RRC_UE_SIM, 0, NAS_DEREGISTRATION_REQ);
+  if (!stop_immediately && IS_SA_MODE(get_softmodem_params())) {
+    MessageDef *msg = itti_alloc_new_message(TASK_NAS_NRUE, 0, NAS_DEREGISTRATION_REQ);
     NAS_DEREGISTRATION_REQ(msg).cause = AS_DETACH;
     itti_send_msg_to_task(TASK_NAS_NRUE, 0, msg);
     stop_immediately = true;
@@ -410,6 +385,7 @@ configmodule_interface_t *uniqCfg = NULL;
 
 // A global var to reduce the changes size
 ldpc_interface_t ldpc_interface = {0}, ldpc_interface_offload = {0};
+nrLDPC_coding_interface_t nrLDPC_coding_interface = {0};
 
 int main(int argc, char **argv)
 {
@@ -427,9 +403,12 @@ int main(int argc, char **argv)
   // get options and fill parameters from configuration file
 
   get_options(uniqCfg); // Command-line options specific for NRUE
-
-  get_common_options(uniqCfg, SOFTMODEM_5GUE_BIT);
+  IS_SOFTMODEM_5GUE = true;
+  get_common_options(uniqCfg);
   CONFIG_CLEARRTFLAG(CONFIG_NOEXITONHELP);
+
+  softmodem_verify_mode(get_softmodem_params());
+
 #if T_TRACER
   T_Config_Init();
 #endif
@@ -446,19 +425,15 @@ int main(int argc, char **argv)
 
   init_opt();
 
-  if (nrUE_params.ldpc_offload_flag)
-    load_LDPClib("_t2", &ldpc_interface_offload);
-
-  load_LDPClib(NULL, &ldpc_interface);
+  int ret_loader = load_nrLDPC_coding_interface(NULL, &nrLDPC_coding_interface);
+  AssertFatal(ret_loader == 0, "error loading LDPC library\n");
 
   if (ouput_vcd) {
     vcd_signal_dumper_init("/tmp/openair_dump_nrUE.vcd");
   }
-#ifndef PACKAGE_VERSION
-#define PACKAGE_VERSION "UNKNOWN-EXPERIMENTAL"
-#endif
   // strdup to put the sring in the core file for post mortem identification
-  LOG_I(HW, "Version: %s\n", strdup(PACKAGE_VERSION));
+  char *pckg = strdup(OAI_PACKAGE_VERSION);
+  LOG_I(HW, "Version: %s\n", pckg);
 
   PHY_vars_UE_g = malloc(sizeof(*PHY_vars_UE_g) * NB_UE_INST);
   for (int inst = 0; inst < NB_UE_INST; inst++) {
@@ -466,6 +441,8 @@ int main(int argc, char **argv)
     for (int CC_id = 0; CC_id < MAX_NUM_CCs; CC_id++) {
       PHY_vars_UE_g[inst][CC_id] = malloc(sizeof(*PHY_vars_UE_g[inst][CC_id]));
       memset(PHY_vars_UE_g[inst][CC_id], 0, sizeof(*PHY_vars_UE_g[inst][CC_id]));
+      // All instances use the same coding interface
+      PHY_vars_UE_g[inst][CC_id]->nrLDPC_coding_interface = nrLDPC_coding_interface;
     }
   }
 
@@ -478,19 +455,14 @@ int main(int argc, char **argv)
     init_pdcp(0);
   else
     init_pdcp(mode_offset + ue_id_g);
+  nas_init_nrue(NB_UE_INST);
 
-  init_NR_UE(NB_UE_INST, uecap_file, reconfig_file, rbconfig_file);
+  init_NR_UE(NB_UE_INST, get_nrUE_params()->uecap_file, get_nrUE_params()->reconfig_file, get_nrUE_params()->rbconfig_file);
 
   if (get_softmodem_params()->emulate_l1) {
     RCconfig_nr_ue_macrlc();
     get_channel_model_mode(uniqCfg);
   }
-
-  if (get_softmodem_params()->do_ra)
-    AssertFatal(get_softmodem_params()->phy_test == 0,"RA and phy_test are mutually exclusive\n");
-
-  if (get_softmodem_params()->sa)
-    AssertFatal(get_softmodem_params()->phy_test == 0,"Standalone mode and phy_test are mutually exclusive\n");
 
   if (!get_softmodem_params()->nsa && get_softmodem_params()->emulate_l1)
     start_oai_nrue_threads();
@@ -503,8 +475,9 @@ int main(int argc, char **argv)
 
         set_options(CC_id, UE[CC_id]);
         NR_UE_MAC_INST_t *mac = get_mac_inst(inst);
+        init_nr_ue_phy_cpu_stats(&UE[CC_id]->phy_cpu_stats);
 
-        if (get_softmodem_params()->sa || get_softmodem_params()->sl_mode) { // set frame config to initial values from command line
+        if (IS_SA_MODE(get_softmodem_params()) || get_softmodem_params()->sl_mode) { // set frame config to initial values from command line
                                                                             // and assume that the SSB is centered on the grid
           uint16_t nr_band = get_softmodem_params()->band;
           mac->nr_band = nr_band;
@@ -515,15 +488,22 @@ int main(int argc, char **argv)
                                     get_softmodem_params()->numerology,
                                     nr_band);
         } else {
-          DevAssert(mac->if_module != NULL && mac->if_module->phy_config_request != NULL);
-          mac->if_module->phy_config_request(&mac->phy_config);
-          mac->phy_config_request_sent = true;
+	  MessageDef *msg = NULL;
+	  do {
+	    itti_poll_msg(TASK_MAC_UE, &msg);
+	    if (msg)
+	      process_msg_rcc_to_mac(msg);
+	  } while (msg);
           fapi_nr_config_request_t *nrUE_config = &UE[CC_id]->nrUE_config;
-
           nr_init_frame_parms_ue(&UE[CC_id]->frame_parms, nrUE_config, mac->nr_band);
         }
 
         UE[CC_id]->sl_mode = get_softmodem_params()->sl_mode;
+        init_actor(&UE[CC_id]->sync_actor, "SYNC_", -1);
+        for (int i = 0; i < NUM_DL_ACTORS; i++) {
+          init_actor(&UE[CC_id]->dl_actors[i], "DL_", -1);
+        }
+        init_actor(&UE[CC_id]->ul_actor, "UL_", -1);
         init_nr_ue_vars(UE[CC_id], inst);
 
         if (UE[CC_id]->sl_mode) {
@@ -533,7 +513,6 @@ int main(int argc, char **argv)
           phycfg->sl_config_req.sl_carrier_config.sl_num_rx_ant = get_nrUE_params()->nb_antennas_rx;
           phycfg->sl_config_req.sl_carrier_config.sl_num_tx_ant = get_nrUE_params()->nb_antennas_tx;
           mac->if_module->sl_phy_config_request(phycfg);
-          mac->phy_config_request_sent = true;
           sl_nr_ue_phy_params_t *sl_phy = &UE[CC_id]->SL_UE_PHY_PARAMS;
           nr_init_frame_parms_ue_sl(&sl_phy->sl_frame_params,
                                     &sl_phy->sl_config,
@@ -544,14 +523,19 @@ int main(int argc, char **argv)
       }
     }
 
-    // NTN cellSpecificKoffset-r17, but in slots for DL SCS
-    NTN_UE_Koffset = nrUE_params.ntn_koffset << PHY_vars_UE_g[0][0]->frame_parms.numerology_index;
-
     init_openair0();
     lock_memory_to_ram();
 
-    if(IS_SOFTMODEM_DOSCOPE) {
-      load_softscope("nr",PHY_vars_UE_g[0][0]);
+    if (IS_SOFTMODEM_DOSCOPE) {
+      load_softscope("nr", PHY_vars_UE_g[0][0]);
+    }
+    if (IS_SOFTMODEM_IMSCOPE_ENABLED) {
+      load_softscope("im", PHY_vars_UE_g[0][0]);
+    }
+    AssertFatal(!(IS_SOFTMODEM_IMSCOPE_ENABLED && IS_SOFTMODEM_IMSCOPE_RECORD_ENABLED),
+                "Data recoding and ImScope cannot be enabled at the same time\n");
+    if (IS_SOFTMODEM_IMSCOPE_RECORD_ENABLED) {
+      load_module_shlib("imscope_record", NULL, 0, PHY_vars_UE_g[0][0]);
     }
 
     for (int inst = 0; inst < NB_UE_INST; inst++) {
@@ -593,6 +577,8 @@ int main(int argc, char **argv)
     }
   }
 
+  free_nrLDPC_coding_interface(&nrLDPC_coding_interface);
+  free(pckg);
   return 0;
 }
 

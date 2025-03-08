@@ -721,44 +721,37 @@ int lte_dl_mbsfn_channel_estimation(PHY_VARS_UE *ue,
 
   // do ifft of channel estimate
   for (aa=0; aa<ue->frame_parms.nb_antennas_rx*ue->frame_parms.nb_antennas_tx; aa++) {
-    if (ue->common_vars.common_vars_rx_data_per_thread[ue->current_thread_id[subframe]].dl_ch_estimates[eNB_offset][aa]) {
+    int32_t *tmp = ue->common_vars.common_vars_rx_data_per_thread[ue->current_thread_id[subframe]].dl_ch_estimates[eNB_offset][aa];
+    if (tmp) {
+      int len;
       switch (ue->frame_parms.N_RB_DL) {
         case 6:
-          idft(IDFT_128,(int16_t *) &ue->common_vars.common_vars_rx_data_per_thread[ue->current_thread_id[subframe]].dl_ch_estimates[eNB_offset][aa][8],
-                  (int16_t *) ue->common_vars.common_vars_rx_data_per_thread[ue->current_thread_id[subframe]].dl_ch_estimates_time[eNB_offset][aa],
-                  1);
+          len = 128;
           break;
-
         case 25:
-          idft(IDFT_512,(int16_t *) &ue->common_vars.common_vars_rx_data_per_thread[ue->current_thread_id[subframe]].dl_ch_estimates[eNB_offset][aa][8],
-                  (int16_t *) ue->common_vars.common_vars_rx_data_per_thread[ue->current_thread_id[subframe]].dl_ch_estimates_time[eNB_offset][aa],
-                  1);
+          len = 512;
           break;
-
         case 50:
-          idft(IDFT_1024,(int16_t *) &ue->common_vars.common_vars_rx_data_per_thread[ue->current_thread_id[subframe]].dl_ch_estimates[eNB_offset][aa][8],
-                   (int16_t *) ue->common_vars.common_vars_rx_data_per_thread[ue->current_thread_id[subframe]].dl_ch_estimates_time[eNB_offset][aa],
-                   1);
+          len = 1024;
           break;
-
         case 75:
-          idft(IDFT_1536,(int16_t *) &ue->common_vars.common_vars_rx_data_per_thread[ue->current_thread_id[subframe]].dl_ch_estimates[eNB_offset][aa][8],
-                   (int16_t *) ue->common_vars.common_vars_rx_data_per_thread[ue->current_thread_id[subframe]].dl_ch_estimates_time[eNB_offset][aa],
-                   1);
+          len=1536;
           break;
-
         case 100:
-          idft(IDFT_2048,(int16_t *) &ue->common_vars.common_vars_rx_data_per_thread[ue->current_thread_id[subframe]].dl_ch_estimates[eNB_offset][aa][8],
-                   (int16_t *) ue->common_vars.common_vars_rx_data_per_thread[ue->current_thread_id[subframe]].dl_ch_estimates_time[eNB_offset][aa],
-                   1);
+          len = 2048;
           break;
-
         default:
-          break;
+          LOG_E(PHY, "Unknown N_RB_DL %d\n", ue->frame_parms.N_RB_DL);
+          return -1;
       }
+
+      idft(get_idft(len),
+           (int16_t *)&tmp[8],
+           (int16_t *)ue->common_vars.common_vars_rx_data_per_thread[ue->current_thread_id[subframe]]
+               .dl_ch_estimates_time[eNB_offset][aa],
+           1);
     }
   }
-
   return(0);
 }
 
@@ -907,30 +900,27 @@ int lte_dl_mbsfn_khz_1dot25_channel_estimation(PHY_VARS_UE *ue,
 
  // do ifft of channel estimate
   for (aa=0; aa<ue->frame_parms.nb_antennas_rx*ue->frame_parms.nb_antennas_tx; aa++) {
-    if (ue->common_vars.common_vars_rx_data_per_thread[ue->current_thread_id[subframe]].dl_ch_estimates[0][aa]) {
+    int32_t *tmp = ue->common_vars.common_vars_rx_data_per_thread[ue->current_thread_id[subframe]].dl_ch_estimates[0][aa];
+    if (tmp) {
+      int len = 0;
       switch (ue->frame_parms.N_RB_DL) {
-      case 25:
-        idft(IDFT_6144,(int16_t*) &ue->common_vars.common_vars_rx_data_per_thread[ue->current_thread_id[subframe]].dl_ch_estimates[0][aa][8],
-                (int16_t*) ue->common_vars.common_vars_rx_data_per_thread[ue->current_thread_id[subframe]].dl_ch_estimates_time[0][aa],
-                1);
-        break;
-      case 50:
-        idft(IDFT_12288,(int16_t*) &ue->common_vars.common_vars_rx_data_per_thread[ue->current_thread_id[subframe]].dl_ch_estimates[0][aa][8],
-                (int16_t*) ue->common_vars.common_vars_rx_data_per_thread[ue->current_thread_id[subframe]].dl_ch_estimates_time[0][aa],
-                1);
-        break;
-     case 100:
-        idft(IDFT_24576,(int16_t*) &ue->common_vars.common_vars_rx_data_per_thread[ue->current_thread_id[subframe]].dl_ch_estimates[0][aa][8],
-                (int16_t*) ue->common_vars.common_vars_rx_data_per_thread[ue->current_thread_id[subframe]].dl_ch_estimates_time[0][aa],
-                1);
-        break;
-      default:
-        break;
+        case 25:
+          len = 6144;
+          break;
+        case 50:
+          len = 12288;
+          break;
+        case 100:
+          len = 24576;
+          break;
       }
+      if (len)
+        idft(get_idft(len),
+             (int16_t *)&tmp[8],
+             (int16_t *)ue->common_vars.common_vars_rx_data_per_thread[ue->current_thread_id[subframe]].dl_ch_estimates_time[0][aa],
+             1);
     }
   }
-
-
   return(0);
 }
 

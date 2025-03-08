@@ -152,7 +152,7 @@ sm_ag_if_ans_t write_ctrl_pdcp_sm(void const* data)
 {
   assert(data != NULL);
 //  assert(data->type == PDCP_CTRL_REQ_V0 );
-  assert(0 !=0 && "Not supported");
+  printf("write_ctrl callback for PDCP SM: operation not supported\n");
   sm_ag_if_ans_t ans = {0};
   return ans;
 }

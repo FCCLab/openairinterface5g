@@ -74,11 +74,6 @@ If DPDK library was installed into custom path, you have to point to the right d
 ```
 export PKG_CONFIG_PATH=/opt/dpdk-t2/lib64/pkgconfig/:$PKG_CONFIG_PATH
 ```
-## Setup of T2-related DPDK EAL parameters
-To configure T2-related DPDK Environment Abstraction Layer (EAL) parameters, you can set the following parameters via the command line:
-- `ldpc_offload.dpdk_dev` - **mandatory** parameter, specifies PCI address of the T2 card. PCI address of the T2 card can be detected by `lspci | grep "Xilinx"` command.
-- `ldpc_offload.dpdk_cores_list` - CPU cores assigned to DPDK for T2 processing, by default set to *11-12*. Ensure that the CPU cores specified in *ldpc_offload.dpdk_cores_list* are available and not used by other processes to avoid conflicts.
-- `ldpc_offload.dpdk_prefix` - DPDK shared data file prefix, by default set to *b6*
 
 # OAI Build
 OTA deployment is precisely described in the following tutorial:
@@ -106,14 +101,35 @@ Shared object file *libldpc_t2.so* is created during the compilation. This objec
 
 *Required poll mode driver has to be present on the host machine and required DPDK version has to be installed on the host, prior to the build of OAI*
 
+# Setup of T2-related DPDK EAL parameters
+To configure T2-related DPDK Environment Abstraction Layer (EAL) parameters, you can set the following parameters via the command line of PHY simulators or softmodem:
+- `nrLDPC_coding_t2.dpdk_dev` - **mandatory** parameter, specifies PCI address of the T2 card. PCI address of the T2 card can be detected by `lspci | grep "Xilinx"` command.
+- `nrLDPC_coding_t2.dpdk_core_list` - **mandatory** parameter, specifies CPU cores assigned to DPDK for T2 processing. Ensure that the CPU cores specified in *nrLDPC_coding_t2.dpdk_core_list* are available and not used by other processes to avoid conflicts.
+- `nrLDPC_coding_t2.dpdk_prefix` - DPDK shared data file prefix, by default set to *b6*.
+
+**Note:** These parameters can also be provided in a configuration file:
+```
+nrLDPC_coding_t2 : {
+  dpdk_dev : "41:00.0";
+  dpdk_core_list : "14-15";
+};
+
+loader : {
+  ldpc : {
+    shlibversion : "_t2";
+  };
+};
+```
+
 # 5G PHY simulators
+
 ## nr_ulsim test
-Offload of the channel decoding to the T2 card is in nr_ulsim specified by *-o* option. Example command for running nr_ulsim with LDPC decoding offload to the T2 card:
+Offload of the channel decoding to the T2 card is in nr_ulsim specified by *--loader.ldpc.shlibversion _t2* option. Example command for running nr_ulsim with LDPC decoding offload to the T2 card:
 ```
 cd ~/openairinterface5g
 source oaienv
 cd cmake_targets/ran_build/build
-sudo ./nr_ulsim -n100 -s20 -m20 -r273 -R273 -o --ldpc_offload.dpdk_dev 01:00.0
+sudo ./nr_ulsim -n100 -s20 -m20 -r273 -R273 --loader.ldpc.shlibversion _t2 --nrLDPC_coding_t2.dpdk_dev 01:00.0 --nrLDPC_coding_t2.dpdk_core_list 0-1
 ```
 ## nr_dlsim test
 Offload of the channel encoding to the AMD Xilinx T2 card is in nr_dlsim specified by *-c* option. Example command for running nr_dlsim with LDPC encoding offload to the T2 card:
@@ -121,18 +137,18 @@ Offload of the channel encoding to the AMD Xilinx T2 card is in nr_dlsim specifi
 cd ~/openairinterface5g
 source oaienv
 cd cmake_targets/ran_build/build
-sudo ./nr_dlsim -n300 -s30 -R 106 -e 27 -c --ldpc_offload.dpdk_dev 01:00.0
+sudo ./nr_dlsim -n300 -s30 -R 106 -e 27 --loader.ldpc.shlibversion _t2 --nrLDPC_coding_t2.dpdk_dev 01:00.0 --nrLDPC_coding_t2.dpdk_core_list 0-1
 ```
 
 # OTA test
-Offload of the channel encoding and decoding to the AMD Xilinx T2 card is enabled by *--ldpc-offload-enable* option.
+Offload of the channel encoding and decoding to the AMD Xilinx T2 card is enabled by *--loader.ldpc.shlibversion _t2* option.
 
 ## Run OAI gNB with USRP B210
 ```
 cd ~/openairinterface5g
 source oaienv
 cd cmake_targets/ran_build/build
-sudo ./nr-softmodem --sa -O ../../../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band78.fr1.106PRB.usrpb210.conf --ldpc-offload-enable --ldpc_offload.dpdk_dev 01:00.0
+sudo ./nr-softmodem -O ../../../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band78.fr1.106PRB.usrpb210.conf --loader.ldpc.shlibversion _t2 --nrLDPC_coding_t2.dpdk_dev 01:00.0 --nrLDPC_coding_t2.dpdk_core_list 0-1
 ```
 
 # Limitations

@@ -20,7 +20,7 @@
 
 #include "nfapi_pnf_interface.h"
 
-#define NFAPI_MAX_PACKED_MESSAGE_SIZE 8192
+#define NFAPI_MAX_PACKED_MESSAGE_SIZE 32768
 
 typedef struct {
 
@@ -40,7 +40,7 @@ int pnf_connect(pnf_t *pnf);
 int pnf_message_pump(pnf_t *pnf);
 int pnf_nr_message_pump(pnf_t *pnf);
 
-int pnf_nr_pack_and_send_p5_message(pnf_t* pnf, nfapi_p4_p5_message_header_t* msg, uint32_t msg_len);
+int pnf_nr_pack_and_send_p5_message(pnf_t* pnf, nfapi_nr_p4_p5_message_header_t* msg, uint32_t msg_len);
 int pnf_pack_and_send_p5_message(pnf_t* pnf, nfapi_p4_p5_message_header_t* msg, uint32_t msg_len);
 int pnf_pack_and_send_p4_message(pnf_t* pnf, nfapi_p4_p5_message_header_t* msg, uint32_t msg_len);
 int pnf_send_message(pnf_t* pnf, uint8_t* msg, uint32_t msg_len, uint16_t stream_id);

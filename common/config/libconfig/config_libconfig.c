@@ -461,13 +461,11 @@ int config_libconfig_get(configmodule_interface_t *cfg, paramdef_t *cfgoptions, 
     } /* switch on param type */
 
     if( notfound == 1) {
-      printf("[LIBCONFIG] %s not found in %s ", cfgpath,libconfig_privdata.configfile );
+      fprintf(stderr, "[LIBCONFIG] %s not found in %s ", cfgpath, libconfig_privdata.configfile);
 
       if ( (cfgoptions[i].paramflags & PARAMFLAG_MANDATORY) != 0) {
         fatalerror=1;
-        printf("  mandatory parameter missing\n");
-      } else {
-        printf("\n");
+        fprintf(stderr, "  mandatory parameter missing\n");
       }
     } else {
       if (defval == 1) {
@@ -570,8 +568,8 @@ int config_libconfig_init(configmodule_interface_t *cfg)
   }
   
   const char *incp = config_get_include_dir (&(libconfig_privdata.cfg)) ;
- 
-  printf("[LIBCONFIG] Path for include directive set to: %s\n", (incp!=NULL)?incp:"libconfig defaults");
+
+  printf_params(cfg, "[LIBCONFIG] Path for include directive set to: %s\n", (incp != NULL) ? incp : "libconfig defaults");
   /* set convertion option to allow integer to float conversion*/
    config_set_auto_convert (&(libconfig_privdata.cfg), CONFIG_TRUE);
   /* Read the file. If there is an error, report it and exit. */
@@ -582,7 +580,7 @@ int config_libconfig_init(configmodule_interface_t *cfg)
             config_error_line(&(libconfig_privdata.cfg)),
             config_error_text(&(libconfig_privdata.cfg)));
     config_destroy(&(libconfig_privdata.cfg));
-    printf( "\n");
+    fprintf(stderr, "\n");
     free(tmppath);
     return -1;
   }
@@ -623,11 +621,11 @@ void config_libconfig_write_parsedcfg(configmodule_interface_t *cfg)
               config_error_line(&(libconfig_privdata.runtcfg)),
               config_error_text(&(libconfig_privdata.runtcfg)));
     } else {
-      printf("[LIBCONFIG] file %s created successfully\n", cfg->status->debug_cfgname);
+      printf_params(cfg, "[LIBCONFIG] file %s created successfully\n", cfg->status->debug_cfgname);
     }
     free(fname);
   } else {
-    printf("[LIBCONFIG] Cannot create config file after parsing: CONFIG_SAVERUNCFG flag not specified\n");
+    printf_params(cfg, "[LIBCONFIG] Cannot create config file after parsing: CONFIG_SAVERUNCFG flag not specified\n");
   }
 }
 

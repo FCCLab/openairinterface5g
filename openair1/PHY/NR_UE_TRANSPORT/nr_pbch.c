@@ -33,12 +33,12 @@
 #include "PHY/CODING/coding_extern.h"
 #include "PHY/phy_extern_nr_ue.h"
 #include "PHY/sse_intrin.h"
-#include "PHY/LTE_REFSIG/lte_refsig.h"
 #include "PHY/INIT/nr_phy_init.h"
 #include "openair1/SCHED_NR_UE/defs.h"
 #include <openair1/PHY/NR_UE_TRANSPORT/nr_transport_proto_ue.h>
 #include <openair1/PHY/TOOLS/phy_scope_interface.h>
-
+#include "openair1/PHY/NR_REFSIG/nr_refsig_common.h"
+#include "instrumentation.h"
 //#define DEBUG_PBCH
 //#define DEBUG_PBCH_ENCODING
 
@@ -208,31 +208,14 @@ int nr_pbch_channel_level(struct complex16 dl_ch_estimates_ext[][PBCH_MAX_RE_PER
                           const NR_DL_FRAME_PARMS *frame_parms,
                           int nb_re)
 {
-  int16_t nb_rb=nb_re/12;
-  simde__m128i avg128;
-  simde__m128i *dl_ch128;
-  int avg1=0,avg2=0;
+  int32_t avg2 = 0;
 
   for (int aarx=0; aarx<frame_parms->nb_antennas_rx; aarx++) {
-    //clear average level
-    avg128 = simde_mm_setzero_si128();
-    dl_ch128=(simde__m128i *)dl_ch_estimates_ext[aarx];
 
-    for (int rb=0; rb<nb_rb; rb++) {
-      avg128 = simde_mm_add_epi32(avg128, simde_mm_madd_epi16(dl_ch128[0],dl_ch128[0]));
-      avg128 = simde_mm_add_epi32(avg128, simde_mm_madd_epi16(dl_ch128[1],dl_ch128[1]));
-      avg128 = simde_mm_add_epi32(avg128, simde_mm_madd_epi16(dl_ch128[2],dl_ch128[2]));
-      dl_ch128+=3;
-      /*
-      if (rb==0) {
-      print_shorts("dl_ch128",&dl_ch128[0]);
-      print_shorts("dl_ch128",&dl_ch128[1]);
-      print_shorts("dl_ch128",&dl_ch128[2]);
-      }*/
-    }
+    simde__m128i *dl_ch128 = (simde__m128i *)dl_ch_estimates_ext[aarx];
 
-    for (int i = 0; i < 4; i++)
-      avg1 += ((int *)&avg128)[i] / (nb_rb * 12);
+    //compute average level
+    int32_t avg1 = simde_mm_average(dl_ch128, nb_re, 0, nb_re);
 
     if (avg1>avg2)
       avg2 = avg1;
@@ -280,8 +263,6 @@ void nr_pbch_detection_mrc(NR_DL_FRAME_PARMS *frame_parms,
     }
   }
 
-  simde_mm_empty();
-  simde_m_empty();
 }
 
 void nr_pbch_unscrambling(int16_t *demod_pbch_e,
@@ -294,46 +275,30 @@ void nr_pbch_unscrambling(int16_t *demod_pbch_e,
                           uint32_t pbch_a_prime,
                           uint32_t *pbch_a_interleaved)
 {
-  uint8_t reset, offset;
-  uint32_t x1 = 0, x2 = 0, s = 0;
-  uint8_t k=0;
-  reset = 1;
-  // x1 is set in first call to lte_gold_generic
-  x2 = Nid; //this is c_init
-
+  uint32_t *seq = gold_cache(Nid, (nushift * M + length + 31) / 32); // this is c_init
   // The Gold sequence is shifted by nushift* M, so we skip (nushift*M /32) double words
-  for (int i=0; i<(uint16_t)ceil(((float)nushift*M)/32); i++) {
-    s = lte_gold_generic(&x1, &x2, reset);
-    reset = 0;
-  }
+  int idxGold = (nushift * M + 31) / 32 - 1;
 
   // Scrambling is now done with offset (nushift*M)%32
-  offset = (nushift*M)&0x1f;
-
-  for (int i=0; i<length; i++) {
-    /*if (((i+offset)&0x1f)==0) {
-      s = lte_gold_generic(&x1, &x2, reset);
-      reset = 0;
-    }*/
+  int offset = (nushift * M) & 0x1f;
+  uint8_t k = 0;
+  for (int i = 0; i < length; i++) {
     if (bitwise) {
-      if (((k+offset)&0x1f)==0 && (!((unscrambling_mask>>i)&1))) {
-        s = lte_gold_generic(&x1, &x2, reset);
-        reset = 0;
-      }
-
-      *pbch_a_interleaved ^= ((unscrambling_mask>>i)&1)? ((pbch_a_prime>>i)&1)<<i : (((pbch_a_prime>>i)&1) ^ ((s>>((k+offset)&0x1f))&1))<<i;
+      if (((k + offset) & 0x1f) == 0 && (!((unscrambling_mask >> i) & 1)))
+        idxGold++;
+      *pbch_a_interleaved ^= ((unscrambling_mask >> i) & 1)
+                                 ? ((pbch_a_prime >> i) & 1) << i
+                                 : (((pbch_a_prime >> i) & 1) ^ ((seq[idxGold] >> ((k + offset) & 0x1f)) & 1)) << i;
       k += (!((unscrambling_mask>>i)&1));
 #ifdef DEBUG_PBCH_ENCODING
       printf("i %d k %d offset %d (unscrambling_mask>>i)&1) %d s: %08x\t  pbch_a_interleaved 0x%08x (!((unscrambling_mask>>i)&1)) %d\n", i, k, offset, (unscrambling_mask>>i)&1, s, *pbch_a_interleaved,
              (!((unscrambling_mask>>i)&1)));
 #endif
     } else {
-      if (((i+offset)&0x1f)==0) {
-        s = lte_gold_generic(&x1, &x2, reset);
-        reset = 0;
-      }
+      if (((i + offset) & 0x1f) == 0)
+        idxGold++;
 
-      if (((s>>((i+offset)&0x1f))&1)==1)
+      if (seq[idxGold] & (1UL << ((i + offset) % 32)))
         demod_pbch_e[i] = -demod_pbch_e[i];
 
 #ifdef DEBUG_PBCH_ENCODING
@@ -382,6 +347,7 @@ int nr_rx_pbch(PHY_VARS_NR_UE *ue,
                int rxdataFSize,
                const struct complex16 rxdataF[][rxdataFSize])
 {
+  TracyCZone(ctx, true);
   int max_h=0;
   int symbol;
   uint8_t Lmax=frame_parms->Lmax;
@@ -459,8 +425,9 @@ int nr_rx_pbch(PHY_VARS_NR_UE *ue,
 
   // legacy code use int16, but it is complex16
   if (ue) {
-    UEscopeCopy(ue, pbchRxdataF_comp, pbch_unClipped, sizeof(struct complex16), frame_parms->nb_antennas_rx, pbch_e_rx_idx / 2, 0);
-    UEscopeCopy(ue, pbchLlr, pbch_e_rx, sizeof(int16_t), frame_parms->nb_antennas_rx, pbch_e_rx_idx, 0);
+    metadata meta = {.slot = proc->nr_slot_rx, .frame = proc->frame_rx};
+    UEscopeCopyWithMetadata(ue, pbchRxdataF_comp, pbch_unClipped, sizeof(struct complex16), frame_parms->nb_antennas_rx, pbch_e_rx_idx / 2, 0, &meta);
+    UEscopeCopyWithMetadata(ue, pbchLlr, pbch_e_rx, sizeof(int16_t), frame_parms->nb_antennas_rx, pbch_e_rx_idx, 0, &meta);
   }
 #ifdef DEBUG_PBCH
   for (int cnt = 0; cnt < 864  ; cnt++)
@@ -555,5 +522,6 @@ int nr_rx_pbch(PHY_VARS_NR_UE *ue,
       ue->if_inst->dl_indication(&dl_indication);
   }
 
+  TracyCZoneEnd(ctx);
   return 0;
 }

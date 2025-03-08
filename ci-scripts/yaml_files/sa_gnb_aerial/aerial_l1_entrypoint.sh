@@ -5,8 +5,7 @@ cuBB_Path="${cuBB_SDK:-/opt/nvidia/cuBB}"
 
 cd "$cuBB_Path" || exit 1
 # Add gdrcopy to LD_LIBRARY_PATH
-export LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64:/opt/mellanox/dpdk/lib/x86_64-linux-gnu:/opt/mellanox/doca/lib/x86_64-linux-gnu:"$cuBB_Path/cuPHY-CP/external/gdrcopy/build/x86_64/"
-export LD_LIBRARY_PATH=$LD_LIBRART_PATH:"$cuBB_Path/gpu-dpdk/build/install/lib/x86_64-linux-gnu:$cuBB_Path/build/cuPHY-CP/cuphydriver/src"
+export LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64:/opt/mellanox/dpdk/lib/x86_64-linux-gnu:/opt/mellanox/doca/lib/x86_64-linux-gnu:/opt/nvidia/cuBB/cuPHY-CP/external/gdrcopy/build/x86_64/
 
 # Restart MPS
 # Export variables
@@ -33,7 +32,3 @@ fi
 
 sudo -E "$cuBB_Path"/build/cuPHY-CP/cuphycontroller/examples/cuphycontroller_scf "$argument"
 sudo -E ./build/cuPHY-CP/gt_common_libs/nvIPC/tests/pcap/pcap_collect
-
-# while true; do
-#     sleep 1
-# done

@@ -92,14 +92,20 @@
 struct T_header;
 
 /* to define message ID */
+#ifdef CHECK_T_TYPE
 #define T_ID(x) ((struct T_header *)(uintptr_t)(x))
+#else
+#define T_ID(x) x
+#endif
 
 /* T macro tricks */
 extern int T_stdout;
-#define TN(...) TN_N(__VA_ARGS__,33,32,31,30,29,28,27,26,25,24,23,22,21,\
-                     20,19,18,17,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0)(__VA_ARGS__)
-#define TN_N(n0,n1,n2,n3,n4,n5,n6,n7,n8,n9,n10,n11,n12,n13,n14,n15,n16,n17,\
-             n18,n19,n20,n21,n22,n23,n24,n25,n26,n27,n28,n29,n30,n31,n32,n,...) T##n
+#define TN(...) TN_N(__VA_ARGS__,39,38,37,36,35,34,33,32,31,30,29,28,27,26, \
+                     25,24,23,22,21,20,19,18,17,16,15,14,13,12,11,10,9,8,7, \
+                     6,5,4,3,2,1,0)(__VA_ARGS__)
+#define TN_N(n0,n1,n2,n3,n4,n5,n6,n7,n8,n9,n10,n11,n12,n13,n14,n15,n16,n17, \
+             n18,n19,n20,n21,n22,n23,n24,n25,n26,n27,n28,n29,n30,n31,n32, \
+             n33,n34,n35,n36,n37,n38,n,...) T##n
 #define T(...) do { if (T_stdout == 0 || T_stdout == 2) TN(__VA_ARGS__); } while (0)
 
 /* type used to send arbitrary buffer data */
@@ -171,6 +177,7 @@ extern int *T_active;
 #else /* #ifdef __cplusplus */
 
 /* C version of T_HEADER with time */
+#ifdef CHECK_T_TYPE
 #define T_HEADER(x) \
   do { \
     if (!__builtin_types_compatible_p(typeof(x), struct T_header *)) { \
@@ -185,6 +192,16 @@ extern int *T_active;
     T_LOCAL_size += sizeof(struct timespec); \
     T_PUT_int(1, (int)(uintptr_t)(x)); \
   } while (0)
+#else /* CHECK_T_TYPE */
+#define T_HEADER(x) \
+  do { \
+    struct timespec T_HEADER_time; \
+    if (clock_gettime(CLOCK_REALTIME, &T_HEADER_time)) abort(); \
+    memcpy(T_LOCAL_buf, &T_HEADER_time, sizeof(struct timespec)); \
+    T_LOCAL_size += sizeof(struct timespec); \
+    T_PUT_int(1, (int)(uintptr_t)(x)); \
+  } while (0)
+#endif /* CHECK_T_TYPE */
 
 #endif /* #ifdef __cplusplus */
 
@@ -201,6 +218,7 @@ extern int *T_active;
 #else /* #ifdef __cplusplus */
 
 /* C version of T_HEADER without time */
+#ifdef CHECK_T_TYPE
 #define T_HEADER(x) \
   do { \
     if (!__builtin_types_compatible_p(typeof(x), struct T_header *)) { \
@@ -211,6 +229,12 @@ extern int *T_active;
     } \
     T_PUT_int(1, (int)(uintptr_t)(x)); \
   } while (0)
+#else /* CHECK_T_TYPE */
+#define T_HEADER(x) \
+  do { \
+    T_PUT_int(1, (int)(uintptr_t)(x)); \
+  } while (0)
+#endif /* CHECK_T_TYPE */
 
 #endif /* #ifdef __cplusplus */
 
@@ -370,7 +394,8 @@ extern int *T_active;
     } \
   } while (0)
 
-#define T23(t,t0,x0,t1,x1,t2,x2,t3,x3,t4,x4,t5,x5,t6,x6,t7,x7,t8,x8,t9,x9,t10,x10) \
+#define T23(t,t0,x0,t1,x1,t2,x2,t3,x3,t4,x4,t5,x5,t6,x6,t7,x7,t8,x8,t9,x9, \
+            t10,x10) \
   do { \
     if (T_ACTIVE(t)) { \
       T_LOCAL_DATA \
@@ -390,7 +415,8 @@ extern int *T_active;
     } \
   } while (0)
 
-#define T25(t,t0,x0,t1,x1,t2,x2,t3,x3,t4,x4,t5,x5,t6,x6,t7,x7,t8,x8,t9,x9,t10,x10,t11,x11) \
+#define T25(t,t0,x0,t1,x1,t2,x2,t3,x3,t4,x4,t5,x5,t6,x6,t7,x7,t8,x8,t9,x9, \
+            t10,x10,t11,x11) \
   do { \
     if (T_ACTIVE(t)) { \
       T_LOCAL_DATA \
@@ -411,7 +437,8 @@ extern int *T_active;
     } \
   } while (0)
 
-#define T27(t,t0,x0,t1,x1,t2,x2,t3,x3,t4,x4,t5,x5,t6,x6,t7,x7,t8,x8,t9,x9,t10,x10,t11,x11,t12,x12) \
+#define T27(t,t0,x0,t1,x1,t2,x2,t3,x3,t4,x4,t5,x5,t6,x6,t7,x7,t8,x8,t9,x9, \
+            t10,x10,t11,x11,t12,x12) \
   do { \
     if (T_ACTIVE(t)) { \
       T_LOCAL_DATA \
@@ -433,7 +460,8 @@ extern int *T_active;
     } \
   } while (0)
 
-#define T29(t,t0,x0,t1,x1,t2,x2,t3,x3,t4,x4,t5,x5,t6,x6,t7,x7,t8,x8,t9,x9,t10,x10,t11,x11,t12,x12,t13,x13) \
+#define T29(t,t0,x0,t1,x1,t2,x2,t3,x3,t4,x4,t5,x5,t6,x6,t7,x7,t8,x8,t9,x9, \
+            t10,x10,t11,x11,t12,x12,t13,x13) \
   do { \
     if (T_ACTIVE(t)) { \
       T_LOCAL_DATA \
@@ -456,7 +484,8 @@ extern int *T_active;
     } \
   } while (0)
 
-#define T31(t,t0,x0,t1,x1,t2,x2,t3,x3,t4,x4,t5,x5,t6,x6,t7,x7,t8,x8,t9,x9,t10,x10,t11,x11,t12,x12,t13,x13,t14,x14) \
+#define T31(t,t0,x0,t1,x1,t2,x2,t3,x3,t4,x4,t5,x5,t6,x6,t7,x7,t8,x8,t9,x9, \
+            t10,x10,t11,x11,t12,x12,t13,x13,t14,x14) \
   do { \
     if (T_ACTIVE(t)) { \
       T_LOCAL_DATA \
@@ -480,7 +509,8 @@ extern int *T_active;
     } \
   } while (0)
 
-#define T33(t,t0,x0,t1,x1,t2,x2,t3,x3,t4,x4,t5,x5,t6,x6,t7,x7,t8,x8,t9,x9,t10,x10,t11,x11,t12,x12,t13,x13,t14,x14,t15,x15) \
+#define T33(t,t0,x0,t1,x1,t2,x2,t3,x3,t4,x4,t5,x5,t6,x6,t7,x7,t8,x8,t9,x9, \
+            t10,x10,t11,x11,t12,x12,t13,x13,t14,x14,t15,x15) \
   do { \
     if (T_ACTIVE(t)) { \
       T_LOCAL_DATA \
@@ -501,6 +531,91 @@ extern int *T_active;
       T_PUT_##t13(15, x13); \
       T_PUT_##t14(16, x14); \
       T_PUT_##t15(17, x15); \
+      T_COMMIT(); \
+    } \
+  } while (0)
+
+#define T35(t,t0,x0,t1,x1,t2,x2,t3,x3,t4,x4,t5,x5,t6,x6,t7,x7,t8,x8,t9,x9, \
+            t10,x10,t11,x11,t12,x12,t13,x13,t14,x14,t15,x15,t16,x16) \
+  do { \
+    if (T_ACTIVE(t)) { \
+      T_LOCAL_DATA \
+      T_HEADER(t); \
+      T_PUT_##t0(2, x0); \
+      T_PUT_##t1(3, x1); \
+      T_PUT_##t2(4, x2); \
+      T_PUT_##t3(5, x3); \
+      T_PUT_##t4(6, x4); \
+      T_PUT_##t5(7, x5); \
+      T_PUT_##t6(8, x6); \
+      T_PUT_##t7(9, x7); \
+      T_PUT_##t8(10, x8); \
+      T_PUT_##t9(11, x9); \
+      T_PUT_##t10(12, x10); \
+      T_PUT_##t11(13, x11); \
+      T_PUT_##t12(14, x12); \
+      T_PUT_##t13(15, x13); \
+      T_PUT_##t14(16, x14); \
+      T_PUT_##t15(17, x15); \
+      T_PUT_##t16(18, x16); \
+      T_COMMIT(); \
+    } \
+  } while (0)
+
+#define T37(t,t0,x0,t1,x1,t2,x2,t3,x3,t4,x4,t5,x5,t6,x6,t7,x7,t8,x8,t9,x9, \
+            t10,x10,t11,x11,t12,x12,t13,x13,t14,x14,t15,x15,t16,x16,t17,x17) \
+  do { \
+    if (T_ACTIVE(t)) { \
+      T_LOCAL_DATA \
+      T_HEADER(t); \
+      T_PUT_##t0(2, x0); \
+      T_PUT_##t1(3, x1); \
+      T_PUT_##t2(4, x2); \
+      T_PUT_##t3(5, x3); \
+      T_PUT_##t4(6, x4); \
+      T_PUT_##t5(7, x5); \
+      T_PUT_##t6(8, x6); \
+      T_PUT_##t7(9, x7); \
+      T_PUT_##t8(10, x8); \
+      T_PUT_##t9(11, x9); \
+      T_PUT_##t10(12, x10); \
+      T_PUT_##t11(13, x11); \
+      T_PUT_##t12(14, x12); \
+      T_PUT_##t13(15, x13); \
+      T_PUT_##t14(16, x14); \
+      T_PUT_##t15(17, x15); \
+      T_PUT_##t16(18, x16); \
+      T_PUT_##t17(19, x17); \
+      T_COMMIT(); \
+    } \
+  } while (0)
+
+#define T39(t,t0,x0,t1,x1,t2,x2,t3,x3,t4,x4,t5,x5,t6,x6,t7,x7,t8,x8,t9,x9, \
+            t10,x10,t11,x11,t12,x12,t13,x13,t14,x14,t15,x15,t16,x16,t17,x17, \
+            t18,x18) \
+  do { \
+    if (T_ACTIVE(t)) { \
+      T_LOCAL_DATA \
+      T_HEADER(t); \
+      T_PUT_##t0(2, x0); \
+      T_PUT_##t1(3, x1); \
+      T_PUT_##t2(4, x2); \
+      T_PUT_##t3(5, x3); \
+      T_PUT_##t4(6, x4); \
+      T_PUT_##t5(7, x5); \
+      T_PUT_##t6(8, x6); \
+      T_PUT_##t7(9, x7); \
+      T_PUT_##t8(10, x8); \
+      T_PUT_##t9(11, x9); \
+      T_PUT_##t10(12, x10); \
+      T_PUT_##t11(13, x11); \
+      T_PUT_##t12(14, x12); \
+      T_PUT_##t13(15, x13); \
+      T_PUT_##t14(16, x14); \
+      T_PUT_##t15(17, x15); \
+      T_PUT_##t16(18, x16); \
+      T_PUT_##t17(19, x17); \
+      T_PUT_##t18(20, x18); \
       T_COMMIT(); \
     } \
   } while (0)
@@ -527,6 +642,9 @@ extern int *T_active;
 #define T28(...) T_CALL_ERROR
 #define T30(...) T_CALL_ERROR
 #define T32(...) T_CALL_ERROR
+#define T34(...) T_CALL_ERROR
+#define T36(...) T_CALL_ERROR
+#define T38(...) T_CALL_ERROR
 
 /* special cases for VCD logs */
 

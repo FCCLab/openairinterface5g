@@ -27,15 +27,11 @@
  * \email: yoshio.inoue@fujitsu.com,masayuki.harada@fujitsu.com (yoshio.inoue%40fujitsu.com%2cmasayuki.harada%40fujitsu.com)
  */
 
-#include <stdio.h>
-#include <stdlib.h>
-
-#include "intertask_interface.h"
-
-#include "ngap_common.h"
-
-#include "ngap_gNB_defs.h"
 #include "ngap_gNB_nnsf.h"
+#include <stdio.h>
+#include "ngap_gNB_defs.h"
+#include "queue.h"
+#include "tree.h"
 
 struct ngap_gNB_amf_data_s *
 ngap_gNB_nnsf_select_amf(ngap_gNB_instance_t       *instance_p,

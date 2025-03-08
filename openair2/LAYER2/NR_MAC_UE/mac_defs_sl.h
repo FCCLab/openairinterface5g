@@ -120,9 +120,9 @@ typedef struct sl_bch_params {
   //configured from RRC
   //Parameters used to determine PSBCH slot
   sl_ssb_timealloc_t ssb_time_alloc;
+  uint8_t  sl_mib[4] __attribute__((aligned(4)));
   uint16_t slss_id;
   bool     status;
-  uint8_t  sl_mib[4];
 
   //Parameters incremented by MAC PSBCH scheduler
   //after every SSB txn/reception

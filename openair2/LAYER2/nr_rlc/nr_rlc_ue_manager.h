@@ -37,12 +37,15 @@ typedef struct nr_rlc_rb_t {
   } choice;
 } nr_rlc_rb_t;
 
+typedef void (*rlf_handler_t)(int rnti);
+
 typedef struct nr_rlc_ue_t {
   int ue_id;
   nr_rlc_entity_t *srb0;
   nr_rlc_entity_t *srb[3];
   nr_rlc_entity_t *drb[MAX_DRBS_PER_UE];
   nr_rlc_rb_t lcid2rb[32];
+  rlf_handler_t rlf_handler;
 } nr_rlc_ue_t;
 
 /***********************************************************************/

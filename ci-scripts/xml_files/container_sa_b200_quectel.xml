@@ -24,11 +24,11 @@
   <htmlTabRef>TEST-SA-FR1-B200</htmlTabRef>
   <htmlTabName>20 MHz TDD SA</htmlTabName>
   <htmlTabIcon>tasks</htmlTabIcon>
-  <repeatCount>1</repeatCount>
   <TestCaseRequestedList>
     100000
     111111
     010000
+    800813
     030101
     010001
     050000
@@ -52,14 +52,15 @@
     010002
     030201
     200000
+    222222
   </TestCaseRequestedList>
   <TestCaseExclusionList></TestCaseExclusionList>
 
   <testCase id="111111">
     <class>Pull_Local_Registry</class>
     <desc>Pull Images from Local Registry</desc>
-    <test_svr_id>0</test_svr_id>
-    <images_to_pull>oai-gnb</images_to_pull>
+    <svr_id>0</svr_id>
+    <images>oai-gnb</images>
   </testCase>
 
   <testCase id="100000">
@@ -70,6 +71,7 @@
   </testCase>
   <testCase id="200000">
     <class>Custom_Command</class>
+    <always_exec>true</always_exec>
     <desc>Enable Sleep States</desc>
     <node>ofqot</node>
     <command>sudo cpupower idle-set -E</command>
@@ -82,6 +84,7 @@
   </testCase>
   <testCase id="010002">
     <class>Terminate_UE</class>
+    <always_exec>true</always_exec>
     <desc>Terminate Quectel</desc>
     <id>idefix</id>
   </testCase>
@@ -92,10 +95,16 @@
   </testCase>
   <testCase id="010010">
     <class>Detach_UE</class>
+    <always_exec>true</always_exec>
     <desc>Detach UE</desc>
     <id>idefix</id>
   </testCase>
-
+  <testCase id="800813">
+    <class>Create_Workspace</class>
+    <desc>Create new Workspace for server 0</desc>
+    <eNB_instance>0</eNB_instance>
+    <eNB_serverId>0</eNB_serverId>
+  </testCase>
   <testCase id="030101">
     <class>Deploy_Object</class>
     <desc>Deploy gNB (TDD/Band78/40MHz/B200) in a container</desc>
@@ -198,12 +207,21 @@
 
   <testCase id="030201">
     <class>Undeploy_Object</class>
+    <always_exec>true</always_exec>
     <desc>Undeploy gNB</desc>
     <yaml_path>ci-scripts/yaml_files/sa_b200_gnb</yaml_path>
     <eNB_instance>0</eNB_instance>
     <eNB_serverId>0</eNB_serverId>
     <d_retx_th>10,100,100,100</d_retx_th>
     <u_retx_th>10,100,100,100</u_retx_th>
+  </testCase>
+
+  <testCase id="222222">
+    <class>Clean_Test_Server_Images</class>
+    <always_exec>true</always_exec>
+    <desc>Clean Test Images on Test Server</desc>
+    <svr_id>0</svr_id>
+    <images>oai-gnb</images>
   </testCase>
 
 </testCaseList>

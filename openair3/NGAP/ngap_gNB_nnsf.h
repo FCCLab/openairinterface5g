@@ -30,6 +30,10 @@
 #ifndef NGAP_GNB_NNSF_H_
 #define NGAP_GNB_NNSF_H_
 
+#include <stdint.h>
+#include "ngap_gNB_defs.h"
+#include "ngap_messages_types.h"
+
 struct ngap_gNB_amf_data_s *
 ngap_gNB_nnsf_select_amf(ngap_gNB_instance_t       *instance_p,
                          ngap_rrc_establishment_cause_t  cause);

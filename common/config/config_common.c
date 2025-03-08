@@ -24,11 +24,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <unistd.h>
-#include <errno.h>
-#include <dlfcn.h>
 #include <arpa/inet.h>
-#include "common/platform_types.h"
 #include "config_common.h"
 #include "../utils/LOG/log.h"
 static int managed_ptr_sz(configmodule_interface_t *cfg, void *ptr)
@@ -112,6 +108,7 @@ void *config_allocate_new(configmodule_interface_t *cfg, int sz, bool autoFree)
   // add the memory piece in the managed memory pieces list
   pthread_mutex_lock(&cfg->memBlocks_mutex);
   int newBlockIdx=cfg->numptrs++;
+  AssertFatal(newBlockIdx < sizeofArray(cfg->oneBlock), "reached maximum number of dynamically allocatable blocks\n");
   oneBlock_t* tmp=&cfg->oneBlock[newBlockIdx];
   tmp->ptrs = (char *)ptr;
   tmp->ptrsAllocated = true;

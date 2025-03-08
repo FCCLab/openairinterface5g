@@ -27,16 +27,19 @@
  * \version 0.1
  */
 
-
-#include <stdio.h>
-#include <string.h>
-#include <stdint.h>
-
-#include "assertions.h"
-#include "conversions.h"
-#include "intertask_interface.h"
-#include "ngap_common.h"
 #include "ngap_gNB_encoder.h"
+#include <stdint.h>
+#include <stdio.h>
+#include "ngap_msg_includes.h"
+#include "T.h"
+#include "asn_application.h"
+#include "asn_codecs.h"
+#include "assertions.h"
+#include "common/utils/T/T.h"
+#include "constr_TYPE.h"
+#include "ngap_common.h"
+#include "utils.h"
+#include "xer_encoder.h"
 
 static inline int ngap_gNB_encode_initiating(NGAP_NGAP_PDU_t *pdu, uint8_t **buffer, uint32_t *len)
 {

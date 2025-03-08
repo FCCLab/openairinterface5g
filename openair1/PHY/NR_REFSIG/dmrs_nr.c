@@ -299,7 +299,7 @@ uint16_t get_dmrs_freq_idx_ul(uint16_t n, uint8_t k_prime, uint8_t delta, uint8_
 int8_t get_next_dmrs_symbol_in_slot(uint16_t  ul_dmrs_symb_pos, uint8_t counter, uint8_t end_symbol)
 {
   for(uint8_t symbol = counter; symbol < end_symbol; symbol++) {
-    if((ul_dmrs_symb_pos >> symbol) & 0x01 ) {
+    if((ul_dmrs_symb_pos >> symbol) & 0x01) {
       return symbol;
     }
   }
@@ -318,23 +318,23 @@ uint8_t get_dmrs_symbols_in_slot(uint16_t l_prime_mask,  uint16_t nb_symb, uint8
 }
 
 /* return the position of valid dmrs symbol in a slot for channel compensation */
-int8_t get_valid_dmrs_idx_for_channel_est(uint16_t  dmrs_symb_pos, uint8_t counter)
+int8_t get_valid_dmrs_idx_for_channel_est(uint16_t dmrs_symb_pos, uint8_t counter)
 {
   int8_t  symbIdx = -1;
   /* if current symbol is DMRS then return this index */
-  if(is_dmrs_symbol(counter,  dmrs_symb_pos ) ==1) {
+  if(is_dmrs_symbol(counter, dmrs_symb_pos) == 1) {
     return counter;
   }
   /* find previous DMRS symbol */
-  for(int8_t symbol = counter;symbol >=0 ; symbol--) {
-    if((1<<symbol & dmrs_symb_pos)> 0) {
+  for(int8_t symbol = counter; symbol >= 0 ; symbol--) {
+    if((1 << symbol & dmrs_symb_pos) > 0) {
       symbIdx = symbol;
       break;
     }
   }
   /* if there is no previous dmrs available then find the next possible*/
   if(symbIdx == -1) {
-    symbIdx = get_next_dmrs_symbol_in_slot(dmrs_symb_pos,counter,15);
+    symbIdx = get_next_dmrs_symbol_in_slot(dmrs_symb_pos, counter, 15);
   }
   return symbIdx;
 }

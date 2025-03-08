@@ -44,7 +44,7 @@ static void f1ap_write_drb_qos_param(const f1ap_qos_flow_level_qos_parameters_t 
   int type = drb_qos_in->qos_characteristics.qos_type;
 
   const f1ap_qos_characteristics_t *drb_qos_char_in = &drb_qos_in->qos_characteristics;
-  if (type == non_dynamic) {
+  if (type == NON_DYNAMIC) {
     asn1_qosparam->qoS_Characteristics.present = F1AP_QoS_Characteristics_PR_non_Dynamic_5QI;
     asn1cCalloc(asn1_qosparam->qoS_Characteristics.choice.non_Dynamic_5QI, tmp);
 
@@ -108,8 +108,12 @@ static void f1ap_write_drb_nssai(const nssai_t *nssai, F1AP_SNSSAI_t *asn1_nssai
   OCTET_STRING_fromBuf(&asn1_nssai->sST, (char *)&nssai->sst, 1);
 
   /* OPTIONAL */
-  if (nssai->sd != 0xffffff)
-    OCTET_STRING_fromBuf(asn1_nssai->sD, (char *)&nssai->sd, 3);
+  if (nssai->sd != 0xffffff) {
+    char sd_buffer[3];
+    INT24_TO_BUFFER(nssai->sd, sd_buffer);
+    asn1cCalloc(asn1_nssai->sD, sD);
+    OCTET_STRING_fromBuf(sD, sd_buffer, 3);
+  }
 }
 
 static void f1ap_write_flows_mapped(const f1ap_flows_mapped_to_drb_t *flows_mapped, F1AP_Flows_Mapped_To_DRB_List_t *asn1_flows_mapped, int n)
@@ -130,7 +134,7 @@ static void f1ap_write_flows_mapped(const f1ap_flows_mapped_to_drb_t *flows_mapp
     const f1ap_qos_characteristics_t *flow_qos_char_in = &flow_qos_params_in->qos_characteristics;
 
     int type = flow_qos_params_in->qos_characteristics.qos_type;
-    if (type == non_dynamic) {
+    if (type == NON_DYNAMIC) {
       QosParams->present = F1AP_QoS_Characteristics_PR_non_Dynamic_5QI;
       asn1cCalloc(QosParams->choice.non_Dynamic_5QI, tmp);
 
@@ -271,6 +275,21 @@ int CU_send_UE_CONTEXT_SETUP_REQUEST(sctp_assoc_t assoc_id, f1ap_ue_context_setu
       asn1cCalloc(ie6->value.choice.CUtoDURRCInformation.measConfig,  measConfig);
       OCTET_STRING_fromBuf(measConfig, (const char*)f1ap_ue_context_setup_req->cu_to_du_rrc_information->measConfig,
         f1ap_ue_context_setup_req->cu_to_du_rrc_information->measConfig_length);
+    }
+
+    /* optional */
+    /* HandoverPreparationInformation */
+    if (f1ap_ue_context_setup_req->cu_to_du_rrc_information->handoverPreparationInfo_length > 0) {
+      DevAssert(f1ap_ue_context_setup_req->cu_to_du_rrc_information->handoverPreparationInfo != NULL);
+      F1AP_ProtocolExtensionContainer_10696P60_t *p = calloc(1, sizeof(*p));
+      ie6->value.choice.CUtoDURRCInformation.iE_Extensions = (struct F1AP_ProtocolExtensionContainer *)p;
+      asn1cSequenceAdd(p->list, F1AP_CUtoDURRCInformation_ExtIEs_t, ie_ext);
+      ie_ext->id = F1AP_ProtocolIE_ID_id_HandoverPreparationInformation;
+      ie_ext->criticality = F1AP_Criticality_ignore;
+      ie_ext->extensionValue.present = F1AP_CUtoDURRCInformation_ExtIEs__extensionValue_PR_HandoverPreparationInformation;
+      OCTET_STRING_fromBuf(&ie_ext->extensionValue.choice.HandoverPreparationInformation,
+                           (const char *)f1ap_ue_context_setup_req->cu_to_du_rrc_information->handoverPreparationInfo,
+                           f1ap_ue_context_setup_req->cu_to_du_rrc_information->handoverPreparationInfo_length);
     }
   }
 
@@ -483,12 +502,15 @@ int CU_send_UE_CONTEXT_SETUP_REQUEST(sctp_assoc_t assoc_id, f1ap_ue_context_setu
       /* 12.1.4 rLCMode */
       /* TODO use rlc_mode from f1ap_drb_to_be_setup */
       switch (f1ap_ue_context_setup_req->drbs_to_be_setup[i].rlc_mode) {
-        case RLC_MODE_AM:
+        case F1AP_RLC_MODE_AM:
           drbs_toBeSetup_item->rLCMode = F1AP_RLCMode_rlc_am;
           break;
-
-        default:
+        case F1AP_RLC_MODE_UM_BIDIR:
           drbs_toBeSetup_item->rLCMode = F1AP_RLCMode_rlc_um_bidirectional;
+          break;
+        default:
+          AssertFatal(false, "modes other than AM/UM-Bidir not supported\n");
+          break;
       }
 
       /* OPTIONAL */
@@ -600,6 +622,12 @@ int CU_handle_UE_CONTEXT_SETUP_RESPONSE(instance_t instance, sctp_assoc_t assoc_
                              F1AP_ProtocolIE_ID_id_gNB_DU_UE_F1AP_ID, true);
   f1ap_ue_context_setup_resp->gNB_DU_ue_id = ie->value.choice.GNB_DU_UE_F1AP_ID;
   LOG_D(F1AP, "f1ap_ue_context_setup_resp->gNB_DU_ue_id is: %d \n", f1ap_ue_context_setup_resp->gNB_DU_ue_id);
+  F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_UEContextSetupResponseIEs_t, ie, container, F1AP_ProtocolIE_ID_id_C_RNTI, false);
+  if (ie) {
+    f1ap_ue_context_setup_resp->crnti = calloc(1, sizeof(uint16_t));
+    *f1ap_ue_context_setup_resp->crnti = ie->value.choice.C_RNTI;
+  }
+
   // DUtoCURRCInformation
   F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_UEContextSetupResponseIEs_t, ie, container,
                              F1AP_ProtocolIE_ID_id_DUtoCURRCInformation, true);
@@ -1001,12 +1029,15 @@ int CU_send_UE_CONTEXT_MODIFICATION_REQUEST(sctp_assoc_t assoc_id, f1ap_ue_conte
 
   /* optional */
   /* c7. TransmissionActionIndicator */
-  if (0) {
+  if (f1ap_ue_context_modification_req->transm_action_ind != NULL) {
     asn1cSequenceAdd(out->protocolIEs.list, F1AP_UEContextModificationRequestIEs_t, ie7);
     ie7->id                                     = F1AP_ProtocolIE_ID_id_TransmissionActionIndicator;
     ie7->criticality                            = F1AP_Criticality_ignore;
     ie7->value.present                          = F1AP_UEContextModificationRequestIEs__value_PR_TransmissionActionIndicator;
-    ie7->value.choice.TransmissionActionIndicator = F1AP_TransmissionActionIndicator_stop;
+    ie7->value.choice.TransmissionActionIndicator = *f1ap_ue_context_modification_req->transm_action_ind;
+    // Stop is guaranteed to be 0, by restart might be different from 1
+    static_assert((int)F1AP_TransmissionActionIndicator_restart == (int)TransmActionInd_RESTART,
+                  "mismatch of ASN.1 and internal representation\n");
   }
 
   /* optional */
@@ -1218,12 +1249,15 @@ int CU_send_UE_CONTEXT_MODIFICATION_REQUEST(sctp_assoc_t assoc_id, f1ap_ue_conte
       /* 12.1.4 rLCMode */
       /* TODO use rlc_mode from f1ap_drb_to_be_setup */
       switch (f1ap_ue_context_modification_req->drbs_to_be_setup[i].rlc_mode) {
-        case RLC_MODE_AM:
+        case F1AP_RLC_MODE_AM:
           drbs_toBeSetupMod_item->rLCMode = F1AP_RLCMode_rlc_am;
           break;
-
-        default:
+        case F1AP_RLC_MODE_UM_BIDIR:
           drbs_toBeSetupMod_item->rLCMode = F1AP_RLCMode_rlc_um_bidirectional;
+          break;
+        default:
+          AssertFatal(false, "modes other than AM/UM-Bidir not supported\n");
+          break;
       }
 
       /* OPTIONAL */

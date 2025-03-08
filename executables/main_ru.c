@@ -41,6 +41,7 @@
 #include "PHY/types.h"
 
 #include "PHY/defs_RU.h"
+#include "common/oai_version.h"
 #include "common/config/config_userapi.h"
 #include "common/utils/load_module_shlib.h"
 
@@ -74,7 +75,7 @@ int sync_var=-1; //!< protected by mutex \ref sync_mutex.
 int config_sync_var=-1;
 
 int oai_exit = 0;
-uint16_t sf_ahead = 4;
+int sf_ahead = 4;
 RU_t ru_m;
 
 
@@ -118,7 +119,8 @@ void exit_function(const char *file, const char *function, const int line, const
 static void get_options(configmodule_interface_t *cfg)
 {
   CONFIG_SETRTFLAG(CONFIG_NOEXITONHELP);
-  get_common_options(cfg, SOFTMODEM_ENB_BIT);
+  IS_SOFTMODEM_ENB = true;
+  get_common_options(cfg);
   CONFIG_CLEARRTFLAG(CONFIG_NOEXITONHELP);
 
   // RCConfig();
@@ -160,11 +162,8 @@ int main ( int argc, char **argv )
   T_Config_Init();
 #endif
   printf("configuring for RRU\n");
-#ifndef PACKAGE_VERSION
-#define PACKAGE_VERSION "UNKNOWN-EXPERIMENTAL"
-#endif
   // strdup to put the sring in the core file for post mortem identification
-  LOG_I(HW, "Version: %s\n", strdup(PACKAGE_VERSION));
+  LOG_I(HW, "Version: %s\n", strdup(OAI_PACKAGE_VERSION));
 
   /* Read configuration */
 

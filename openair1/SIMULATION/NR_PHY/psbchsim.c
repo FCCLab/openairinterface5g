@@ -1,3 +1,23 @@
+/*
+ * Licensed to the OpenAirInterface (OAI) Software Alliance under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The OpenAirInterface Software Alliance licenses this file to You under
+ * the OAI Public License, Version 1.1  (the "License"); you may not use this file
+ * except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.openairinterface.org/?page_id=698
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *-------------------------------------------------------------------------------
+ * For more information about the OpenAirInterface (OAI) Software Alliance:
+ *      contact@openairinterface.org
+ */
 
 #include <string.h>
 #include <math.h>
@@ -25,12 +45,13 @@
 #include "common/utils/load_module_shlib.h"
 #include "PHY/MODULATION/nr_modulation.h"
 #include "NR_SL-SSB-TimeAllocation-r16.h"
+#include "nr-uesoftmodem.h"
 
 void e1_bearer_context_setup(const e1ap_bearer_setup_req_t *req)
 {
   abort();
 }
-void e1_bearer_context_modif(const e1ap_bearer_setup_req_t *req)
+void e1_bearer_context_modif(const e1ap_bearer_mod_req_t *req)
 {
   abort();
 }
@@ -54,12 +75,13 @@ double cpuf;
 void get_num_re_dmrs(nfapi_nr_ue_pusch_pdu_t *pusch_pdu, uint8_t *nb_dmrs_re_per_rb, uint16_t *number_dmrs_symbols)
 {
 }
-uint64_t downlink_frequency[1][1];
-int32_t uplink_frequency_offset[1][1];
+
+uint64_t downlink_frequency[MAX_NUM_CCs][4];
+int32_t uplink_frequency_offset[MAX_NUM_CCs][4];
 THREAD_STRUCT thread_struct;
 instance_t DUuniqInstance = 0;
 instance_t CUuniqInstance = 0;
-openair0_config_t openair0_cfg[1];
+openair0_config_t openair0_cfg[MAX_CARDS];
 
 RAN_CONTEXT_t RC;
 int oai_exit = 0;
@@ -80,9 +102,11 @@ int8_t nr_mac_rrc_data_req_ue(const module_id_t Mod_idP,
   return 0;
 }
 
-void get_nrUE_params(void)
+nrUE_params_t nrUE_params = {0};
+
+nrUE_params_t *get_nrUE_params(void)
 {
-  return;
+  return &nrUE_params;
 }
 uint8_t check_if_ue_is_sl_syncsource()
 {
@@ -236,15 +260,8 @@ static int freq_domain_loopback(PHY_VARS_NR_UE *UE_tx, PHY_VARS_NR_UE *UE_rx, in
   nr_tx_psbch(UE_tx, frame, slot, &phy_data->psbch_vars, txdataF);
 
   int estimateSz = sl_ue2->sl_frame_params.samples_per_slot_wCP;
-  __attribute__((aligned(32))) struct complex16 rxdataF[1][estimateSz];
-  for (int i = 0; i < sl_ue1->sl_frame_params.samples_per_slot_wCP; i++) {
-    struct complex16 *txdataF_ptr = (struct complex16 *)&txdataF[0][i];
-    struct complex16 *rxdataF_ptr = (struct complex16 *)&rxdataF[0][i];
-    rxdataF_ptr->r = txdataF_ptr->r;
-    rxdataF_ptr->i = txdataF_ptr->i;
-    // printf("r,i TXDATAF[%d]-    %d:%d, RXDATAF[%d]-    %d:%d\n",
-    //                                   i, txdataF_ptr->r, txdataF_ptr->i, i, txdataF_ptr->r, txdataF_ptr->i);
-  }
+  __attribute__((aligned(32))) c16_t rxdataF[1][estimateSz];
+  memcpy(rxdataF[0], txdataF[0], sl_ue1->sl_frame_params.samples_per_slot_wCP * sizeof(**rxdataF));
 
   uint8_t err_status = 0;
 
@@ -291,7 +308,6 @@ double cpuf;
 configmodule_interface_t *uniqCfg = NULL;
 int main(int argc, char **argv)
 {
-  char c;
   int test_freqdomain_loopback = 0, test_slss_search = 0;
   int frame = 5, slot = 10, frame_tx = 0, slot_tx = 0;
   int loglvl = OAILOG_INFO;
@@ -319,6 +335,7 @@ int main(int argc, char **argv)
 
   randominit(0);
 
+  int c;
   while ((c = getopt(argc, argv, "--:O:c:hn:o:s:FIL:N:R:S:T:")) != -1) {
 
     /* ignore long options starting with '--', option '-O' and their arguments that are handled by configmodule */

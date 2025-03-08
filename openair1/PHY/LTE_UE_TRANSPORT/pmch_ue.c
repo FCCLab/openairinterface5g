@@ -244,8 +244,6 @@ void mch_channel_level(int **dl_ch_estimates_ext,
     //            printf("Channel level : %d\n",avg[(aatx<<1)+aarx]);
   }
 
-  simde_mm_empty();
-  simde_m_empty();
 }
 
 void mch_channel_level_khz_1dot25(int **dl_ch_estimates_ext,
@@ -285,8 +283,6 @@ void mch_channel_level_khz_1dot25(int **dl_ch_estimates_ext,
                 //printf("Channel level : %d\n",avg[(aatx<<1)+aarx]);
   }
 
-  simde_mm_empty();
-  simde_m_empty();
 }
 
 
@@ -393,8 +389,6 @@ void mch_channel_compensation(int **rxdataF_ext,
     }
   }
 
-  simde_mm_empty();
-  simde_m_empty();
 }
 
 
@@ -501,8 +495,6 @@ void mch_channel_compensation_khz_1dot25(int **rxdataF_ext,
     }
   }
 
-  simde_mm_empty();
-  simde_m_empty();
 }
 
 
@@ -533,8 +525,6 @@ void mch_detection_mrc(LTE_DL_FRAME_PARMS *frame_parms,
     }
   }
 
-  simde_mm_empty();
-  simde_m_empty();
 }
 
 
@@ -564,8 +554,6 @@ void mch_detection_mrc_khz_1dot25(LTE_DL_FRAME_PARMS *frame_parms,
     }
   }
 
-  simde_mm_empty();
-  simde_m_empty();
 }
 
 
@@ -603,8 +591,6 @@ int mch_qpsk_llr(LTE_DL_FRAME_PARMS *frame_parms,
   }
 
   *llr32p = (short *)llr32;
-  simde_mm_empty();
-  simde_m_empty();
   return(0);
 }
 
@@ -634,8 +620,6 @@ int mch_qpsk_llr_khz_1dot25(LTE_DL_FRAME_PARMS *frame_parms,
   }
 
   *llr32p = (short *)llr32;
-  simde_mm_empty();
-  simde_m_empty();
   return(0);
 }
 
@@ -700,8 +684,6 @@ void mch_16qam_llr(LTE_DL_FRAME_PARMS *frame_parms,
     llr32 += 8;
   }
 
-  simde_mm_empty();
-  simde_m_empty();
 }
 
 void mch_16qam_llr_khz_1dot25(LTE_DL_FRAME_PARMS *frame_parms,
@@ -750,8 +732,6 @@ void mch_16qam_llr_khz_1dot25(LTE_DL_FRAME_PARMS *frame_parms,
     llr32 += 8;
   }
 
-  simde_mm_empty();
-  simde_m_empty();
 }
 
 //----------------------------------------------------------------------------------------------
@@ -843,8 +823,6 @@ void mch_64qam_llr(LTE_DL_FRAME_PARMS *frame_parms,
   }
 
   *llr_save = llr;
-  simde_mm_empty();
-  simde_m_empty();
 }
 
 void mch_64qam_llr_khz_1dot25(LTE_DL_FRAME_PARMS *frame_parms,
@@ -924,8 +902,6 @@ void mch_64qam_llr_khz_1dot25(LTE_DL_FRAME_PARMS *frame_parms,
   }
 
   *llr_save = llr;
-  simde_mm_empty();
-  simde_m_empty();
 }
 
 int avg_pmch[4];

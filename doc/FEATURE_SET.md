@@ -24,7 +24,9 @@
 
 The following features are valid for the gNB and the 5G-NR UE.
 
-*  Static TDD, FDD
+*  Static TDD
+   - Multi TDD pattern supported refer [TDD Configuration](NR_SA_Multi_TDD_Pattern.md)
+*  Static FDD
 *  Normal CP
 *  Subcarrier spacings: 15 and 30kHz (FR1), 120kHz (FR2)
 *  Bandwidths: 10, 20, 40, 60, 80, 100MHz
@@ -70,7 +72,7 @@ These modes of operation are supported:
    - DMRS configuration type 1 and 2
    - Single and multiple DMRS symbols
    - PTRS support
-   - Support for 1, 2 and 4 TX antennas
+   - Support for up to 4 TX antennas
    - Support for up to 2 layers
    - Support for 256 QAM
 *  NR-CSIRS Generation of sequence at PHY
@@ -79,7 +81,7 @@ These modes of operation are supported:
    - DMRS configuration type 1 and 2
    - Single and multiple DMRS symbols
    - PTRS support
-   - Support for up to 2 RX antenna
+   - Support for up to 4 RX antennas
    - Support for up to 2 layers
    - Support for 256 QAM
 *  NR-PUCCH
@@ -105,10 +107,18 @@ These modes of operation are supported:
 - MAC <-> PHY data interface using FAPI P7 interface for BCH PDU, DCI PDU, PDSCH PDU
 - Scheduler procedures for SIB1
 - Scheduler procedures for RA
-  - Contention Free RA procedure
-  - Contention Based RA procedure
-    - Msg3 can transfer uplink CCCH, DTCH or DCCH messages
-    - CBRA can be performed using MAC CE or C-RNTI
+    - 4-Step RA
+        - Contention Free RA procedure
+        - Contention Based RA procedure
+            - Msg3 can transfer uplink CCCH, DTCH or DCCH messages
+            - CBRA can be performed using MAC CE for C-RNTI
+            - Is not possible to use 2-Step RA and 4-Step RA at the same time
+    - 2-Step RA
+        - Contention Based RA procedure
+            - MsgA can transfer uplink CCCH, DTCH or DCCH messages
+            - CBRA can be performed using MAC CE for C-RNTI
+            - Is not possible to use 2-Step RA and 4-Step RA at the same time
+            - Fallback not supported
 - Scheduler procedures for CSI-RS
 - MAC downlink scheduler
   - phy-test scheduler (fixed allocation and usable also without UE)
@@ -128,7 +138,7 @@ These modes of operation are supported:
   - evalution of RSRP report
   - evaluation of CQI report
 - MAC scheduling of SR reception
-- Support of up to 16 UEs (can be increased to 32)
+- Intra-frequency handover
 
 ## gNB RLC
 
@@ -197,17 +207,23 @@ These modes of operation are supported:
 ## gNB F1AP
 
 - Integration of F1AP messages and procedures for the control plane exchanges between the CU and DU entities according to 38.473 Rel. 16
-  - F1 Setup request/response/failure
-  - F1 DL/UL RRC message transfer
-  - F1 Initial UL RRC message transfer
-  - F1 UE Context setup request/response
-  - F1 UE Context modification request/response
-  - F1 UE Context modification required
-  - F1 UE Context release req/cmd/complete
+  - F1 Interface Management:
+    * F1 Setup request/response/failure
+  - F1 RRC Message Transfer:
+    * F1 Initial UL RRC Message Transfer
+    * F1 DL RRC Message Transfer
+    * F1 UL RRC Message Transfer
+  - F1 UE Context Management:
+    * F1 UE Context setup request/response
+    * F1 UE Context modification request/response
+    * F1 UE Context modification required
+    * F1 UE Context release req/cmd/complete
   - F1 gNB CU configuration update
+  - F1 Reset (handled at DU only, full reset only)
 - Interface with RRC
 - Interface with GTP-u (tunnel creation/handling for F1-U interface)
 - One CU(-CP) can handle multiple DUs
+- Support for intra-CU mobility (across DUs)
 
 ## gNB E1AP
 
@@ -232,12 +248,18 @@ These modes of operation are supported:
   - Interfaces with PDCP and RLC for data send/receive at the CU and DU respectively (F1-U interface)
   - Interface with SDAP for data send/receive, capture of GTP-U Optional Header, GTP-U Extension Header and PDU Session Container.
 
+## Number of supported UEs
+
+* 16 by default (as defined in `MAX_MOBILES_PER_GNB`)
+* up to 64 if the configured bandwidth is sufficient (at leat 40 MHz)
+
 # OpenAirInterface 5G-NR UE Feature Set #
 
 ##  NR UE PHY Layer ##
 
 *  Initial synchronization
-   - the UE needs to know the position in frequency of the SSBs (via command line parameter in SA)
+   - non-blind synchronization (information required: carrier frequency, bandwidth, numerology)
+   - option to search SSB inside the bandwidth available
 *  Time tracking based on PBCH DMRS
 *  Frequency offset estimation based on PSS and SSS
 *  15kHz and 30kHz SCS for FR1 and 120 kHz SCS for FR2
@@ -292,7 +314,7 @@ These modes of operation are supported:
 
 *  MAC -> PHY configuration via UE FAPI P5 interface
 *  Basic MAC to control PHY via UE FAPI P7 interface
-*  PHY -> MAC indication (needs some improvement)
+*  PHY -> MAC indication
 
 ## NR UE Higher Layers ##
 
@@ -304,9 +326,15 @@ These modes of operation are supported:
 * Random access procedure (needs improvement, there is still not a clear separation between MAC and PHY)
    - Mapping SSBs to multiple ROs
    - Scheduling of PRACH
-   - Processing of RAR
-   - Transmission and re-transmission of Msg3
-   - Msg4 and contention resolution
+  - 4-Step RA
+      - Processing of RAR
+      - Transmission and re-transmission of Msg3
+      - Msg4 and contention resolution
+  - 2-Step RA
+      - Transmission of MsgA-PUSCH
+      - Reception of MsgB
+      - Processing of SuccessRAR
+      - Fallback not supported
 * DCI processing
    - format 10 (RA-RNTI, C-RNTI, SI-RNTI, TC-RNTI)
    - format 00 (C-RNTI, TC-RNTI)
@@ -314,19 +342,21 @@ These modes of operation are supported:
    - format 01 (C-RNTI)
 * UCI processing
    - ACK/NACK processing
-   - Triggering periodic SR
-   - CSI measurement reporting
+   - Scheduling request procedures
+   - CSI measurement reporting (periodic and aperiodic)
 * DLSCH scheduler
    - Configuration of fapi PDU according to DCI
    - HARQ procedures
 * ULSCH scheduler
    - Configuration of fapi PDU according to DCI
+   - Buffer status reporting procedures
    - Logical channel prioritization of 'data from any logical channel'
+   - UCI on PUSCH
 * NR-CSIRS scheduler
   - Scheduling of NR-CSIRS reception
   - Fill UCI for CSI measurement reporting
 * Scheduler procedures for SRS transmission
-   - Periodic SRS transmission
+   - Periodic and aperiodic SRS transmission
 * Bandwidth part (BWP) operation
    - Operation in configured dedicated BWP through RRCSetup or RRCReconfiguration
 
@@ -363,6 +393,7 @@ These modes of operation are supported:
    - RRCSetupRequest/RRCSetup/RRCSetupComplete
    - RRC Uplink/Downlink Information transfer carrying NAS messages transparently
    - RRC Reconfiguration/Reconfiguration complete
+   - RRCReestablishmentRequest/RRC Reestablishment/Reestablishment complete
    - Support for master cell group configuration
    - Reception of UECapabilityEnquiry, encoding and transmission of UECapability
 * Interface with PDCP: configuration, DCCH and CCCH message handling

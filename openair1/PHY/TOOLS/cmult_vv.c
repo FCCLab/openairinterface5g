@@ -27,7 +27,6 @@ static const int16_t conjug[8]__attribute__((aligned(16))) = {-1,1,-1,1,-1,1,-1,
 static const int16_t conjug2[8]__attribute__((aligned(16))) = {1,-1,1,-1,1,-1,1,-1} ;
 
 #define simd_q15_t simde__m128i
-#define simdshort_q15_t simde__m64
 #define set1_int16(a) simde_mm_set1_epi16(a)
 #define setr_int16(a0, a1, a2, a3, a4, a5, a6, a7) simde_mm_setr_epi16(a0, a1, a2, a3, a4, a5, a6, a7 )
 
@@ -87,8 +86,6 @@ int mult_cpx_conj_vector(int16_t *x1,
   }
 
 
-  simde_mm_empty();
-  simde_m_empty();
 
   return(0);
 }
@@ -150,8 +147,6 @@ int mult_cpx_vector(int16_t *x1, //Q15
     x2_128++;
     y_128++;
   }
-  simde_mm_empty();
-  simde_m_empty();
   return(0);
 }
 
@@ -207,7 +202,5 @@ int multadd_cpx_vector(int16_t *x1,
     x2_128++;
     y_128++;
   }
-  simde_mm_empty();
-  simde_m_empty();
   return(0);
 }

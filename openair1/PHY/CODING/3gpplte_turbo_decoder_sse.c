@@ -364,8 +364,6 @@ void compute_gamma(llr_t *m11,llr_t *m10,llr_t *systematic,channel_t *y_parity,
      simde_mm_extract_epi8(m11_128[k],15));
   */
 #endif
-  simde_mm_empty();
-  simde_m_empty();
 }
 
 #define L 40
@@ -1183,8 +1181,6 @@ void compute_alpha(llr_t *alpha,llr_t *beta,llr_t *m_11,llr_t *m_10,unsigned sho
       break;
   }
 
-  simde_mm_empty();
-  simde_m_empty();
 }
 
 
@@ -1747,8 +1743,6 @@ void compute_beta(llr_t *alpha,llr_t *beta,llr_t *m_11,llr_t *m_10,unsigned shor
       break;
   }
 
-  simde_mm_empty();
-  simde_m_empty();
 }
 
 void compute_ext(llr_t *alpha,llr_t *beta,llr_t *m_11,llr_t *m_10,llr_t *ext, llr_t *systematic,unsigned short frame_length) {
@@ -1910,8 +1904,6 @@ void compute_ext(llr_t *alpha,llr_t *beta,llr_t *m_11,llr_t *m_10,llr_t *ext, ll
   }
 
 #endif
-  simde_mm_empty();
-  simde_m_empty();
 }
 
 

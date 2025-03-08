@@ -38,7 +38,7 @@ RUN /bin/sh oaienv && \
     ./build_oai -w AW2SORI -t Ethernet
 
 #start from scratch for target executable
-FROM ubuntu:bionic as oai-gnb-aw2s
+FROM ubuntu:jammy as oai-gnb-aw2s
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Europe
 
@@ -55,7 +55,8 @@ RUN apt-get update && \
         openssl \
         net-tools \
         iproute2 \
-        iputils-ping  && \
+        iputils-ping \
+        libyaml-cpp-dev && \
     rm -rf /var/lib/apt/lists/*
 
 COPY ./libori.so /usr/local/lib/
@@ -73,6 +74,7 @@ COPY --from=gnb-build \
     /oai-ran/cmake_targets/ran_build/build/libdfts.so \
     /oai-ran/cmake_targets/ran_build/build/libldpc*.so \
     /oai-ran/cmake_targets/ran_build/build/libtelnetsrv.so \
+    /oai-ran/cmake_targets/ran_build/build/libparams_yaml.so \
     /usr/local/lib/
 
 
@@ -95,4 +97,4 @@ WORKDIR /opt/oai-gnb-aw2s
 
 COPY --from=gnb-base /tini /tini
 ENTRYPOINT ["/tini", "-v", "--", "/opt/oai-gnb-aw2s/bin/entrypoint.sh"]
-CMD ["/opt/oai-gnb-aw2s/bin/nr-softmodem", "-O", "/opt/oai-gnb-aw2s/etc/gnb.conf"]
+CMD ["/opt/oai-gnb-aw2s/bin/nr-softmodem"]

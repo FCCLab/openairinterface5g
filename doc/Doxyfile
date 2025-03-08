@@ -38,7 +38,7 @@ PROJECT_NAME           = OpenAirInterface
 # could be handy for archiving the generated documentation or if some version
 # control system is used.
 
-PROJECT_NUMBER         =
+PROJECT_NUMBER         = @GIT_COMMIT_HASH@ (@GIT_BRANCH@)
 
 # Using the PROJECT_BRIEF tag one can provide an optional one line description
 # for a project that appears at the top of each page and should give viewer a
@@ -866,6 +866,8 @@ INPUT                  = \
 @CMAKE_CURRENT_SOURCE_DIR@/../common/config/config_cmdline.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../common/utils/time_meas.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../common/utils/time_meas.h \
+@CMAKE_CURRENT_SOURCE_DIR@/../common/utils/tun_if.h \
+@CMAKE_CURRENT_SOURCE_DIR@/../common/utils/tun_if.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../common/utils/utils.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../common/utils/oai_asn1.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../common/utils/system.h \
@@ -995,7 +997,6 @@ INPUT                  = \
 @CMAKE_CURRENT_SOURCE_DIR@/../executables/softmodem-common.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../executables/nr-softmodem.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../executables/nr-gnb.c \
-@CMAKE_CURRENT_SOURCE_DIR@/../executables/rt_profiling.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../executables/nr-uesoftmodem.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../executables/nr-uesoftmodem.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../executables/lte-softmodem.h \
@@ -1131,9 +1132,8 @@ INPUT                  = \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/UICC/usim_interface.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/UICC/usim_interface.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/ocp-gtpu/gtp_itf.h \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/NR_UE/nr_nas_msg_sim.h \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/NR_UE/ue_process_nas.c \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/NR_UE/nr_nas_msg_sim.c \
+@CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/NR_UE/nr_nas_msg.h \
+@CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/NR_UE/nr_nas_msg.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/UE/nas_itti_messaging.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/UE/user_defs.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/UE/EMM/emm_proc.h \
@@ -1274,12 +1274,10 @@ INPUT                  = \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/EMM/MSG/emm_msg.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/EMM/MSG/AttachReject.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/EMM/MSG/SecurityModeReject.h \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/EMM/MSG/FGSDeregistrationRequestUEOriginating.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/EMM/MSG/UplinkNasTransport.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/EMM/MSG/AuthenticationFailure.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/EMM/MSG/AuthenticationResponse.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/EMM/MSG/AttachComplete.h \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/EMM/MSG/FGSNASSecurityModeComplete.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/EMM/MSG/ExtendedServiceRequest.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/EMM/MSG/GutiReallocationComplete.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/EMM/MSG/DownlinkNasTransport.h \
@@ -1289,7 +1287,6 @@ INPUT                  = \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/EMM/MSG/AttachReject.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/EMM/MSG/AttachAccept.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/EMM/MSG/ServiceReject.h \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/EMM/MSG/FGSIdentityResponse.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/EMM/MSG/AttachComplete.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/EMM/MSG/AttachRequest.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/EMM/MSG/AuthenticationRequest.c \
@@ -1301,17 +1298,14 @@ INPUT                  = \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/EMM/MSG/AttachAccept.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/EMM/MSG/IdentityResponse.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/EMM/MSG/GutiReallocationComplete.h \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/EMM/MSG/RegistrationComplete.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/EMM/MSG/ServiceRequest.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/EMM/MSG/RegistrationAccept.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/EMM/MSG/IdentityRequest.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/EMM/MSG/RegistrationRequest.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/EMM/MSG/DetachAccept.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/EMM/MSG/AttachRequest.c \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/EMM/MSG/FGSIdentityResponse.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/EMM/MSG/EmmStatus.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/EMM/MSG/AuthenticationFailure.h \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/EMM/MSG/FGSAuthenticationResponse.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/EMM/MSG/AuthenticationReject.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/EMM/MSG/TrackingAreaUpdateAccept.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/EMM/MSG/TrackingAreaUpdateRequest.h \
@@ -1321,17 +1315,17 @@ INPUT                  = \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/EMM/MSG/FGSNASSecurityModeComplete.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/EMM/MSG/IdentityResponse.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/EMM/MSG/RegistrationComplete.c \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/EMM/MSG/FGSDeregistrationRequestUEOriginating.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/EMM/MSG/emm_cause.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/EMM/MSG/EmmInformation.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/EMM/MSG/IdentityRequest.h \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/EMM/MSG/FGSUplinkNasTransport.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/EMM/MSG/GutiReallocationCommand.h \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/EMM/MSG/RegistrationRequest.h \
+@CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/NR_UE/5GS/5GMM/MSG \
+@CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/NR_UE/5GS/5GMM/IES \
+@CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/NR_UE/5GS/5GSM \
+@CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/NR_UE/5GS/5GSM/MSG \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/UTIL/parser.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/UTIL/device.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/UTIL/device.c \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/UTIL/TLVEncoder.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/UTIL/OctetString.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/UTIL/nas_timer.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/UTIL/TLVDecoder.c \
@@ -1354,7 +1348,6 @@ INPUT                  = \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/AuthenticationParameterRand.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/UeRadioCapabilityInformationUpdateNeeded.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/ProtocolDiscriminator.h \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/ExtendedProtocolDiscriminator.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/CsfbResponse.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/EsmCause.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/ProcedureTransactionIdentity.h \
@@ -1368,7 +1361,6 @@ INPUT                  = \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/LlcServiceAccessPointIdentifier.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/ProtocolConfigurationOptions.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/TransactionIdentifier.h \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/ExtendedProtocolDiscriminator.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/GutiType.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/SupportedCodecList.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/MobileStationClassmark3.c \
@@ -1392,12 +1384,10 @@ INPUT                  = \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/UeSecurityCapability.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/ApnAggregateMaximumBitRate.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/ImeisvRequest.c \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/SpareHalfOctet.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/PdnType.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/ShortMac.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/MobileStationClassmark3.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/TrafficFlowTemplate.h \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/SORTransparentContainer.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/NasPagingIdentity.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/NasMessageContainer.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/Cli.h \
@@ -1407,18 +1397,15 @@ INPUT                  = \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/DetachType.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/EmergencyNumberList.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/EsmMessageContainer.c \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/FGSRegistrationResult.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/GprsTimer.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/TmsiStatus.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/VoiceDomainPreferenceAndUeUsageSetting.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/IdentityType2.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/EpsQualityOfService.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/LocationAreaIdentification.h \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/FGCNasMessageContainer.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/TrackingAreaIdentityList.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/MsNetworkCapability.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/ShortMac.c \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/FGSRegistrationResult.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/AuthenticationFailureParameter.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/TrackingAreaIdentity.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/EmmCause.h \
@@ -1433,12 +1420,10 @@ INPUT                  = \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/AuthenticationParameterAutn.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/PdnAddress.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/EsmInformationTransferFlag.c \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/SpareHalfOctet.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/KsiAndSequenceNumber.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/LocationAreaIdentification.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/QualityOfService.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/ProcedureTransactionIdentity.c \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/NrUESecurityCapability.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/ProtocolConfigurationOptions.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/SsCode.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/EpsQualityOfService.h \
@@ -1448,12 +1433,10 @@ INPUT                  = \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/EpsMobileIdentity.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/MobileIdentity.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/SsCode.h \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/FGSRegistrationType.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/TrackingAreaIdentity.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/EpsBearerIdentity.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/NasMessageContainer.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/DetachType.h \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/FGMMCapability.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/TmsiStatus.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/MobileStationClassmark2.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/MessageType.c \
@@ -1467,13 +1450,10 @@ INPUT                  = \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/AdditionalUpdateType.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/NasRequestType.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/EpsBearerContextStatus.h \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/FGSMobileIdentity.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/LcsClientIdentity.h \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/FGSMobileIdentity.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/ServiceType.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/PagingIdentity.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/UeNetworkCapability.c \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/NrUESecurityCapability.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/AuthenticationParameterAutn.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/PdnAddress.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/EpsUpdateType.h \
@@ -1481,7 +1461,6 @@ INPUT                  = \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/PTmsiSignature.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/PacketFlowIdentifier.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/UeRadioCapabilityInformationUpdateNeeded.h \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/FGCNasMessageContainer.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/PTmsiSignature.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/EpsMobileIdentity.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/GutiType.h \
@@ -1497,16 +1476,13 @@ INPUT                  = \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/NasKeySetIdentifier.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/EpsAttachResult.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/AccessPointName.h \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/FGMMCapability.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/AdditionalUpdateResult.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/EpsAttachType.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/UeNetworkCapability.h \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/FGSDeregistrationType.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/EsmMessageContainer.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/SecurityHeaderType.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/EsmCause.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/NasSecurityAlgorithms.c \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/SORTransparentContainer.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/LinkedEpsBearerIdentity.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/AdditionalUpdateType.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/MsNetworkFeatureSupport.c \
@@ -1519,14 +1495,12 @@ INPUT                  = \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/EpsBearerIdentity.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/EsmInformationTransferFlag.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/TimeZoneAndTime.c \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/FGSRegistrationType.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/EpsUpdateResult.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/EpsUpdateType.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/AuthenticationResponseParameter.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/NetworkName.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/LinkedEpsBearerIdentity.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/IES/SupportedCodecList.c \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/NR_NAS_defs.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/milenage.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/ESM/MSG/EsmStatus.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/ESM/MSG/ModifyEpsBearerContextReject.h \
@@ -1581,8 +1555,6 @@ INPUT                  = \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/ESM/MSG/EsmInformationResponse.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/ESM/MSG/ActivateDefaultEpsBearerContextAccept.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/userDef.h \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/COMMON/nr_common.c \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair3/NAS/gNB/network_process_nas.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair3/UTILS/conversions.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair2/X2AP/x2ap_eNB_encoder.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair2/X2AP/x2ap_eNB_management_procedures.c \
@@ -1874,10 +1846,6 @@ INPUT                  = \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair2/RRC/NR_UE/rrc_defs.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair2/RRC/NR_UE/L2_interface_ue.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair2/RRC/L2_INTERFACE/openair_rrc_L2_interface.h \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair2/RRC/NAS/rb_config.h \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair2/RRC/NAS/rb_config.c \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair2/RRC/NAS/nas_config.h \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair2/RRC/NAS/nas_config.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair2/RRC/NR/rrc_gNB_internode.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair2/RRC/NR/nr_rrc_defs.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair2/RRC/NR/cucp_cuup_if.h \
@@ -1888,13 +1856,11 @@ INPUT                  = \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair2/RRC/NR/rrc_gNB_radio_bearers.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair2/RRC/NR/rrc_gNB_NGAP.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair2/RRC/NR/nr_rrc_proto.h \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair2/RRC/NR/nr_rrc_common.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair2/RRC/NR/rrc_gNB_UE_context.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair2/RRC/NR/MESSAGES/asn1_msg.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair2/RRC/NR/MESSAGES/asn1_msg.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair2/RRC/NR/rrc_gNB_UE_context.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair2/RRC/NR/cucp_cuup_e1ap.c \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair2/RRC/NR/nr_rrc_common.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair2/RRC/NR/rrc_gNB.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair2/RRC/NR/nr_rrc_config.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair2/RRC/NR/rrc_gNB_radio_bearers.h \
@@ -2093,7 +2059,6 @@ INPUT                  = \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair1/PHY/NR_REFSIG/ul_ref_seq_nr.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair1/PHY/NR_REFSIG/ul_ref_seq_nr.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair1/PHY/NR_REFSIG/sss_nr.h \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair1/PHY/NR_REFSIG/scrambling_luts.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair1/PHY/NR_REFSIG/dmrs_nr.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair1/PHY/NR_REFSIG/refsig_defs_ue.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair1/PHY/NR_REFSIG/ptrs_nr.h \
@@ -2258,7 +2223,6 @@ INPUT                  = \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair1/PHY/NR_UE_TRANSPORT/pucch_nr.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair1/PHY/NR_UE_TRANSPORT/sss_nr.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair1/PHY/NR_UE_TRANSPORT/dci_nr.c \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair1/PHY/NR_UE_TRANSPORT/nr_dlsch_llr_computation.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair1/PHY/NR_UE_TRANSPORT/nr_prach.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair1/PHY/NR_UE_TRANSPORT/nr_transport_proto_ue.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair1/PHY/NR_UE_TRANSPORT/nr_ue_rf_helpers.c \
@@ -2308,13 +2272,6 @@ INPUT                  = \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair1/PHY/NR_ESTIMATION/nr_freq_equalization.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair1/PHY/NR_ESTIMATION/nr_measurements_gNB.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair1/PHY/NR_ESTIMATION/nr_ul_channel_estimation.c \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair1/SIMULATION/ETH_TRANSPORT/proto.h \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair1/SIMULATION/ETH_TRANSPORT/multicast_link.h \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair1/SIMULATION/ETH_TRANSPORT/netlink_init.c \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair1/SIMULATION/ETH_TRANSPORT/multicast_link.c \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair1/SIMULATION/ETH_TRANSPORT/socket.h \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair1/SIMULATION/ETH_TRANSPORT/socket.c \
-@CMAKE_CURRENT_SOURCE_DIR@/../openair1/SIMULATION/ETH_TRANSPORT/defs.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair1/SIMULATION/RF/adc.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair1/SIMULATION/RF/dac.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../openair1/SIMULATION/RF/rf.h \

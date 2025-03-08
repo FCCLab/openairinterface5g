@@ -38,8 +38,6 @@ import os
 import time
 import signal
 
-from multiprocessing import Process, Lock, SimpleQueue
-
 #-----------------------------------------------------------
 # OAI Testing modules
 #-----------------------------------------------------------
@@ -48,6 +46,7 @@ import helpreadme as HELP
 import constants as CONST
 import cls_cluster as OC
 import cls_cmd
+import cls_module
 #-----------------------------------------------------------
 # Class Declaration
 #-----------------------------------------------------------
@@ -72,9 +71,10 @@ class EPCManagement():
 		self.cfgDeploy = '--type start-mini --scenario 1 --capture /tmp/oai-cn5g-v1.5.pcap' #from xml, 'mini' is default normal for docker-network.py
 		self.cfgUnDeploy = '--type stop-mini --scenario 1' #from xml, 'mini' is default normal for docker-network.py
 		self.OCUrl = "https://api.oai.cs.eurecom.fr:6443"
-		self.OCRegistry = "default-route-openshift-image-registry.apps.oai.cs.eurecom.fr/"
+		self.OCRegistry = "default-route-openshift-image-registry.apps.oai.cs.eurecom.fr"
 		self.OCUserName = ''
 		self.OCPassword = ''
+		self.cnID = ''
 		self.imageToPull = ''
 		self.eNBSourceCodePath = ''
 
@@ -133,6 +133,7 @@ class EPCManagement():
 			logging.error('This option should not occur!')
 		mySSH.close()
 		HTML.CreateHtmlTestRow(self.Type, 'OK', CONST.ALL_PROCESSES_OK)
+		return True
 
 	def InitializeMME(self, HTML):
 		if self.IPAddress == '' or self.UserName == '' or self.Password == '' or self.SourceCodePath == '' or self.Type == '':
@@ -173,6 +174,7 @@ class EPCManagement():
 			logging.error('This option should not occur!')
 		mySSH.close()
 		HTML.CreateHtmlTestRow(self.Type, 'OK', CONST.ALL_PROCESSES_OK)
+		return True
 
 	def SetMmeIPAddress(self):
 		# Not an error if we don't need an EPC
@@ -239,12 +241,14 @@ class EPCManagement():
 			logging.error('This option should not occur!')
 		mySSH.close()
 		HTML.CreateHtmlTestRow(self.Type, 'OK', CONST.ALL_PROCESSES_OK)
+		return True
 
 	def Initialize5GCN(self, HTML):
 		if self.IPAddress == '' or self.UserName == '' or self.Password == '' or self.Type == '':
 			HELP.GenericHelp(CONST.Version)
 			HELP.EPCSrvHelp(self.IPAddress, self.UserName, self.Password, self.Type)
-			sys.exit('Insufficient EPC Parameters')
+			logging.error('Insufficient EPC Parameters')
+			return False
 		mySSH = cls_cmd.getConnection(self.IPAddress)
 		html_cell = ''
 		if re.match('ltebox', self.Type, re.IGNORECASE):
@@ -298,12 +302,14 @@ class EPCManagement():
 						html_cell += '(' + res4.group('date') + ')'
 					html_cell += '\n'
 		elif re.match('OC-OAI-CN5G', self.Type, re.IGNORECASE):
-			succeeded, report = OC.OC_deploy_CN(mySSH, self.OCUserName, self.OCPassword)
+			cn = cls_module.Module_UE(self.cnID)
+			succeeded, report = OC.OC_deploy_CN(mySSH, self.OCUserName, self.OCPassword, cn.getNamespace(), cn.getCNPath())
 			if not succeeded:
 				HTML.CreateHtmlTestRow('N/A', 'KO', report)
 				HTML.CreateHtmlTabFooter(False)
 				mySSH.close()
-				sys.exit("OC OAI CN5G: CN deployment failed!")
+				logging.error("OC OAI CN5G: CN deployment failed!")
+				return False
 			for line in report.stdout.split('\n')[1:]:
 				columns = line.strip().split()
 				name = columns[0]
@@ -314,6 +320,7 @@ class EPCManagement():
 			logging.error('This option should not occur!')
 		mySSH.close()
 		HTML.CreateHtmlTestRowQueue(self.Type, 'OK', [html_cell])
+		return True
 
 	def SetAmfIPAddress(self):
 		# Not an error if we don't need an 5GCN
@@ -469,6 +476,7 @@ class EPCManagement():
 			logging.error('This should not happen!')
 		mySSH.close()
 		HTML.CreateHtmlTestRow('N/A', 'OK', CONST.ALL_PROCESSES_OK)
+		return True
 
 	def TerminateMME(self, HTML):
 		mySSH = SSH.SSHConnection()
@@ -496,6 +504,7 @@ class EPCManagement():
 			logging.error('This should not happen!')
 		mySSH.close()
 		HTML.CreateHtmlTestRow('N/A', 'OK', CONST.ALL_PROCESSES_OK)
+		return True
 
 	def TerminateSPGW(self, HTML):
 		mySSH = SSH.SSHConnection()
@@ -539,6 +548,7 @@ class EPCManagement():
 			logging.error('This should not happen!')
 		mySSH.close()
 		HTML.CreateHtmlTestRow('N/A', 'OK', CONST.ALL_PROCESSES_OK)
+		return True
 
 	def Terminate5GCN(self, HTML):
 		mySSH = cls_cmd.getConnection(self.IPAddress)
@@ -565,7 +575,7 @@ class EPCManagement():
 			mySSH.command('python3 ./core-network.py '+self.cfgUnDeploy, '\$', 60)
 			mySSH.command('docker volume prune --force || true', '\$', 60)
 			time.sleep(2)
-			mySSH.command('tshark -r /tmp/oai-cn5g-v1.5.pcap | egrep --colour=never "Tracking area update" ','\$', 30)
+			mySSH.command('tshark -r /tmp/oai-cn5g-v1.5.pcap | grep -E --colour=never "Tracking area update" ','\$', 30)
 			result = re.search('Tracking area update request', mySSH.getBefore())
 			if result is not None:
 				message = 'UE requested ' + str(mySSH.getBefore().count('Tracking area update request')) + 'Tracking area update request(s)'
@@ -575,29 +585,34 @@ class EPCManagement():
 			mySSH.copyin(f'{self.SourceCodePath}/logs/test_logs_CN.zip','test_logs_CN.zip')
 			logging.debug(message)
 		elif re.match('OC-OAI-CN5G', self.Type, re.IGNORECASE):
-			succeeded, report = OC.OC_undeploy_CN(mySSH, self.OCUserName, self.OCPassword)
+			cn = cls_module.Module_UE(self.cnID)
+			succeeded, report = OC.OC_undeploy_CN(mySSH, self.OCUserName, self.OCPassword, cn.getNamespace(), cn.getCNPath())
 			if not succeeded:
 				HTML.CreateHtmlTestRow('N/A', 'KO', report)
 				HTML.CreateHtmlTabFooter(False)
-				sys.exit("OC OAI CN5G: CN undeployment failed!")
+				logging.error("OC OAI CN5G: CN undeployment failed!")
+				return False
 			else:
 				message = report.stdout
 		else:
 			logging.error('This should not happen!')
 		mySSH.close()
 		HTML.CreateHtmlTestRowQueue(self.Type, 'OK', [message])
+		return True
 
 	def DeployEpc(self, HTML):
 		logging.debug('Trying to deploy')
 		if not re.match('OAI-Rel14-Docker', self.Type, re.IGNORECASE):
 			HTML.CreateHtmlTestRow(self.Type, 'KO', CONST.INVALID_PARAMETER)
 			HTML.CreateHtmlTabFooter(False)
-			sys.exit('Deploy not possible with this EPC type: ' + self.Type)
+			logging.error('Deploy not possible with this EPC type: ' + self.Type)
+			return False
 
 		if self.IPAddress == '' or self.UserName == '' or self.Password == '' or self.SourceCodePath == '' or self.Type == '':
 			HELP.GenericHelp(CONST.Version)
 			HELP.EPCSrvHelp(self.IPAddress, self.UserName, self.Password, self.SourceCodePath, self.Type)
-			sys.exit('Insufficient EPC Parameters')
+			logging.error('Insufficient EPC Parameters')
+			return False
 		mySSH = SSH.SSHConnection()
 		mySSH.open(self.IPAddress, self.UserName, self.Password)
 		mySSH.command('docker-compose --version', '\$', 5)
@@ -606,7 +621,8 @@ class EPCManagement():
 			mySSH.close()
 			HTML.CreateHtmlTestRow(self.Type, 'KO', CONST.INVALID_PARAMETER)
 			HTML.CreateHtmlTabFooter(False)
-			sys.exit('docker-compose not installed on ' + self.IPAddress)
+			logging.error('docker-compose not installed on ' + self.IPAddress)
+			return False
 
 		# Checking if it is a MAGMA deployment
 		self.isMagmaUsed = False
@@ -656,7 +672,8 @@ class EPCManagement():
 		if not db_init_status:
 			HTML.CreateHtmlTestRow(self.Type, 'KO', CONST.INVALID_PARAMETER)
 			HTML.CreateHtmlTabFooter(False)
-			sys.exit('Cassandra DB deployment/configuration went wrong!')
+			logging.error('Cassandra DB deployment/configuration went wrong!')
+			return True
 
 		# deploying EPC cNFs
 		mySSH.command('docker-compose up -d oai_spgwu', '\$', 60)
@@ -725,10 +742,12 @@ class EPCManagement():
 			mySSH.close()
 			logging.debug('Deployment OK')
 			HTML.CreateHtmlTestRowQueue(self.Type, 'OK', [html_cell])
+			return True
 		else:
 			mySSH.close()
 			logging.debug('Deployment went wrong')
 			HTML.CreateHtmlTestRowQueue(self.Type, 'KO', [html_cell])
+			return False
 
 	def UndeployEpc(self, HTML):
 		logging.debug('Trying to undeploy')
@@ -765,7 +784,7 @@ class EPCManagement():
 			mySSH.command('docker cp prod-magma-mme:/tmp/mme_check_run.pcap mme_' + self.testCase_id + '.pcap', '\$', 60)
 		else:
 			mySSH.command('docker cp prod-oai-mme:/tmp/mme_check_run.pcap mme_' + self.testCase_id + '.pcap', '\$', 60)
-		mySSH.command('tshark -r mme_' + self.testCase_id + '.pcap | egrep --colour=never "Tracking area update"', '\$', 60)
+		mySSH.command('tshark -r mme_' + self.testCase_id + '.pcap | grep -E --colour=never "Tracking area update"', '\$', 60)
 		result = re.search('Tracking area update request', mySSH.getBefore())
 		if result is not None:
 			message = 'UE requested ' + str(mySSH.getBefore().count('Tracking area update request')) + 'Tracking area update request(s)'
@@ -798,9 +817,11 @@ class EPCManagement():
 		if noMoreContainerNb == nbContainers and noMoreNetworkNb == 2:
 			logging.debug('Undeployment OK')
 			HTML.CreateHtmlTestRowQueue(self.Type, 'OK', [message])
+			return True
 		else:
 			logging.debug('Undeployment went wrong')
 			HTML.CreateHtmlTestRowQueue(self.Type, 'KO', [message])
+			return False
 
 	def LogCollectHSS(self):
 		mySSH = SSH.SSHConnection()

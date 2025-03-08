@@ -23,25 +23,40 @@
 #define TLV_ENCODER_H_
 
 #include <arpa/inet.h>  // htonl, htons
+#include <string.h>     // memcpy
 
-#define ENCODE_U8(buffer, value, size)    \
-    *(uint8_t*)(buffer) = value;    \
-    size += sizeof(uint8_t)
+#define ENCODE_U8(buffer, value, size) \
+  do {                                 \
+    *(uint8_t*)(buffer) = value;       \
+    size += sizeof(uint8_t);           \
+  } while (0)
 
-#define ENCODE_U16(buffer, value, size)   \
-    *(uint16_t*)(buffer) = htons(value);  \
-   size += sizeof(uint16_t)
+/* Safely encodes a 16-bit value into a buffer, handling
+   misalignment by memcpy 2 bytes to buffer in network
+   byte order (big-endian). */
+#define ENCODE_U16(buffer, value, size)        \
+  do {                                         \
+    uint16_t _val = htons(value);              \
+    memcpy((buffer), &_val, sizeof(uint16_t)); \
+    size += sizeof(uint16_t);                  \
+  } while (0)
 
-#define ENCODE_U24(buffer, value, size)   \
-    *(uint32_t*)(buffer) = htonl(value);  \
-    size += sizeof(uint8_t) + sizeof(uint16_t)
+/* Safely encodes a 24-bit value into a buffer, handling
+   misalignment by using htonl and memcpy to copy 3 bytes
+   in network byte order (big-endian). */
+#define ENCODE_U24(buffer, value, size)         \
+  do {                                          \
+    uint32_t _val = htonl(value);               \
+    memcpy((buffer), ((uint8_t*)&_val) + 1, 3); \
+    size += sizeof(uint8_t) + sizeof(uint16_t); \
+  } while (0)
 
 #define ENCODE_U32(buffer, value, size) \
-  {                                     \
+  do {                                  \
     uint32_t tmp = htonl(value);        \
     memcpy(buffer, &tmp, sizeof(tmp));  \
-  }                                     \
-  size += sizeof(uint32_t)
+    size += sizeof(uint32_t);           \
+  } while (0)
 
 #define IES_ENCODE_U8(buffer, encoded, value)   \
     ENCODE_U8(buffer + encoded, value, encoded)
@@ -70,32 +85,32 @@ typedef enum {
  * it cannot be further processed */
 #define TLV_ENCODE_FATAL_ERROR  (TLV_ENCODE_VALUE_DOESNT_MATCH)
 
-extern int errorCodeEncoder;
+#ifdef ENABLE_TESTS
+#define TLV_ENC_ERROR(...) fprintf(stderr, "TLV Encoder: " __VA_ARGS__)
+#else
+#define TLV_ENC_ERROR(...) // Do nothing
+#endif
 
-void tlv_encode_perror(void);
+#define CHECK_PDU_POINTER_AND_LENGTH_ENCODER(bUFFER, mINIMUMlENGTH, lENGTH)                                          \
+  do {                                                                                                               \
+    if ((bUFFER) == NULL) {                                                                                          \
+      TLV_ENC_ERROR("Got NULL pointer for the payload\n");                                                           \
+      return TLV_ENCODE_BUFFER_NULL;                                                                                 \
+    }                                                                                                                \
+    if ((lENGTH) < (mINIMUMlENGTH)) {                                                                                \
+      TLV_ENC_ERROR("(%s:%d) Expecting at least %d bytes, got %u\n", __FILE__, __LINE__, (mINIMUMlENGTH), (lENGTH)); \
+      return TLV_ENCODE_BUFFER_TOO_SHORT;                                                                            \
+    }                                                                                                                \
+  } while (0)
 
-#define CHECK_PDU_POINTER_AND_LENGTH_ENCODER(bUFFER, mINIMUMlENGTH, lENGTH)    \
-  if (bUFFER == NULL)                                                    \
-        {                                                                      \
-                printf("Got NULL pointer for the payload\n");                  \
-                errorCodeEncoder = TLV_ENCODE_BUFFER_NULL;                     \
-                return TLV_ENCODE_BUFFER_NULL;                                 \
-        }                                                                      \
-        if (lENGTH < mINIMUMlENGTH)                                            \
-        {                                                                      \
-                printf("(%s:%d) Expecting at least %d bytes, got %u\n",        \
-           __FILE__, __LINE__, mINIMUMlENGTH, lENGTH);             \
-                errorCodeEncoder = TLV_ENCODE_BUFFER_TOO_SHORT;                \
-                return TLV_ENCODE_BUFFER_TOO_SHORT;                            \
-        }
-
-#define CHECK_PDU_POINTER_ENCODER(bUFFER)                                      \
-  if (bUFFER == NULL)                                                    \
-        {                                                                      \
-                printf("Got NULL pointer for the payload\n");                  \
-                errorCodeEncoder = TLV_ENCODE_BUFFER_NULL;                     \
-                return TLV_ENCODE_BUFFER_NULL;                                 \
-        }
+#define CHECK_PDU_POINTER_ENCODER(bUFFER)                  \
+  do {                                                     \
+    if ((bUFFER) == NULL) {                                \
+      TLV_ENC_ERROR("Got NULL pointer for the payload\n"); \
+      errorCodeEncoder = TLV_ENCODE_BUFFER_NULL;           \
+      return TLV_ENCODE_BUFFER_NULL;                       \
+    }                                                      \
+  } while (0)
 
 #endif /* define (TLV_ENCODER_H_) */
 

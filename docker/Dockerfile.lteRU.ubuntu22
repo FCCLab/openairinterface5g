@@ -25,13 +25,13 @@
 #
 #---------------------------------------------------------------------
 
-FROM ran-base:latest as ru-base
+FROM ran-base:latest AS ru-base
 
 FROM ran-build:latest AS ru-build
 
 
 #start from scratch for target executable
-FROM ubuntu:jammy as oai-lte-ru
+FROM ubuntu:jammy AS oai-lte-ru
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Europe/Paris
 

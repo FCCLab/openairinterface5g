@@ -31,7 +31,7 @@ FROM ran-build:latest AS enb-build
 
 
 #start from scratch for target executable
-FROM registry.access.redhat.com/ubi9/ubi:latest as oai-enb
+FROM registry.access.redhat.com/ubi9/ubi:latest AS oai-enb
 ENV TZ=Europe/Paris
 
 RUN dnf update -y && \

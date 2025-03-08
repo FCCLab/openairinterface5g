@@ -41,7 +41,7 @@
 #include "NR_MAC_UE/mac_extern.h"
 #include "SCHED_NR_UE/fapi_nr_ue_l1.h"
 #include "executables/softmodem-common.h"
-#include "openair2/RRC/NR_UE/rrc_proto.h"
+#include "openair2/RRC/NR_UE/L2_interface_ue.h"
 #include "openair2/GNB_APP/L1_nr_paramdef.h"
 #include "openair2/GNB_APP/gnb_paramdef.h"
 #include "radio/ETHERNET/if_defs.h"
@@ -65,8 +65,60 @@ queue_t nr_dl_tti_req_queue;
 queue_t nr_tx_req_queue;
 queue_t nr_ul_dci_req_queue;
 queue_t nr_ul_tti_req_queue;
-pthread_mutex_t mac_IF_mutex;
 static void save_pdsch_pdu_for_crnti(nfapi_nr_dl_tti_request_t *dl_tti_request);
+
+void print_ue_mac_stats(const module_id_t mod, const int frame_rx, const int slot_rx)
+{
+  NR_UE_MAC_INST_t *mac = get_mac_inst(mod);
+  if (mac->state != UE_CONNECTED)
+    return;
+  int ret = pthread_mutex_lock(&mac->if_mutex);
+  AssertFatal(!ret, "mutex failed %d\n", ret);
+
+  char txt[1024];
+  char *end = txt + sizeof(txt);
+  char *cur = txt;
+
+  float nbul = 0;
+  for (uint64_t *p = mac->stats.ul.rounds; p < mac->stats.ul.rounds + NR_MAX_HARQ_ROUNDS_FOR_STATS; p++)
+    nbul += *p;
+  if (nbul < 1)
+    nbul = 1;
+
+  float nbdl = 0;
+  for (uint64_t *p = mac->stats.dl.rounds; p < mac->stats.dl.rounds + NR_MAX_HARQ_ROUNDS_FOR_STATS; p++)
+    nbdl += *p;
+  if (nbdl < 1)
+    nbdl = 1;
+
+  cur += snprintf(cur, end - cur, "UE %d stats sfn: %d.%d, cumulated bad DCI %d\n", mod, frame_rx, slot_rx, mac->stats.bad_dci);
+
+  cur += snprintf(cur, end - cur, "    DL harq: %lu", mac->stats.dl.rounds[0]);
+  int nb;
+  for (nb = NR_MAX_HARQ_ROUNDS_FOR_STATS - 1; nb > 1; nb--)
+    if (mac->stats.ul.rounds[nb])
+      break;
+  for (int i = 1; i < nb + 1; i++)
+    cur += snprintf(cur, end - cur, "/%lu", mac->stats.dl.rounds[i]);
+
+  cur += snprintf(cur, end - cur, "\n    Ul harq: %lu", mac->stats.ul.rounds[0]);
+  for (nb = NR_MAX_HARQ_ROUNDS_FOR_STATS - 1; nb > 1; nb--)
+    if (mac->stats.ul.rounds[nb])
+      break;
+  for (int i = 1; i < nb + 1; i++)
+    cur += snprintf(cur, end - cur, "/%lu", mac->stats.ul.rounds[i]);
+  snprintf(cur,
+           end - cur,
+           " avg code rate %.01f, avg bit/symbol %.01f, avg per TB: "
+           "(nb RBs %.01f, nb symbols %.01f)\n",
+           (double)mac->stats.ul.target_code_rate / (mac->stats.ul.total_bits * 1024 * 10), // See const Table_51311 definition
+           (double)mac->stats.ul.total_bits / mac->stats.ul.total_symbols,
+           mac->stats.ul.rb_size / nbul,
+           mac->stats.ul.nr_of_symbols / nbul);
+  LOG_I(NR_MAC, "%s", txt);
+  ret = pthread_mutex_unlock(&mac->if_mutex);
+  AssertFatal(!ret, "mutex failed %d\n", ret);
+}
 
 void nrue_init_standalone_socket(int tx_port, int rx_port)
 {
@@ -223,59 +275,59 @@ void send_nsa_standalone_msg(NR_UL_IND_t *UL_INFO, uint16_t msg_id)
   }
 }
 
-bool sfn_slot_matcher(void *wanted, void *candidate)
+bool sfn_slot_matcher(void *sfn_slot_s, void *candidate)
 {
   nfapi_p7_message_header_t *msg = candidate;
-  int sfn_sf = *(int*)wanted;
+  const struct sfn_slot_s *sfn_sf = (const struct sfn_slot_s *)sfn_slot_s;
 
   switch (msg->message_id)
   {
     case NFAPI_NR_PHY_MSG_TYPE_RACH_INDICATION:
     {
       nfapi_nr_rach_indication_t *ind = candidate;
-      return NFAPI_SFNSLOT2SFN(sfn_sf) == ind->sfn && NFAPI_SFNSLOT2SLOT(sfn_sf) == ind->slot;
+      return sfn_sf->sfn == ind->sfn && sfn_sf->slot == ind->slot;
     }
 
     case NFAPI_NR_PHY_MSG_TYPE_RX_DATA_INDICATION:
     {
       nfapi_nr_rx_data_indication_t *ind = candidate;
-      return NFAPI_SFNSLOT2SFN(sfn_sf) == ind->sfn && NFAPI_SFNSLOT2SLOT(sfn_sf) == ind->slot;
+      return sfn_sf->sfn == ind->sfn && sfn_sf->slot == ind->slot;
     }
 
     case NFAPI_NR_PHY_MSG_TYPE_CRC_INDICATION:
     {
       nfapi_nr_crc_indication_t *ind = candidate;
-      return NFAPI_SFNSLOT2SFN(sfn_sf) == ind->sfn && NFAPI_SFNSLOT2SLOT(sfn_sf) == ind->slot;
+      return sfn_sf->sfn == ind->sfn && sfn_sf->slot == ind->slot;
     }
 
     case NFAPI_NR_PHY_MSG_TYPE_UCI_INDICATION:
     {
       nfapi_nr_uci_indication_t *ind = candidate;
-      return NFAPI_SFNSLOT2SFN(sfn_sf) == ind->sfn && NFAPI_SFNSLOT2SLOT(sfn_sf) == ind->slot;
+      return sfn_sf->sfn == ind->sfn && sfn_sf->slot == ind->slot;
     }
 
     case NFAPI_NR_PHY_MSG_TYPE_DL_TTI_REQUEST:
     {
       nfapi_nr_dl_tti_request_t *ind = candidate;
-      return NFAPI_SFNSLOT2SFN(sfn_sf) == ind->SFN && NFAPI_SFNSLOT2SLOT(sfn_sf) == ind->Slot;
+      return sfn_sf->sfn == ind->SFN && sfn_sf->slot == ind->Slot;
     }
 
     case NFAPI_NR_PHY_MSG_TYPE_TX_DATA_REQUEST:
     {
       nfapi_nr_tx_data_request_t *ind = candidate;
-      return NFAPI_SFNSLOT2SFN(sfn_sf) == ind->SFN && NFAPI_SFNSLOT2SLOT(sfn_sf) == ind->Slot;
+      return sfn_sf->sfn == ind->SFN && sfn_sf->slot == ind->Slot;
     }
 
     case NFAPI_NR_PHY_MSG_TYPE_UL_DCI_REQUEST:
     {
       nfapi_nr_ul_dci_request_t *ind = candidate;
-      return NFAPI_SFNSLOT2SFN(sfn_sf) == ind->SFN && NFAPI_SFNSLOT2SLOT(sfn_sf) == ind->Slot;
+      return sfn_sf->sfn == ind->SFN && sfn_sf->slot == ind->Slot;
     }
 
     case NFAPI_NR_PHY_MSG_TYPE_UL_TTI_REQUEST:
     {
       nfapi_nr_ul_tti_request_t *ind = candidate;
-      return NFAPI_SFNSLOT2SFN(sfn_sf) == ind->SFN && NFAPI_SFNSLOT2SLOT(sfn_sf) == ind->Slot;
+      return sfn_sf->sfn == ind->SFN && sfn_sf->slot == ind->Slot;
     }
 
     default:
@@ -343,10 +395,10 @@ static bool is_my_dci(NR_UE_MAC_INST_t *mac, nfapi_nr_dl_dci_pdu_t *received_pdu
         (received_pdu->RNTI != mac->ra.ra_rnti || mac->ra.RA_RAPID_found))
       return false;
   }
-  if (get_softmodem_params()->sa) {
+  if (IS_SA_MODE(get_softmodem_params())) {
     if (mac->state == UE_NOT_SYNC)
       return false;
-    if (received_pdu->RNTI == 0xFFFF && mac->phy_config_request_sent)
+    if (received_pdu->RNTI == 0xFFFF)
       return false;
     if (received_pdu->RNTI != mac->crnti && mac->ra.ra_state == nrRA_SUCCEEDED)
       return false;
@@ -578,10 +630,11 @@ static void copy_ul_dci_data_req_to_dl_info(nr_downlink_indication_t *dl_info, n
     dl_info->slot = ul_dci_req->Slot;
 }
 
-static bool send_crc_ind_and_rx_ind(int sfn_slot)
+static bool send_crc_ind_and_rx_ind(int sfn, int slot)
 {
   bool sent_crc_rx = true;
 
+  struct sfn_slot_s sfn_slot = {.sfn = sfn, .slot = slot};
   nfapi_nr_rx_data_indication_t *rx_ind = unqueue_matching(&nr_rx_ind_queue, MAX_QUEUE_SIZE, sfn_slot_matcher, &sfn_slot);
   nfapi_nr_crc_indication_t *crc_ind = unqueue_matching(&nr_crc_ind_queue, MAX_QUEUE_SIZE, sfn_slot_matcher, &sfn_slot);
 
@@ -590,8 +643,9 @@ static bool send_crc_ind_and_rx_ind(int sfn_slot)
     NR_UE_MAC_INST_t *mac = get_mac_inst(0);
     for (int i = 0; i < crc_ind->number_crcs; i++) {
         int harq_pid = crc_ind->crc_list[i].harq_id;
-        LOG_T(NR_MAC, "Resetting harq_pid %d active_ul_harq_sfn_slot\n", harq_pid);
-        mac->nr_ue_emul_l1.harq[harq_pid].active_ul_harq_sfn_slot = -1;
+        LOG_T(NR_MAC, "Resetting harq_pid %d active_ul_harq_sfn/slot\n", harq_pid);
+        mac->nr_ue_emul_l1.harq[harq_pid].active_ul_harq_sfn = -1;
+        mac->nr_ue_emul_l1.harq[harq_pid].active_ul_harq_slot = -1;
     }
     NR_UL_IND_t UL_INFO = {
       .crc_ind = *crc_ind,
@@ -619,12 +673,11 @@ static bool send_crc_ind_and_rx_ind(int sfn_slot)
 static void copy_ul_tti_data_req_to_dl_info(nr_downlink_indication_t *dl_info, nfapi_nr_ul_tti_request_t *ul_tti_req)
 {
     int num_pdus = ul_tti_req->n_pdus;
-    int sfn_slot = NFAPI_SFNSLOT2HEX(ul_tti_req->SFN, ul_tti_req->Slot);
     AssertFatal(num_pdus >= 0, "Invalid ul_tti_request number of PDUS\n");
     AssertFatal(num_pdus <= sizeof(ul_tti_req->pdus_list) / sizeof(ul_tti_req->pdus_list[0]),
                 "Too many pdus %d in ul_tti_req\n", num_pdus);
 
-    if (!send_crc_ind_and_rx_ind(sfn_slot))
+    if (!send_crc_ind_and_rx_ind(ul_tti_req->SFN, ul_tti_req->Slot))
     {
         LOG_T(NR_MAC, "CRC_RX ind not sent\n");
         if (!put_queue(&nr_ul_tti_req_queue, ul_tti_req))
@@ -741,7 +794,7 @@ void check_and_process_dci(nfapi_nr_dl_tti_request_t *dl_tti_request,
     int slots_per_frame = 20; //30 kHZ subcarrier spacing
     int slot_ahead = 2; // TODO: Make this dynamic
 
-    if (is_nr_UL_slot(mac->tdd_UL_DL_ConfigurationCommon, (slot + slot_ahead) % slots_per_frame, mac->frame_type)
+    if (is_ul_slot((slot + slot_ahead) % slots_per_frame, &mac->frame_structure)
         && mac->ra.ra_state != nrRA_SUCCEEDED) {
       // If we filled dl_info AFTER we got the slot indication, we want to check if we should fill tx_req:
       nr_uplink_indication_t ul_info = {.slot = (slot + slot_ahead) % slots_per_frame,
@@ -794,7 +847,7 @@ static void enqueue_nr_nfapi_msg(void *buffer, ssize_t len, nfapi_p7_message_hea
     {
         case NFAPI_NR_PHY_MSG_TYPE_DL_TTI_REQUEST:
         {
-            nfapi_nr_dl_tti_request_t *dl_tti_request = MALLOC(sizeof(*dl_tti_request));
+            nfapi_nr_dl_tti_request_t *dl_tti_request = malloc16(sizeof(*dl_tti_request));
             if (nfapi_nr_p7_message_unpack(buffer, len, dl_tti_request,
                                             sizeof(*dl_tti_request), NULL) < 0)
             {
@@ -818,7 +871,7 @@ static void enqueue_nr_nfapi_msg(void *buffer, ssize_t len, nfapi_p7_message_hea
 
         case NFAPI_NR_PHY_MSG_TYPE_TX_DATA_REQUEST:
         {
-            nfapi_nr_tx_data_request_t *tx_data_request = MALLOC(sizeof(*tx_data_request));
+            nfapi_nr_tx_data_request_t *tx_data_request = malloc16(sizeof(*tx_data_request));
             if (nfapi_nr_p7_message_unpack(buffer, len, tx_data_request,
                                         sizeof(*tx_data_request), NULL) < 0)
             {
@@ -838,7 +891,7 @@ static void enqueue_nr_nfapi_msg(void *buffer, ssize_t len, nfapi_p7_message_hea
 
         case NFAPI_NR_PHY_MSG_TYPE_UL_DCI_REQUEST:
         {
-            nfapi_nr_ul_dci_request_t *ul_dci_request = MALLOC(sizeof(*ul_dci_request));
+            nfapi_nr_ul_dci_request_t *ul_dci_request = malloc16(sizeof(*ul_dci_request));
             if (nfapi_nr_p7_message_unpack(buffer, len, ul_dci_request,
                                             sizeof(*ul_dci_request), NULL) < 0)
             {
@@ -858,7 +911,7 @@ static void enqueue_nr_nfapi_msg(void *buffer, ssize_t len, nfapi_p7_message_hea
 
         case NFAPI_NR_PHY_MSG_TYPE_UL_TTI_REQUEST:
         {
-            nfapi_nr_ul_tti_request_t *ul_tti_request = MALLOC(sizeof(*ul_tti_request));
+            nfapi_nr_ul_tti_request_t *ul_tti_request = malloc16(sizeof(*ul_tti_request));
             if (nfapi_nr_p7_message_unpack(buffer, len, ul_tti_request,
                                            sizeof(*ul_tti_request), NULL) < 0)
             {
@@ -966,8 +1019,7 @@ void *nrue_standalone_pnf_task(void *context)
       uint16_t *sfn_slot = CALLOC(1, sizeof(*sfn_slot));
       memcpy(sfn_slot, buffer, sizeof(*sfn_slot));
 
-      LOG_D(NR_PHY, "Received from proxy sfn %d slot %d\n",
-            NFAPI_SFNSLOT2SFN(*sfn_slot), NFAPI_SFNSLOT2SLOT(*sfn_slot));
+      LOG_D(NR_PHY, "Received from proxy sfn_slot %x\n", *sfn_slot);
 
       if (!put_queue(&nr_sfn_slot_queue, sfn_slot))
       {
@@ -991,11 +1043,13 @@ void *nrue_standalone_pnf_task(void *context)
       // TODO: Update sinr field of slot_rnti_mcs to be array.
       for (int i = 0; i < ch_info->nb_of_csi; ++i)
       {
-        slot_rnti_mcs[NFAPI_SFNSLOT2SLOT(ch_info->sfn_slot)].sinr = ch_info->csi[i].sinr;
-        slot_rnti_mcs[NFAPI_SFNSLOT2SLOT(ch_info->sfn_slot)].area_code = ch_info->csi[i].area_code;
+        int mu = 1; // NR-UE emul-L1 is hardcoded to 30kHZ, see check_and_process_dci()
+        int frame = NFAPI_SFNSLOTDEC2SFN(mu, ch_info->sfn_slot);
+        int slot = NFAPI_SFNSLOTDEC2SLOT(mu, ch_info->sfn_slot);
+        slot_rnti_mcs[slot].sinr = ch_info->csi[i].sinr;
+        slot_rnti_mcs[slot].area_code = ch_info->csi[i].area_code;
 
-        LOG_D(NR_PHY, "Received_SINR[%d] = %f, sfn:slot %d:%d\n",
-              i, ch_info->csi[i].sinr, NFAPI_SFNSLOT2SFN(ch_info->sfn_slot), NFAPI_SFNSLOT2SLOT(ch_info->sfn_slot));
+        LOG_D(NR_PHY, "Received_SINR[%d] = %f, sfn:slot %d:%d\n", i, ch_info->csi[i].sinr, frame, slot);
       }
 
       if (!put_queue(&nr_chan_param_queue, ch_info))
@@ -1092,9 +1146,10 @@ static int8_t handle_dlsch(NR_UE_MAC_INST_t *mac, nr_downlink_indication_t *dl_i
   if (get_softmodem_params()->emulate_l1)
     dl_info->rx_ind->rx_indication_body[pdu_id].pdsch_pdu.harq_pid = g_harq_pid;
 
-  update_harq_status(mac,
-                     dl_info->rx_ind->rx_indication_body[pdu_id].pdsch_pdu.harq_pid,
-                     dl_info->rx_ind->rx_indication_body[pdu_id].pdsch_pdu.ack_nack);
+  if (mac->ra.ra_state != nrRA_WAIT_RAR) // no HARQ for MSG2
+    update_harq_status(mac,
+                       dl_info->rx_ind->rx_indication_body[pdu_id].pdsch_pdu.harq_pid,
+                       dl_info->rx_ind->rx_indication_body[pdu_id].pdsch_pdu.ack_nack);
   if(dl_info->rx_ind->rx_indication_body[pdu_id].pdsch_pdu.ack_nack)
     nr_ue_send_sdu(mac, dl_info, pdu_id);
 
@@ -1120,13 +1175,13 @@ static int8_t handle_csirs_measurements(NR_UE_MAC_INST_t *mac,
 
 void update_harq_status(NR_UE_MAC_INST_t *mac, uint8_t harq_pid, uint8_t ack_nack)
 {
-  NR_UE_HARQ_STATUS_t *current_harq = &mac->dl_harq_info[harq_pid];
+  NR_UE_DL_HARQ_STATUS_t *current_harq = &mac->dl_harq_info[harq_pid];
 
   if (current_harq->active) {
     LOG_D(PHY,"Updating harq_status for harq_id %d, ack/nak %d\n", harq_pid, current_harq->ack);
     // we can prepare feedback for MSG4 in advance
     if (mac->ra.ra_state == nrRA_WAIT_CONTENTION_RESOLUTION)
-      prepare_msg4_feedback(mac, harq_pid, ack_nack);
+      prepare_msg4_msgb_feedback(mac, harq_pid, ack_nack);
     else {
       current_harq->ack = ack_nack;
       current_harq->ack_received = true;
@@ -1140,27 +1195,25 @@ void update_harq_status(NR_UE_MAC_INST_t *mac, uint8_t harq_pid, uint8_t ack_nac
 
 int nr_ue_ul_indication(nr_uplink_indication_t *ul_info)
 {
-  int ret = pthread_mutex_lock(&mac_IF_mutex);
+  module_id_t module_id = ul_info->module_id;
+  NR_UE_MAC_INST_t *mac = get_mac_inst(module_id);
+  int ret = pthread_mutex_lock(&mac->if_mutex);
   AssertFatal(!ret, "mutex failed %d\n", ret);
   LOG_D(PHY, "Locked in ul, slot %d\n", ul_info->slot);
 
-  module_id_t module_id = ul_info->module_id;
-  NR_UE_MAC_INST_t *mac = get_mac_inst(module_id);
-
   LOG_T(NR_MAC, "Not calling scheduler mac->ra.ra_state = %d\n", mac->ra.ra_state);
 
-  if (mac->phy_config_request_sent && is_nr_UL_slot(mac->tdd_UL_DL_ConfigurationCommon, ul_info->slot, mac->frame_type))
+  if (is_ul_slot(ul_info->slot, &mac->frame_structure))
     nr_ue_ul_scheduler(mac, ul_info);
-  pthread_mutex_unlock(&mac_IF_mutex);
-
+  ret = pthread_mutex_unlock(&mac->if_mutex);
+  AssertFatal(!ret, "mutex failed %d\n", ret);
   return 0;
 }
 
-static uint32_t nr_ue_dl_processing(nr_downlink_indication_t *dl_info)
+static uint32_t nr_ue_dl_processing(NR_UE_MAC_INST_t *mac, nr_downlink_indication_t *dl_info)
 {
   uint32_t ret_mask = 0x0;
-  DevAssert(dl_info != NULL);
-  NR_UE_MAC_INST_t *mac = get_mac_inst(dl_info->module_id);
+  DevAssert(mac != NULL && dl_info != NULL);
 
   // DL indication after reception of DCI or DL PDU
   if (dl_info->dci_ind && dl_info->dci_ind->number_of_dcis) {
@@ -1179,7 +1232,7 @@ static uint32_t nr_ue_dl_processing(nr_downlink_indication_t *dl_info)
         continue;
       }
       dci_pdu_rel15_t *def_dci_pdu_rel15 = &mac->def_dci_pdu_rel15[dl_info->slot][dci_format];
-      g_harq_pid = def_dci_pdu_rel15->harq_pid;
+      g_harq_pid = def_dci_pdu_rel15->harq_pid.val;
       LOG_T(NR_MAC, "Setting harq_pid = %d and dci_index = %d (based on format)\n", g_harq_pid, dci_format);
 
       ret_mask |= (1 << FAPI_NR_DCI_IND);
@@ -1263,26 +1316,29 @@ static uint32_t nr_ue_dl_processing(nr_downlink_indication_t *dl_info)
 
 int nr_ue_dl_indication(nr_downlink_indication_t *dl_info)
 {
-  int ret = pthread_mutex_lock(&mac_IF_mutex);
-  AssertFatal(!ret, "mutex failed %d\n", ret);
   uint32_t ret2 = 0;
   NR_UE_MAC_INST_t *mac = get_mac_inst(dl_info->module_id);
+  int ret = pthread_mutex_lock(&mac->if_mutex);
+  AssertFatal(!ret, "mutex failed %d\n", ret);
   if (!dl_info->dci_ind && !dl_info->rx_ind)
     // DL indication to process DCI reception
     nr_ue_dl_scheduler(mac, dl_info);
   else
     // DL indication to process data channels
-    ret2 = nr_ue_dl_processing(dl_info);
-  pthread_mutex_unlock(&mac_IF_mutex);
+    ret2 = nr_ue_dl_processing(mac, dl_info);
+  ret = pthread_mutex_unlock(&mac->if_mutex);
+  AssertFatal(!ret, "mutex failed %d\n", ret);
   return ret2;
 }
 
 void nr_ue_slot_indication(uint8_t mod_id)
 {
-  pthread_mutex_lock(&mac_IF_mutex);
   NR_UE_MAC_INST_t *mac = get_mac_inst(mod_id);
+  int ret = pthread_mutex_lock(&mac->if_mutex);
+  AssertFatal(!ret, "mutex failed %d\n", ret);
   update_mac_timers(mac);
-  pthread_mutex_unlock(&mac_IF_mutex);
+  ret = pthread_mutex_unlock(&mac->if_mutex);
+  AssertFatal(!ret, "mutex failed %d\n", ret);
 }
 
 nr_ue_if_module_t *nr_ue_if_module_init(uint32_t module_id)
@@ -1308,7 +1364,6 @@ nr_ue_if_module_t *nr_ue_if_module_init(uint32_t module_id)
     nr_ue_if_module_inst[module_id]->ul_indication = nr_ue_ul_indication;
     nr_ue_if_module_inst[module_id]->slot_indication = nr_ue_slot_indication;
   }
-  pthread_mutex_init(&mac_IF_mutex, NULL);
 
   return nr_ue_if_module_inst[module_id];
 }

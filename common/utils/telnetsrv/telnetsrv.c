@@ -53,9 +53,10 @@
 #include <sys/resource.h>
 #include "common/utils/load_module_shlib.h"
 #include "common/config/config_userapi.h"
-#include "common/utils/threadPool/thread-pool.h"
 #include "executables/softmodem-common.h"
+#include "common/utils/threadPool/notified_fifo.h"
 #include <readline/history.h>
+#include "common/oai_version.h"
 
 
 #include "telnetsrv_phycmd.h"
@@ -65,6 +66,12 @@ static telnetsrv_params_t telnetparams;
 
 #define TELNETSRV_OPTNAME_STATICMOD   "staticmod"
 #define TELNETSRV_OPTNAME_SHRMOD      "shrmod"
+
+#define TELNET_LOG(fmt, ...)                               \
+  do {                                                     \
+    printf("[TELNETSRV] " fmt __VA_OPT__(, ) __VA_ARGS__); \
+    fflush(stdout);                                        \
+  } while (0)
 
 // clang-format off
 paramdef_t telnetoptions[] = {
@@ -651,11 +658,11 @@ void run_telnetsrv(void) {
     fprintf(stderr,"[TELNETSRV] Error %s on listen call\n",strerror(errno));
 
   using_history();
-  int plen=sprintf(prompt,"%s_%s> ",TELNET_PROMPT_PREFIX,get_softmodem_function(NULL));
-  printf("\nInitializing telnet server...\n");
+  int plen = sprintf(prompt, "%s_%s> ", TELNET_PROMPT_PREFIX, get_softmodem_function());
+  TELNET_LOG("\nInitializing telnet server...\n");
 
   while( (telnetparams.new_socket = accept(sock, &cli_addr, &cli_len)) ) {
-    printf("[TELNETSRV] Telnet client connected....\n");
+    TELNET_LOG("Telnet client connected....\n");
     read_history(telnetparams.histfile);
     stifle_history(telnetparams.histsize);
 
@@ -681,12 +688,12 @@ void run_telnetsrv(void) {
       }
 
       if(!readc) {
-        printf ("[TELNETSRV] Telnet Client disconnected.\n");
+        TELNET_LOG("Telnet Client disconnected.\n");
         break;
       }
 
       if (telnetparams.telnetdbg > 0)
-        printf("[TELNETSRV] Command received: readc %i filled %i \"%s\"\n", readc, filled,buf);
+        TELNET_LOG("Command received: readc %i filled %i \"%s\"\n", readc, filled, buf);
 
       if (buf[0] == '!') {
         if (buf[1] == '!') {
@@ -719,7 +726,7 @@ void run_telnetsrv(void) {
 
         send(telnetparams.new_socket, prompt, strlen(prompt), MSG_NOSIGNAL);
       } else {
-        printf ("[TELNETSRV] Closing telnet connection...\n");
+        TELNET_LOG("Closing telnet connection...\n");
         break;
       }
     }
@@ -727,7 +734,7 @@ void run_telnetsrv(void) {
     write_history(telnetparams.histfile);
     clear_history();
     close(telnetparams.new_socket);
-    printf ("[TELNETSRV] Telnet server waitting for connection...\n");
+    TELNET_LOG("Telnet server waiting for connection...\n");
   }
 
   close(sock);
@@ -740,7 +747,7 @@ void run_telnetclt(void) {
   pthread_setname_np(pthread_self(), "telnetclt");
   set_sched(pthread_self(),0,telnetparams.priority);
   char prompt[sizeof(TELNET_PROMPT_PREFIX)+10];
-  sprintf(prompt,"%s_%s> ",TELNET_PROMPT_PREFIX,get_softmodem_function(NULL));
+  sprintf(prompt, "%s_%s> ", TELNET_PROMPT_PREFIX, get_softmodem_function());
   name.sin_family = AF_INET;
   struct in_addr addr;
   inet_aton("127.0.0.1", &addr) ;
@@ -877,7 +884,7 @@ int telnetsrv_autoinit(void) {
   memset(&telnetparams,0,sizeof(telnetparams));
   config_get(config_get_if(), telnetoptions, sizeofArray(telnetoptions), "telnetsrv");
   /* possibly load a exec specific shared lib */
-  char *execfunc=get_softmodem_function(NULL);
+  char *execfunc = get_softmodem_function();
   char libname[64];
   sprintf(libname,"telnetsrv_%s",execfunc);
   load_module_shlib(libname,NULL,0,NULL);
@@ -926,7 +933,7 @@ int add_telnetcmd(char *modulename, telnetshell_vardef_t *var, telnetshell_cmdde
           cmd[j].qptr = afifo;
         }
       }
-      printf("[TELNETSRV] Telnet server: module %i = %s added to shell\n", i, telnetparams.CmdParsers[i].module);
+      TELNET_LOG("Telnet server: module %i = %s added to shell\n", i, telnetparams.CmdParsers[i].module);
       break;
     }
   }
@@ -938,10 +945,7 @@ int add_telnetcmd(char *modulename, telnetshell_vardef_t *var, telnetshell_cmdde
    against main exec version. version mismatch not considered as fatal (interfaces not supposed to change)
 */
 int  telnetsrv_checkbuildver(char *mainexec_buildversion, char **shlib_buildversion) {
-#ifndef PACKAGE_VERSION
-#define PACKAGE_VERSION "standalone built: " __DATE__ __TIME__
-#endif
-  *shlib_buildversion = PACKAGE_VERSION;
+  *shlib_buildversion = OAI_PACKAGE_VERSION;
 
   if (strcmp(mainexec_buildversion, *shlib_buildversion) != 0) {
     fprintf(stderr,"[TELNETSRV] shared lib version %s, doesn't match main version %s, compatibility should be checked\n",

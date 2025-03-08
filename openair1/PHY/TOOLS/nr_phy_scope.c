@@ -686,7 +686,7 @@ STATICFORXSCOPE OAI_phy_scope_t *create_phy_scope_gnb(void)
   fl_end_form( );
   if (fdui->phy_scope)
     fdui->phy_scope->fdui = fdui;
-  fl_show_form (fdui->phy_scope, FL_PLACE_HOTSPOT, FL_FULLBORDER, "LTE UL SCOPE gNB");
+  fl_show_form (fdui->phy_scope, FL_PLACE_HOTSPOT, FL_FULLBORDER, "NR UL SCOPE gNB");
   return fdui;
 }
 
@@ -1165,9 +1165,9 @@ STATICFORXSCOPE void nrUEinitScope(PHY_VARS_NR_UE *ue)
 }
 
 void nrscope_autoinit(void *dataptr) {
-  AssertFatal( (IS_SOFTMODEM_GNB_BIT||IS_SOFTMODEM_5GUE_BIT),"Scope cannot find NRUE or GNB context");
+  AssertFatal((IS_SOFTMODEM_GNB || IS_SOFTMODEM_5GUE), "Scope cannot find NRUE or GNB context");
 
-  if (IS_SOFTMODEM_GNB_BIT)
+  if (IS_SOFTMODEM_GNB)
     gNBinitScope(dataptr);
   else
     nrUEinitScope(dataptr);

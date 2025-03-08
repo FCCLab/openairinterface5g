@@ -44,8 +44,7 @@ extern const uint16_t NCS_unrestricted[16];
 extern const uint16_t NCS_restricted[15];
 extern const uint16_t NCS_4[7];
 
-extern int16_t ru[2*839]; // quantized roots of unity
-extern uint32_t ZC_inv[839]; // multiplicative inverse for roots u
+extern int16_t ru[2 * 839]; // quantized roots of unity
 extern uint16_t du[838];
 
 

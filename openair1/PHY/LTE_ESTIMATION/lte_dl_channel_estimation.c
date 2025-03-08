@@ -47,9 +47,10 @@ int lte_dl_channel_estimation(PHY_VARS_UE *ue,
   uint16_t Nid_cell = (eNB_offset == 0) ? ue->frame_parms.Nid_cell : ue->measurements.adj_cell_id[eNB_offset-1];
   uint8_t nushift,pilot0,pilot1,pilot2,pilot3;
   uint8_t previous_thread_id = ue->current_thread_id[Ns>>1]==0 ? (RX_NB_TH-1):(ue->current_thread_id[Ns>>1]-1);
-  int **dl_ch_estimates         =ue->common_vars.common_vars_rx_data_per_thread[ue->current_thread_id[Ns>>1]].dl_ch_estimates[eNB_offset];
+  LTE_UE_COMMON_PER_THREAD * vars=&ue->common_vars.common_vars_rx_data_per_thread[ue->current_thread_id[Ns>>1]];
+  int **dl_ch_estimates         =vars->dl_ch_estimates[eNB_offset];
   int **dl_ch_estimates_previous=ue->common_vars.common_vars_rx_data_per_thread[previous_thread_id].dl_ch_estimates[eNB_offset];
-  int **rxdataF=ue->common_vars.common_vars_rx_data_per_thread[ue->current_thread_id[Ns>>1]].rxdataF;
+  int **rxdataF=vars->rxdataF;
   pilot0 = 0;
 
   if (ue->frame_parms.Ncp == 0) {  // normal prefix
@@ -657,53 +658,27 @@ int lte_dl_channel_estimation(PHY_VARS_UE *ue,
     }
   }
 
-  idft_size_idx_t idftsizeidx;
-
-  switch (ue->frame_parms.ofdm_symbol_size) {
-    case 128:
-      idftsizeidx = IDFT_128;
-      break;        
-                    
-    case 256:       
-      idftsizeidx = IDFT_256;
-      break;        
-                    
-    case 512:       
-      idftsizeidx = IDFT_512;
-      break;        
-                    
-    case 1024:      
-      idftsizeidx = IDFT_1024;
-      break;       
-                   
-    case 1536:     
-      idftsizeidx = IDFT_1536;
-      break;        
-                    
-    case 2048:      
-      idftsizeidx = IDFT_2048;
-      break;        
-                    
-    default:        
-      idftsizeidx = IDFT_512;
-      break;
-  }
+  int s = ue->frame_parms.ofdm_symbol_size;
+  if (s != 128 && s != 256 && s != 512 && s != 1024 && s != 1536 && s != 2048)
+    s = 512;
 
   if( ((Ns%2) == 0) && (l == pilot0)) {
     // do ifft of channel estimate
     for (aarx=0; aarx<ue->frame_parms.nb_antennas_rx; aarx++)
       for (p=0; p<ue->frame_parms.nb_antenna_ports_eNB; p++) {
-        if (ue->common_vars.common_vars_rx_data_per_thread[ue->current_thread_id[Ns>>1]].dl_ch_estimates[eNB_offset][(p<<1)+aarx]) {
+        if (dl_ch_estimates[(p<<1)+aarx]) {
           //LOG_I(PHY,"Channel Impulse Computation Slot %d ThreadId %d Symbol %d \n", Ns, ue->current_thread_id[Ns>>1], l);
-          idft(idftsizeidx,(int16_t *) &ue->common_vars.common_vars_rx_data_per_thread[ue->current_thread_id[Ns>>1]].dl_ch_estimates[eNB_offset][(p<<1)+aarx][8],
-               (int16_t *) ue->common_vars.common_vars_rx_data_per_thread[ue->current_thread_id[Ns>>1]].dl_ch_estimates_time[eNB_offset][(p<<1)+aarx],1);
+          idft(get_idft(s),
+               (int16_t *)&dl_ch_estimates[(p << 1) + aarx][8],
+               (int16_t *)vars->dl_ch_estimates_time[eNB_offset][(p << 1) + aarx],
+               1);
         }
       }
   }
 
   T(T_UE_PHY_DL_CHANNEL_ESTIMATE, T_INT(eNB_id), T_INT(0),
     T_INT(ue->proc.proc_rxtx[ue->current_thread_id[Ns>>1]].frame_rx%1024), T_INT(ue->proc.proc_rxtx[ue->current_thread_id[Ns>>1]].subframe_rx),
-    T_INT(0), T_BUFFER(&ue->common_vars.common_vars_rx_data_per_thread[ue->current_thread_id[Ns>>1]].dl_ch_estimates_time[eNB_offset][0][0], 512  * 4));
+    T_INT(0), T_BUFFER(&vars->dl_ch_estimates_time[eNB_offset][0][0], 512  * 4));
   return(0);
 }
 

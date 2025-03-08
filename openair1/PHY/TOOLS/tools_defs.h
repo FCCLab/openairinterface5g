@@ -38,9 +38,9 @@
 #include <simde/simde-common.h>
 #include <simde/x86/sse.h>
 #include <simde/x86/avx2.h>
+#include "common/utils/LOG/log.h"
 
 #define simd_q15_t simde__m128i
-#define simdshort_q15_t simde__m64
 #define shiftright_int16(a,shift) simde_mm_srai_epi16(a,shift)
 #define set1_int16(a) simde_mm_set1_epi16(a)
 #define mulhi_int16(a,b) simde_mm_mulhrs_epi16 (a,b)
@@ -52,8 +52,8 @@
 extern "C" {
 #endif
 
-#define CEILIDIV(a,b) ((a+b-1)/b)
-#define ROUNDIDIV(a,b) (((a<<1)+b)/(b<<1))
+#define ALIGNARRAYSIZE(a, b) (((a + b - 1) / b) * b)
+#define ALNARS_16_4(a) ALIGNARRAYSIZE(a, 4)
 
   typedef struct complexd {
     double r;
@@ -90,7 +90,7 @@ extern "C" {
     int dim2;
     int dim3;
     int dim4;
-    uint8_t data[];
+    uint8_t data[] __attribute__((aligned(32)));
   } fourDimArray_t;
 
   static inline fourDimArray_t *allocateFourDimArray(int elmtSz, int dim1, int dim2, int dim3, int dim4)
@@ -357,6 +357,74 @@ static __attribute__((always_inline)) inline void multadd_real_four_symbols_vect
     simde_mm_storeu_si128((simd_q15_t *)y, y_128);
 }
 
+// Multiply two vectors of complex int16 and take the most significant bits (shift by 15 in normal case)
+// works only with little endian storage (for big endian, modify the srai/ssli at the end)
+static __attribute__((always_inline)) inline void mult_complex_vectors(const c16_t *in1,
+                                                                       const c16_t *in2,
+                                                                       c16_t *out,
+                                                                       const int size,
+                                                                       const int shift)
+{
+  const simde__m256i complex_shuffle256 = simde_mm256_set_epi8(29,
+                                                               28,
+                                                               31,
+                                                               30,
+                                                               25,
+                                                               24,
+                                                               27,
+                                                               26,
+                                                               21,
+                                                               20,
+                                                               23,
+                                                               22,
+                                                               17,
+                                                               16,
+                                                               19,
+                                                               18,
+                                                               13,
+                                                               12,
+                                                               15,
+                                                               14,
+                                                               9,
+                                                               8,
+                                                               11,
+                                                               10,
+                                                               5,
+                                                               4,
+                                                               7,
+                                                               6,
+                                                               1,
+                                                               0,
+                                                               3,
+                                                               2);
+  const simde__m256i conj256 = simde_mm256_set_epi16(-1, 1, -1, 1, -1, 1, -1, 1, -1, 1, -1, 1, -1, 1, -1, 1);
+  int i;
+  // do 8 multiplications at a time
+  for (i = 0; i < size - 7; i += 8) {
+    const simde__m256i i1 = simde_mm256_loadu_si256((simde__m256i *)(in1 + i));
+    const simde__m256i i2 = simde_mm256_loadu_si256((simde__m256i *)(in2 + i));
+    const simde__m256i i2swap = simde_mm256_shuffle_epi8(i2, complex_shuffle256);
+    const simde__m256i i2conj = simde_mm256_sign_epi16(i2, conj256);
+    const simde__m256i re = simde_mm256_madd_epi16(i1, i2conj);
+    const simde__m256i im = simde_mm256_madd_epi16(i1, i2swap);
+    simde_mm256_storeu_si256(
+        (simde__m256i *)(out + i),
+        simde_mm256_blend_epi16(simde_mm256_srai_epi32(re, shift), simde_mm256_slli_epi32(im, 16 - shift), 0xAA));
+  }
+  if (size - i > 4) {
+    const simde__m128i i1 = simde_mm_loadu_si128((simde__m128i *)(in1 + i));
+    const simde__m128i i2 = simde_mm_loadu_si128((simde__m128i *)(in2 + i));
+    const simde__m128i i2swap = simde_mm_shuffle_epi8(i2, *(simde__m128i *)&complex_shuffle256);
+    const simde__m128i i2conj = simde_mm_sign_epi16(i2, *(simde__m128i *)&conj256);
+    const simde__m128i re = simde_mm_madd_epi16(i1, i2conj);
+    const simde__m128i im = simde_mm_madd_epi16(i1, i2swap);
+    simde_mm_storeu_si128((simde__m128i *)(out + i),
+                          simde_mm_blend_epi16(simde_mm_srai_epi32(re, shift), simde_mm_slli_epi32(im, 16 - shift), 0xAA));
+    i += 4;
+  }
+  for (; i < size; i++)
+    out[i] = c16mulShift(in1[i], in2[i], shift);
+}
 /*!\fn void multadd_complex_vector_real_scalar(int16_t *x,int16_t alpha,int16_t *y,uint8_t zero_flag,uint32_t N)
 This function performs componentwise multiplication and accumulation of a real scalar and a complex vector.
 @param x Vector input (Q1.15) in the format |Re0 Im0|Re1 Im 1| ...
@@ -431,135 +499,109 @@ void init_fft(uint16_t size,
               uint16_t *rev);
 
 #define FOREACH_DFTSZ(SZ_DEF) \
-  SZ_DEF(12) \
-  SZ_DEF(24) \
-  SZ_DEF(36) \
-  SZ_DEF(48) \
-  SZ_DEF(60) \
-  SZ_DEF(64) \
-  SZ_DEF(72) \
-  SZ_DEF(96) \
-  SZ_DEF(108) \
-  SZ_DEF(120) \
-  SZ_DEF(128) \
-  SZ_DEF(144) \
-  SZ_DEF(180) \
-  SZ_DEF(192) \
-  SZ_DEF(216) \
-  SZ_DEF(240) \
-  SZ_DEF(256) \
-  SZ_DEF(288) \
-  SZ_DEF(300) \
-  SZ_DEF(324) \
-  SZ_DEF(360) \
-  SZ_DEF(384) \
-  SZ_DEF(432) \
-  SZ_DEF(480) \
-  SZ_DEF(512) \
-  SZ_DEF(540) \
-  SZ_DEF(576) \
-  SZ_DEF(600) \
-  SZ_DEF(648) \
-  SZ_DEF(720) \
-  SZ_DEF(768) \
-  SZ_DEF(864) \
-  SZ_DEF(900) \
-  SZ_DEF(960) \
-  SZ_DEF(972) \
-  SZ_DEF(1024) \
-  SZ_DEF(1080) \
-  SZ_DEF(1152) \
-  SZ_DEF(1200) \
-  SZ_DEF(1296) \
-  SZ_DEF(1440) \
-  SZ_DEF(1500) \
-  SZ_DEF(1536) \
-  SZ_DEF(1620) \
-  SZ_DEF(1728) \
-  SZ_DEF(1800) \
-  SZ_DEF(1920) \
-  SZ_DEF(1944) \
-  SZ_DEF(2048) \
-  SZ_DEF(2160) \
-  SZ_DEF(2304) \
-  SZ_DEF(2400) \
-  SZ_DEF(2592) \
-  SZ_DEF(2700) \
-  SZ_DEF(2880) \
-  SZ_DEF(2916) \
-  SZ_DEF(3000) \
-  SZ_DEF(3072) \
-  SZ_DEF(3240) \
-  SZ_DEF(4096) \
-  SZ_DEF(6144) \
-  SZ_DEF(8192) \
-  SZ_DEF(9216) \
-  SZ_DEF(12288) \
-  SZ_DEF(18432) \
-  SZ_DEF(24576) \
-  SZ_DEF(36864) \
-  SZ_DEF(49152) \
-  SZ_DEF(73728) \
+  SZ_DEF(12)                  \
+  SZ_DEF(24)                  \
+  SZ_DEF(36)                  \
+  SZ_DEF(48)                  \
+  SZ_DEF(60)                  \
+  SZ_DEF(64)                  \
+  SZ_DEF(72)                  \
+  SZ_DEF(96)                  \
+  SZ_DEF(108)                 \
+  SZ_DEF(120)                 \
+  SZ_DEF(128)                 \
+  SZ_DEF(144)                 \
+  SZ_DEF(180)                 \
+  SZ_DEF(192)                 \
+  SZ_DEF(216)                 \
+  SZ_DEF(240)                 \
+  SZ_DEF(256)                 \
+  SZ_DEF(288)                 \
+  SZ_DEF(300)                 \
+  SZ_DEF(324)                 \
+  SZ_DEF(360)                 \
+  SZ_DEF(384)                 \
+  SZ_DEF(432)                 \
+  SZ_DEF(480)                 \
+  SZ_DEF(512)                 \
+  SZ_DEF(540)                 \
+  SZ_DEF(576)                 \
+  SZ_DEF(600)                 \
+  SZ_DEF(648)                 \
+  SZ_DEF(720)                 \
+  SZ_DEF(768)                 \
+  SZ_DEF(864)                 \
+  SZ_DEF(900)                 \
+  SZ_DEF(960)                 \
+  SZ_DEF(972)                 \
+  SZ_DEF(1024)                \
+  SZ_DEF(1080)                \
+  SZ_DEF(1152)                \
+  SZ_DEF(1200)                \
+  SZ_DEF(1296)                \
+  SZ_DEF(1440)                \
+  SZ_DEF(1500)                \
+  SZ_DEF(1536)                \
+  SZ_DEF(1620)                \
+  SZ_DEF(1728)                \
+  SZ_DEF(1800)                \
+  SZ_DEF(1920)                \
+  SZ_DEF(1944)                \
+  SZ_DEF(2048)                \
+  SZ_DEF(2160)                \
+  SZ_DEF(2304)                \
+  SZ_DEF(2400)                \
+  SZ_DEF(2592)                \
+  SZ_DEF(2700)                \
+  SZ_DEF(2880)                \
+  SZ_DEF(2916)                \
+  SZ_DEF(3000)                \
+  SZ_DEF(3072)                \
+  SZ_DEF(3240)                \
+  SZ_DEF(4096)                \
+  SZ_DEF(6144)                \
+  SZ_DEF(8192)                \
+  SZ_DEF(12288)               \
+  SZ_DEF(18432)               \
+  SZ_DEF(24576)               \
+  SZ_DEF(36864)               \
+  SZ_DEF(49152)               \
   SZ_DEF(98304)
 
-#define FOREACH_IDFTSZ(SZ_DEF)\
-  SZ_DEF(64) \
-  SZ_DEF(128) \
-  SZ_DEF(256) \
-  SZ_DEF(512) \
-  SZ_DEF(768) \
-  SZ_DEF(1024) \
-  SZ_DEF(1536) \
-  SZ_DEF(2048) \
-  SZ_DEF(3072) \
-  SZ_DEF(4096) \
-  SZ_DEF(6144) \
-  SZ_DEF(8192) \
-  SZ_DEF(9216) \
-  SZ_DEF(12288) \
-  SZ_DEF(16384) \
-  SZ_DEF(18432) \
-  SZ_DEF(24576) \
-  SZ_DEF(32768) \
-  SZ_DEF(36864) \
-  SZ_DEF(49152) \
-  SZ_DEF(65536) \
-  SZ_DEF(73728) \
+#define FOREACH_IDFTSZ(SZ_DEF) \
+  SZ_DEF(64)                   \
+  SZ_DEF(128)                  \
+  SZ_DEF(256)                  \
+  SZ_DEF(512)                  \
+  SZ_DEF(768)                  \
+  SZ_DEF(1024)                 \
+  SZ_DEF(1536)                 \
+  SZ_DEF(2048)                 \
+  SZ_DEF(3072)                 \
+  SZ_DEF(4096)                 \
+  SZ_DEF(6144)                 \
+  SZ_DEF(8192)                 \
+  SZ_DEF(12288)                \
+  SZ_DEF(16384)                \
+  SZ_DEF(18432)                \
+  SZ_DEF(24576)                \
+  SZ_DEF(32768)                \
+  SZ_DEF(36864)                \
+  SZ_DEF(49152)                \
+  SZ_DEF(65536)                \
   SZ_DEF(98304)
 
-#ifdef OAIDFTS_MAIN
-typedef  void(*adftfunc_t)(int16_t *sigF,int16_t *sig,unsigned char scale_flag);
-typedef  void(*aidftfunc_t)(int16_t *sigF,int16_t *sig,unsigned char scale_flag);
-
-#define SZ_FUNC(Sz) void dft ## Sz(int16_t *x,int16_t *y,uint8_t scale_flag);
-
-FOREACH_DFTSZ(SZ_FUNC)
-
-#define SZ_iFUNC(Sz) void idft ## Sz(int16_t *x,int16_t *y,uint8_t scale_flag);
-
-FOREACH_IDFTSZ(SZ_iFUNC)
-
-#else
 typedef  void(*dftfunc_t)(uint8_t sizeidx,int16_t *sigF,int16_t *sig,unsigned char scale_flag);
-typedef  void(*idftfunc_t)(uint8_t sizeidx,int16_t *sigF,int16_t *sig,unsigned char scale_flag);
-#  ifdef OAIDFTS_LOADER
-dftfunc_t dft;
-idftfunc_t idft;
-#  else
+typedef void (*idftfunc_t)(uint8_t sizeidx, int16_t *sigF, int16_t *sig, unsigned char scale_flag);
 extern dftfunc_t dft;
 extern idftfunc_t idft;
-extern int load_dftslib(void);
-#  endif
-#endif
+int load_dftslib(void);
 
-#define SZ_ENUM(Sz) DFT_ ## Sz,
-
+#define SZ_ENUM(Sz) DFT_##Sz,
 typedef enum dft_size_idx {
   FOREACH_DFTSZ(SZ_ENUM)
   DFT_SIZE_IDXTABLESIZE
 }  dft_size_idx_t;
-
-#define SZ_iENUM(Sz) IDFT_ ## Sz,
 
 /*******************************************************************
 *
@@ -572,63 +614,38 @@ typedef enum dft_size_idx {
 * DESCRIPTION :  get dft function depending of ofdm size
 *
 *********************************************************************/
-static inline
-dft_size_idx_t get_dft(int ofdm_symbol_size)
+#define FIND_ENUM(Sz) \
+  case Sz:            \
+    return DFT_##Sz;  \
+    break;
+static inline dft_size_idx_t get_dft(int size)
 {
-  switch (ofdm_symbol_size) {
-    case 128:
-      return DFT_128;
-    case 256:
-      return DFT_256;
-    case 512:
-      return DFT_512;
-    case 768:
-      return DFT_768;
-    case 1024:
-      return DFT_1024;
-    case 1536:
-      return DFT_1536;
-    case 2048:
-      return DFT_2048;
-    case 3072:
-      return DFT_3072;
-    case 4096:
-      return DFT_4096;
-    case 6144:
-      return DFT_6144;
-    case 8192:
-      return DFT_8192;
-    case 9216:
-      return DFT_9216;
-    case 12288:
-      return DFT_12288;
-    case 18432:
-      return DFT_18432;
-    case 24576:
-      return DFT_24576;
-    case 36864:
-      return DFT_36864;
-    case 49152:
-      return DFT_49152;
-    case 73728:
-      return DFT_73728;
-    case 98304:
-      return DFT_98304;
+  switch (size) {
+    FOREACH_DFTSZ(FIND_ENUM)
     default:
-      printf("function get_dft : unsupported ofdm symbol size \n");
-      assert(0);
+      LOG_E(UTIL, "function get_dft : unsupported DFT size %d\n", size);
       break;
   }
-  return DFT_SIZE_IDXTABLESIZE; // never reached and will trigger assertion in idft function;
+  return DFT_SIZE_IDXTABLESIZE;
 }
 
+#define SZ_iENUM(Sz) IDFT_##Sz,
 typedef enum idft_size_idx {
   FOREACH_IDFTSZ(SZ_iENUM)
   IDFT_SIZE_IDXTABLESIZE
 }  idft_size_idx_t;
 
 #ifdef OAIDFTS_MAIN
+typedef void (*adftfunc_t)(int16_t *sigF, int16_t *sig, unsigned char scale_flag);
+typedef void (*aidftfunc_t)(int16_t *sigF, int16_t *sig, unsigned char scale_flag);
 
+#define SZ_FUNC(Sz) void dft##Sz(int16_t *x, int16_t *y, uint8_t scale_flag);
+
+FOREACH_DFTSZ(SZ_FUNC)
+
+#define SZ_iFUNC(Sz) void idft##Sz(int16_t *x, int16_t *y, uint8_t scale_flag);
+
+FOREACH_IDFTSZ(SZ_iFUNC)
 #define SZ_PTR(Sz) {dft ## Sz,Sz},
 struct {
   adftfunc_t func;
@@ -654,57 +671,17 @@ struct {
 * DESCRIPTION :  get idft function depending of ofdm size
 *
 *********************************************************************/
-static inline
-idft_size_idx_t get_idft(int ofdm_symbol_size)
+#define FIND_iENUM(iSz) \
+  case iSz:             \
+    return IDFT_##iSz;  \
+    break;
+
+static inline idft_size_idx_t get_idft(int size)
 {
-  switch (ofdm_symbol_size) {
-    case 128:
-      return IDFT_128;
-    case 256:
-      return IDFT_256;
-    case 512:
-      return IDFT_512;
-    case 768:
-      return IDFT_768;
-    case 1024:
-      return IDFT_1024;
-    case 1536:
-      return IDFT_1536;
-    case 2048:
-      return IDFT_2048;
-    case 3072:
-      return IDFT_3072;
-    case 4096:
-      return IDFT_4096;
-    case 6144:
-      return IDFT_6144;
-    case 8192:
-      return IDFT_8192;
-    case 9216:
-      return IDFT_9216;
-    case 12288:
-      return IDFT_12288;
-    case 16384:
-      return IDFT_16384;
-    case 18432:
-      return IDFT_18432;
-    case 24576:
-      return IDFT_24576;
-    case 32768:
-      return IDFT_32768;
-    case 36864:
-      return IDFT_36864;
-    case 49152:
-      return IDFT_49152;
-    case 65536:
-      return IDFT_65536;
-    case 73728:
-      return IDFT_73728;
-    case 98304:
-      return IDFT_98304;
+  switch (size) {
+    FOREACH_IDFTSZ(FIND_iENUM)
     default:
-      printf("function get_idft : unsupported ofdm symbol size \n");
-      assert(0);
+      AssertFatal(false, "function get_idft : unsupported iDFT size %d\n", size);
       break;
   }
   return IDFT_SIZE_IDXTABLESIZE; // never reached and will trigger assertion in idft function
@@ -749,19 +726,10 @@ int32_t sub_cpx_vector16(int16_t *x,
 */
 int32_t signal_energy(int32_t *,uint32_t);
 
-int32_t signal_energy_amp_shift(int32_t *input, uint32_t length);
-
-#ifdef LOCALIZATION
-/*!\fn int32_t signal_energy(int *,uint32_t);
-\brief Computes the signal energy per subcarrier
-*/
-int32_t subcarrier_energy(int32_t *,uint32_t, int32_t *subcarrier_energy, uint16_t rx_power_correction);
-#endif
-
-/*!\fn int32_t signal_energy_nodc(int32_t *,uint32_t);
+/*!\fn uint32_t signal_energy_nodc(c16_t *,uint32_t);
 \brief Computes the signal energy per subcarrier, without DC removal
 */
-int32_t signal_energy_nodc(int32_t *,uint32_t);
+uint32_t signal_energy_nodc(const c16_t *input, uint32_t length);
 
 int32_t signal_power(int32_t *,uint32_t);
 int32_t interference_power(int32_t *,uint32_t);

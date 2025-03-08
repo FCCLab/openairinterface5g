@@ -19,13 +19,8 @@
  *      contact@openairinterface.org
  */
 
-#include <stdio.h>
-#include <stdlib.h>
 #include <math.h>
-#include <string.h>
-#include "nfapi_nr_interface_scf.h"
 #include "PHY/TOOLS/tools_defs.h"
-#include "SIMULATION/RF/rf.h"
 #include "sim.h"
 
 //#define DEBUG_CH

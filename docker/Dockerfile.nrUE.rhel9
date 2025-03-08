@@ -31,8 +31,11 @@ FROM ran-build:latest AS nr-ue-build
 
 
 #start from scratch for target executable
-FROM registry.access.redhat.com/ubi9/ubi:latest as oai-nr-ue
+FROM registry.access.redhat.com/ubi9/ubi:latest AS oai-nr-ue
 ENV TZ=Europe/Paris
+
+# Install EPEL for RHEL9
+RUN dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm
 
 RUN dnf update -y && \
     dnf install -y \
@@ -47,7 +50,8 @@ RUN dnf update -y && \
         python3 \
         python3-pip \
         libXpm \
-        libX11 && \
+        libX11 \
+        yaml-cpp-devel && \
     pip3 install six && \
     pip3 install requests && \
     echo "/usr/local/lib" > /etc/ld.so.conf.d/local-lib.conf && \
@@ -70,6 +74,7 @@ COPY --from=nr-ue-build \
     /oai-ran/cmake_targets/ran_build/build/libldpc*.so \
     /oai-ran/cmake_targets/ran_build/build/libtelnetsrv.so \
     /oai-ran/cmake_targets/ran_build/build/libtelnetsrv_5Gue.so \
+    /oai-ran/cmake_targets/ran_build/build/libparams_yaml.so \
     /usr/local/lib/
 
 COPY --from=nr-ue-base \
@@ -117,5 +122,5 @@ RUN /bin/bash -c "ln -s /usr/local/lib/liboai_usrpdevif.so /usr/local/lib/liboai
 
 WORKDIR /opt/oai-nr-ue
 COPY --from=nr-ue-base /tini /tini
-CMD ["/opt/oai-nr-ue/bin/nr-uesoftmodem", "-O", "/opt/oai-nr-ue/etc/nr-ue.conf"]
+CMD ["/opt/oai-nr-ue/bin/nr-uesoftmodem"]
 ENTRYPOINT ["/tini", "-v", "--", "/opt/oai-nr-ue/bin/entrypoint.sh"]

@@ -31,7 +31,7 @@ FROM ran-build:latest AS lte-ue-build
 
 
 #start from scratch for target executable
-FROM registry.access.redhat.com/ubi9/ubi:latest as oai-lte-ue
+FROM registry.access.redhat.com/ubi9/ubi:latest AS oai-lte-ue
 ENV TZ=Europe/Paris
 
 RUN dnf update -y && \

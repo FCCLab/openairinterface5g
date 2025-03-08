@@ -83,12 +83,15 @@ find_path(xran_INCLUDE_DIR
     xran_pkt.h
     xran_pkt_up.h
     xran_sync_api.h
-  PATHS ${xran_LOCATION}
-  PATH_SUFFIXES api
+  HINTS ${xran_LOCATION}
+  PATH_SUFFIXES api include
+  NO_DEFAULT_PATH
 )
 find_library(xran_LIBRARY
   NAMES xran
-  PATHS ${xran_LOCATION}/build
+  HINTS ${xran_LOCATION}
+  PATH_SUFFIXES build api
+  NO_DEFAULT_PATH
 )
 if (NOT xran_LIBRARY)
   message(FATAL_ERROR "could not detect xran build artifacts at ${xran_LOCATION}/build")
@@ -101,17 +104,16 @@ endif()
 
 file(STRINGS ${xran_VERSION_FILE} xran_VERSION_LINE REGEX "^#define[ \t]+VERSIONX[ \t]+\"[a-z_.0-9]+\"$")
 string(REGEX REPLACE "^#define[ \t]+VERSIONX[ \t]+\"([a-z_.0-9]+)\"$" "\\1" xran_VERSION_STRING "${xran_VERSION_LINE}")
-message(STATUS "Found xran release ${xran_VERSION_STRING}")
-set(xran_VERSION "NOTFOUND")
-if (xran_VERSION_STRING STREQUAL "oran_e_maintenance_release_v1.0")
-  set(xran_VERSION 5.1.0)
-elseif (xran_VERSION_STRING STREQUAL "oran_e_maintenance_release_v1.1")
-  set(xran_VERSION 5.1.1)
-elseif (xran_VERSION_STRING STREQUAL "oran_e_maintenance_release_v1.2")
-  set(xran_VERSION 5.1.2)
-elseif (xran_VERSION_STRING STREQUAL "oran_e_maintenance_release_v1.3")
-  set(xran_VERSION 5.1.3)
+if (xran_VERSION_STRING MATCHES "^oran_e_maintenance_release_v")
+  string(REGEX REPLACE "oran_e_maintenance_release_v([0-9]+).([0-9]+)" "5.\\1.\\2" xran_VERSION ${xran_VERSION_STRING})
+elseif(xran_VERSION_STRING MATCHES "^oran_f_release_v")
+  string(REGEX REPLACE "oran_f_release_v([0-9]+).([0-9]+)" "6.\\1.\\2" xran_VERSION ${xran_VERSION_STRING})
+elseif(xran_VERSION_STRING MATCHES "^oran_bronze_release_v")
+  string(REGEX REPLACE "oran_bronze_release_v([0-9]+).([0-9]+)" "2.\\1.\\2" xran_VERSION ${xran_VERSION_STRING})
+else()
+  message(FATAL_ERROR "unrecognized xran version string: ${xran_VERSION_STRING}")
 endif()
+message(STATUS "Found xran release ${xran_VERSION_STRING} (v${xran_VERSION})")
 unset(xran_VERSION_LINE)
 unset(xran_VERSION_STRING)
 unset(xran_VERSION_FILE)

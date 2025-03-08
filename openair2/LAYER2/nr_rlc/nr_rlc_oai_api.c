@@ -40,9 +40,7 @@
 
 #include "openair2/F1AP/f1ap_du_rrc_message_transfer.h"
 #include "openair2/F1AP/f1ap_ids.h"
-
-extern RAN_CONTEXT_t RC;
-
+#include "openair3/ocp-gtpu/gtp_itf.h"
 #include <stdint.h>
 
 #include <executables/softmodem-common.h>
@@ -50,9 +48,33 @@ extern RAN_CONTEXT_t RC;
 static nr_rlc_ue_manager_t *nr_rlc_ue_manager;
 
 /* TODO: handle time a bit more properly */
+static pthread_mutex_t nr_rlc_current_time_mutex = PTHREAD_MUTEX_INITIALIZER;
 static uint64_t nr_rlc_current_time;
 static int      nr_rlc_current_time_last_frame;
 static int      nr_rlc_current_time_last_subframe;
+
+void lock_nr_rlc_current_time(void)
+{
+  if (pthread_mutex_lock(&nr_rlc_current_time_mutex))
+    AssertFatal(0, "error locking mutex");
+}
+
+void unlock_nr_rlc_current_time(void)
+{
+  if (pthread_mutex_unlock(&nr_rlc_current_time_mutex))
+    AssertFatal(0, "error locking mutex");
+}
+
+static uint64_t get_nr_rlc_current_time(void)
+{
+  lock_nr_rlc_current_time();
+
+  uint64_t ret = nr_rlc_current_time;
+
+  unlock_nr_rlc_current_time();
+
+  return ret;
+}
 
 static void release_rlc_entity_from_lcid(nr_rlc_ue_t *ue, logical_chan_id_t channel_id)
 {
@@ -90,14 +112,19 @@ logical_chan_id_t nr_rlc_get_lcid_from_rb(int ue_id, bool is_srb, int rb_id)
   for (logical_chan_id_t id = 1; id <= 32; id++) {
     nr_rlc_rb_t *rb = &ue->lcid2rb[id - 1];
     if (is_srb) {
-      if (rb->type == NR_RLC_SRB && rb->choice.srb_id == rb_id)
+      if (rb->type == NR_RLC_SRB && rb->choice.srb_id == rb_id) {
+        nr_rlc_manager_unlock(nr_rlc_ue_manager);
         return id;
+      }
     } else {
-      if (rb->type == NR_RLC_DRB && rb->choice.drb_id == rb_id)
+      if (rb->type == NR_RLC_DRB && rb->choice.drb_id == rb_id) {
+        nr_rlc_manager_unlock(nr_rlc_ue_manager);
         return id;
+      }
     }
   }
   LOG_E(RLC, "Couldn't find LCID corresponding to %s %d\n", is_srb ? "SRB" : "DRB", rb_id);
+  nr_rlc_manager_unlock(nr_rlc_ue_manager);
   return 0;
 }
 
@@ -166,7 +193,7 @@ void mac_rlc_data_ind(const module_id_t  module_idP,
 
   if (rb != NULL) {
     LOG_D(RLC, "RB found! (channel ID %d) \n", channel_idP);
-    rb->set_time(rb, nr_rlc_current_time);
+    rb->set_time(rb, get_nr_rlc_current_time());
     rb->recv_pdu(rb, buffer_pP, tb_sizeP);
   } else {
     LOG_E(RLC, "Fatal: no RB found (channel ID %d UE ID %d)\n", channel_idP, ue_id);
@@ -197,7 +224,7 @@ tbs_size_t mac_rlc_data_req(const module_id_t  module_idP,
 
   if (rb != NULL) {
     LOG_D(RLC, "MAC PDU to get created for channel_idP:%d \n", channel_idP);
-    rb->set_time(rb, nr_rlc_current_time);
+    rb->set_time(rb, get_nr_rlc_current_time());
     maxsize = tb_sizeP;
     ret = rb->generate_pdu(rb, buffer_pP, maxsize);
   } else {
@@ -233,7 +260,7 @@ mac_rlc_status_resp_t mac_rlc_status_ind(const module_id_t module_idP,
 
   if (rb != NULL) {
     nr_rlc_entity_buffer_status_t buf_stat;
-    rb->set_time(rb, nr_rlc_current_time);
+    rb->set_time(rb, get_nr_rlc_current_time());
     /* 38.321 deals with BSR values up to 81338368 bytes, after what it
      * reports '> 81338368' (table 6.1.3.1-2). Passing 100000000 is thus
      * more than enough.
@@ -275,12 +302,14 @@ rlc_buffer_occupancy_t mac_rlc_get_buffer_occupancy_ind(const module_id_t module
   }
 
   /* TODO: handle time a bit more properly */
+  lock_nr_rlc_current_time();
   if (nr_rlc_current_time_last_frame != frameP ||
       nr_rlc_current_time_last_subframe != subframeP) {
     nr_rlc_current_time++;
     nr_rlc_current_time_last_frame = frameP;
     nr_rlc_current_time_last_subframe = subframeP;
   }
+  unlock_nr_rlc_current_time();
 
   nr_rlc_manager_lock(nr_rlc_ue_manager);
   nr_rlc_ue_t *ue = nr_rlc_manager_get_ue(nr_rlc_ue_manager, ue_id);
@@ -288,7 +317,7 @@ rlc_buffer_occupancy_t mac_rlc_get_buffer_occupancy_ind(const module_id_t module
 
   if (rb != NULL) {
     nr_rlc_entity_buffer_status_t buf_stat;
-    rb->set_time(rb, nr_rlc_current_time);
+    rb->set_time(rb, get_nr_rlc_current_time());
     /* 38.321 deals with BSR values up to 81338368 bytes, after what it
      * reports '> 81338368' (table 6.1.3.1-2). Passing 100000000 is thus
      * more than enough.
@@ -345,7 +374,7 @@ rlc_op_status_t rlc_data_req(const protocol_ctxt_t *const ctxt_pP,
   }
 
   if (rb != NULL) {
-    rb->set_time(rb, nr_rlc_current_time);
+    rb->set_time(rb, get_nr_rlc_current_time());
     rb->recv_sdu(rb, (char *)sdu_pP, sdu_sizeP, muiP);
   } else {
     LOG_E(RLC, "%s:%d:%s: fatal: SDU sent to unknown RB\n", __FILE__, __LINE__, __FUNCTION__);
@@ -494,18 +523,9 @@ rb_found:
 	itti_send_msg_to_task(TASK_DU_F1, ENB_MODULE_ID_TO_INSTANCE(0 /*ctxt_pP->module_id*/), msg);
 	return;
       } else {
-	MessageDef *msg = itti_alloc_new_message_sized(TASK_RLC_ENB, 0, GTPV1U_TUNNEL_DATA_REQ,
-						       sizeof(gtpv1u_tunnel_data_req_t) + size);
-	gtpv1u_tunnel_data_req_t *req=&GTPV1U_TUNNEL_DATA_REQ(msg);
-	req->buffer=(uint8_t*)(req+1);
-	memcpy(req->buffer,buf,size);
-	req->length=size;
-	req->offset = 0;
-	req->ue_id = ue->ue_id;
-	req->bearer_id=rb_id;
 	LOG_D(RLC, "Received uplink user-plane traffic at RLC-DU to be sent to the CU, size %d \n", size);
 	extern instance_t DUuniqInstance;
-	itti_send_msg_to_task(TASK_GTPV1_U, DUuniqInstance, msg);
+        gtpv1uSendDirect(DUuniqInstance, ue->ue_id, rb_id, (uint8_t*) buf, size, false, false);
 	return;
       }
     }
@@ -519,7 +539,7 @@ rb_found:
   }
   memcpy(memblock, buf, size);
   LOG_D(PDCP, "Calling PDCP layer from RLC in %s\n", __FUNCTION__);
-  if (!pdcp_data_ind(&ctx, is_srb, 0, rb_id, size, memblock, NULL, NULL)) {
+  if (!nr_pdcp_data_ind(&ctx, is_srb, 0, rb_id, size, memblock, NULL, NULL)) {
     LOG_E(RLC, "%s:%d:%s: ERROR: pdcp_data_ind failed\n", __FILE__, __LINE__, __FUNCTION__);
     /* what to do in case of failure? for the moment: nothing */
   }
@@ -588,10 +608,6 @@ static void max_retx_reached(void *_ue, nr_rlc_entity_t *entity)
   int i;
   int is_srb;
   int rb_id;
-#if 0
-  MessageDef *msg;
-#endif
-  int is_enb;
 
   /* is it SRB? */
   for (i = 0; i < 2; i++) {
@@ -619,23 +635,18 @@ rb_found:
         is_srb ? "SRB" : "DRB",
         rb_id);
 
-  /* TODO: do something for DRBs? */
-  if (is_srb == 0)
-    return;
+  if (ue->rlf_handler)
+    ue->rlf_handler(ue->ue_id);
+  else
+    LOG_W(RLC, "UE %04x: RLF detected, but no callable RLF handler registered\n", ue->ue_id);
+}
 
-  is_enb = nr_rlc_manager_get_enb_flag(nr_rlc_ue_manager);
-  if (!is_enb)
-    return;
-
-#if 0
-  msg = itti_alloc_new_message(TASK_RLC_ENB, RLC_SDU_INDICATION);
-  RLC_SDU_INDICATION(msg).rnti          = ue->rnti;
-  RLC_SDU_INDICATION(msg).is_successful = 0;
-  RLC_SDU_INDICATION(msg).srb_id        = rb_id;
-  RLC_SDU_INDICATION(msg).message_id    = -1;
-  /* TODO: accept more than 1 instance? here we send to instance id 0 */
-  itti_send_msg_to_task(TASK_RRC_ENB, 0, msg);
-#endif
+void nr_rlc_set_rlf_handler(int ue_id, rlf_handler_t rlf_h)
+{
+  nr_rlc_manager_lock(nr_rlc_ue_manager);
+  nr_rlc_ue_t *ue = nr_rlc_manager_get_ue(nr_rlc_ue_manager, ue_id);
+  ue->rlf_handler = rlf_h;
+  nr_rlc_manager_unlock(nr_rlc_ue_manager);
 }
 
 void nr_rlc_reestablish_entity(int ue_id, int lc_id)
@@ -645,6 +656,7 @@ void nr_rlc_reestablish_entity(int ue_id, int lc_id)
 
   if (ue == NULL) {
     LOG_E(RLC, "RLC instance for the given UE was not found \n");
+    nr_rlc_manager_unlock(nr_rlc_ue_manager);
     return;
   }
   nr_rlc_entity_t *rb = get_rlc_entity_from_lcid(ue, lc_id);
@@ -957,10 +969,17 @@ void deliver_sdu_srb0(void *deliver_sdu_data, struct nr_rlc_entity_t *entity,
   s0->send_initial_ul_rrc_message(s0->ue_id, (unsigned char *)buf, size, s0->data);
 }
 
-void nr_rlc_activate_srb0(int ue_id,
+bool nr_rlc_activate_srb0(int ue_id,
                           void *data,
                           void (*send_initial_ul_rrc_message)(int ue_id, const uint8_t *sdu, sdu_size_t sdu_len, void *data))
 {
+  nr_rlc_manager_lock(nr_rlc_ue_manager);
+  nr_rlc_ue_t *ue = nr_rlc_manager_get_ue(nr_rlc_ue_manager, ue_id);
+  if (ue->srb0 != NULL) {
+    LOG_W(RLC, "SRB0 already exists for UE %x, do nothing\n", ue_id);
+    nr_rlc_manager_unlock(nr_rlc_ue_manager);
+    return false;
+  }
   struct srb0_data *srb0_data = calloc(1, sizeof(struct srb0_data));
   AssertFatal(srb0_data, "out of memory\n");
 
@@ -968,21 +987,13 @@ void nr_rlc_activate_srb0(int ue_id,
   srb0_data->data = data;
   srb0_data->send_initial_ul_rrc_message = send_initial_ul_rrc_message;
 
-  nr_rlc_manager_lock(nr_rlc_ue_manager);
-  nr_rlc_ue_t *ue = nr_rlc_manager_get_ue(nr_rlc_ue_manager, ue_id);
-  if (ue->srb0 != NULL) {
-    LOG_W(RLC, "SRB0 already exists for UE %d, do nothing\n", ue_id);
-    free(srb0_data);
-    nr_rlc_manager_unlock(nr_rlc_ue_manager);
-    return;
-  }
-
   nr_rlc_entity_t *nr_rlc_tm = new_nr_rlc_entity_tm(10000,
-                                   deliver_sdu_srb0, srb0_data);
+                                  deliver_sdu_srb0, srb0_data);
   nr_rlc_ue_add_srb_rlc_entity(ue, 0, nr_rlc_tm);
 
   LOG_I(RLC, "Activated srb0 for UE %d\n", ue_id);
   nr_rlc_manager_unlock(nr_rlc_ue_manager);
+  return true;
 }
 
 rlc_op_status_t rrc_rlc_config_req(const protocol_ctxt_t* const ctxt_pP,
@@ -1074,8 +1085,14 @@ bool nr_rlc_update_id(int from_id, int to_id)
   return true;
 }
 
-/* This function is for testing purposes. At least on a COTS UE, it will
- * trigger a reestablishment. */
+/**
+ * @brief This function is for testing purposes.
+ *        Re-establishment is triggered by resetting RLC counters of the bearer,
+ *        which leads to UE reaching maximum RLC retransmissions, RLF detection
+ *        and RRC triggering re-sync. It is assumed that there is ongoing traffic on the bearer.
+ *        - With COTS UEs, triggers re-establishment on SRB 1, where periodical measurement reports are sent.
+ *        - With OAI UE, triggers re-establishment on DRB 1, assuming there is ongoing data traffic.
+ */
 void nr_rlc_test_trigger_reestablishment(int ue_id)
 {
   nr_rlc_manager_lock(nr_rlc_ue_manager);
@@ -1089,17 +1106,22 @@ void nr_rlc_test_trigger_reestablishment(int ue_id)
    * as the UE context is created. */
   nr_rlc_entity_t *ent = ue->srb[0];
   ent->reestablishment(ent);
+  /* Trigger re-establishment on OAI UE */
+  nr_rlc_entity_t *drb = ue->drb[0];
+  drb->reestablishment(drb);
   nr_rlc_manager_unlock(nr_rlc_ue_manager);
 }
 
 void nr_rlc_tick(int frame, int subframe)
 {
+  lock_nr_rlc_current_time();
   if (frame != nr_rlc_current_time_last_frame ||
       subframe != nr_rlc_current_time_last_subframe) {
     nr_rlc_current_time_last_frame = frame;
     nr_rlc_current_time_last_subframe = subframe;
     nr_rlc_current_time++;
   }
+  unlock_nr_rlc_current_time();
 }
 
 /* This is a hack, to compile the gNB.
@@ -1158,7 +1180,7 @@ bool nr_rlc_get_statistics(int ue_id, int srb_flag, int rb_id, nr_rlc_statistics
     ret = true;
 
     // Patch buffer status using OAI results (no need to change anything in the RB)
-    // rb->set_time(rb, nr_rlc_current_time);
+    // rb->set_time(rb, get_nr_rlc_current_time());
     nr_rlc_entity_buffer_status_t oai_stat = rb->buffer_status(rb, 1000*1000);
     out->rxbuf_occ_bytes = oai_stat.status_size;
     out->txbuf_occ_bytes = oai_stat.tx_size + oai_stat.retx_size;
@@ -1187,7 +1209,7 @@ void nr_rlc_srb_recv_sdu(const int ue_id, const logical_chan_id_t channel_id, un
 
   AssertFatal(rb != NULL, "SDU sent to unknown RB UE-ID %d SRB %d\n", ue_id, channel_id);
 
-  rb->set_time(rb, nr_rlc_current_time);
+  rb->set_time(rb, get_nr_rlc_current_time());
   rb->recv_sdu(rb, (char *)buf, size, -1);
 
   nr_rlc_manager_unlock(nr_rlc_ue_manager);

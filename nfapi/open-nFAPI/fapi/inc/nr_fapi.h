@@ -18,16 +18,6 @@
  * For more information about the OpenAirInterface (OAI) Software Alliance:
  *      contact@openairinterface.org
  */
-/*! \file nfapi/open-nFAPI/fapi/inc/nr_fapi.h
- * \brief
- * \author Ruben S. Silva
- * \date 2024
- * \version 0.1
- * \company OpenAirInterface Software Alliance
- * \email: contact@openairinterface.org, rsilva@allbesmart.pt
- * \note
- * \warning
- */
 
 #ifndef OPENAIRINTERFACE_NR_FAPI_H
 #define OPENAIRINTERFACE_NR_FAPI_H
@@ -42,6 +32,34 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include "assertions.h"
+#include "debug.h"
+
+#define INDENTED_PRINTF(format, ...) printf("%*s" format, depth * 2, "", ##__VA_ARGS__)
+
+#define EQ_TLV(_tlv_a, _tlv_b)        \
+  do {                                \
+    EQ(_tlv_a.tl.tag, _tlv_b.tl.tag); \
+    EQ(_tlv_a.value, _tlv_b.value);   \
+  } while (0)
+
+#define EQ(_a, _b)      \
+  do {                  \
+    if ((_a) != (_b)) { \
+      return false;     \
+    }                   \
+  } while (0)
+
+#define COPY_TL(_dst_tl, _src_tl)    \
+  do {                               \
+    _dst_tl.tag = _src_tl.tag;       \
+    _dst_tl.length = _src_tl.length; \
+  } while (0)
+
+#define COPY_TLV(_dst, _src)   \
+  do {                         \
+    COPY_TL(_dst.tl, _src.tl); \
+    _dst.value = _src.value;   \
+  } while (0)
 
 typedef struct {
   uint8_t num_msg;
@@ -50,23 +68,16 @@ typedef struct {
   uint32_t message_length;
 } fapi_message_header_t;
 
-int fapi_nr_p5_message_header_unpack(uint8_t **pMessageBuf,
-                                     uint32_t messageBufLen,
-                                     void *pUnpackedBuf,
-                                     uint32_t unpackedBufLen,
-                                     nfapi_p4_p5_codec_config_t *config);
+void copy_vendor_extension_value(nfapi_vendor_extension_tlv_t *dst, const nfapi_vendor_extension_tlv_t *src);
 
-int fapi_nr_p5_message_pack(void *pMessageBuf,
-                            uint32_t messageBufLen,
-                            void *pPackedBuf,
-                            uint32_t packedBufLen,
-                            nfapi_p4_p5_codec_config_t *config);
-
-int fapi_nr_p5_message_unpack(void *pMessageBuf,
-                              uint32_t messageBufLen,
-                              void *pUnpackedBuf,
-                              uint32_t unpackedBufLen,
-                              nfapi_p4_p5_codec_config_t *config);
+bool isFAPIMessageIDValid(uint16_t id);
 
 int check_nr_fapi_unpack_length(nfapi_nr_phy_msg_type_e msgId, uint32_t unpackedBufLen);
+
+int fapi_nr_message_header_unpack(uint8_t **pMessageBuf,
+                                  uint32_t messageBufLen,
+                                  void *pUnpackedBuf,
+                                  uint32_t unpackedBufLen,
+                                  nfapi_p4_p5_codec_config_t *config);
+
 #endif // OPENAIRINTERFACE_NR_FAPI_H

@@ -41,7 +41,7 @@ const uint16_t NCS_restricted[15] = {15, 18, 22, 26, 32, 38, 46, 55, 68, 82, 100
 const uint16_t NCS_4[7] = {2, 4, 6, 8, 10, 12, 15};
 
 int16_t ru[2*839]; // quantized roots of unity
-uint32_t ZC_inv[839]; // multiplicative inverse for roots u
+static uint32_t ZC_inv[839]; // multiplicative inverse for roots u
 uint16_t du[838];
 
 extern PRACH_TDD_PREAMBLE_MAP tdd_preamble_map[64][7];

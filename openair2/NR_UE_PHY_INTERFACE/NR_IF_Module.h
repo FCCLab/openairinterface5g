@@ -37,7 +37,6 @@
 #include <semaphore.h>
 #include "fapi_nr_ue_interface.h"
 #include "openair2/PHY_INTERFACE/queue_t.h"
-#include "nfapi_nr_interface_scf.h"
 #include "openair2/NR_PHY_INTERFACE/NR_IF_Module.h"
 #include "NR_Packet_Drop.h"
 #include "nfapi/open-nFAPI/nfapi/public_inc/sidelink_nr_ue_interface.h"
@@ -50,6 +49,17 @@ typedef enum sl_sidelink_slot_type {
   SIDELINK_SLOT_TYPE_BOTH
 
 } sl_sidelink_slot_type_t;
+
+extern queue_t nr_rach_ind_queue;
+extern queue_t nr_rx_ind_queue;
+extern queue_t nr_crc_ind_queue;
+extern queue_t nr_uci_ind_queue;
+extern queue_t nr_sfn_slot_queue;
+extern queue_t nr_chan_param_queue;
+extern queue_t nr_dl_tti_req_queue;
+extern queue_t nr_tx_req_queue;
+extern queue_t nr_ul_dci_req_queue;
+extern queue_t nr_ul_tti_req_queue;
 
 extern slot_rnti_mcs_s slot_rnti_mcs[NUM_NFAPI_SLOT];
 
@@ -216,18 +226,12 @@ typedef void (nr_sl_ue_scheduled_response_f)(nr_scheduled_response_t *sl_schedul
 /*
  * Generic type of an application-defined callback to return various
  * types of data to the application.
- * EXPECTED RETURN VALUES:
- *  -1: Failed to consume bytes. Abort the mission.
- * Non-negative return values indicate success, and ignored.
  */
-typedef int8_t (nr_ue_phy_config_request_f)(nr_phy_config_t *phy_config);
+typedef void (nr_ue_phy_config_request_f)(nr_phy_config_t *phy_config);
 
 /*
  * Generic type of an application-defined callback to return various
  * types of data to the application.
- * EXPECTED RETURN VALUES:
- *  -1: Failed to consume bytes. Abort the mission.
- * Non-negative return values indicate success, and ignored.
  */
 typedef void(nr_ue_sl_phy_config_request_f)(nr_sl_phy_config_t *sl_phy_config);
 
@@ -308,7 +312,11 @@ void check_and_process_dci(nfapi_nr_dl_tti_request_t *dl_tti_request,
                            nfapi_nr_ul_dci_request_t *ul_dci_request,
                            nfapi_nr_ul_tti_request_t *ul_tti_request);
 
-bool sfn_slot_matcher(void *wanted, void *candidate);
+struct sfn_slot_s {
+  int sfn;
+  int slot;
+};
+bool sfn_slot_matcher(void *sfn_slot_s, void *candidate);
 
 /**\brief interface between L1/L2, indicating the downlink related information, like dci_ind and rx_req
    \param dl_info including dci_ind and rx_request messages*/
@@ -317,6 +325,8 @@ int nr_ue_dl_indication(nr_downlink_indication_t *dl_info);
 int nr_ue_ul_indication(nr_uplink_indication_t *ul_info);
 
 void nr_ue_sl_indication(nr_sidelink_indication_t *sl_indication);
+
+void print_ue_mac_stats(const module_id_t mod, const int frame_rx, const int slot_rx);
 
 #endif
 

@@ -29,7 +29,7 @@
 * \note
 * \warning
 */
-#ifdef ENABLE_AERIAL
+
 #define _GNU_SOURCE
 #include <sched.h>
 #include <stdio.h>
@@ -79,39 +79,8 @@ static int ipc_handle_rx_msg(nv_ipc_t *ipc, nv_ipc_msg_t *msg)
     return -1;
   }
 
-  char *p_cpu_data = NULL;
-  if (msg->data_buf != NULL) {
-    int gpu;
-    if (msg->data_pool == NV_IPC_MEMPOOL_CUDA_DATA) {
-      gpu = 1;
-    } else {
-      gpu = 0;
-    }
-
-#ifdef NVIPC_CUDA_ENABLE
-    // Test CUDA: call CUDA functions to change all string to lower case
-    test_cuda_to_lower_case(test_cuda_device_id, msg->data_buf, TEST_DATA_BUF_LEN, gpu);
-#endif
-
-    if (gpu) {
-      p_cpu_data = cpu_buf_recv;
-      memset(cpu_buf_recv, 0, RECV_BUF_LEN);
-      ipc->cuda_memcpy_to_host(ipc, p_cpu_data, msg->data_buf, RECV_BUF_LEN);
-    } else {
-      p_cpu_data = msg->data_buf;
-    }
-  }
-
-  int messageBufLen = msg->msg_len;
-  int dataBufLen = msg->data_len;
-  uint8_t msgbuf[messageBufLen];
-  uint8_t databuf[dataBufLen];
-  memcpy(msgbuf, msg->msg_buf, messageBufLen);
-  memcpy(databuf, msg->data_buf, dataBufLen);
-  uint8_t *pReadPackedMessage = msgbuf;
-  uint8_t *pReadData = databuf;
-  uint8_t *end = msgbuf + messageBufLen;
-  uint8_t *data_end = databuf + dataBufLen;
+  uint8_t *pReadPackedMessage = msg->msg_buf;
+  uint8_t *end = msg->msg_buf + msg->msg_len;
 
   // unpack FAPI messages and handle them
   if (vnf_config != 0) {
@@ -209,6 +178,9 @@ static int ipc_handle_rx_msg(nv_ipc_t *ipc, nv_ipc_msg_t *msg)
       }
 
       case NFAPI_NR_PHY_MSG_TYPE_RX_DATA_INDICATION: {
+        uint8_t *pReadData = msg->data_buf;
+        int dataBufLen = msg->data_len;
+        uint8_t *data_end = msg->data_buf + dataBufLen;
         nfapi_nr_rx_data_indication_t ind;
         ind.header.message_id = fapi_msg.message_id;
         ind.header.message_length = fapi_msg.message_length;
@@ -278,9 +250,14 @@ static int ipc_handle_rx_msg(nv_ipc_t *ipc, nv_ipc_msg_t *msg)
       }
 
       case NFAPI_NR_PHY_MSG_TYPE_SRS_INDICATION: {
+        uint8_t *pReadData = msg->data_buf;
+        int dataBufLen = msg->data_len;
+        uint8_t *data_end = msg->data_buf + dataBufLen;
         nfapi_nr_srs_indication_t ind;
         aerial_unpack_nr_srs_indication(&pReadPackedMessage,
                                         end,
+                                        &pReadData,
+                                        data_end,
                                         &ind,
                                         &((vnf_p7_t *)((vnf_info *)vnf_config->user_data)->p7_vnfs->config)->_public.codec_config);
         if (((vnf_info *)vnf_config->user_data)->p7_vnfs->config->nr_srs_indication) {
@@ -316,7 +293,7 @@ int8_t buf[1024];
 
 nv_ipc_config_t nv_ipc_config;
 
-int aerial_send_P5_msg(void *packedBuf, uint32_t packedMsgLength, nfapi_p4_p5_message_header_t *header)
+int aerial_send_P5_msg(void *packedBuf, uint32_t packedMsgLength, nfapi_nr_p4_p5_message_header_t *header)
 {
   if (ipc == NULL) {
     return -1;
@@ -362,12 +339,12 @@ int aerial_send_P5_msg(void *packedBuf, uint32_t packedMsgLength, nfapi_p4_p5_me
 
   memcpy(send_msg.msg_buf, packedBuf, send_msg.msg_len);
   LOG_D(NFAPI_VNF,
-         "send: cell_id=%d msg_id=0x%02X msg_len=%d data_len=%d data_pool=%d\n",
-         send_msg.cell_id,
-         send_msg.msg_id,
-         send_msg.msg_len,
-         send_msg.data_len,
-         send_msg.data_pool);
+        "send: cell_id=%d msg_id=0x%02X msg_len=%d data_len=%d data_pool=%d\n",
+        send_msg.cell_id,
+        send_msg.msg_id,
+        send_msg.msg_len,
+        send_msg.data_len,
+        send_msg.data_pool);
   // Send the message
   int send_retval = ipc->tx_send_msg(ipc, &send_msg);
   if (send_retval < 0) {
@@ -380,7 +357,7 @@ int aerial_send_P5_msg(void *packedBuf, uint32_t packedMsgLength, nfapi_p4_p5_me
   return 0;
 }
 
-int aerial_send_P7_msg(void *packedBuf, uint32_t packedMsgLength, nfapi_p7_message_header_t *header)
+int aerial_send_P7_msg(void *packedBuf, uint32_t packedMsgLength, nfapi_nr_p7_message_header_t *header)
 {
   if (ipc == NULL) {
     return -1;
@@ -449,12 +426,12 @@ int aerial_send_P7_msg(void *packedBuf, uint32_t packedMsgLength, nfapi_p7_messa
 
   memcpy(send_msg.msg_buf, packedBuf, send_msg.msg_len);
   LOG_D(NFAPI_VNF,
-         "send: cell_id=%d msg_id=0x%02X msg_len=%d data_len=%d data_pool=%d\n",
-         send_msg.cell_id,
-         send_msg.msg_id,
-         send_msg.msg_len,
-         send_msg.data_len,
-         send_msg.data_pool);
+        "send: cell_id=%d msg_id=0x%02X msg_len=%d data_len=%d data_pool=%d\n",
+        send_msg.cell_id,
+        send_msg.msg_id,
+        send_msg.msg_len,
+        send_msg.data_len,
+        send_msg.data_pool);
   // Send the message
   int send_retval = ipc->tx_send_msg(ipc, &send_msg);
   if (send_retval < 0) {
@@ -468,10 +445,10 @@ int aerial_send_P7_msg(void *packedBuf, uint32_t packedMsgLength, nfapi_p7_messa
 }
 
 int aerial_send_P7_msg_with_data(void *packedBuf,
-                                      uint32_t packedMsgLength,
-                                      void *dataBuf,
-                                      uint32_t dataLength,
-                                      nfapi_p7_message_header_t *header)
+                                 uint32_t packedMsgLength,
+                                 void *dataBuf,
+                                 uint32_t dataLength,
+                                 nfapi_nr_p7_message_header_t *header)
 {
   if (ipc == NULL) {
     return -1;
@@ -539,12 +516,12 @@ int aerial_send_P7_msg_with_data(void *packedBuf,
   memcpy(send_msg.msg_buf, packedBuf, send_msg.msg_len);
   memcpy(send_msg.data_buf, dataBuf, send_msg.data_len);
   LOG_D(NFAPI_VNF,
-         "send: cell_id=%d msg_id=0x%02X msg_len=%d data_len=%d data_pool=%d\n",
-         send_msg.cell_id,
-         send_msg.msg_id,
-         send_msg.msg_len,
-         send_msg.data_len,
-         send_msg.data_pool);
+        "send: cell_id=%d msg_id=0x%02X msg_len=%d data_len=%d data_pool=%d\n",
+        send_msg.cell_id,
+        send_msg.msg_id,
+        send_msg.msg_len,
+        send_msg.data_len,
+        send_msg.data_pool);
   // Send the message
   int send_retval = ipc->tx_send_msg(ipc, &send_msg);
   if (send_retval != 0) {
@@ -652,11 +629,7 @@ int load_hard_code_config(nv_ipc_config_t *config, int module_type, nv_ipc_trans
     return -1;
   }
 
-#ifdef NVIPC_CUDA_ENABLE
-  int test_cuda_device_id = get_cuda_device_id();
-#else
   int test_cuda_device_id = -1;
-#endif
   LOG_D(NFAPI_VNF,"CUDA device ID configured : %d \n", test_cuda_device_id);
   config->transport_config.shm.cuda_device_id = test_cuda_device_id;
   if (test_cuda_device_id >= 0) {
@@ -686,4 +659,3 @@ int nvIPC_Init(nvipc_params_t nvipc_params_s)
   aerial_pnf_nr_connection_indication_cb(vnf_config, 1);
   return 0;
 }
-#endif

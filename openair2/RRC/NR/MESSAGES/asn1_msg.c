@@ -80,6 +80,8 @@
 #include "NR_PCCH-Message.h"
 #include "NR_PagingRecord.h"
 #include "NR_UE-CapabilityRequestFilterNR.h"
+#include "NR_HandoverPreparationInformation.h"
+#include "NR_HandoverPreparationInformation-IEs.h"
 #include "common/utils/nr/nr_common.h"
 #if defined(NR_Rel16)
   #include "NR_SCS-SpecificCarrier.h"
@@ -150,8 +152,6 @@ typedef struct xer_sprint_string_s {
   size_t string_size;
   size_t string_index;
 } xer_sprint_string_t;
-
-extern RAN_CONTEXT_t RC;
 
 /*
  * This is a helper function for xer_sprint, which directs all incoming data
@@ -519,12 +519,10 @@ int do_RRCSetup(rrc_gNB_ue_context_t *const ue_context_pP,
   return ((enc_rval.encoded + 7) / 8);
 }
 
-int do_NR_SecurityModeCommand(
-  const protocol_ctxt_t *const ctxt_pP,
-  uint8_t *const buffer,
-  const uint8_t Transaction_id,
-  const uint8_t cipheringAlgorithm,
-  NR_IntegrityProtAlgorithm_t integrityProtAlgorithm)
+int do_NR_SecurityModeCommand(uint8_t *const buffer,
+                              const uint8_t Transaction_id,
+                              const uint8_t cipheringAlgorithm,
+                              NR_IntegrityProtAlgorithm_t integrityProtAlgorithm)
 //------------------------------------------------------------------------------
 {
   NR_DL_DCCH_Message_t dl_dcch_msg={0};
@@ -555,19 +553,13 @@ int do_NR_SecurityModeCommand(
   AssertFatal(enc_rval.encoded >0 , "ASN1 message encoding failed (%s, %lu)!\n",
               enc_rval.failed_type->name, enc_rval.encoded);
   ASN_STRUCT_FREE_CONTENTS_ONLY(asn_DEF_NR_DL_DCCH_Message,&dl_dcch_msg);
-  LOG_D(NR_RRC, "[gNB %d] securityModeCommand for UE %lx Encoded %zd bits (%zd bytes)\n", ctxt_pP->module_id, ctxt_pP->rntiMaybeUEid, enc_rval.encoded, (enc_rval.encoded + 7) / 8);
 
   //  rrc_ue_process_ueCapabilityEnquiry(0,1000,&dl_dcch_msg.message.choice.c1.choice.ueCapabilityEnquiry,0);
   //  exit(-1);
   return((enc_rval.encoded+7)/8);
 }
 
-/*TODO*/
-//------------------------------------------------------------------------------
-int do_NR_SA_UECapabilityEnquiry(const protocol_ctxt_t *const ctxt_pP,
-                                 uint8_t               *const buffer,
-                                 const uint8_t         Transaction_id)
-//------------------------------------------------------------------------------
+int do_NR_SA_UECapabilityEnquiry(uint8_t *const buffer, const uint8_t Transaction_id)
 {
   NR_UE_CapabilityRequestFilterNR_t *sa_band_filter;
   NR_FreqBandList_t *sa_band_list;
@@ -627,7 +619,7 @@ int do_NR_SA_UECapabilityEnquiry(const protocol_ctxt_t *const ctxt_pP,
               enc_rval.failed_type->name, enc_rval.encoded);
   ASN_STRUCT_FREE_CONTENTS_ONLY(asn_DEF_NR_DL_DCCH_Message, &dl_dcch_msg);
 
-  LOG_D(NR_RRC, "[gNB %d] NR UECapabilityRequest for UE %lx Encoded %zd bits (%zd bytes)\n", ctxt_pP->module_id, ctxt_pP->rntiMaybeUEid, enc_rval.encoded, (enc_rval.encoded + 7) / 8);
+  LOG_D(NR_RRC, "NR UECapabilityRequestEncoded %zd bits (%zd bytes)\n", enc_rval.encoded, (enc_rval.encoded + 7) / 8);
 
   return((enc_rval.encoded+7)/8);
 }
@@ -773,7 +765,7 @@ int do_RRCReconfiguration(const gNB_RRC_UE_t *UE,
     return((enc_rval.encoded+7)/8);
 }
 
-int do_RRCSetupRequest(uint8_t *buffer, size_t buffer_size, uint8_t *rv)
+int do_RRCSetupRequest(uint8_t *buffer, size_t buffer_size, uint8_t *rv, uint64_t fiveG_S_TMSI)
 {
   NR_UL_CCCH_Message_t ul_ccch_msg = {0};
   ul_ccch_msg.message.present           = NR_UL_CCCH_MessageType_PR_c1;
@@ -781,24 +773,34 @@ int do_RRCSetupRequest(uint8_t *buffer, size_t buffer_size, uint8_t *rv)
   c1->present = NR_UL_CCCH_MessageType__c1_PR_rrcSetupRequest;
   asn1cCalloc(c1->choice.rrcSetupRequest, rrcSetupRequest);
 
-  if (1) {
+  if (fiveG_S_TMSI == UINT64_MAX) {
+    /* set the ue-Identity to a random value */
     rrcSetupRequest->rrcSetupRequest.ue_Identity.present = NR_InitialUE_Identity_PR_randomValue;
     BIT_STRING_t *str = &rrcSetupRequest->rrcSetupRequest.ue_Identity.choice.randomValue;
     str->size = 5;
     str->bits_unused = 1;
-    str->buf = CALLOC(1, str->size);
+    str->buf = calloc_or_fail(str->size, sizeof(str->buf[0]));
     str->buf[0] = rv[0];
     str->buf[1] = rv[1];
     str->buf[2] = rv[2];
     str->buf[3] = rv[3];
     str->buf[4] = rv[4] & 0xfe;
   } else {
+    uint64_t fiveG_S_TMSI_part1 = fiveG_S_TMSI & ((1ULL << 39) - 1);
+    /** set the ue-Identity to ng-5G-S-TMSI-Part1
+     * ng-5G-S-TMSI-Part1: the rightmost 39 bits of 5G-S-TMSI
+     * BIT STRING (SIZE (39)) - 3GPP TS 38.331 */
+    LOG_D(NR_RRC, "5G-S-TMSI: %lu, set the ue-Identity to ng-5G-S-TMSI-Part1 %lu\n", fiveG_S_TMSI, fiveG_S_TMSI_part1);
     rrcSetupRequest->rrcSetupRequest.ue_Identity.present = NR_InitialUE_Identity_PR_ng_5G_S_TMSI_Part1;
     BIT_STRING_t *str = &rrcSetupRequest->rrcSetupRequest.ue_Identity.choice.ng_5G_S_TMSI_Part1;
-    str->size = 1;
-    str->bits_unused = 0;
-    str->buf = CALLOC(1, str->size);
-    str->buf[0] = 0x12;
+    str->size = 5;
+    str->bits_unused = 1;
+    str->buf = calloc_or_fail(str->size, sizeof(str->buf[0]));
+    str->buf[0] = (fiveG_S_TMSI_part1 >> 31) & 0xff;
+    str->buf[1] = (fiveG_S_TMSI_part1 >> 23) & 0xff;
+    str->buf[2] = (fiveG_S_TMSI_part1 >> 15) & 0xff;
+    str->buf[3] = (fiveG_S_TMSI_part1 >> 7) & 0xff;
+    str->buf[4] = (fiveG_S_TMSI_part1 << 1) & 0xff;
   }
 
   rrcSetupRequest->rrcSetupRequest.establishmentCause = NR_EstablishmentCause_mo_Signalling; //EstablishmentCause_mo_Data;
@@ -880,6 +882,8 @@ int do_RRCSetupComplete(uint8_t *buffer,
                         size_t buffer_size,
                         const uint8_t Transaction_id,
                         uint8_t sel_plmn_id,
+                        bool is_rrc_connection_setup,
+                        uint64_t fiveG_s_tmsi,
                         const int dedicatedInfoNASLength,
                         const char *dedicatedInfoNAS)
 {
@@ -895,7 +899,31 @@ int do_RRCSetupComplete(uint8_t *buffer,
   NR_RRCSetupComplete_IEs_t *ies = RrcSetupComplete->criticalExtensions.choice.rrcSetupComplete;
   ies->selectedPLMN_Identity = sel_plmn_id;
   ies->registeredAMF = NULL;
-  ies->ng_5G_S_TMSI_Value = NULL;
+  /* RRCSetup is received in response to an RRCSetupRequest
+   * set the ng-5G-S-TMSI-Value to ng-5G-S-TMSI-Part2
+   * i.e. the leftmost 9 bits of 5G-S-TMSI (5.3.3.4 of 3GPP TS 38.331) */
+  if (fiveG_s_tmsi != UINT64_MAX) {
+    if (is_rrc_connection_setup) {
+      ies->ng_5G_S_TMSI_Value = calloc_or_fail(1, sizeof(*ies->ng_5G_S_TMSI_Value));
+      ies->ng_5G_S_TMSI_Value->present = NR_RRCSetupComplete_IEs__ng_5G_S_TMSI_Value_PR_ng_5G_S_TMSI_Part2;
+      BIT_STRING_t *str = &ies->ng_5G_S_TMSI_Value->choice.ng_5G_S_TMSI_Part2;
+      str->size = 2;
+      str->bits_unused = 7;
+      str->buf = calloc_or_fail(str->size, sizeof(str->buf[0]));
+      uint16_t fiveG_s_tmsi_part2 = (fiveG_s_tmsi >> 39) & ((1ULL << 9) - 1);
+      str->buf[0] = (fiveG_s_tmsi_part2 >> (8 - str->bits_unused)) & 0xFF;
+      str->buf[1] = (fiveG_s_tmsi_part2 << str->bits_unused) & 0xFF;
+      LOG_D(NR_RRC, "5G-S-TMSI part 2 %d in RRCSetupComplete (5G-S-TMSI %ld)\n", fiveG_s_tmsi_part2, fiveG_s_tmsi);
+    } else {
+      ies->ng_5G_S_TMSI_Value = CALLOC(1, sizeof(struct NR_RRCSetupComplete_IEs__ng_5G_S_TMSI_Value));
+      ies->ng_5G_S_TMSI_Value->present = NR_RRCSetupComplete_IEs__ng_5G_S_TMSI_Value_PR_ng_5G_S_TMSI;
+      FIVEG_S_TMSI_TO_BIT_STRING(fiveG_s_tmsi, &ies->ng_5G_S_TMSI_Value->choice.ng_5G_S_TMSI);
+      LOG_D(NR_RRC, "5G-S-TMSI %lu in RRCSetupComplete\n", fiveG_s_tmsi);
+    }
+  } else {
+    LOG_D(NR_RRC, "5G-S-TMSI is not available!\n");
+    ies->ng_5G_S_TMSI_Value = NULL;
+  }
 
   memset(&ies->dedicatedNAS_Message,0,sizeof(OCTET_STRING_t));
   OCTET_STRING_fromBuf(&ies->dedicatedNAS_Message, dedicatedInfoNAS, dedicatedInfoNASLength);
@@ -1165,10 +1193,9 @@ static NR_ReportConfigToAddMod_t *prepare_a2_event_report(const nr_a2_event_t *a
 static NR_ReportConfigToAddMod_t *prepare_a3_event_report(const nr_a3_event_t *a3_event)
 {
   NR_ReportConfigToAddMod_t *rc_A3 = calloc(1, sizeof(*rc_A3));
-  rc_A3->reportConfigId =
-      a3_event->cell_id == -1
-          ? 3
-          : a3_event->cell_id + 4; // 3 is default A3 Report Config ID. So cellId(0) specific Report Config ID starts from 4
+  // 3 is default A3 Report Config ID. So cellId(0) specific Report Config ID
+  // starts from 4
+  rc_A3->reportConfigId = a3_event->pci == -1 ? 3 : a3_event->pci + 4;
   rc_A3->reportConfig.present = NR_ReportConfigToAddMod__reportConfig_PR_reportConfigNR;
   NR_EventTriggerConfig_t *etrc_A3 = calloc(1, sizeof(*etrc_A3));
   etrc_A3->eventId.present = NR_EventTriggerConfig__eventId_PR_eventA3;
@@ -1194,7 +1221,7 @@ static NR_ReportConfigToAddMod_t *prepare_a3_event_report(const nr_a3_event_t *a
   return rc_A3;
 }
 
-const nr_a3_event_t *get_a3_configuration(int nr_cellid)
+const nr_a3_event_t *get_a3_configuration(int pci)
 {
   gNB_RRC_INST *rrc = RC.nrrrc[0];
   nr_measurement_configuration_t *measurementConfiguration = &rrc->measurementConfiguration;
@@ -1203,7 +1230,7 @@ const nr_a3_event_t *get_a3_configuration(int nr_cellid)
 
   for (uint8_t i = 0; i < measurementConfiguration->a3_event_list->size; i++) {
     nr_a3_event_t *a3_event = (nr_a3_event_t *)seq_arr_at(measurementConfiguration->a3_event_list, i);
-    if (a3_event->cell_id == nr_cellid)
+    if (a3_event->pci == pci)
       return a3_event;
   }
 
@@ -1262,11 +1289,11 @@ NR_MeasConfig_t *get_MeasConfig(const NR_MeasTiming_t *mt,
       if (!neighbourCell->isIntraFrequencyNeighbour)
         continue;
 
-      const nr_a3_event_t *a3Event = get_a3_configuration(neighbourCell->nrcell_id);
+      const nr_a3_event_t *a3Event = get_a3_configuration(neighbourCell->physicalCellId);
       if (!a3Event || is_default_a3_added)
         continue;
 
-      if (a3Event->cell_id == -1)
+      if (a3Event->pci == -1)
         is_default_a3_added = true;
 
       NR_ReportConfigToAddMod_t *rc_A3 = prepare_a3_event_report(a3Event);
@@ -1368,7 +1395,7 @@ int do_NR_Paging(uint8_t Mod_id, uint8_t *buffer, uint32_t tmsi)
   LOG_D(NR_RRC, "[gNB %d] do_Paging paging_record: PagingRecordList.count %d\n",
         Mod_id, c1->choice.paging->pagingRecordList->list.count);
   asn_enc_rval_t enc_rval = uper_encode_to_buffer(
-      &asn_DEF_NR_PCCH_Message, NULL, (void *)&pcch_msg, buffer, RRC_BUF_SIZE);
+      &asn_DEF_NR_PCCH_Message, NULL, (void *)&pcch_msg, buffer, NR_RRC_BUF_SIZE);
 
   if ( LOG_DEBUGFLAG(DEBUG_ASN1) ) {
     xer_fprint(stdout, &asn_DEF_NR_PCCH_Message, (void *)&pcch_msg);
@@ -1381,4 +1408,43 @@ int do_NR_Paging(uint8_t Mod_id, uint8_t *buffer, uint32_t tmsi)
   }
 
   return((enc_rval.encoded+7)/8);
+}
+
+/* \brief generate HandoverPreparationInformation to be sent to the DU for
+ * handover. Takes uecap_buf in encoded form as (1) this is the form present at
+ * the CU already (2) we have to clone this information anyway, so can take it
+ * in encoded form which we decode + add to the handoverPreparationInformation */
+int do_NR_HandoverPreparationInformation(const uint8_t *uecap_buf, int uecap_buf_size, uint8_t *buf, int buf_size)
+{
+  NR_HandoverPreparationInformation_t *hpi = calloc(1, sizeof(*hpi));
+  AssertFatal(hpi != NULL, "out of memory\n");
+  hpi->criticalExtensions.present = NR_HandoverPreparationInformation__criticalExtensions_PR_c1;
+  hpi->criticalExtensions.choice.c1 = calloc(1, sizeof(*hpi->criticalExtensions.choice.c1));
+  AssertFatal(hpi->criticalExtensions.choice.c1 != NULL, "out of memory\n");
+  hpi->criticalExtensions.choice.c1->present =
+      NR_HandoverPreparationInformation__criticalExtensions__c1_PR_handoverPreparationInformation;
+  NR_HandoverPreparationInformation_IEs_t *hpi_ie = calloc(1, sizeof(*hpi_ie));
+  AssertFatal(hpi_ie != NULL, "out of memory\n");
+  hpi->criticalExtensions.choice.c1->choice.handoverPreparationInformation = hpi_ie;
+
+  NR_UE_CapabilityRAT_ContainerList_t *list = NULL;
+  asn_dec_rval_t dec_rval =
+      uper_decode_complete(NULL, &asn_DEF_NR_UE_CapabilityRAT_ContainerList, (void **)&list, uecap_buf, uecap_buf_size);
+  if (dec_rval.code == RC_OK) {
+    hpi_ie->ue_CapabilityRAT_List = *list;
+    free(list); /* list itself is not needed, members below will be freed in ASN_STRUCT_FREE */
+  } else {
+    /* problem with decoding, don't put a capability */
+    ASN_STRUCT_FREE(asn_DEF_NR_UE_CapabilityRAT_ContainerList, list);
+    list = NULL;
+  }
+
+  if (LOG_DEBUGFLAG(DEBUG_ASN1))
+    xer_fprint(stdout, &asn_DEF_NR_HandoverPreparationInformation, hpi);
+
+  asn_enc_rval_t enc_rval = uper_encode_to_buffer(&asn_DEF_NR_HandoverPreparationInformation, NULL, hpi, buf, buf_size);
+  AssertFatal(enc_rval.encoded > 0, "ASN1 message encoding failed (%s, %lu)!\n", enc_rval.failed_type->name, enc_rval.encoded);
+
+  ASN_STRUCT_FREE(asn_DEF_NR_HandoverPreparationInformation, hpi);
+  return (enc_rval.encoded + 7) / 8;
 }

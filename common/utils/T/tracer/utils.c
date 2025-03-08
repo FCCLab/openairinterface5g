@@ -276,3 +276,9 @@ void PUTUL(OBUF *o, unsigned long l) {
   sprintf(s, "%lu", l);
   PUTS(o, s);
 }
+
+void PUTF(OBUF *o, float f) {
+  char s[256];
+  sprintf(s, "%g", f);
+  PUTS(o, s);
+}

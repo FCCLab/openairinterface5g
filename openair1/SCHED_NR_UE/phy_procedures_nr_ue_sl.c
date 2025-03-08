@@ -82,7 +82,7 @@ void nr_fill_sl_rx_indication(sl_nr_rx_indication_t *rx_ind,
       sl_nr_ssb_pdu_t *ssb_pdu = &rx_ind->rx_indication_body[n_pdus - 1].ssb_pdu;
       if (typeSpecific) {
         uint8_t *psbch_decoded_output = (uint8_t *)typeSpecific;
-        memcpy(ssb_pdu->psbch_payload, psbch_decoded_output, sizeof(4)); // 4 bytes of PSBCH payload bytes
+        memcpy(ssb_pdu->psbch_payload, psbch_decoded_output, 4); // 4 bytes of PSBCH payload bytes
         ssb_pdu->rsrp_dbm = sl_phy_params->psbch.rsrp_dBm_per_RE;
         ssb_pdu->rx_slss_id = rx_slss_id;
         ssb_pdu->decode_status = true;
@@ -149,7 +149,12 @@ static int nr_ue_psbch_procedures(PHY_VARS_NR_UE *ue,
   } else {
     result = decoded_pdu;
     sl_phy_params->psbch.rx_ok++;
-    LOG_I(NR_PHY, "%d:%d PSBCH RX:OK. RSRP: %d dB/RE\n", proc->frame_rx, proc->nr_slot_rx, sl_phy_params->psbch.rsrp_dB_per_RE);
+    LOG_I(NR_PHY,
+          "[UE%d] %d:%d PSBCH RX:OK. RSRP: %d dB/RE\n",
+          ue->Mod_id,
+          proc->frame_rx,
+          proc->nr_slot_rx,
+          sl_phy_params->psbch.rsrp_dB_per_RE);
   }
 
   nr_fill_sl_indication(&sl_indication, &rx_ind, NULL, proc, ue, phy_data);
@@ -168,7 +173,7 @@ int psbch_pscch_processing(PHY_VARS_NR_UE *ue, const UE_nr_rxtx_proc_t *proc, nr
   int nr_slot_rx = proc->nr_slot_rx;
   sl_nr_ue_phy_params_t *sl_phy_params = &ue->SL_UE_PHY_PARAMS;
   NR_DL_FRAME_PARMS *fp = &sl_phy_params->sl_frame_params;
-  int sampleShift = 0;
+  int sampleShift = INT_MAX;
 
   // VCD_SIGNAL_DUMPER_DUMP_FUNCTION_BY_NAME(VCD_SIGNAL_DUMPER_FUNCTIONS_PHY_PROCEDURES_UE_RX_SL, VCD_FUNCTION_IN);
   start_meas(&sl_phy_params->phy_proc_sl_rx);
@@ -191,12 +196,11 @@ int psbch_pscch_processing(PHY_VARS_NR_UE *ue, const UE_nr_rxtx_proc_t *proc, nr
     const int numsym = (fp->Ncp) ? SL_NR_NUM_SYMBOLS_SSB_EXT_CP : SL_NR_NUM_SYMBOLS_SSB_NORMAL_CP;
 
     for (int sym = 0; sym < numsym;) {
-      nr_slot_fep(ue, fp, proc, sym, rxdataF, link_type_sl);
+      nr_slot_fep(ue, fp, proc->nr_slot_rx, sym, rxdataF, link_type_sl, 0, ue->common_vars.rxdata);
 
       start_meas(&sl_phy_params->channel_estimation_stats);
       nr_pbch_channel_estimation(fp,
                                  &ue->SL_UE_PHY_PARAMS,
-                                 ue->nr_gold_pbch,
                                  estimateSz,
                                  dl_ch_estimates,
                                  dl_ch_estimates_time,
@@ -223,7 +227,7 @@ int psbch_pscch_processing(PHY_VARS_NR_UE *ue, const UE_nr_rxtx_proc_t *proc, nr
       sym = (sym == 0) ? 5 : sym + 1;
     }
 
-    nr_sl_psbch_rsrp_measurements(sl_phy_params, fp, rxdataF, false);
+    ue->adjust_rxgain = nr_sl_psbch_rsrp_measurements(sl_phy_params, fp, rxdataF, false);
 
     LOG_D(NR_PHY, " ------  Decode SL-MIB: frame.slot %d.%d ------  \n", frame_rx % 1024, nr_slot_rx);
 

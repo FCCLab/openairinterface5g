@@ -85,6 +85,13 @@ void set_ptrs_symb_idx(uint16_t *ptrs_symbols,
   }
 }
 
+unsigned int get_first_ptrs_re(const rnti_t rnti, const uint8_t K_ptrs, const uint16_t nRB, const uint8_t k_RE_ref)
+{
+  const uint16_t nRB_Kptrs = nRB % K_ptrs;
+  const uint16_t k_RB_ref = nRB_Kptrs ? (rnti % nRB_Kptrs) : (rnti % K_ptrs);
+  return (k_RE_ref + k_RB_ref * NR_NB_SC_PER_RB);
+}
+
 /*******************************************************************
 *
 * NAME :         is_ptrs_subcarrier
@@ -191,7 +198,7 @@ void nr_ptrs_cpe_estimation(uint8_t K_ptrs,
                             unsigned char symbol,
                             uint16_t ofdm_symbol_size,
                             int16_t *rxF_comp,
-                            uint32_t *gold_seq,
+                            const uint32_t *gold_seq,
                             int16_t *error_est,
                             int32_t *ptrs_sc)
 {
@@ -206,7 +213,7 @@ void nr_ptrs_cpe_estimation(uint8_t K_ptrs,
   c16_t dmrs_comp_p[(1 + sc_per_symbol / 4) * 4];
 
   /* generate PTRS RE for the symbol */
-  nr_gen_ref_conj_symbols(gold_seq,sc_per_symbol*2,(int16_t*)ptrs_p, NR_MOD_TABLE_QPSK_OFFSET,2);// 2 for QPSK
+  nr_gen_ref_conj_symbols(gold_seq, sc_per_symbol * 2, (int16_t *)ptrs_p, 2); // 2 for QPSK
   uint32_t re_cnt = 0, cnt = 0;
   /* loop over all sub carriers to get compensated RE on ptrs symbols*/
   for (int re = 0; re < NR_NB_SC_PER_RB * nb_rb; re++) {

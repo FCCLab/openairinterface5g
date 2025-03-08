@@ -20,6 +20,7 @@
  */
 
 #include "openair2/RRC/NR_UE/rrc_proto.h"
+#include "executables/softmodem-common.h"
 
 void init_SI_timers(NR_UE_RRC_SI_INFO *SInfo)
 {
@@ -39,80 +40,36 @@ void init_SI_timers(NR_UE_RRC_SI_INFO *SInfo)
   nr_timer_setup(&SInfo->sib12_timer, 10800000, 10);
   nr_timer_setup(&SInfo->sib13_timer, 10800000, 10);
   nr_timer_setup(&SInfo->sib14_timer, 10800000, 10);
+  nr_timer_setup(&SInfo->SInfo_r17.sib19_timer, 10800000, 10);
+}
+
+static SIB_validity_t check_sib_timer_validity(SIB_validity_t sib_validity, NR_timer_t *sib_timer)
+{
+  if (sib_validity == SIB_VALID) {
+    bool sib_expired = nr_timer_tick(sib_timer);
+    if (sib_expired)
+      return SIB_NOT_VALID;
+  }
+  return sib_validity;
 }
 
 void nr_rrc_SI_timers(NR_UE_RRC_SI_INFO *SInfo)
 {
-  if (SInfo->sib1) {
-   bool sib1_expired = nr_timer_tick(&SInfo->sib1_timer);
-   if (sib1_expired)
-     asn1cFreeStruc(asn_DEF_NR_SIB1, SInfo->sib1);
-  }
-  if (SInfo->sib2) {
-   bool sib2_expired = nr_timer_tick(&SInfo->sib2_timer);
-   if (sib2_expired)
-     asn1cFreeStruc(asn_DEF_NR_SIB2, SInfo->sib2);
-  }
-  if (SInfo->sib3) {
-   bool sib3_expired = nr_timer_tick(&SInfo->sib3_timer);
-   if (sib3_expired)
-     asn1cFreeStruc(asn_DEF_NR_SIB3, SInfo->sib3);
-  }
-  if (SInfo->sib4) {
-   bool sib4_expired = nr_timer_tick(&SInfo->sib4_timer);
-   if (sib4_expired)
-     asn1cFreeStruc(asn_DEF_NR_SIB4, SInfo->sib4);
-  }
-  if (SInfo->sib5) {
-   bool sib5_expired = nr_timer_tick(&SInfo->sib5_timer);
-   if (sib5_expired)
-     asn1cFreeStruc(asn_DEF_NR_SIB5, SInfo->sib5);
-  }
-  if (SInfo->sib6) {
-   bool sib6_expired = nr_timer_tick(&SInfo->sib6_timer);
-   if (sib6_expired)
-     asn1cFreeStruc(asn_DEF_NR_SIB6, SInfo->sib6);
-  }
-  if (SInfo->sib7) {
-   bool sib7_expired = nr_timer_tick(&SInfo->sib7_timer);
-   if (sib7_expired)
-     asn1cFreeStruc(asn_DEF_NR_SIB7, SInfo->sib7);
-  }
-  if (SInfo->sib8) {
-   bool sib8_expired = nr_timer_tick(&SInfo->sib8_timer);
-   if (sib8_expired)
-     asn1cFreeStruc(asn_DEF_NR_SIB8, SInfo->sib8);
-  }
-  if (SInfo->sib9) {
-   bool sib9_expired = nr_timer_tick(&SInfo->sib9_timer);
-   if (sib9_expired)
-     asn1cFreeStruc(asn_DEF_NR_SIB9, SInfo->sib9);
-  }
-  if (SInfo->sib10) {
-   bool sib10_expired = nr_timer_tick(&SInfo->sib10_timer);
-   if (sib10_expired)
-     asn1cFreeStruc(asn_DEF_NR_SIB10_r16, SInfo->sib10);
-  }
-  if (SInfo->sib11) {
-   bool sib11_expired = nr_timer_tick(&SInfo->sib11_timer);
-   if (sib11_expired)
-     asn1cFreeStruc(asn_DEF_NR_SIB11_r16, SInfo->sib11);
-  }
-  if (SInfo->sib12) {
-   bool sib12_expired = nr_timer_tick(&SInfo->sib12_timer);
-   if (sib12_expired)
-     asn1cFreeStruc(asn_DEF_NR_SIB12_r16, SInfo->sib12);
-  }
-  if (SInfo->sib13) {
-   bool sib13_expired = nr_timer_tick(&SInfo->sib13_timer);
-   if (sib13_expired)
-     asn1cFreeStruc(asn_DEF_NR_SIB13_r16, SInfo->sib13);
-  }
-  if (SInfo->sib14) {
-   bool sib14_expired = nr_timer_tick(&SInfo->sib14_timer);
-   if (sib14_expired)
-     asn1cFreeStruc(asn_DEF_NR_SIB14_r16, SInfo->sib14);
-  }
+  SInfo->sib1_validity = check_sib_timer_validity(SInfo->sib1_validity, &SInfo->sib1_timer);
+  SInfo->sib2_validity = check_sib_timer_validity(SInfo->sib2_validity, &SInfo->sib2_timer);
+  SInfo->sib3_validity = check_sib_timer_validity(SInfo->sib3_validity, &SInfo->sib3_timer);
+  SInfo->sib4_validity = check_sib_timer_validity(SInfo->sib4_validity, &SInfo->sib4_timer);
+  SInfo->sib5_validity = check_sib_timer_validity(SInfo->sib5_validity, &SInfo->sib5_timer);
+  SInfo->sib6_validity = check_sib_timer_validity(SInfo->sib6_validity, &SInfo->sib6_timer);
+  SInfo->sib7_validity = check_sib_timer_validity(SInfo->sib7_validity, &SInfo->sib7_timer);
+  SInfo->sib8_validity = check_sib_timer_validity(SInfo->sib8_validity, &SInfo->sib8_timer);
+  SInfo->sib9_validity = check_sib_timer_validity(SInfo->sib9_validity, &SInfo->sib9_timer);
+  SInfo->sib10_validity = check_sib_timer_validity(SInfo->sib10_validity, &SInfo->sib10_timer);
+  SInfo->sib11_validity = check_sib_timer_validity(SInfo->sib11_validity, &SInfo->sib11_timer);
+  SInfo->sib12_validity = check_sib_timer_validity(SInfo->sib12_validity, &SInfo->sib12_timer);
+  SInfo->sib13_validity = check_sib_timer_validity(SInfo->sib13_validity, &SInfo->sib13_timer);
+  SInfo->sib14_validity = check_sib_timer_validity(SInfo->sib14_validity, &SInfo->sib14_timer);
+  SInfo->SInfo_r17.sib19_validity = check_sib_timer_validity(SInfo->SInfo_r17.sib19_validity, &SInfo->SInfo_r17.sib19_timer);
 }
 
 void nr_rrc_handle_timers(NR_UE_RRC_INST_t *rrc)
@@ -150,10 +107,9 @@ void nr_rrc_handle_timers(NR_UE_RRC_INST_t *rrc)
   bool t310_expired = nr_timer_tick(&timers->T310);
   if(t310_expired) {
     LOG_W(NR_RRC, "Timer T310 expired\n");
-    // TODO
     // handle detection of radio link failure
     // as described in 5.3.10.3 of 38.331
-    AssertFatal(false, "Radio link failure! Not handled yet!\n");
+    handle_rlf_detection(rrc);
   }
 
   bool t311_expired = nr_timer_tick(&timers->T311);
@@ -199,11 +155,11 @@ int nr_rrc_get_T304(long t304)
   return target;
 }
 
-void set_rlf_sib1_timers_and_constants(NR_UE_Timers_Constants_t *tac, NR_SIB1_t *sib1)
+void set_rlf_sib1_timers_and_constants(NR_UE_Timers_Constants_t *tac, NR_UE_TimersAndConstants_t *ue_TimersAndConstants)
 {
-  if(sib1 && sib1->ue_TimersAndConstants) {
+  if(ue_TimersAndConstants) {
     int k = 0;
-    switch (sib1->ue_TimersAndConstants->t301) {
+    switch (ue_TimersAndConstants->t301) {
       case NR_UE_TimersAndConstants__t301_ms100 :
         k = 100;
         break;
@@ -229,10 +185,10 @@ void set_rlf_sib1_timers_and_constants(NR_UE_Timers_Constants_t *tac, NR_SIB1_t 
         k = 2000;
         break;
       default :
-        AssertFatal(false, "Invalid T301 %ld\n", sib1->ue_TimersAndConstants->t301);
+        AssertFatal(false, "Invalid T301 %ld\n", ue_TimersAndConstants->t301);
     }
     nr_timer_setup(&tac->T301, k, 10); // 10ms step
-    switch (sib1->ue_TimersAndConstants->t310) {
+    switch (ue_TimersAndConstants->t310) {
       case NR_UE_TimersAndConstants__t310_ms0 :
         k = 0;
         break;
@@ -255,10 +211,10 @@ void set_rlf_sib1_timers_and_constants(NR_UE_Timers_Constants_t *tac, NR_SIB1_t 
         k = 2000;
         break;
       default :
-        AssertFatal(false, "Invalid T310 %ld\n", sib1->ue_TimersAndConstants->t310);
+        AssertFatal(false, "Invalid T310 %ld\n", ue_TimersAndConstants->t310);
     }
     nr_timer_setup(&tac->T310, k, 10); // 10ms step
-    switch (sib1->ue_TimersAndConstants->t311) {
+    switch (ue_TimersAndConstants->t311) {
       case NR_UE_TimersAndConstants__t311_ms1000 :
         k = 1000;
         break;
@@ -281,10 +237,10 @@ void set_rlf_sib1_timers_and_constants(NR_UE_Timers_Constants_t *tac, NR_SIB1_t 
         k = 30000;
         break;
       default :
-        AssertFatal(false, "Invalid T311 %ld\n", sib1->ue_TimersAndConstants->t311);
+        AssertFatal(false, "Invalid T311 %ld\n", ue_TimersAndConstants->t311);
     }
     nr_timer_setup(&tac->T311, k, 10); // 10ms step
-    switch (sib1->ue_TimersAndConstants->n310) {
+    switch (ue_TimersAndConstants->n310) {
       case NR_UE_TimersAndConstants__n310_n1 :
         tac->N310_k = 1;
         break;
@@ -310,9 +266,9 @@ void set_rlf_sib1_timers_and_constants(NR_UE_Timers_Constants_t *tac, NR_SIB1_t 
         tac->N310_k = 20;
         break;
       default :
-        AssertFatal(false, "Invalid N310 %ld\n", sib1->ue_TimersAndConstants->n310);
+        AssertFatal(false, "Invalid N310 %ld\n", ue_TimersAndConstants->n310);
     }
-    switch (sib1->ue_TimersAndConstants->n311) {
+    switch (ue_TimersAndConstants->n311) {
       case NR_UE_TimersAndConstants__n311_n1 :
         tac->N311_k = 1;
         break;
@@ -338,16 +294,16 @@ void set_rlf_sib1_timers_and_constants(NR_UE_Timers_Constants_t *tac, NR_SIB1_t 
         tac->N311_k = 10;
         break;
       default :
-        AssertFatal(false, "Invalid N311 %ld\n", sib1->ue_TimersAndConstants->n311);
+        AssertFatal(false, "Invalid N311 %ld\n", ue_TimersAndConstants->n311);
     }
   }
   else
-    LOG_E(NR_RRC,"SIB1 should not be NULL and neither UE_Timers_Constants\n");
+    LOG_E(NR_RRC,"UE_Timers_Constants should not be NULL\n");
 }
 
 void nr_rrc_set_sib1_timers_and_constants(NR_UE_Timers_Constants_t *tac, NR_SIB1_t *sib1)
 {
-  set_rlf_sib1_timers_and_constants(tac, sib1);
+  set_rlf_sib1_timers_and_constants(tac, sib1->ue_TimersAndConstants);
   if(sib1 && sib1->ue_TimersAndConstants) {
     int k = 0;
     switch (sib1->ue_TimersAndConstants->t300) {
@@ -424,7 +380,7 @@ void nr_rrc_handle_SetupRelease_RLF_TimersAndConstants(NR_UE_RRC_INST_t *rrc,
   switch(rlf_TimersAndConstants->present){
     case NR_SetupRelease_RLF_TimersAndConstants_PR_release :
       // use values for timers T301, T310, T311 and constants N310, N311, as included in ue-TimersAndConstants received in SIB1
-      set_rlf_sib1_timers_and_constants(tac, rrc->perNB[0].SInfo.sib1);
+      set_rlf_sib1_timers_and_constants(tac, rrc->timers_and_constants.sib1_TimersAndConstants);
       break;
     case NR_SetupRelease_RLF_TimersAndConstants_PR_setup :
       rlf_tac = rlf_TimersAndConstants->choice.setup;
@@ -560,7 +516,7 @@ void handle_rlf_sync(NR_UE_Timers_Constants_t *tac,
 {
   if (sync_msg == IN_SYNC) {
     tac->N310_cnt = 0;
-    if (is_nr_timer_active(tac->T310)) {
+    if (nr_timer_is_active(&tac->T310)) {
       tac->N311_cnt++;
       // Upon receiving N311 consecutive "in-sync" indications
       if (tac->N311_cnt >= tac->N311_k) {
@@ -573,12 +529,13 @@ void handle_rlf_sync(NR_UE_Timers_Constants_t *tac,
   else {
     // OUT_OF_SYNC
     tac->N311_cnt = 0;
-    if(is_nr_timer_active(tac->T300) ||
-       is_nr_timer_active(tac->T301) ||
-       is_nr_timer_active(tac->T304) ||
-       is_nr_timer_active(tac->T310) ||
-       is_nr_timer_active(tac->T311) ||
-       is_nr_timer_active(tac->T319))
+    if(get_softmodem_params()->phy_test ||
+       nr_timer_is_active(&tac->T300) ||
+       nr_timer_is_active(&tac->T301) ||
+       nr_timer_is_active(&tac->T304) ||
+       nr_timer_is_active(&tac->T310) ||
+       nr_timer_is_active(&tac->T311) ||
+       nr_timer_is_active(&tac->T319))
       return;
     tac->N310_cnt++;
     // upon receiving N310 consecutive "out-of-sync" indications

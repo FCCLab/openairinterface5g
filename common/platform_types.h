@@ -150,6 +150,15 @@ typedef enum ip_traffic_type_e {
   TRAFFIC_PC5S_SESSION_INIT = 10
 } ip_traffic_type_t;
 
+typedef enum {
+  PDCCH_AGG_LEVEL1 = 0,
+  PDCCH_AGG_LEVEL2,
+  PDCCH_AGG_LEVEL4,
+  PDCCH_AGG_LEVEL8,
+  PDCCH_AGG_LEVEL16,
+  NUM_PDCCH_AGG_LEVELS
+} Pdcch_Aggregation_Level_t;
+
 typedef struct net_ip_address_s {
   unsigned ipv4: 1;
   unsigned ipv6: 1;
@@ -192,6 +201,20 @@ typedef struct nsa_msg_t {
   uint8_t msg_type;
   uint8_t msg_buffer[MAX_MESSAGE_SIZE];
 } nsa_msg_t;
+
+typedef struct transport_layer_addr_s {
+  /**
+   * Transport Layer Address as a bitstring:
+   * - 32 bits for IPv4 (RFC 791),
+   * - 128 bits for IPv6 (RFC 2460),
+   * - 160 bits for both IPv4 and IPv6, with IPv4 in the first 32 bits.
+   * The S1AP/NGAP layer forwards this address (bitstring<1..160>)
+   * to S1-U/NG-U without interpreting it.
+   */
+  uint8_t length;
+  /// Buffer: address in network byte order
+  uint8_t buffer[20];
+} transport_layer_addr_t;
 
 //-----------------------------------------------------------------------------
 // GTPV1U TYPES
@@ -273,6 +296,12 @@ typedef struct protocol_ctxt_s {
   (CTXT_Pp)->frame, ((CTXT_Pp)->enb_flag == GNB_FLAG_YES) ? "gNB" : " UE", (CTXT_Pp)->module_id, (CTXT_Pp)->rntiMaybeUEid
 
 #define CHECK_CTXT_ARGS(CTXT_Pp)
+
+
+static inline int ceil_mod(const unsigned int v, const unsigned int mod)
+{
+  return ((v + mod - 1) / mod) * mod;
+}
 
 #define exit_fun(msg) exit_function(__FILE__, __FUNCTION__, __LINE__, "exit_fun", OAI_EXIT_NORMAL)
 #ifdef __cplusplus

@@ -155,7 +155,7 @@ class gtpEndPoints {
   }
 };
 
-gtpEndPoints globGtp;
+static gtpEndPoints globGtp;
 
 // note TEid 0 is reserved for specific usage: echo req/resp, error and supported extensions
 static  teid_t gtpv1uNewTeid(void) {
@@ -193,7 +193,7 @@ instance_t legacyInstanceMapping=0;
     auto ptrUe=insT->ue2te_mapping.find(Ue);                        \
                                                                         \
   if (  ptrUe==insT->ue2te_mapping.end() ) {                          \
-    LOG_E(GTPU, "[%ld] gtpv1uSend failed: while getting ue id %ld in hashtable ue_mapping\n", instance, ue_id); \
+    LOG_E(GTPU, "[%ld] %s failed: while getting ue id %ld in hashtable ue_mapping\n", instance, __func__, ue_id); \
     pthread_mutex_unlock(&globGtp.gtp_lock);                            \
     return;                                                             \
   }
@@ -202,7 +202,7 @@ instance_t legacyInstanceMapping=0;
     auto ptrUe=insT->ue2te_mapping.find(Ue);                        \
                                                                         \
   if (  ptrUe==insT->ue2te_mapping.end() ) {                          \
-    LOG_E(GTPU, "[%ld] gtpv1uSend failed: while getting ue id %ld in hashtable ue_mapping\n", instance, ue_id); \
+    LOG_E(GTPU, "[%ld] %s failed: while getting ue id %ld in hashtable ue_mapping\n", instance, __func__, ue_id); \
     pthread_mutex_unlock(&globGtp.gtp_lock);                            \
     return GTPNOK;                                                             \
   }
@@ -286,38 +286,48 @@ static int gtpv1uCreateAndSendMsg(int h,
   return  !GTPNOK;
 }
 
-static void gtpv1uSend(instance_t instance, gtpv1u_tunnel_data_req_t *req, bool seqNumFlag, bool npduNumFlag) {
-  uint8_t *buffer=req->buffer+req->offset;
-  size_t length=req->length;
-  ue_id_t ue_id=req->ue_id;
-  int  bearer_id=req->bearer_id;
+void gtpv1uSendDirect(instance_t instance,
+                      ue_id_t ue_id,
+                      int bearer_id,
+                      uint8_t *buf,
+                      size_t len,
+                      bool seqNumFlag,
+                      bool npduNumFlag)
+{
   pthread_mutex_lock(&globGtp.gtp_lock);
   getInstRetVoid(compatInst(instance));
   getUeRetVoid(inst, ue_id);
 
-  auto ptr2=ptrUe->second.bearers.find(bearer_id);
+  auto ptr2 = ptrUe->second.bearers.find(bearer_id);
 
-  if ( ptr2 == ptrUe->second.bearers.end() ) {
-    LOG_E(GTPU,"[%ld] GTP-U instance: sending a packet to a non existant UE:RAB: %lx/%x\n", instance, ue_id, bearer_id);
+  if (ptr2 == ptrUe->second.bearers.end()) {
+    LOG_E(GTPU, "[%ld] GTP-U instance: sending a packet to a non existant UE:RAB: %lx/%x\n", instance, ue_id, bearer_id);
     pthread_mutex_unlock(&globGtp.gtp_lock);
     return;
   }
 
-  LOG_D(GTPU,"[%ld] sending a packet to UE:RAB:teid %lx/%x/%x, len %lu, oldseq %d, oldnum %d\n",
-        instance, ue_id, bearer_id,ptr2->second.teid_outgoing,length, ptr2->second.seqNum,ptr2->second.npduNum );
+  LOG_D(GTPU,
+        "[%ld] sending a packet to UE:RAB:teid %lx/%x/%x, len %lu, oldseq %d, oldnum %d\n",
+        instance,
+        ue_id,
+        bearer_id,
+        ptr2->second.teid_outgoing,
+        len,
+        ptr2->second.seqNum,
+        ptr2->second.npduNum);
 
-  if(seqNumFlag)
+  if (seqNumFlag)
     ptr2->second.seqNum++;
 
-  if(npduNumFlag)
+  if (npduNumFlag)
     ptr2->second.npduNum++;
 
   // copy to release the mutex
-  gtpv1u_bearer_t tmp=ptr2->second;
+  gtpv1u_bearer_t tmp = ptr2->second;
   pthread_mutex_unlock(&globGtp.gtp_lock);
 
   if (tmp.outgoing_qfi != -1) {
-    Gtpv1uExtHeaderT ext = { 0 };
+    Gtpv1uExtHeaderT ext = {0};
     ext.ExtHeaderLen = 1; // in quad bytes  EXT_HDR_LNTH_OCTET_UNITS
     ext.pdusession_cntr.spare = 0;
     ext.pdusession_cntr.PDU_type = UL_PDU_SESSION_INFORMATION;
@@ -331,8 +341,8 @@ static void gtpv1uSend(instance_t instance, gtpv1u_tunnel_data_req_t *req, bool 
                            tmp.outgoing_port,
                            GTP_GPDU,
                            tmp.teid_outgoing,
-                           buffer,
-                           length,
+                           buf,
+                           len,
                            seqNumFlag,
                            npduNumFlag,
                            tmp.seqNum,
@@ -341,8 +351,20 @@ static void gtpv1uSend(instance_t instance, gtpv1u_tunnel_data_req_t *req, bool 
                            (uint8_t *)&ext,
                            sizeof(ext));
   } else {
-    gtpv1uCreateAndSendMsg(
-        compatInst(instance), tmp.outgoing_ip_addr, tmp.outgoing_port, GTP_GPDU, tmp.teid_outgoing, buffer, length, seqNumFlag, npduNumFlag, tmp.seqNum, tmp.npduNum, NO_MORE_EXT_HDRS, NULL, 0);
+    gtpv1uCreateAndSendMsg(compatInst(instance),
+                           tmp.outgoing_ip_addr,
+                           tmp.outgoing_port,
+                           GTP_GPDU,
+                           tmp.teid_outgoing,
+                           buf,
+                           len,
+                           seqNumFlag,
+                           npduNumFlag,
+                           tmp.seqNum,
+                           tmp.npduNum,
+                           NO_MORE_EXT_HDRS,
+                           NULL,
+                           0);
   }
 }
 
@@ -403,9 +425,10 @@ static void gtpv1uSendDlDeliveryStatus(instance_t instance, gtpv1u_DU_buffer_rep
       compatInst(instance), tmp.outgoing_ip_addr, tmp.outgoing_port, GTP_GPDU, tmp.teid_outgoing, NULL, 0, false, false, 0, 0, NR_RAN_CONTAINER, extensionHeader->buffer, extensionHeader->length);
 }
 
-static void gtpv1uEndTunnel(instance_t instance, gtpv1u_tunnel_data_req_t *req) {
-  ue_id_t ue_id=req->ue_id;
-  int  bearer_id=req->bearer_id;
+static void gtpv1uEndTunnel(instance_t instance, gtpv1u_enb_end_marker_req_t *req)
+{
+  ue_id_t ue_id=req->rnti;
+  int  bearer_id=req->rab_id;
   pthread_mutex_lock(&globGtp.gtp_lock);
   getInstRetVoid(compatInst(instance));
   getUeRetVoid(inst, ue_id);
@@ -1287,11 +1310,6 @@ void *gtpv1uTask(void *args)  {
       switch (msgType) {
           // DATA TO BE SENT TO UDP
 
-        case GTPV1U_TUNNEL_DATA_REQ: {
-          gtpv1uSend(compatInst(myInstance), &GTPV1U_TUNNEL_DATA_REQ(message_p), false, false);
-        }
-        break;
-
         case GTPV1U_DU_BUFFER_REPORT_REQ:{
           gtpv1uSendDlDeliveryStatus(compatInst(myInstance), &GTPV1U_DU_BUFFER_REPORT_REQ(message_p));
         }
@@ -1305,8 +1323,8 @@ void *gtpv1uTask(void *args)  {
           break;
 
         case GTPV1U_ENB_END_MARKER_REQ:
-          gtpv1uEndTunnel(compatInst(myInstance), &GTPV1U_TUNNEL_DATA_REQ(message_p));
-          itti_free(TASK_GTPV1_U, GTPV1U_TUNNEL_DATA_REQ(message_p).buffer);
+          gtpv1uEndTunnel(compatInst(myInstance), &GTPV1U_ENB_END_MARKER_REQ(message_p));
+          itti_free(TASK_GTPV1_U, GTPV1U_ENB_END_MARKER_REQ(message_p).buffer);
           break;
 
         case GTPV1U_ENB_DATA_FORWARDING_REQ:

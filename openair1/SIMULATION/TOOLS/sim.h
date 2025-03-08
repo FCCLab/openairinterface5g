@@ -126,6 +126,18 @@ typedef struct {
   char *model_name;  
   /// flags to properly trigger memory free
   unsigned int free_flags;
+  /// time stamp when the time varying channel emulation starts (when client connected)
+  uint64_t start_TS;
+  /// height of LEO satellite
+  float sat_height;
+  /// flag to enable dynamic delay simulation for LEO satellite
+  bool enable_dynamic_delay;
+  /// flag to enable dynamic Doppler simulation for LEO satellite
+  bool enable_dynamic_Doppler;
+  /// Doppler phase increment (might vary over time, e.g. for LEO satellite)
+  float Doppler_phase_inc;
+  /// current Doppler phase of each RX antenna (for continuous phase from one block to the next)
+  float *Doppler_phase_cur;
 } channel_desc_t;
 
 typedef struct {
@@ -218,6 +230,8 @@ typedef enum {
   EPA_low,
   EPA_medium,
   EPA_high,
+  SAT_LEO_TRANS,
+  SAT_LEO_REGEN,
 } SCM_t;
 #define CHANNELMOD_MAP_INIT \
   {"custom",custom},\
@@ -253,6 +267,8 @@ typedef enum {
   {"EPA_low",EPA_low},\
   {"EPA_medium",EPA_medium},\
   {"EPA_high",EPA_high},\
+  {"SAT_LEO_TRANS",SAT_LEO_TRANS},\
+  {"SAT_LEO_REGEN",SAT_LEO_REGEN},\
   {NULL, -1}
 
 #define CONFIG_HLP_SNR     "Set average SNR in dB (for --siml1 option)\n"
@@ -262,10 +278,15 @@ typedef enum {
 #define CHANNELMOD_MODELLIST_PARANAME "modellist"
 
 #define CHANNELMOD_HELP_MODELLIST "<list name> channel list name in config file describing the model type and its parameters\n"
+#define CHANNELMOD_HELP_NOISE_POWER \
+  "Noise power in dBFS. If set, noise per channel is not applied. To achieve positive SNR use values below -36dBFS\n"
+
+#define INVALID_DBFS_VALUE 100
 // clang-format off
 #define CHANNELMOD_PARAMS_DESC {  \
   {"max_chan",                    "Max number of runtime models",     0,                                  .uptr=&max_chan,              .defintval=10,                    TYPE_UINT,   0}, \
   {CHANNELMOD_MODELLIST_PARANAME, CHANNELMOD_HELP_MODELLIST,          0,                                  .strptr=&modellist_name,      .defstrval="DefaultChannelList",  TYPE_STRING, 0}, \
+  {"noise_power_dBFS",            CHANNELMOD_HELP_NOISE_POWER,        0,                                  .iptr=&noise_power_dBFS,      .defintval=INVALID_DBFS_VALUE,    TYPE_INT,    0 },\
 }
 // clang-format on
 
@@ -543,7 +564,7 @@ int modelid_fromstrtype(char *modeltype);
 double channelmod_get_snr_dB(void);
 double channelmod_get_sinr_dB(void);
 void init_channelmod(void) ;
-int load_channellist(uint8_t nb_tx, uint8_t nb_rx, double sampling_rate, double channel_bandwidth) ;
+int load_channellist(uint8_t nb_tx, uint8_t nb_rx, double sampling_rate, uint64_t center_freq, double channel_bandwidth) ;
 double N_RB2sampling_rate(uint16_t N_RB);
 double N_RB2channel_bandwidth(uint16_t N_RB);
 
@@ -569,5 +590,6 @@ void do_DL_sig(sim_t *sim,
                int CC_id);
 
 void do_UL_sig(sim_t *sim, uint16_t subframe, uint8_t abstraction_flag, LTE_DL_FRAME_PARMS *frame_parms, uint32_t frame, int ru_id, uint8_t CC_id, int NB_UEs);
+int get_noise_power_dBFS(void);
 
 #endif

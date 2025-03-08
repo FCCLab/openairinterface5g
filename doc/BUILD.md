@@ -38,10 +38,11 @@ Running the  [build_oai](../cmake_targets/build_oai) script also generates some 
 
 - `conf2uedata`: a binary used to build the (4G) UE data from a configuration file. The created file emulates the sim card  of a 3GPP compliant phone.
 - `nvram`: a binary used to build (4G) UE (IMEI...) and EMM (IMSI, registered PLMN) non volatile data.
-- `rb_tool`: radio bearer utility for (4G) UE
 - `genids` T Tracer utility, used at build time to generate `T_IDs.h` include file. This binary is located in the [T Tracer source file directory](../common/utils/T) .
 
 The build system for OAI uses [cmake](https://cmake.org/) which is a  tool to generate makefiles. The `build_oai` script is a wrapper using `cmake` and `make`/`ninja` to ease the oai build and use. It logs the `cmake` and `ninja`/`make` commands it executes. The file describing how to build the executables from source files is the [CMakeLists.txt](../CMakeLists.txt), it is used as input by cmake to generate the makefiles.
+
+cmake is further extended by using [CPM](https://github.com/cpm-cmake/CPM.cmake). CPM is a cmake script that handles external code dependencies. It is setup to cache downloaded code in `~/.cache/cpm`. While most external dependencies should be handled by system package managers, CPM has the advantage of using any code that is available in a public git repository.
 
 The oai softmodem supports many use cases, and new ones are regularly added. Most of them are accessible using the configuration file or the command line options and continuous effort is done to avoid introducing build options as it makes tests and usage more complicated than run-time options. The following functionalities, originally requiring a specific build are now accessible by configuration or command line options:
 
@@ -215,6 +216,30 @@ ccmake ../../..
 cmake-gui ../../..
 ```
 You can of course use all standard cmake/ninja/make commands in this directory.
+
+## cmake presets
+
+CMake presets are common project configure options. See https://cmake.org/cmake/help/latest/manual/cmake-presets.7.html
+
+Configure presets:
+
+ - `default`: Configure compilation with default options
+ - `tests`: Same as above but ENABLE_TESTS and SANITIZE_ADDRESS is ON
+
+Build presets:
+
+ - `5gdefault`: Build the software for NR rfsimulator test
+ - `default`: same as 5gdefault
+ - `4gdefault`: Build the software for LTE rfsimulator test
+ - `tests`: build all unit tests
+
+To configure using configuration preset:
+
+    cmake --preset <preset_name>
+
+To build using a build preset:
+
+    cmake --build --preset <preset_name>
 
 # Cross Compile
 

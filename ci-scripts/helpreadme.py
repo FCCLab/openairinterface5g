@@ -43,6 +43,8 @@ def GenericHelp(vers):
 	print('      InitiateHtml, FinalizeHtml')
 	print('      TerminateeNB, TerminateHSS, TerminateMME, TerminateSPGW')
 	print('      LogCollectBuild, LogCollecteNB, LogCollectHSS, LogCollectMME, LogCollectSPGW, LogCollectPing, LogCollectIperf')
+	print('  --local Force local execution: rewrites the test xml script before running to always execute on localhost. Assumes')
+	print('          images are available locally, will not remove any images and will run inside the current repo directory')
 
 def GitSrvHelp(repository,branch,commit,mergeallow,targetbranch):
 	print('  --ranRepository=[OAI RAN Repository URL]                                      -- ' + repository)

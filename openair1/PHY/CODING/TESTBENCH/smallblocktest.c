@@ -10,7 +10,7 @@ configmodule_interface_t *uniqCfg = NULL;
 int main(int argc, char *argv[])
 {
   time_stats_t timeEncoder, timeDecoder;
-  opp_enabled = 1;
+  cpu_meas_enabled = 1;
   reset_meas(&timeEncoder);
   reset_meas(&timeDecoder);
   randominit(0);

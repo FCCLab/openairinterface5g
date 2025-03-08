@@ -26,7 +26,12 @@ The hardware on which we have tried this tutorial:
 |Intel(R) Xeon(R) Gold 6354 36-Core, 128GB|Ubuntu 22.04.3 LTS (5.15.0-1033-realtime)       |Intel X710, i40e, 9.00 0x8000cfeb 21.5.9 |
 |AMD EPYC 9374F 32-Core Processor, 128GB  |Ubuntu 22.04.2 LTS (5.15.0-1038-realtime)       |Intel E810 ,ice, 4.00 0x8001184e 1.3236.0|
 
-**NOTE**: These are not minimum hardware requirements. This is the configuration of our servers. The NIC card should support hardware PTP time stamping.
+**NOTE**: 
+
+- These are not minimum hardware requirements. This is the configuration of our servers. 
+- The NIC card should support hardware PTP time stamping. 
+- If you are using Intel servers then use only Ice Lake or newer generations. In case of AMD use only 4th generation, Genoa or newer. 
+- If you try on any other server apart from the above listed, then choose a desktop/server with clock speed higher than 3.0 GHz and `avx512` capabilities. 
 
 NICs we have tested so far:
 
@@ -37,7 +42,10 @@ NICs we have tested so far:
 |E810-C         |4.20 0x8001784e 22.0.9  |
 |Intel XXV710   |6.02 0x80003888         |
 
-**Note**: With AMD servers/desktop machines with PCIe 5.0 we have only used E810 cards. 
+**Note**:
+
+- With AMD servers/desktop machines with PCIe 5.0 we have only used E810 cards.
+- If you are using Mellanox NIC, please be aware that DPDK can't bind the NIC as vfio-pci. Instead it must be bind with mlx driver.
 
 PTP enabled switches and grandmaster clock we have in are lab:
 
@@ -70,8 +78,10 @@ Tested libxran releases:
 | Vendor                                  |
 |-----------------------------------------|
 | `oran_e_maintenance_release_v1.0`       |
+| `oran_f_release_v1.0`                   |
 
-**Note**: The libxran driver of OAI identifies the above version as "5.1.0" (E is fifth letter, then 1.0).
+
+**Note**: The libxran driver of OAI identifies the above E release version as "5.1.0" (E is fifth letter, then 1.0), and the above F release as "6.1.0".
 
 ## Configure your server
 
@@ -371,19 +381,22 @@ cd ~/openairinterface5g/
 
 ## Build ORAN Fronthaul Interface Library
 
-Download ORAN FHI DU library and checkout the correct version.
+Download ORAN FHI DU library, checkout the correct version, and apply the correct patch (available in `oai_folder/cmake_targets/tools/oran_fhi_integration_patches`).
 
+### E release
 ```bash
 git clone https://gerrit.o-ran-sc.org/r/o-du/phy.git ~/phy
 cd ~/phy
 git checkout oran_e_maintenance_release_v1.0
+git apply ~/openairinterface5g/cmake_targets/tools/oran_fhi_integration_patches/E/oaioran_E.patch
 ```
 
-Apply the patch (available in `oai_folder/cmake_targets/tools/oran_fhi_integration_patches/E`):
-
+### F release
 ```bash
+git clone https://gerrit.o-ran-sc.org/r/o-du/phy.git ~/phy
 cd ~/phy
-git apply ~/openairinterface5g/cmake_targets/tools/oran_fhi_integration_patches/E/oaioran_E.patch
+git checkout oran_f_release_v1.0
+git apply ~/openairinterface5g/cmake_targets/tools/oran_fhi_integration_patches/F/oaioran_F.patch
 ```
 
 Compile the fronthaul interface library by calling `make` and the option
@@ -396,7 +409,8 @@ environment variables `RTE_SDK` for the path to the source tree of DPDK, and
 ```bash
 cd ~/phy/fhi_lib/lib
 make clean
-RTE_SDK=~/dpdk-stable-20.11.9/ XRAN_DIR=~/phy/fhi_lib make XRAN_LIB_SO=1
+RTE_SDK=~/dpdk-stable-20.11.9/ XRAN_DIR=~/phy/fhi_lib make XRAN_LIB_SO=1 # E release
+WIRELESS_SDK_TOOLCHAIN=gcc RTE_SDK=~/dpdk-stable-20.11.9/ XRAN_DIR=~/phy/fhi_lib make XRAN_LIB_SO=1 # F release
 ...
 [AR] build/libxran.so
 ./build/libxran.so
@@ -461,6 +475,19 @@ cmake .. -GNinja -DOAI_FHI72=ON -Dxran_LOCATION=$HOME/phy/fhi_lib/lib
 ninja nr-softmodem oran_fhlib_5g params_libconfig
 ```
 
+Note that in tags 2025.w06 and prior, the FHI72 driver used polling to wait for
+the next slot. This is inefficient as it burns CPU time, and has been replaced
+with a more efficient mechanism. Nevertheless, if you experience problems that
+did not occur previously, it is possible to re-enable polling, either with
+`build_oai` like this
+
+    ./build_oai --gNB --ninja -t oran_fhlib_5g --cmake-opt -Dxran_LOCATION=$HOME/phy/fhi_lib/lib --cmake-opt -DOAI_FHI72_USE_POLLING=ON
+
+or with `cmake` like so
+
+    cmake .. -GNinja -DOAI_FHI72=ON -Dxran_LOCATION=$HOME/phy/fhi_lib/lib -DOAI_FHI72_USE_POLLING=ON
+    ninja oran_fhlib_5g
+
 # Configuration
 
 RU and DU configurations have a circular dependency: you have to configure DU MAC address in the RU configuration and the RU MAC address, VLAN and Timing advance parameters in the DU configuration.
@@ -476,12 +503,15 @@ Contact the RU vendor and get the configuration manual to understand the below c
 
 ### Benetel 650
 
-- **Valid only for version RAN650-1v1.0.4-dda1bf5**
-- TDD pattern `DDDDDDDSUU`, 5ms
+**Valid only for version RAN650-1v1.0.4-dda1bf5**
+
+The OAI configuration file [`gnb-du.sa.band77.273prb.fhi72.4x4-benetel650.conf`](../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb-du.sa.band77.273prb.fhi72.4x4-benetel650.conf) corresponds to:
+- TDD pattern `DDDSU`, 2.5ms
 - Bandwidth 100MHz
-- MTU 9216 (this is the maximum we can configure on our switch)
+- MTU 9600
 - 4TX4R
-- The OAI configuration file [`gnb.sa.band78.273prb.fhi72.4x4-benetel650.conf`](../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band78.273prb.fhi72.4x4-benetel650.conf) corresponds to below RU configuration. 
+
+#### RU configuration
 
 After switching on the radio or rebooting, wait for the radio bring up to complete, which you can follow using `tail -f  /tmp/logs/radio_status`. Once you will see `[INFO] Radio bringup complete`, you can configure the RU via editing `/etc/ru_config.cfg`
 
@@ -501,12 +531,15 @@ dl_ul_tuning_special_slot=0xfd00000
 
 ### Benetel 550
 
+**Valid only for version RAN550-1v1.0.4-605a25a**
 
-- **Valid only for version RAN550-1v1.0.4-605a25a**
+The OAI configuration file [`gnb.sa.band78.273prb.fhi72.4x4-benetel550.conf`](../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band78.273prb.fhi72.4x4-benetel550.conf) corresponds to:
 - TDD pattern `DDDDDDDSUU`, 5ms
 - Bandwidth 100MHz
+- MTU 9600
 - 4TX4R
-- The OAI configuration file [`gnb.sa.band78.273prb.fhi72.4x4-benetel550.conf`](../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band78.273prb.fhi72.4x4-benetel550.conf) corresponds to below RU configuration.
+
+#### RU configuration
 
 After switching on the radio or rebooting, wait for the radio bring up to complete, which you can follow using `tail -f  /tmp/logs/radio_status`. Once you will see `[INFO] Radio bringup complete`, you can configure the RU via editing `/etc/ru_config.cfg`
 
@@ -524,48 +557,56 @@ flexran_prach_workaround=disabled
 dl_tuning_special_slot=0x13b6
 ```
 
-### LiteON
+### LITEON
 
+**Verson 01.00.08**
+The OAI configuration file [`gnb.sa.band78.273prb.fhi72.4x4-liteon.conf`](../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band78.273prb.fhi72.4x4-liteon.conf) corresponds to:
 - TDD pattern `DDDSU`, 2.5ms
 - Bandwidth 100MHz
-- Default MTU is 1500
+- MTU 1500 (the above mentioned LITEON version doesn't support jumbo frames)
+
+#### RU configuration
 
 SSH to the unit as user `user`. Write `enable` in the terminal to enter the configuration console; the password should be in the user guide. Use the command `show oru-status` to check the RU status. The output should be similar to:
-
 ```bash
 # show oru-status 
 Sync State  : SYNCHRONIZED
 RF State    : Ready
 DPD         : Ready
+DuConnected : notReady
 ```
 
-Once the RU is PTP synced, and RF state and DPD are `Ready`, write `configure` in the terminal to set:
+Also, you can use `show running-config` to display the current RU configuration. 
 
+Once the RU is PTP synced, and RF state and DPD are `Ready`, write `configure terminal` to set:
 - Center frequency 
 - Bandwidth
 - Compression Bitwidth
 - TX/RX attenuation
 
-To configure 4TX and 4RX antennas, you have to repeat the below steps after every reboot, so don't restart the RU after entering below commands:
-
+After each reboot, the PRACH has to be manually configured.
+To do so, please login to RU as user `root` and run below commands:
 ```bash
 devmem 0x80001014 32 0x00050004
 devmem 0x80001018 32 0x00070006
 devmem 0x8000201C 32 0x00000001
 ```
 
-If you want to set MTU size to 9000 then use the below command: 
-
+If you have RU version that supports jumbo frames, please enable it as:
 ```bash
 devmem 0x8000200C 32 0x00000001
 ```
 
 ### VVDN LPRU
 
+**Version 3.x**
+
+The OAI configuration file [`gnb.sa.band77.273prb.fhi72.4x4-vvdn.conf`](../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band77.273prb.fhi72.4x4-vvdn.conf) corresponds to:
 - TDD pattern `DDDSU`, 2.5ms
 - Bandwidth 100MHz
-- MTU 9216 (this is the maximum we can configure on our switch)
-- The OAI configuration file [`gnb.sa.band77.273prb.fhi72.4x4-vvdn.conf`](../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band77.273prb.fhi72.4x4-vvdn.conf) corresponds to below RU configuration. 
+- MTU 9600
+
+#### RU configuration
 
 Check in the RU user manual how to configure the center frequency. There are multiple ways to do it. We set the center frequency by editing `sysrepocfg` database. You can use `sysrepocfg --edit=vi -d running` to do the same. You can edit the `startup` database to make the center frequency change persistent. 
 
@@ -599,12 +640,36 @@ Execute the below commands on every restart
 ```bash
 xml_parser 4x4-config.xml
 ## To enable prach compression
-mw.l a0010024 1919
+mw.l a0010024 1919 # format `<PRACH-comp-method><PRACH-compr-value><PUSCH-comp-method><PUSCH-compr-value>
 ## This will show the current configuration
 /etc/scripts/lpru_configuration.sh
 ## Edit the sysrepo to ACTIVATE the carrier when you want to use the RU
+## option 1 - activation by writing directly in register
+mw.l a0050010 <YOUR-RU-VLAN>3 # e.g. VLAN = 4 => `mw.l a0050010 43`
+## option 2 - activation via sysrepocfg command
 sysrepocfg --edit=vi -d running
 ```
+
+### Metanoia RU
+
+**Version 2.0.6**
+
+The OAI configuration file [`gnb.sa.band78.273prb.fhi72.4x4-metanoia.conf`](../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band78.273prb.fhi72.4x4-metanoia.conf) corresponds to:
+- TDD pattern `DDDSU`, 2.5ms (`DDDDDDDSUU`, 5ms, also supported)
+- Bandwidth 100MHz
+- 4TX4R
+
+The RU configuration is stored in `/etc/rumanager.conf`. The required modifications:
+1. `processing_element/vlan_id`
+2. `processing_element/du_mac_address`
+3. `low_level_tx_endpoint/compression_type` -> `STATIC`
+4. `low_level_rx_endpoint/compression_type` -> `STATIC`
+5. `low_level_rx_endpoint/compression/fs-offset` -> `8`
+6. `center-of-channel-bandwidth` -> `3750000000`
+7. `tx_gain_correction` -> tested with `6020` (please be careful to not fry the RU)
+8. `rx_gain_correction` -> tested with `-903` (please be careful to not fry the RU)
+
+At this stage, RU must be rebooted so the changes apply.
 
 ## Configure Network Interfaces and DPDK VFs
 
@@ -612,63 +677,103 @@ The 7.2 fronthaul uses the xran library, which requires DPDK. In this step, we
 need to configure network interfaces to send data to the RU, and configure DPDK
 to bind to the corresponding PCI interfaces. More specifically, in the
 following we use [SR-IOV](https://en.wikipedia.org/wiki/Single-root_input/output_virtualization)
-to create multiple virtual functions (VFs) through which Control plane (C
+to create one or multiple virtual functions (VFs) through which Control plane (C
 plane) and User plane (U plane) traffic will flow. The following commands are
 not persistant, and have to be repeated after reboot.
 
 In the following, we will use these short hands:
 
-- `physical-interface`: Physical network interface through which you can access the RU
-- `vlan`: VLAN tags as defined in the RU configuration
-- `mtu`: the MTU as specified by the RU vendor, and supported by the NIC
-- `du-c-plane-mac-addr`: DU C plane MAC address
-- `pci-address-c-plane-vf`: PCI bus address of the VF for C plane
-- `du-u-plane-mac-addr`: DU U plane MAC address
-- `pci-address-u-plane-vf`: PCI bus address of the VF for U plane
+- `IF_NAME`: Physical network interface through which you can access the RU
+- `VLAN`: the VLAN tag as recommended by the RU vendor
+- `MTU`: the MTU as specified by the RU vendor, and supported by the NIC
+- `DU_U_PLANE_MAC_ADD`: DU U plane MAC address
+- `U_PLANE_PCI_BUS_ADD`: PCI bus address of the VF for U plane
+- `DU_C_PLANE_MAC_ADD`: DU C plane MAC address
+- `C_PLANE_PCI_BUS_ADD`: PCI bus address of the VF for C plane
 
-In the configuration file, in option `fhi_72.dpdk_devices`, the first PCI address is for C-plane and the second for U-plane. 
+In the configuration file, in option `fhi_72.dpdk_devices`, the first PCI address is for U-plane and the second for C-plane.
 
-For both the MAC addresses, you might use the MAC addresses which are
-pre-configured in the RUs (typically `00:11:22:33:44:66`, but that is not
-always the case). Note that if your system has Intel E-810 NIC cards/ICE
-driver, you have to choose different MAC addresses (valid for above-mentioned
-kernels). If the RU vendor requires untagged traffic, remove the VLAN tagging
+RU might support either one DU MAC address for both CU planes or two different.
+i.e. VVDN Gen3, Metanoia support only one, Benetel550 supports both cases
+
+
+**Note**
+
+- X710 NIC supports the same DU MAC address for multiple VFs
+- E-810 NIC requires different DU MAC addresses for multiple VFs
+
+If the RU vendor requires untagged traffic, remove the VLAN tagging
 in the below command and configure VLAN on the switch as "access VLAN". In case
 the MTU is different than 1500, you have to update the MTU on the switch
 interface as well.
 
-First, set maximum ring buffers:
+### Set maximum ring buffers:
+
+As a first step, please set up the maximum allowed buffer size to your desired interface. To check the maximum value, please execute the following command:
 ```bash
-sudo ethtool -g <physical-interface>
-sudo ethtool -G <physical-interface> rx 4096     # assumes 4096 is max
-sudo ethtool -G <physical-interface> tx 4096     # assumes 4096 is max
+sudo ethtool -g $IF_NAME
 ```
 
-Set the maximum MTU in the physical interface:
 ```bash
-sudo ifconfig <physical-interface> mtu <mtu>
+set -x
+IF_NAME=<YOUR_PHYSICAL_INTERFACE_NAME>
+MAX_RING_BUFFER_SIZE=<YOUR_PHYSICAL_INTERFACE_MAX_BUFFER_SIZE>
+
+sudo ethtool -G $IF_NAME rx $MAX_RING_BUFFER_SIZE tx $MAX_RING_BUFFER_SIZE
 ```
 
-(Re-)create two VFs, load the Linux "Base Driver for Intel Ethernet Adaptive
-Virtual Function" (in case you use Intel ethernet card), and set up the VFs.
+### Set the maximum MTU in the physical interface:
+```bash
+set -x
+IF_NAME=<YOUR_PHYSICAL_INTERFACE_NAME>
+MTU=<RU_MTU>
+
+sudo ip link set $IF_NAME mtu $MTU
+```
+
+### (Re-)create VF(s)
+
+#### one VF
 
 ```bash
+set -x
+IF_NAME=<YOUR_PHYSICAL_INTERFACE_NAME>
+DU_CU_PLANE_MAC_ADD=<YOUR_DU_CU_PLANE_MAC_ADDRESS>
+VLAN=<RU_VLAN>
+MTU=<RU_MTU>
+
 sudo modprobe iavf
-sudo sh -c echo "0" > /sys/class/net/<physical-interface>/device/sriov_numvfs
-sudo sh -c echo "2" > /sys/class/net/<physical-interface>/device/sriov_numvfs
-sudo ip link set <physical-interface> vf 0 mac <du-c-plane-mac-addr> vlan <vlan> mtu <mtu> spoofchk off
-sudo ip link set <physical-interface> vf 1 mac <du-u-plane-mac-addr> vlan <vlan> mtu <mtu> spoofchk off
+sudo sh -c 'echo 0 > /sys/class/net/$IF_NAME/device/sriov_numvfs'
+sudo sh -c 'echo 1 > /sys/class/net/$IF_NAME/device/sriov_numvfs'
+sudo ip link set $IF_NAME vf 0 mac $DU_CU_PLANE_MAC_ADD vlan $VLAN mtu $MTU spoofchk off # set CU planes PCI address
 ```
 
-After running the above commands, the kernel created virtual functions that
+#### two VFs
+
+```bash
+set -x
+IF_NAME=<YOUR_PHYSICAL_INTERFACE_NAME>
+DU_U_PLANE_MAC_ADD=<YOUR_DU_U_PLANE_MAC_ADDRESS>
+DU_C_PLANE_MAC_ADD=<YOUR_DU_C_PLANE_MAC_ADDRESS> # can be same as for U plane -> depends if the NIC supports the same MAC address
+VLAN=<RU_VLAN>
+MTU=<RU_MTU>
+
+sudo modprobe iavf
+sudo sh -c 'echo 0 > /sys/class/net/$IF_NAME/device/sriov_numvfs'
+sudo sh -c 'echo 2 > /sys/class/net/$IF_NAME/device/sriov_numvfs'
+sudo ip link set $IF_NAME vf 0 mac $DU_U_PLANE_MAC_ADD vlan $VLAN mtu $MTU spoofchk off # set U plane PCI address
+sudo ip link set $IF_NAME vf 1 mac $DU_C_PLANE_MAC_ADD vlan $VLAN mtu $MTU spoofchk off # set C plane PCI address
+```
+
+After running the above commands, the kernel created VF(s) that
 have been assigned a PCI address under the same device and vendor ID. For
 instance, use `sudo lshw -c network -businfo` to get a list of PCI addresses
-and interface names, locate the PCI address of `<physical-interface>`, then use
+and interface names, locate the PCI address of `$IF_NAME`, then use
 `lspci | grep Virtual` to get all virtual interfaces and use the ones with the
 same Device/Vendor ID parts (first two numbers).
 
 <details>
-<summary>Example</summary>
+<summary>Example with two VFs</summary>
 
 The machine in this example has an Intel X710 card. The interface
 <physical-interface> in question is `eno12409`. Running `lshw` gives:
@@ -701,41 +806,68 @@ The hardware card `31:00.1` has two associated virtual functions `31:06.0` and
 `31:06.1`.
 </details>
 
+### Bind VF(s)
+
 Now, unbind any pre-existing DPDK devices, load the "Virtual Function I/O"
-driver `vfio_pci`, and bind DPDK to these devices:
+driver `vfio_pci` or `mlx5_core`, and bind DPDK to these devices.
 
-```
-sudo /usr/local/bin/dpdk-devbind.py --unbind <pci-address-c-plane-vf>
-sudo /usr/local/bin/dpdk-devbind.py --unbind <pci-address-u-plane-vf>
-sudo modprobe vfio_pci
-sudo /usr/local/bin/dpdk-devbind.py --bind vfio-pci <pci-address-c-plane-vf>
-sudo /usr/local/bin/dpdk-devbind.py --bind vfio-pci <pci-address-u-plane-vf>
+#### Bind one VF
+
+```bash
+set -x
+CU_PLANE_PCI_BUS_ADD=<YOUR_CU_PLANE_PCI_BUS_ADDRESS>
+DRIVER=<YOUR_DRIVER> # set to `vfio_pci` or `mlx5_core`, depending on your NIC
+
+sudo /usr/local/bin/dpdk-devbind.py --unbind $CU_PLANE_PCI_BUS_ADD
+sudo modprobe $DRIVER
+sudo /usr/local/bin/dpdk-devbind.py --bind $DRIVER $CU_PLANE_PCI_BUS_ADD
 ```
 
-We recommand to put the above commands into a script file to quickly repeat them.
+#### Bind two VFs
+
+```bash
+set -x
+U_PLANE_PCI_BUS_ADD=<YOUR_U_PLANE_PCI_BUS_ADDRESS>
+C_PLANE_PCI_BUS_ADD=<YOUR_C_PLANE_PCI_BUS_ADDRESS>
+DRIVER=<YOUR_DRIVER> # set to `vfio_pci` or `mlx5_core`, depending on your NIC
+
+sudo /usr/local/bin/dpdk-devbind.py --unbind $U_PLANE_PCI_BUS_ADD
+sudo /usr/local/bin/dpdk-devbind.py --unbind $C_PLANE_PCI_BUS_ADD
+sudo modprobe $DRIVER
+sudo /usr/local/bin/dpdk-devbind.py --bind $DRIVER $U_PLANE_PCI_BUS_ADD
+sudo /usr/local/bin/dpdk-devbind.py --bind $DRIVER $C_PLANE_PCI_BUS_ADD
+```
+
+We recommand to put the above four steps into one script file to quickly repeat them.
 
 <details>
-<summary>Example script for Benetel 550-A/650 with Intel X710 on host</summary>
+<summary>Example script for Benetel 550-A/650 with Intel X710 on host with two VFs</summary>
 
-```console
+```bash
 set -x
+IF_NAME=eno12409
+MAX_RING_BUFFER_SIZE=4096
+MTU=9600
+DU_U_PLANE_MAC_ADD=00:11:22:33:44:66
+DU_C_PLANE_MAC_ADD=00:11:22:33:44:67
+VLAN=3
+U_PLANE_PCI_BUS_ADD=31:06.0
+C_PLANE_PCI_BUS_ADD=31:06.1
+DRIVER=vfio_pci
 
-sudo ethtool -G eno12409 rx 4096
-sudo ethtool -G eno12409 tx 4096
-sudo ifconfig eno12409 mtu 9216
-
-sudo modprobe -r iavf
+sudo ethtool -G $IF_NAME rx $MAX_RING_BUFFER_SIZE tx $MAX_RING_BUFFER_SIZE
+sudo ip link set $IF_NAME mtu $MTU
 sudo modprobe iavf
-sudo sh -c 'echo 0 > /sys/class/net/eno12409/device/sriov_numvfs'
-sudo sh -c 'echo 2 > /sys/class/net/eno12409/device/sriov_numvfs'
-sudo ip link set eno12409 vf 0 mac 00:11:22:33:44:66 vlan 3 qos 0 spoofchk off mtu 9216
-sudo ip link set eno12409 vf 1 mac 00:11:22:33:44:67 vlan 3 qos 0 spoofchk off mtu 9216
-
-sudo /usr/local/bin/dpdk-devbind.py --unbind 31:06.0
-sudo /usr/local/bin/dpdk-devbind.py --unbind 31:06.1
-sudo modprobe vfio-pci
-sudo /usr/local/bin/dpdk-devbind.py --bind vfio-pci 31:06.0
-sudo /usr/local/bin/dpdk-devbind.py --bind vfio-pci 31:06.1
+sudo sh -c 'echo 0 > /sys/class/net/$IF_NAME/device/sriov_numvfs'
+sudo sh -c 'echo 2 > /sys/class/net/$IF_NAME/device/sriov_numvfs'
+sudo ip link set $IF_NAME vf 0 mac $DU_U_PLANE_MAC_ADD vlan $VLAN mtu $MTU spoofchk off # set U plane PCI address
+sudo ip link set $IF_NAME vf 1 mac $DU_C_PLANE_MAC_ADD vlan $VLAN mtu $MTU spoofchk off # set C plane PCI address
+sleep 1
+sudo /usr/local/bin/dpdk-devbind.py --unbind $U_PLANE_PCI_BUS_ADD
+sudo /usr/local/bin/dpdk-devbind.py --unbind $C_PLANE_PCI_BUS_ADD
+sudo modprobe $DRIVER
+sudo /usr/local/bin/dpdk-devbind.py --bind $DRIVER $U_PLANE_PCI_BUS_ADD
+sudo /usr/local/bin/dpdk-devbind.py --bind $DRIVER $C_PLANE_PCI_BUS_ADD
 ```
 </details>
 
@@ -746,9 +878,19 @@ sudo /usr/local/bin/dpdk-devbind.py --bind vfio-pci 31:06.1
 **Beware in the following section to let in the range of isolated cores the parameters that should be (i.e. `L1s.L1_rx_thread_core`, `L1s.L1_tx_thread_core`, `RUs.ru_thread_core`, `fhi_72.io_core` and `fhi_72.worker_cores`)**
 
 Sample configuration files for OAI gNB, specific to the manufacturer of the radio unit, are available at:
-1. LITE-ON RU: [`gnb.sa.band78.273prb.fhi72.4x4-liteon.conf`](../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band78.273prb.fhi72.4x4-liteon.conf) (band n78, 273 PRBs, 3.5GHz center freq, 4x4 antenna configuration with 9 bit I/Q samples (compressed) for PUSCH/PDSCH/PRACH, 2-layer DL MIMO, UL SISO)
-2. Benetel 650 RU: [`gnb.sa.band78.273prb.fhi72.4x4-benetel650.conf`](../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band78.273prb.fhi72.4x2-benetel650.conf) (band n78, 273 PRBs, 3.5GHz center freq, 4x2 antenna configuration with 9 bit I/Q samples (compressed) for PUSCH/PDSCH/PRACH, 2-layer DL MIMO, UL SISO)
-3. VVDN RU: [`gnb.sa.band77.273prb.fhi72.4x4-vvdn.conf`](../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band77.273prb.fhi72.4x4-vvdn.conf) (band n77, 273 PRBs, 4.0GHz center freq, 4x4 antenna configuration with 9 bit I/Q samples (compressed) for PUSCH/PDSCH/PRACH, 2-layer DL MIMO, UL SISO)
+1. LITEON RU:
+[`gnb.sa.band78.273prb.fhi72.4x4-liteon.conf`](../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band78.273prb.fhi72.4x4-liteon.conf)
+2. VVDN RU:
+[`gnb.sa.band77.273prb.fhi72.4x4-vvdn.conf`](../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band77.273prb.fhi72.4x4-vvdn.conf)
+[`gnb.sa.band77.106prb.fhi72.4x4-vvdn.conf`](../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band77.106prb.fhi72.4x4-vvdn.conf)
+[`gnb.sa.band77.273prb.fhi72.2x2-vvdn.conf`](../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band77.273prb.fhi72.2x2-vvdn.conf)
+3. Benetel 650 RU:
+[`gnb-du.sa.band77.273prb.fhi72.4x4-benetel650.conf`](../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb-du.sa.band77.273prb.fhi72.4x4-benetel650.conf)
+4. Benetel 550 RU:
+[`gnb.sa.band78.273prb.fhi72.4x4-benetel550.conf`](../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band78.273prb.fhi72.4x4-benetel550.conf)
+[`gnb.sa.band78.273prb.fhi72.4x2-benetel550.conf`](../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band78.273prb.fhi72.4x2-benetel550.conf)
+5. Metanoia RU:
+[`gnb.sa.band78.273prb.fhi72.4x4-metanoia.conf`](../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band78.273prb.fhi72.4x4-metanoia.conf)
 
 Edit the sample OAI gNB configuration file and check following parameters:
 
@@ -773,16 +915,33 @@ Edit the sample OAI gNB configuration file and check following parameters:
 * `fhi_72` (FrontHaul Interface) section: this config follows the structure
   that is employed by the xRAN library (`xran_fh_init` and `xran_fh_config`
   structs in the code):
-  * `dpdk_devices`: PCI addresses of NIC VFs binded to the DPDK (not the physical NIC but the VFs, use `lspci | grep Virtual`)
+  * `dpdk_devices`: PCI addresses of NIC VFs binded to the DPDK (not the physical NIC but the VFs, use `lspci | grep Virtual`) in the format `{VF-U-plane, VF-C-plane}`;
+    if one VF used per RU, U and C planes will share the same VF => depends on the RU capabilities
   * `system_core`: absolute CPU core ID for DPDK control threads, it should be an isolated core, in our environment we are using CPU 0
     (`rte_mp_handle`, `eal-intr-thread`, `iavf-event-thread`)
   * `io_core`: absolute CPU core ID for XRAN library, it should be an isolated core, in our environment we are using CPU 4
   * `worker_cores`: array of absolute CPU core IDs for XRAN library, they should be isolated cores, in our environment we are using CPU 2
-  * `du_addr`: DU C- and U-plane MAC-addresses (format `UU:VV:WW:XX:YY:ZZ`,
-    hexadecimal numbers)
-  * `ru_addr`: RU C- and U-plane MAC-addresses (format `UU:VV:WW:XX:YY:ZZ`,
-    hexadecimal numbers)
-  * `mtu`: Maximum Transmission Unit for the RU, specified by RU vendor
+  * `ru_addr`: RU U- and C-plane MAC-addresses (format `UU:VV:WW:XX:YY:ZZ`, hexadecimal numbers)
+  * `mtu`: Maximum Transmission Unit for the RU, specified by RU vendor; either 1500 or 9600 B (Jumbo Frames); if not set, 1500 is used
+  * `file_prefix` : used to specify a unique prefix for shared memory and files created by multiple DPDK processes; if not set, default value of `wls_0` is used
+  * `dpdk_mem_size`: the huge page size that should be pre-allocated by DPDK
+    _for NUMA node 0_; by default, this is 8192 MiB (corresponding to 8 huge
+    pages à 1024 MiB each, see above). In the current implementation, you
+    cannot preallocate memory on NUMA nodes other than 0; in this case, set
+    this to 0 (no pre-allocation) and so that DPDK will allocate it on-demand
+    on the right NUMA node.
+  * `dpdk_iova_mode`: Specifies DPDK IO Virtual Address (IOVA) mode:
+    * `PA`: IOVA as Physical Address (PA) mode, where DPDK IOVA memory layout
+      corresponds directly to the physical memory layout.
+    * `VA`: IOVA as Virtual Address (VA) mode, where DPDK IOVA addresses do not
+      follow the physical memory layout. Uses IOMMU to remap physical memory.
+      Requires kernel support and IOMMU for address translation.
+    * If not specified, default value of "PA" is used (for backwards compabilibity;
+      it was hardcoded to PA in the past). However, we recommend using "VA" mode
+      as it offers several benefits. For a detailed explanation of DPDK IOVA,
+      including the advantages and disadvantages of each mode, refer to
+      [Memory in DPDK](https://www.dpdk.org/memory-in-dpdk-part-2-deep-dive-into-iova/)
+  * `owdm_enable`: used for eCPRI One-Way Delay Measurements; it depends if the RU supports it; if not set to 1 (enabled), default value is 0 (disabled)
   * `fh_config`: parameters that need to match RU parameters
     * timing parameters (starting with `T`) depend on the RU: `Tadv_cp_dl` is a
       single number, the rest pairs of numbers `(x, y)` specifying minimum and
@@ -793,30 +952,34 @@ Edit the sample OAI gNB configuration file and check following parameters:
       * `iq_width_prach`: Width of PRACH IQ samples: if 16, no compression, if <16, applies
         compression
     * `prach_config`: PRACH-specific configuration
-      * `eAxC_offset`:  PRACH antenna offset
+      * `eAxC_offset`:  PRACH antenna offset; if not set, default value of `N = max(Nrx,Ntx)` is used
       * `kbar`: the PRACH guard interval, provided in RU
 
 Layer mapping (eAxC offsets) happens as follows:
-- For PUSCH/PDSCH, the layers are mapped to `[0,1,...,N-1]` where `N` is the
+- For PUSCH/PDSCH, the layers are mapped to `[0,1,...,Nrx-1]/[0,1,...,Ntx-1]` where `Nrx/Ntx` is the
   respective RX/TX number of antennas.
-- For PRACH, the layers are mapped to `[No,No+1,...No+N-1]` where No is the
-  `fhi_72.fh_config.[0].prach_config.eAxC_offset` and `N` the number of receive
-  antennas.
+- For PRACH, the layers are mapped to `[No,No+1,...No+Nrx-1]` where `No` is the
+  `fhi_72.fh_config.[0].prach_config.eAxC_offset`. xran assumes PRACH offset `No >= max(Nrx,Ntx)`.
+  However, we made a workaround that xran supports PRACH eAxC IDs same as PUSCH eAxC IDs. This is achieved with `is_prach` and `filter_id` parameters in the patch.
+  Please note that this approach only applies to the RUs that support this functionality, e.g. LITEON RU.
 
-xRAN SRS reception is not supported.
+**Note**
+
+- At the moment, OAI is compatible with CAT A O-RU only. Therefore, SRS is not supported.
+- XRAN retreives DU MAC address with `rte_eth_macaddr_get()` function. Hence, `fhi_72.du_addr` parameter is not taken into account.
 
 # Start and Operation of OAI gNB
 
 Run the `nr-softmodem` from the build directory:
 ```bash
 cd ~/openairinterface5g/cmake_targets/ran_build/build
-sudo ./nr-softmodem -O <configuration file> --sa --thread-pool <list of non isolated cpus>
+sudo ./nr-softmodem -O <configuration file> --thread-pool <list of non isolated cpus>
 ```
 
 **Warning**: Make sure that the configuration file you add after the `-O` option is adapted to your machine, especially to its isolated cores.
 
 **Note**: You may run OAI with O-RAN 7.2 Fronthaul without a RU attached (e.g. for benchmarking).
-In such case, you would generate artificial traffic by replacing the `--sa` option by the `--phy-test` option.
+In such case, you would generate artificial traffic by adding the `--phy-test` option.
 
 You have to set the thread pool option to non-isolated CPUs, since the thread
 pool is used for L1 processing which should not interfere with DPDK threads.
@@ -890,7 +1053,137 @@ In this case, you should reverify that `ptp4l` and `phc2sys` are working, e.g.,
 do not do any jumps (during the last hour). While an occasional jump is not
 necessarily problematic for the gNB, many such messages mean that the system is
 not working, and UEs might not be able to attach or reach good performance.
+Also, you can try to compile with polling (see [the build
+section](.#build-oai-gnb)) to see if it resolves the problem.
 
+# Operation with multiple RUs
+
+It is possible to connect up to 4 RUs to one DU at the same time and operate
+them as a (single) distributed antenna (array). This works since all RUs and
+the DU are synchronized onto a common clock using PTP. The assumed
+configuration is that with N RUs each having an M×M configuration, we
+effectively reach an (N×M)×(N×M) configuration.
+
+Some caveats:
+- Since it's a distributed antenna, this implies that this setup will deploy a
+  single cell only -- multiple cells on different RUs are not supported.
+- All RUs should use the same MTU, so either "normal" (1500 byte) MTU or jumbo
+  frames, but not a mix of both.
+- We tested only two RUs as of now, i.e., an 8×8 configuration.
+- Testing is currently limited to 4 logical antenna ports in DL; in UL, up to 8 can be used.
+
+For two RUs each using a 4x4 configuration, make sure to configure the 8x8
+configuration, i.e., set `nb_tx` and `nb_rx` under `RUs` to 8 each (NOT two
+`RUs`!). Also, set the antenna port information as listed above, i.e.,
+
+```
+pdsch_AntennaPorts_XP = 2;
+pdsch_AntennaPorts_N1 = 2;
+pusch_AntennaPorts    = 8;
+maxMIMO_layers        = 2;
+```
+Once testing for 8 antenna ports in DL is complete, we will change pdsch_AntennaPorts_N1 to 4.
+
+Next, configure the `fhi_72` section as indicated below:
+
+```
+fhi_72 = {
+   dpdk_devices = ("ru1_up_vf_pci", "ru1_cp_vf_pci", "ru2_up_vf_pci", "ru2_cp_vf_pci"); # two VFs can be used as well
+   // core config as always
+   ru_addr = ("ru1_up_mac_addr", "ru1_cp_mac_addr", "ru2_up_mac_addr", "ru2_cp_mac_addr"); # if two VFs, set two RU MAC addresses (one per RU)
+   // mtu
+   fh_config = (
+     {
+       // timing, ru_config, prach_config of RU1
+     },
+     {
+       // timing, ru_config, prach_config of RU2
+     }
+  );
+};
+```
+
+i.e., for `dpdk_devices`, and `ru_addr` is configured for
+both RUs in a (flat) array, and the individual radio configuration is given for
+each RU individually inside the `fh_config`.
+
+<details>
+<summary>Sample FHI 7.2 configuration for two RUs (2 x Benetel 650)</summary>
+
+```
+fhi_72 = {
+  dpdk_devices = ("0000:01:01.0", "0000:01:01.1", "0000:01:01.2", "0000:01:01.3");
+  system_core = 0;
+  io_core = 1;
+  worker_cores = (2);
+  ru_addr = ("8c:1f:64:d1:10:46","8c:1f:64:d1:10:46","8c:1f:64:d1:10:43","8c:1f:64:d1:10:43")
+  mtu = 9600;
+  fh_config = (
+# RAN650 #1
+   {
+    Tadv_cp_dl = 125;
+    T2a_cp_dl = (259, 500);
+    T2a_cp_ul = (25, 500);
+    T2a_up = (134, 375);
+    Ta3 = (152, 160);
+    T1a_cp_dl = (419, 470);
+    T1a_cp_ul = (285, 336);
+    T1a_up = (294, 345);
+    Ta4 = (0, 200);
+    ru_config = {
+      iq_width = 9;
+      iq_width_prach = 9;
+    };
+  },
+# RAN650 #2
+  {
+    Tadv_cp_dl = 125;
+    T2a_cp_dl = (259, 500);
+    T2a_cp_ul = (25, 500);
+    T2a_up = (134, 375);
+    Ta3 = (152, 160);
+    T1a_cp_dl = (419, 470);
+    T1a_cp_ul = (285, 336);
+    T1a_up = (294, 345);
+    Ta4 = (0, 200);
+    ru_config = {
+      iq_width = 9;
+      iq_width_prach = 9;
+    };
+  });
+```
+</details>
+
+Compare also with the example (DU) configuration in
+[`gnb-du.sa.band77.273prb.fhi72.8x8-benetel650_650.conf`](../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb-du.sa.band77.273prb.fhi72.8x8-benetel650_650.conf).
+
+Afterwards, start the gNB with the modified configuration file. If everything
+went well, you should see the RU counters for both RUs go up:
+
+```
+[NR_PHY]   [o-du 0][rx   63488 pps   63264 kbps 2759808][tx  127684 pps  127116 kbps 4717971][Total Msgs_Rcvd 63488]
+[NR_PHY]   [o_du0][pusch0   14336 prach0    1536]
+[NR_PHY]   [o_du0][pusch1   14336 prach1    1536]
+[NR_PHY]   [o_du0][pusch2   14336 prach2    1536]
+[NR_PHY]   [o_du0][pusch3   14336 prach3    1536]
+[NR_PHY]   [o-du 1][rx   63544 pps   63320 kbps 2763240][tx  127684 pps  127116 kbps 4717971][Total Msgs_Rcvd 63544]
+[NR_PHY]   [o_du1][pusch0   14350 prach0    1536]
+[NR_PHY]   [o_du1][pusch1   14350 prach1    1536]
+[NR_PHY]   [o_du1][pusch2   14350 prach2    1536]
+[NR_PHY]   [o_du1][pusch3   14350 prach3    1536]
+```
+
+You can also verify that there is signal on all RX antennas like so:
+```bash
+$ cat nrL1_stats.log
+[...]
+max_IO = 55 (85), min_I0 = 0 (136), avg_I0 = 44 dB(43.44.43.45.44.43.43.45.)
+PRACH I0 = 30.6 dB
+```
+
+Note the eight entries after `avg_IO`.
+
+You should be able to connect a UE now.
 
 # Contact in case of questions
 
@@ -901,7 +1194,7 @@ Your email should contain below information:
 - A clear subject in your email.
 - For all the queries there should be [Query\] in the subject of the email and for problems there should be [Problem\].
 - In case of a problem, add a small description.
-- Do not share any photos unless you want to share a diagram. 
+- Do not share any screenshots/photos unless you want to share a diagram.
 - OAI gNB/DU/CU/CU-CP/CU-UP configuration file in `.conf` format only.
 - Logs of OAI gNB/DU/CU/CU-CP/CU-UP in `.log` or `.txt` format only.
 - RU Vendor and Version.

@@ -346,7 +346,7 @@ nr_initial_sync_t sl_nr_slss_search(PHY_VARS_NR_UE *UE, UE_nr_rxtx_proc_t *proc,
   int ret = -1;
   uint16_t rx_slss_id = 65535;
 
-  nr_initial_sync_t result = {true, 0};
+  nr_initial_sync_t result = {false, 0};
 
 #ifdef SL_DEBUG_SEARCH_SLSS
   LOG_D(PHY, "SIDELINK SEARCH SLSS: Function:%s\n", __func__);
@@ -447,7 +447,14 @@ nr_initial_sync_t sl_nr_slss_search(PHY_VARS_NR_UE *UE, UE_nr_rxtx_proc_t *proc,
 
         /* In order to achieve correct processing for NR prefix samples is forced to 0 and then restored after function call */
         for (int symbol = 0; symbol < SL_NR_NUMSYM_SLSS_NORMAL_CP; symbol++) {
-          sl_nr_slot_fep(UE, NULL, symbol, 0, sync_params->ssb_offset, rxdataF);
+          nr_slot_fep(UE,
+                      frame_parms,
+                      proc->nr_slot_rx,
+                      symbol,
+                      rxdataF,
+                      link_type_sl,
+                      sync_params->ssb_offset,
+                      UE->common_vars.rxdata);
         }
 
         sl_nr_extract_sss(UE, NULL, &metric_tdd_ncp, &phase_tdd_ncp, rxdataF);
@@ -464,7 +471,6 @@ nr_initial_sync_t sl_nr_slss_search(PHY_VARS_NR_UE *UE, UE_nr_rxtx_proc_t *proc,
         for (int symbol = 0; symbol < SL_NR_NUMSYM_SLSS_NORMAL_CP - 1;) {
           nr_pbch_channel_estimation(frame_parms,
                                      &UE->SL_UE_PHY_PARAMS,
-                                     UE->nr_gold_pbch,
                                      rxdataF_sz,
                                      dl_ch_estimates,
                                      dl_ch_estimates_time,
@@ -512,7 +518,7 @@ nr_initial_sync_t sl_nr_slss_search(PHY_VARS_NR_UE *UE, UE_nr_rxtx_proc_t *proc,
                 sync_params->DFN,
                 sync_params->slot_offset);
 
-          nr_sl_psbch_rsrp_measurements(sl_ue, frame_parms, rxdataF, false);
+          UE->adjust_rxgain = nr_sl_psbch_rsrp_measurements(sl_ue, frame_parms, rxdataF, false);
 
           UE->init_sync_frame = sync_params->remaining_frames;
           result.rx_offset = sync_params->rx_offset;

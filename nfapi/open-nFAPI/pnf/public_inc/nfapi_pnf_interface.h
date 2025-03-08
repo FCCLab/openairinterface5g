@@ -305,19 +305,19 @@ typedef struct nfapi_pnf_config
 	 *  \param msg A pointer to the decode P4/P5 message
 	 *  \return not current used
 	 */
-	int (*vendor_ext)(nfapi_pnf_config_t* config, nfapi_p4_p5_message_header_t* msg);
+	int (*vendor_ext)(nfapi_pnf_config_t* config, void* msg);
 	
 	/*! A callback to allocate vendor extension message
 	 * \param message_id The message id from the decode P4/P5 message header
 	 * \param msg_size A pointer a the size of the allocated message structure. The callee should set this
 	 * \return A pointer to a allocated P4/P5 message structure
 	 */
-	nfapi_p4_p5_message_header_t* (*allocate_p4_p5_vendor_ext)(uint16_t message_id, uint16_t* msg_size);
+	void* (*allocate_p4_p5_vendor_ext)(uint16_t message_id, uint16_t* msg_size);
 	
 	/*! A callback to deallocate vendor extension message 
 	 * \param header A pointer to an P4/P5 message structure
 	 */
-	void (*deallocate_p4_p5_vendor_ext)(nfapi_p4_p5_message_header_t* header);
+	void (*deallocate_p4_p5_vendor_ext)(void* header);
 
 
 
@@ -571,13 +571,12 @@ typedef struct
 typedef struct 
 {
 	//uint16_t sfn_slot
-	int16_t sfn;
-	int16_t slot;
-	//TODO: Change P7 structs to NR
-	nfapi_nr_dl_tti_request_t* dl_tti_req;//nfapi_dl_config_request_t* dl_config_req; 
-	nfapi_nr_ul_tti_request_t* ul_tti_req;//nfapi_ul_config_request_t* ul_config_req;
-	nfapi_nr_ul_dci_request_t* ul_dci_req;//nfapi_hi_dci0_request_t* hi_dci0_req;
-	nfapi_nr_tx_data_request_t* tx_data_req;//nfapi_tx_request_t* tx_req;
+	uint16_t sfn;
+	uint16_t slot;
+	nfapi_nr_dl_tti_request_t  dl_tti_req;
+	nfapi_nr_ul_tti_request_t  ul_tti_req;
+	nfapi_nr_ul_dci_request_t  ul_dci_req;
+	nfapi_nr_tx_data_request_t tx_data_req;
 
 	//TODO: check these two later
 	//nfapi_lbt_dl_config_request_t* lbt_dl_config_req;
@@ -630,8 +629,8 @@ typedef struct nfapi_pnf_p7_config
 	uint8_t checksum_enabled;
 
 	/*! The maxium size of a P7 segement. If a message is large that this it
-	 * will be segemented */
-	uint16_t segment_size;
+	 * will be segmented. Note: u32 to cover 4G and 5G */
+	uint32_t segment_size;
 
 	/*! The dummy subframe buffer structure that should be used in case there
 	 * are no 'valid' subframe messages */
@@ -711,7 +710,7 @@ typedef struct nfapi_pnf_p7_config
 	 * \param msg A pointer to a decode vendor extention message
 	 * \return not currently used
 	 */
-	int (*vendor_ext)(nfapi_pnf_p7_config_t* config, nfapi_p7_message_header_t* msg);
+	int (*vendor_ext)(nfapi_pnf_p7_config_t* config, void* msg);
 
 	/*! A callback to allocate vendor extension message
 	 * \param message_id The vendor extention message id from the decode message header
@@ -720,12 +719,12 @@ typedef struct nfapi_pnf_p7_config
 	 * 
 	 * 
 	 */
-	nfapi_p7_message_header_t* (*allocate_p7_vendor_ext)(uint16_t message_id, uint16_t* msg_size);
+	void* (*allocate_p7_vendor_ext)(uint16_t message_id, uint16_t* msg_size);
 	
 	/*! A callback to deallocate vendor extension message
 	 * \param header A pointer to a p7 vendor extention message
 	 */
-	void (*deallocate_p7_vendor_ext)(nfapi_p7_message_header_t* header);
+	void (*deallocate_p7_vendor_ext)(void* header);
 
 
 

@@ -69,13 +69,13 @@ typedef struct {
 
 static log_mem_cnt_t log_mem_d[2];
 static int log_mem_flag = 0;
-volatile int log_mem_side=0;
+static volatile int log_mem_side = 0;
 static pthread_mutex_t log_mem_lock;
 static pthread_cond_t log_mem_notify;
 static pthread_t log_mem_thread;
 static int log_mem_file_cnt=0;
-volatile int log_mem_write_flag=0;
-volatile int log_mem_write_side=0;
+static volatile int log_mem_write_flag = 0;
+static volatile int log_mem_write_side = 0;
 static char * log_mem_filename;
 
 static mapping log_level_names[] = {{"error", OAILOG_ERR},
@@ -103,7 +103,8 @@ static const unsigned int FLAG_FILE_LINE = 1 << 4;
 static const unsigned int FLAG_TIME = 1 << 5;
 static const unsigned int FLAG_THREAD_ID = 1 << 6;
 static const unsigned int FLAG_REAL_TIME = 1 << 7;
-static const unsigned int FLAG_INITIALIZED = 1 << 8;
+static const unsigned int FLAG_UTC_TIME = 1 << 8;
+static const unsigned int FLAG_INITIALIZED = 1 << 9;
 
 /** @}*/
 static mapping log_options[] = {{"nocolor", FLAG_NOCOLOR},
@@ -114,32 +115,11 @@ static mapping log_options[] = {{"nocolor", FLAG_NOCOLOR},
                                       {"time", FLAG_TIME},
                                       {"thread_id", FLAG_THREAD_ID},
                                       {"wall_clock", FLAG_REAL_TIME},
+                                      {"utc_time", FLAG_UTC_TIME},
                                       {NULL, -1}};
 mapping * log_option_names_ptr(void)
 {
   return log_options;
-}
-
-static mapping log_maskmap[] = {{"PRACH", DEBUG_PRACH},
-                               {"RU", DEBUG_RU},
-                               {"UE_PHYPROC", DEBUG_UE_PHYPROC},
-                               {"LTEESTIM", DEBUG_LTEESTIM},
-                               {"DLCELLSPEC", DEBUG_DLCELLSPEC},
-                               {"ULSCH", DEBUG_ULSCH},
-                               {"RRC", DEBUG_RRC},
-                               {"PDCP", DEBUG_PDCP},
-                               {"DFT", DEBUG_DFT},
-                               {"ASN1", DEBUG_ASN1},
-                               {"CTRLSOCKET", DEBUG_CTRLSOCKET},
-                               {"SECURITY", DEBUG_SECURITY},
-                               {"NAS", DEBUG_NAS},
-                               {"RLC", DEBUG_RLC},
-                               {"DLSCH_DECOD", DEBUG_DLSCH_DECOD},
-                               {"UE_TIMING", UE_TIMING},
-                               {NULL, -1}};
-mapping * log_maskmap_ptr(void)
-{
-  return log_maskmap;
 }
 
 /* .log_format = 0x13 uncolored standard messages
@@ -327,6 +307,9 @@ int write_file_matlab(const char *fname, const char *vname, void *data, int leng
   return 0;
 }
 
+#define FLAG_SETDEBUG(flag) g_log->debug_mask.DEBUG_##flag = *logparams_debug[i++].uptr;
+#define FLAG_SETDUMP(flag) g_log->dump_mask.DEBUG_##flag = *logparams_dump[i++].uptr;
+
 /* get log parameters from configuration file */
 void log_getconfig(log_t *g_log)
 {
@@ -335,8 +318,6 @@ void log_getconfig(log_t *g_log)
   paramdef_t logparams_defaults[] = LOG_GLOBALPARAMS_DESC;
   paramdef_t logparams_level[MAX_LOG_PREDEF_COMPONENTS];
   paramdef_t logparams_logfile[MAX_LOG_PREDEF_COMPONENTS];
-  paramdef_t logparams_debug[sizeofArray(log_maskmap)];
-  paramdef_t logparams_dump[sizeofArray(log_maskmap)];
   int ret = config_get(config_get_if(), logparams_defaults, sizeofArray(logparams_defaults), CONFIG_STRING_LOG_PREFIX);
 
   if (ret <0) {
@@ -404,37 +385,45 @@ void log_getconfig(log_t *g_log)
   }
 
   /* build then read the debug and dump parameter array */
-  for (int i=0; log_maskmap[i].name != NULL ; i++) {
-    sprintf(logparams_debug[i].optname,  LOG_CONFIG_DEBUG_FORMAT, log_maskmap[i].name);
-    sprintf(logparams_dump[i].optname,   LOG_CONFIG_DUMP_FORMAT, log_maskmap[i].name);
-    logparams_debug[i].defuintval  = 0;
-    logparams_debug[i].type        = TYPE_UINT;
-    logparams_debug[i].paramflags  = PARAMFLAG_BOOL;
-    logparams_debug[i].uptr        = NULL;
-    logparams_debug[i].chkPptr     = NULL;
-    logparams_debug[i].numelt      = 0;
-    logparams_dump[i].defuintval  = 0;
-    logparams_dump[i].type        = TYPE_UINT;
-    logparams_dump[i].paramflags  = PARAMFLAG_BOOL;
-    logparams_dump[i].uptr        = NULL;
-    logparams_dump[i].chkPptr     = NULL;
-    logparams_dump[i].numelt      = 0;
+  int sz = 0;
+  for (const char *const *ptr = flag_name; strlen(*ptr) > 1; ptr++)
+    sz++;
+  paramdef_t logparams_debug[sz];
+  paramdef_t logparams_dump[sz];
+  for (int i = 0; i < sz; i++) {
+    logparams_debug[i] = (paramdef_t){
+        .type = TYPE_UINT,
+        .paramflags = PARAMFLAG_BOOL,
+    };
+    sprintf(logparams_debug[i].optname, LOG_CONFIG_DEBUG_FORMAT, flag_name[i]);
+    logparams_dump[i] = (paramdef_t){.type = TYPE_UINT, .paramflags = PARAMFLAG_BOOL};
+    sprintf(logparams_dump[i].optname, LOG_CONFIG_DUMP_FORMAT, flag_name[i]);
   }
 
-  config_get(config_get_if(), logparams_debug, sizeofArray(log_maskmap) - 1, CONFIG_STRING_LOG_PREFIX);
-  config_get(config_get_if(), logparams_dump, sizeofArray(log_maskmap) - 1, CONFIG_STRING_LOG_PREFIX);
+  config_get(config_get_if(), logparams_debug, sz, CONFIG_STRING_LOG_PREFIX);
+  config_get(config_get_if(), logparams_dump, sz, CONFIG_STRING_LOG_PREFIX);
 
-  if (config_check_unknown_cmdlineopt(config_get_if(), CONFIG_STRING_LOG_PREFIX) > 0)
+  bool old = CONFIG_ISFLAGSET(CONFIG_NOABORTONCHKF);
+  CONFIG_SETRTFLAG(CONFIG_NOABORTONCHKF);
+  if (config_check_unknown_cmdlineopt(config_get_if(), CONFIG_STRING_LOG_PREFIX) > 0) {
+    printf("Existing log_config options:\n");
+    printf("   Boolean options:\n");
+    for (int i = 0; i < sz; i++)
+      printf("      %s, \t%s\n", logparams_debug[i].optname, logparams_dump[i].optname);
+    printf("   Log level per module (");
+    for (int i = 0; log_level_names[i].name != NULL; i++)
+      printf("%s ", log_level_names[i].name);
+    printf(")\n");
+    for (int i = 0; i < MAX_LOG_PREDEF_COMPONENTS; i++)
+      printf("      %s\n", logparams_level[i].optname);
     exit(1);
-
-  /* set the debug mask according to the debug parameters values */
-  for (int i=0; log_maskmap[i].name != NULL ; i++) {
-    if (*(logparams_debug[i].uptr) )
-      g_log->debug_mask = g_log->debug_mask | log_maskmap[i].value;
-
-    if (*(logparams_dump[i].uptr) )
-      g_log->dump_mask = g_log->dump_mask | log_maskmap[i].value;
   }
+  if (!old)
+    CONFIG_CLEARRTFLAG(CONFIG_NOABORTONCHKF);
+  int i = 0;
+  FOREACH_FLAG(FLAG_SETDEBUG);
+  i = 0;
+  FOREACH_FLAG(FLAG_SETDUMP);
 
   /* log globally enabled/disabled */
   set_glog_onlinelog(consolelog);
@@ -513,11 +502,10 @@ int logInit (void)
     memset(&(g_log->log_component[i]),0,sizeof(log_component_t));
   }
 
-  AssertFatal(!((g_log->flag & FLAG_TIME) && (g_log->flag & FLAG_REAL_TIME)),
-		   "Invalid log options: time and wall_clock both set but are mutually exclusive\n");
+  AssertFatal(__builtin_popcount(g_log->flag & (FLAG_TIME | FLAG_REAL_TIME | FLAG_UTC_TIME)) <= 1,
+          "Invalid log options: time, wall_clock and utc_time are mutually exclusive\n");
 
   g_log->flag =  g_log->flag | FLAG_INITIALIZED;
-  printf("log init done\n");
   return 0;
 }
 
@@ -559,15 +547,24 @@ static inline int log_header(log_component_t *c,
     l[0] = 0;
 
   // output time information
-  char timeString[32];
-  if ((flag & FLAG_TIME) || (flag & FLAG_REAL_TIME)) {
+  char timeString[64];
+  if ((flag & FLAG_TIME) || (flag & FLAG_REAL_TIME) || (flag & FLAG_UTC_TIME)) {
     struct timespec t;
     const clockid_t clock = flag & FLAG_TIME ? CLOCK_MONOTONIC : CLOCK_REALTIME;
     if (clock_gettime(clock, &t) == -1)
+       abort();
+    if (flag & FLAG_UTC_TIME) {
+      struct tm utc_time;
+      if (gmtime_r(&t.tv_sec, &utc_time) == NULL)
         abort();
-    snprintf(timeString, sizeof(timeString), "%lu.%06lu ",
-             t.tv_sec,
-             t.tv_nsec / 1000);
+      snprintf(timeString, sizeof(timeString), "%04d-%02d-%02d %02d:%02d:%02d.%06lu UTC ",
+               utc_time.tm_year + 1900, utc_time.tm_mon + 1, utc_time.tm_mday,
+               utc_time.tm_hour, utc_time.tm_min, utc_time.tm_sec, t.tv_nsec / 1000);
+    } else {
+      snprintf(timeString, sizeof(timeString), "%lu.%06lu ",
+               t.tv_sec,
+               t.tv_nsec / 1000);
+    }
   } else {
     timeString[0] = 0;
   }
@@ -652,6 +649,10 @@ void log_dump(int component,
       wbuf=malloc((buffsize * 10)  + 64 + MAX_LOG_TOTAL);
       break;
 
+    case LOG_DUMP_C16:
+      wbuf = malloc((buffsize * 10) + 64 + MAX_LOG_TOTAL);
+      break;
+
     case LOG_DUMP_CHAR:
     default:
       wbuf=malloc((buffsize * 3 ) + 64 + MAX_LOG_TOTAL);
@@ -669,6 +670,21 @@ void log_dump(int component,
         case LOG_DUMP_DOUBLE:
           pos = pos + sprintf(wbuf+pos,"%04.4lf ", (double)((double *)buffer)[i]);
           break;
+
+        case LOG_DUMP_I16: {
+          int16_t *tmp = ((int16_t *)buffer) + i;
+          pos = pos + sprintf(wbuf + pos, "%d, ", *tmp);
+        } break;
+
+        case LOG_DUMP_C16: {
+          int16_t *tmp = ((int16_t *)buffer) + i * 2;
+          pos = pos + sprintf(wbuf + pos, "(%d,%d), ", *tmp, *(tmp + 1));
+        } break;
+
+        case LOG_DUMP_C32: {
+          int32_t *tmp = ((int32_t *)buffer) + i * 2;
+          pos = pos + sprintf(wbuf + pos, "(%d,%d), ", *tmp, *(tmp + 1));
+        } break;
 
         case LOG_DUMP_CHAR:
         default:
@@ -946,7 +962,6 @@ int logInit_log_mem (char * filename)
     return -1;
   }
   pthread_create(&log_mem_thread, NULL, (void *(*)(void *))flush_mem_to_file, (void *)NULL);
-  printf("log init done\n");
   
   return 0;
 }

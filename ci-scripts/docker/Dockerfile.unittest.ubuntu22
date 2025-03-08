@@ -25,12 +25,13 @@
 #
 #---------------------------------------------------------------------
 
-FROM ran-base:develop as ran-tests
+FROM ran-base:develop AS ran-tests
 
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get upgrade --yes && \
     DEBIAN_FRONTEND=noninteractive apt-get install --yes \
-        libgtest-dev
+        libgtest-dev \
+        libyaml-cpp-dev
 
 RUN rm -Rf /oai-ran
 WORKDIR /oai-ran

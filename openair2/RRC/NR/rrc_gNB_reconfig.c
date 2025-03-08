@@ -30,24 +30,15 @@
 #ifndef RRC_GNB_NSA_C
 #define RRC_GNB_NSA_C
 
-#include "NR_ServingCellConfigCommon.h"
-#include "NR_ServingCellConfig.h"
-#include "NR_RRCReconfiguration.h"
-#include "NR_RRCReconfiguration-IEs.h"
-#include "NR_CellGroupConfig.h"
-#include "NR_MAC-CellGroupConfig.h"
-#include "NR_BSR-Config.h"
-#include "NR_PDSCH-ServingCellConfig.h"
-#include "NR_RLC-BearerConfig.h"
-#include "BOOLEAN.h"
-#include "uper_encoder.h"
+#include <stdlib.h>
+
+#include "OCTET_STRING.h"
+#include "RRC/NR/nr_rrc_proto.h"
+#include "asn_codecs.h"
 #include "assertions.h"
+#include "constr_TYPE.h"
 #include "oai_asn1.h"
-#include "common/utils/nr/nr_common.h"
-#include "executables/softmodem-common.h"
-#include "LAYER2/nr_rlc/nr_rlc_oai_api.h"
-#include "nr_rrc_config.h"
-#include "MESSAGES/asn1_msg.h"
+#include "uper_encoder.h"
 
 NR_RRCReconfiguration_IEs_t *get_default_reconfig(const NR_CellGroupConfig_t *secondaryCellGroup)
 {

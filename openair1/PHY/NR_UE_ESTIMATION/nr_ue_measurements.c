@@ -113,7 +113,7 @@ void nr_ue_measurements(PHY_VARS_NR_UE *ue,
       ue->measurements.rx_power[gNB_id][aarx] = 0;
 
       for (aatx = 0; aatx < frame_parms->nb_antenna_ports_gNB; aatx++){
-        const int z=signal_energy_nodc(&dl_ch_estimates[gNB_id][ch_offset], N_RB_DL * NR_NB_SC_PER_RB);
+        const int z=signal_energy_nodc((c16_t*)&dl_ch_estimates[gNB_id][ch_offset], N_RB_DL * NR_NB_SC_PER_RB);
         rx_spatial_power[gNB_id][aatx][aarx] = z;
 
         if (rx_spatial_power[gNB_id][aatx][aarx] < 0)
@@ -170,6 +170,50 @@ void nr_ue_measurements(PHY_VARS_NR_UE *ue,
   }
 }
 
+// This function calculates:
+// - SS reference signal received digital power in dB/RE
+int nr_ue_calculate_ssb_rsrp(const NR_DL_FRAME_PARMS *fp,
+                             const UE_nr_rxtx_proc_t *proc,
+                             const c16_t rxdataF[][fp->samples_per_slot_wCP],
+                             int symbol_offset,
+                             int ssb_start_subcarrier)
+{
+  int k_start = 56;
+  int k_end   = 183;
+  unsigned int ssb_offset = fp->first_carrier_offset + ssb_start_subcarrier;
+
+  uint8_t l_sss = (symbol_offset + 2) % fp->symbols_per_slot;
+
+  uint32_t rsrp = 0;
+
+  LOG_D(PHY, "In %s: l_sss %d ssb_offset %d\n", __FUNCTION__, l_sss, ssb_offset);
+  int nb_re = 0;
+
+  for (int aarx = 0; aarx < fp->nb_antennas_rx; aarx++) {
+    int16_t *rxF_sss = (int16_t *)&rxdataF[aarx][l_sss * fp->ofdm_symbol_size];
+
+    for(int k = k_start; k < k_end; k++){
+      int re = (ssb_offset + k) % fp->ofdm_symbol_size;
+
+#ifdef DEBUG_MEAS_UE
+      LOG_I(PHY, "In %s rxF_sss[%d] %d %d\n", __FUNCTION__, re, rxF_sss[re * 2], rxF_sss[re * 2 + 1]);
+#endif
+
+      rsrp += (((int32_t)rxF_sss[re*2]*rxF_sss[re*2]) + ((int32_t)rxF_sss[re*2 + 1]*rxF_sss[re*2 + 1]));
+      nb_re++;
+
+    }
+  }
+
+  rsrp /= nb_re;
+
+  LOG_D(PHY, "In %s: RSRP/nb_re: %d nb_re :%d\n", __FUNCTION__, rsrp, nb_re);
+
+  int rsrp_db_per_re = 10 * log10(rsrp);
+
+  return rsrp_db_per_re;
+}
+
 // This function implements:
 // - SS reference signal received power (SS-RSRP) as per clause 5.1.1 of 3GPP TS 38.215 version 16.3.0 Release 16
 // - no Layer 3 filtering implemented (no filterCoefficient provided from RRC)
@@ -183,52 +227,27 @@ void nr_ue_ssb_rsrp_measurements(PHY_VARS_NR_UE *ue,
                                  const UE_nr_rxtx_proc_t *proc,
                                  c16_t rxdataF[][ue->frame_parms.samples_per_slot_wCP])
 {
-  int k_start = 56;
-  int k_end   = 183;
-  int slot = proc->nr_slot_rx;
-  unsigned int ssb_offset = ue->frame_parms.first_carrier_offset + ue->frame_parms.ssb_start_subcarrier;
-  int symbol_offset = nr_get_ssb_start_symbol(&ue->frame_parms,ssb_index);
+  NR_DL_FRAME_PARMS *fp = &ue->frame_parms;
 
-  if (ue->frame_parms.half_frame_bit)
-    symbol_offset += (ue->frame_parms.slots_per_frame>>1)*ue->frame_parms.symbols_per_slot;
+  int symbol_offset = nr_get_ssb_start_symbol(fp, ssb_index);
 
-  uint8_t l_sss = (symbol_offset + 2) % ue->frame_parms.symbols_per_slot;
+  if (fp->half_frame_bit)
+    symbol_offset += (fp->slots_per_frame >> 1) * fp->symbols_per_slot;
 
-  uint32_t rsrp = 0;
+  int rsrp_db_per_re = nr_ue_calculate_ssb_rsrp(fp, proc, rxdataF, symbol_offset, fp->ssb_start_subcarrier);
 
-  LOG_D(PHY, "In %s: [UE %d] slot %d l_sss %d ssb_offset %d\n", __FUNCTION__, ue->Mod_id, slot, l_sss, ssb_offset);
-  int nb_re = 0;
+  openair0_config_t *cfg0 = &openair0_cfg[0];
 
-  for (int aarx = 0; aarx < ue->frame_parms.nb_antennas_rx; aarx++) {
+  ue->measurements.ssb_rsrp_dBm[ssb_index] = rsrp_db_per_re + 30 - SQ15_SQUARED_NORM_FACTOR_DB
+                                             - ((int)cfg0->rx_gain[0] - (int)cfg0->rx_gain_offset[0])
+                                             - dB_fixed(fp->ofdm_symbol_size);
 
-    int16_t *rxF_sss = (int16_t *)&rxdataF[aarx][l_sss*ue->frame_parms.ofdm_symbol_size];
-
-    for(int k = k_start; k < k_end; k++){
-
-      int re = (ssb_offset + k) % ue->frame_parms.ofdm_symbol_size;
-
-#ifdef DEBUG_MEAS_UE
-      LOG_I(PHY, "In %s rxF_sss %d %d\n", __FUNCTION__, rxF_sss[re*2], rxF_sss[re*2 + 1]);
-#endif
-
-      rsrp += (((int32_t)rxF_sss[re*2]*rxF_sss[re*2]) + ((int32_t)rxF_sss[re*2 + 1]*rxF_sss[re*2 + 1]));
-      nb_re++;
-
-    }
-  }
-
-  rsrp /= nb_re;
-  ue->measurements.ssb_rsrp_dBm[ssb_index] = 10*log10(rsrp) +
-                                             30 - SQ15_SQUARED_NORM_FACTOR_DB -
-                                             ((int)openair0_cfg[0].rx_gain[0] - (int)openair0_cfg[0].rx_gain_offset[0]) -
-                                             dB_fixed(ue->frame_parms.ofdm_symbol_size);
-
-  LOG_D(PHY, "In %s: [UE %d] ssb %d SS-RSRP: %d dBm/RE (%d)\n",
-    __FUNCTION__,
-    ue->Mod_id,
-    ssb_index,
-    ue->measurements.ssb_rsrp_dBm[ssb_index],
-    rsrp);
+  LOG_D(PHY,
+        "[UE %d] ssb %d SS-RSRP: %d dBm/RE (%d dB/RE)\n",
+        ue->Mod_id,
+        ssb_index,
+        ue->measurements.ssb_rsrp_dBm[ssb_index],
+        rsrp_db_per_re);
 }
 
 // This function computes the received noise power
@@ -310,11 +329,17 @@ void nr_ue_rrc_measurements(PHY_VARS_NR_UE *ue,
             - ((int)rx_gain - (int)rx_gain_offset));
 }
 
-// PSBCH RSRP calculations according to 38.215 section 5.1.22
-void nr_sl_psbch_rsrp_measurements(sl_nr_ue_phy_params_t *sl_phy_params,
-                                   NR_DL_FRAME_PARMS *fp,
-                                   c16_t rxdataF[][fp->samples_per_slot_wCP],
-                                   bool use_SSS)
+// This function implements:
+// - PSBCH RSRP calculations according to 38.215 section 5.1.22 Release 16
+// - PSBCH DMRS used for calculations
+// - TBD: SSS REs for calculation.
+// Measurement units:
+// - RSRP:    W (dBW)
+// returns RXgain to be adjusted based on target rx power (50db) - received digital power in db/RE
+int nr_sl_psbch_rsrp_measurements(sl_nr_ue_phy_params_t *sl_phy_params,
+                                  NR_DL_FRAME_PARMS *fp,
+                                  c16_t rxdataF[][fp->samples_per_slot_wCP],
+                                  bool use_SSS)
 {
   SL_NR_UE_PSBCH_t *psbch_rx = &sl_phy_params->psbch;
   uint8_t numsym = (fp->Ncp) ? SL_NR_NUM_SYMBOLS_SSB_EXT_CP : SL_NR_NUM_SYMBOLS_SSB_NORMAL_CP;
@@ -351,9 +376,14 @@ void nr_sl_psbch_rsrp_measurements(sl_nr_ue_phy_params_t *sl_phy_params,
                               - ((int)openair0_cfg[0].rx_gain[0] - (int)openair0_cfg[0].rx_gain_offset[0])
                               - dB_fixed(fp->ofdm_symbol_size);
 
+  int adjust_rxgain = TARGET_RX_POWER - psbch_rx->rsrp_dB_per_RE;
+
   LOG_D(PHY,
-        "PSBCH RSRP (DMRS REs): numREs:%d RSRP :%d dB/RE ,RSRP:%d dBm/RE\n",
+        "PSBCH RSRP (DMRS REs): numREs:%d RSRP :%d dB/RE ,RSRP:%d dBm/RE, adjust_rxgain:%d dB\n",
         num_re,
         psbch_rx->rsrp_dB_per_RE,
-        psbch_rx->rsrp_dBm_per_RE);
+        psbch_rx->rsrp_dBm_per_RE,
+        adjust_rxgain);
+
+  return adjust_rxgain;
 }

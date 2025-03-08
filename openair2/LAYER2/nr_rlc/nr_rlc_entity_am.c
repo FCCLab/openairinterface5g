@@ -28,6 +28,7 @@
 
 #include "LOG/log.h"
 #include "common/utils/time_stat.h"
+#include "common/utils/assertions.h"
 
 /* for a given SDU/SDU segment, computes the corresponding PDU header size */
 static int compute_pdu_header_size(nr_rlc_entity_am_t *entity,
@@ -54,7 +55,7 @@ static int modulus_rx(nr_rlc_entity_am_t *entity, int a)
   return r;
 }
 
-static int modulus_tx(nr_rlc_entity_am_t *entity, int a)
+static inline int modulus_tx(nr_rlc_entity_am_t *entity, int a)
 {
   int r = a - entity->tx_next_ack;
   if (r < 0) r += entity->sn_modulus;
@@ -75,10 +76,36 @@ static int sn_compare_rx(void *_entity, int a, int b)
   return modulus_rx(entity, a) - modulus_rx(entity, b);
 }
 
-static int sn_compare_tx(void *_entity, int a, int b)
+static inline int sn_compare_tx(void *_entity, int a, int b)
 {
   nr_rlc_entity_am_t *entity = _entity;
   return modulus_tx(entity, a) - modulus_tx(entity, b);
+}
+
+nr_rlc_sdu_segment_t *nr_rlc_tx_sdu_segment_list_add(nr_rlc_entity_am_t *entity,
+    nr_rlc_sdu_segment_t *list, nr_rlc_sdu_segment_t *sdu_segment)
+{
+  nr_rlc_sdu_segment_t head;
+  nr_rlc_sdu_segment_t *cur;
+  nr_rlc_sdu_segment_t *prev;
+
+  head.next = list;
+  cur = list;
+  prev = &head;
+
+  /* order is by 'sn', if 'sn' is the same then order is by 'so' */
+  while (cur != NULL) {
+    /* check if 'sdu_segment' is before 'cur' in the list */
+    if (sn_compare_tx(entity, cur->sdu->sn, sdu_segment->sdu->sn) > 0 ||
+        (cur->sdu->sn == sdu_segment->sdu->sn && cur->so > sdu_segment->so)) {
+      break;
+    }
+    prev = cur;
+    cur = cur->next;
+  }
+  prev->next = sdu_segment;
+  sdu_segment->next = cur;
+  return head.next;
 }
 
 static int segment_already_received(nr_rlc_entity_am_t *entity,
@@ -767,8 +794,10 @@ void nr_rlc_entity_am_recv_pdu(nr_rlc_entity_t *_entity,
   nr_rlc_pdu_decoder_init(&decoder, buffer, size);
   dc = nr_rlc_pdu_decoder_get_bits(&decoder, 1); R(decoder);
 
-  if (dc == 0)
+  if (dc == 0) {
+    LOG_D(RLC, "RLC received control PDU\n");
     return process_control_pdu(entity, buffer, size);
+  }
 
   /* data PDU */
   p  = nr_rlc_pdu_decoder_get_bits(&decoder, 1); R(decoder);
@@ -839,6 +868,7 @@ void nr_rlc_entity_am_recv_pdu(nr_rlc_entity_t *_entity,
                                         entity->rx_list, pdu);
 
   /* do reception actions (38.322 5.2.3.2.3) */
+  LOG_D(RLC, "RLC received PDU sn %d so %d is_first %d is_last %d data_size = %d \n", sn, so, is_first, is_last, data_size);
   reception_actions(entity, pdu);
 
   if (p) {
@@ -852,15 +882,14 @@ void nr_rlc_entity_am_recv_pdu(nr_rlc_entity_t *_entity,
     entity->status_triggered = 1;
     if (!(sn_compare_rx(entity, sn, entity->rx_highest_status) < 0 ||
           sn_compare_rx(entity, sn, v) >= 0)) {
-      LOG_D(RLC, "%s:%d:%s: warning: STATUS trigger should be delayed, according to specs\n",
-            __FILE__, __LINE__, __FUNCTION__);
+      LOG_D(RLC, "warning: STATUS triggerered but should be delayed according to specs\n");
     }
   }
 
   return;
 
 err:
-  LOG_W(RLC, "%s:%d:%s: error decoding PDU, discarding\n", __FILE__, __LINE__, __FUNCTION__);
+  LOG_W(RLC, "RX error decoding PDU, discarding\n");
   goto discard;
 
 discard:
@@ -978,10 +1007,7 @@ static nr_rlc_sdu_segment_t *resegment(nr_rlc_sdu_segment_t *sdu,
   pdu_header_size = compute_pdu_header_size(entity, sdu);
 
   next = calloc(1, sizeof(nr_rlc_sdu_segment_t));
-  if (next == NULL) {
-    LOG_E(RLC, "%s:%d:%s: out of memory\n", __FILE__, __LINE__,  __FUNCTION__);
-    exit(1);
-  }
+  AssertFatal(next != NULL, "out of memory\n");
   *next = *sdu;
 
   over_size = pdu_header_size + sdu->size - pdu_size;
@@ -994,7 +1020,6 @@ static nr_rlc_sdu_segment_t *resegment(nr_rlc_sdu_segment_t *sdu,
   next->size = over_size;
   next->so = sdu->so + sdu->size;
   next->is_first = 0;
-
   return next;
 }
 
@@ -1581,7 +1606,7 @@ static int generate_retx_pdu(nr_rlc_entity_am_t *entity, char *buffer,
           && sdu->so > entity->wait_end->so))
     nr_rlc_sdu_segment_list_append(&entity->wait_list, &entity->wait_end, sdu);
   else {
-    entity->wait_list = nr_rlc_sdu_segment_list_add(sn_compare_tx, entity,
+    entity->wait_list = nr_rlc_tx_sdu_segment_list_add(entity,
                             entity->wait_list, sdu);
     if (entity->wait_list->next == NULL)
       entity->wait_end = entity->wait_list;
@@ -1593,6 +1618,8 @@ static int generate_retx_pdu(nr_rlc_entity_am_t *entity, char *buffer,
     p = 1;
     entity->force_poll = 0;
   }
+
+  LOG_D(RLC, "RLC TX: sending sdu sn = %d is_first = %d, is_last = %d size = %d\n", sdu->sdu->sn,  sdu->is_first, sdu->is_last, size);
 
   int ret_size = serialize_sdu(entity, sdu, buffer, size, p);
   entity->common.stats.txpdu_pkts++;
@@ -1612,11 +1639,14 @@ static int generate_tx_pdu(nr_rlc_entity_am_t *entity, char *buffer, int size)
   int p;
 
   /* sn out of window (that is: we have window stalling)? do nothing */
-  if (is_window_stalling(entity))
+  if (is_window_stalling(entity)) {
+    LOG_D(RLC, "Abort transmit due to window stall\n");
     return 0;
+  }
 
-  if (entity->tx_list == NULL)
+  if (entity->tx_list == NULL) {
     return 0;
+  }
 
   sdu = entity->tx_list;
 
@@ -1645,6 +1675,7 @@ static int generate_tx_pdu(nr_rlc_entity_am_t *entity, char *buffer, int size)
 
   /* segment if necessary */
   if (pdu_size > size) {
+    LOG_D(RLC, "Segmentation (header %d + data %d) / (%d)\n", pdu_header_size, size - pdu_header_size, pdu_size - pdu_header_size);
     nr_rlc_sdu_segment_t *next_sdu;
     next_sdu = resegment(sdu, entity, size);
     /* put the second SDU back at the head of the TX list */
@@ -1667,7 +1698,7 @@ static int generate_tx_pdu(nr_rlc_entity_am_t *entity, char *buffer, int size)
           && sdu->so > entity->wait_end->so))
     nr_rlc_sdu_segment_list_append(&entity->wait_list, &entity->wait_end, sdu);
   else {
-    entity->wait_list = nr_rlc_sdu_segment_list_add(sn_compare_tx, entity,
+    entity->wait_list = nr_rlc_tx_sdu_segment_list_add(entity,
                             entity->wait_list, sdu);
     if (entity->wait_list->next == NULL)
       entity->wait_end = entity->wait_list;
@@ -1693,13 +1724,21 @@ static int generate_tx_pdu(nr_rlc_entity_am_t *entity, char *buffer, int size)
   entity->common.stats.txpdu_pkts++;
   entity->common.stats.txpdu_bytes += ret_size;
 
-  /* No need to 'zero' time-of-arrival; 
+  /* No need to 'zero' time-of-arrival;
   Segmented packets do need to be duplicated in time-sensitive use cases */
   if (entity->common.avg_time_is_on) {
     uint64_t time_now = time_average_now();
     uint64_t waited_time = time_now - sdu->sdu->time_of_arrival;
     time_average_add(entity->common.txsdu_avg_time_to_tx, time_now, waited_time);
   }
+
+  LOG_D(RLC,
+        "RLC TX: sending sdu sn = %d is_first = %d, is_last = %d header size = %d data size = %d\n",
+        sdu->sdu->sn,
+        sdu->is_first,
+        sdu->is_last,
+        pdu_header_size,
+        size - pdu_header_size);
 
   return ret_size;
 //  return serialize_sdu(entity, sdu, buffer, size, p);
@@ -1730,14 +1769,18 @@ int nr_rlc_entity_am_generate_pdu(nr_rlc_entity_t *_entity,
 
   if (status_to_report(entity)) {
     ret = generate_status(entity, buffer, size);
-    if (ret != 0)
+    if (ret != 0) {
+      LOG_D(RLC, "RLC transmit status pdu PDU\n");
       return ret;
+    }
   }
 
   if (entity->retransmit_list != NULL) {
     ret = generate_retx_pdu(entity, buffer, size);
-    if (ret != 0)
+    if (ret != 0) {
+      LOG_D(RLC, "RLC retransmit PDU\n");
       return ret;
+    }
   }
 
   return generate_tx_pdu(entity, buffer, size);
@@ -1756,18 +1799,12 @@ void nr_rlc_entity_am_recv_sdu(nr_rlc_entity_t *_entity,
 
   entity->common.stats.rxsdu_pkts++;
 
-  if (size > NR_SDU_MAX) {
-    LOG_E(RLC, "%s:%d:%s: fatal: SDU size too big (%d bytes)\n",
-          __FILE__, __LINE__, __FUNCTION__, size);
-    exit(1);
-  }
+  AssertFatal(size <= NR_SDU_MAX, "Fatal: SDU size too big (%d bytes)\n", size);
 
   /* log SDUs rejected, at most once per second */
   if (entity->sdu_rejected != 0
       && entity->t_current > entity->t_log_buffer_full + 1000) {
-    LOG_E(RLC, "%s:%d:%s: warning: %d SDU rejected, SDU buffer full\n",
-          __FILE__, __LINE__, __FUNCTION__,
-          entity->sdu_rejected);
+    LOG_E(RLC, "%d SDU rejected, SDU buffer full\n", entity->sdu_rejected);
     entity->sdu_rejected = 0;
     entity->t_log_buffer_full = entity->t_current;
   }
@@ -1870,7 +1907,7 @@ static void check_t_poll_retransmit(nr_rlc_entity_am_t *entity)
           cur->sdu->sn, cur->so, cur->size, cur->sdu->retx_count);
 
     /* put in retransmit list */
-    entity->retransmit_list = nr_rlc_sdu_segment_list_add(sn_compare_tx, entity,
+    entity->retransmit_list = nr_rlc_tx_sdu_segment_list_add(entity,
                                   entity->retransmit_list, cur);
 
     cur = entity->wait_list;
@@ -2053,3 +2090,4 @@ int nr_rlc_entity_am_available_tx_space(nr_rlc_entity_t *_entity)
   nr_rlc_entity_am_t *entity = (nr_rlc_entity_am_t *)_entity;
   return entity->tx_maxsize - entity->tx_size;
 }
+

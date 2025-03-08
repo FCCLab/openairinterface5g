@@ -22,11 +22,12 @@
 #ifndef _NR_SDAP_ENTITY_H_
 #define _NR_SDAP_ENTITY_H_
 
-#include <stdint.h>
+#include <assertions.h>
 #include <stdbool.h>
-#include "common/platform_types.h"
-#include "openair2/LAYER2/nr_pdcp/nr_pdcp_entity.h"
-#include "NR_RadioBearerConfig.h"
+#include <stdint.h>
+#include "NR_QFI.h"
+#include "NR_SDAP-Config.h"
+#include "common/platform_constants.h"
 
 #define SDAP_BITMASK_DC             (0x80)
 #define SDAP_BITMASK_R              (0x40)

@@ -95,5 +95,7 @@ void read_gtp_setup_sm(void* data)
 sm_ag_if_ans_t write_ctrl_gtp_sm(void const* src)
 {
   assert(src != NULL);
-  assert(0 !=0 && "Not supported");
+  printf("write_ctrl callback for GTP SM: operation not supported\n");
+  sm_ag_if_ans_t ans = {0};
+  return ans;
 }

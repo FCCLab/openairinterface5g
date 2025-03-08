@@ -103,7 +103,7 @@ of wireshark. Adapt as necessary.
 2) Then, in the menu, choose `Edit->Preferences`.
 3) In the preference window, unroll `Protocols` and configure the following:
 
-**MAC**
+**MAC-NR**
 
 Go to `MAC-NR`. Select:
 
@@ -117,7 +117,7 @@ For `Source of LCID -> drb channel settings`:
 Type `AM, SN Len=18`, same thing for DL RLC Bearer Type.
 * Click OK.
 
-**RLC**
+**RLC-NR**
 
 Now, go to `RLC-NR`. Select:
 
@@ -129,7 +129,7 @@ Now, go to `RLC-NR`. Select:
 You don't need to select `May see RLC headers only` and
 `Try to reassemble UM frames`.
 
-**PDCP**
+**PDCP-NR**
 
 Now, go to `PDCP-NR`. Select what you need in there.
 
@@ -145,6 +145,12 @@ You are done with the preferences. You can click OK.
 
 4) Then, in the menu `Analyze`, choose `Enabled Protocols...`.
 5) In the new window search for `nr` and select `mac_nr_udp` to have `MAC-NR over UDP`.
+
+**NAS-5GS**
+
+Under `NAS-5GS`, select:
+
+* `Try to detect and decode 5G-EA0 ciphered messages`
 
 And that's it. Maybe other settings can be changed, but those steps should be
 enough for a start.

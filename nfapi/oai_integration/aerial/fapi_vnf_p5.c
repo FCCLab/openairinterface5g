@@ -29,7 +29,7 @@
 * \note
 * \warning
  */
-#ifdef ENABLE_AERIAL
+
 #include "fapi_vnf_p5.h"
 #include "fapi_vnf_p7.h"
 #include "nfapi/open-nFAPI/vnf/inc/vnf_p7.h"
@@ -38,9 +38,8 @@
 
 extern RAN_CONTEXT_t RC;
 extern UL_RCC_IND_t UL_RCC_INFO;
-extern uint16_t sf_ahead;
-extern uint16_t slot_ahead;
-
+extern int sf_ahead;
+extern int slot_ahead;
 
 void *aerial_vnf_nr_p7_config_init(void *ptr)
 {
@@ -50,22 +49,21 @@ void *aerial_vnf_nr_p7_config_init(void *ptr)
   init_queue(&gnb_rx_ind_queue);
   init_queue(&gnb_crc_ind_queue);
   init_queue(&gnb_uci_ind_queue);
-  init_queue(&gnb_slot_ind_queue);
 
   p7_vnf->config->port = p7_vnf->local_port;
-  p7_vnf->config->sync_indication = &aerial_phy_sync_indication;
-  p7_vnf->config->slot_indication = &aerial_phy_slot_indication;
-  p7_vnf->config->harq_indication = &aerial_phy_harq_indication;
+  p7_vnf->config->sync_indication = NULL;
+  p7_vnf->config->slot_indication = NULL;
+  p7_vnf->config->harq_indication = NULL;
   p7_vnf->config->nr_crc_indication = &aerial_phy_nr_crc_indication;
   p7_vnf->config->nr_rx_data_indication = &aerial_phy_nr_rx_data_indication;
   p7_vnf->config->nr_rach_indication = &aerial_phy_nr_rach_indication;
   p7_vnf->config->nr_uci_indication = &aerial_phy_nr_uci_indication;
-  p7_vnf->config->srs_indication = &aerial_phy_srs_indication;
-  p7_vnf->config->sr_indication = &aerial_phy_sr_indication;
-  p7_vnf->config->cqi_indication = &aerial_phy_cqi_indication;
-  p7_vnf->config->lbt_dl_indication = &aerial_phy_lbt_dl_indication;
-  p7_vnf->config->nb_harq_indication = &aerial_phy_nb_harq_indication;
-  p7_vnf->config->nrach_indication = &aerial_phy_nrach_indication;
+  p7_vnf->config->srs_indication = NULL;
+  p7_vnf->config->sr_indication = NULL;
+  p7_vnf->config->cqi_indication = NULL;
+  p7_vnf->config->lbt_dl_indication = NULL;
+  p7_vnf->config->nb_harq_indication = NULL;
+  p7_vnf->config->nrach_indication = NULL;
   p7_vnf->config->nr_slot_indication = &aerial_phy_nr_slot_indication;
   p7_vnf->config->nr_srs_indication = &aerial_phy_nr_srs_indication;
   p7_vnf->config->malloc = &aerial_vnf_allocate;
@@ -283,7 +281,7 @@ int aerial_nr_send_config_request(nfapi_vnf_config_t *config, int p5_idx)
   pnf_info *pnf = vnf->pnfs;
   phy_info *phy = pnf->phys;
 
-  nfapi_nr_config_request_scf_t *req = &RC.nrmac[0]->config[0]; //&RC.gNB[0]->gNB_config; // check
+  nfapi_nr_config_request_scf_t *req = &RC.nrmac[0]->config[0];
 
   NFAPI_TRACE(NFAPI_TRACE_INFO,
               "[VNF] %d.%d pnf p7 %s:%d timing %u %u %u %u\n",
@@ -299,7 +297,6 @@ int aerial_nr_send_config_request(nfapi_vnf_config_t *config, int p5_idx)
   req->header.phy_id = phy->id;
   NFAPI_TRACE(NFAPI_TRACE_INFO, "[VNF] Send NFAPI_CONFIG_REQUEST\n");
 
-
   vnf_t *_this = (vnf_t *)(config);
 
   nfapi_vnf_phy_info_t *vnf_phy = nfapi_vnf_phy_info_list_find(config, req->header.phy_id);
@@ -309,7 +306,7 @@ int aerial_nr_send_config_request(nfapi_vnf_config_t *config, int p5_idx)
     return -1;
   }
 
-  nfapi_p4_p5_message_header_t *msg = &req->header;
+  nfapi_nr_p4_p5_message_header_t *msg = &req->header;
   uint16_t msg_len = sizeof(nfapi_nr_config_request_scf_t);
   uint8_t tx_messagebufferFAPI[sizeof(_this->tx_message_buffer)];
   int packedMessageLengthFAPI = -1;
@@ -337,28 +334,22 @@ int aerial_nr_config_resp_cb(nfapi_vnf_config_t *config, int p5_idx, nfapi_nr_co
 int aerial_nr_start_resp_cb(nfapi_vnf_config_t *config, int p5_idx, nfapi_nr_start_response_scf_t *resp)
 {
   NFAPI_TRACE(NFAPI_TRACE_INFO, "[VNF] Received NFAPI_START_RESP idx:%d phy_id:%d\n", p5_idx, resp->header.phy_id);
-  vnf_info *vnf = (vnf_info *)(config->user_data);
-  pnf_info *pnf = vnf->pnfs;
-  phy_info *phy = pnf->phys;
-  vnf_p7_info *p7_vnf = vnf->p7_vnfs;
-
-  nfapi_vnf_p7_add_pnf((p7_vnf->config), phy->remote_addr, phy->remote_port, phy->id);
   return 0;
 }
 
-int aerial_vendor_ext_cb(nfapi_vnf_config_t *config, int p5_idx, nfapi_p4_p5_message_header_t *msg)
+int aerial_vendor_ext_cb(nfapi_vnf_config_t *config, int p5_idx, void *msg)
 {
   NFAPI_TRACE(NFAPI_TRACE_INFO, "[VNF] %s\n", __FUNCTION__);
 
-  switch (msg->message_id) {
+  switch (((nfapi_nr_p4_p5_message_header_t *)msg)->message_id) {
     case P5_VENDOR_EXT_RSP: {
       vendor_ext_p5_rsp *rsp = (vendor_ext_p5_rsp *)msg;
       NFAPI_TRACE(NFAPI_TRACE_INFO, "[VNF] P5_VENDOR_EXT_RSP error_code:%d\n", rsp->error_code);
       // send the start request
-      nfapi_pnf_start_request_t req;
+      nfapi_nr_pnf_start_request_t req;
       memset(&req, 0, sizeof(req));
       req.header.message_id = NFAPI_PNF_START_REQUEST;
-      nfapi_vnf_pnf_start_req(config, p5_idx, &req);
+      nfapi_nr_vnf_pnf_start_req(config, p5_idx, &req);
     } break;
   }
 
@@ -392,12 +383,12 @@ int aerial_vnf_pack_vendor_extension_tlv(void *vext, uint8_t **ppWritePackedMsg,
   return -1;
 }
 
-int aerial_vnf_unpack_p4_p5_vendor_extension(nfapi_p4_p5_message_header_t *header,
+int aerial_vnf_unpack_p4_p5_vendor_extension(void *header,
                                              uint8_t **ppReadPackedMessage,
                                              uint8_t *end,
                                              nfapi_p4_p5_codec_config_t *codec)
 {
-  if (header->message_id == P5_VENDOR_EXT_RSP) {
+  if (((nfapi_nr_p4_p5_message_header_t *)header)->message_id == P5_VENDOR_EXT_RSP) {
     vendor_ext_p5_rsp *req = (vendor_ext_p5_rsp *)(header);
     return (!pull16(ppReadPackedMessage, &req->error_code, end));
   }
@@ -405,12 +396,12 @@ int aerial_vnf_unpack_p4_p5_vendor_extension(nfapi_p4_p5_message_header_t *heade
   return 0;
 }
 
-int aerial_vnf_pack_p4_p5_vendor_extension(nfapi_p4_p5_message_header_t *header,
+int aerial_vnf_pack_p4_p5_vendor_extension(void *header,
                                            uint8_t **ppWritePackedMsg,
                                            uint8_t *end,
                                            nfapi_p4_p5_codec_config_t *codec)
 {
-  if (header->message_id == P5_VENDOR_EXT_REQ) {
+  if (((nfapi_nr_p4_p5_message_header_t *)header)->message_id == P5_VENDOR_EXT_REQ) {
     vendor_ext_p5_req *req = (vendor_ext_p5_req *)(header);
     return (!(push16(req->dummy1, ppWritePackedMsg, end) && push16(req->dummy2, ppWritePackedMsg, end)));
   }
@@ -418,17 +409,17 @@ int aerial_vnf_pack_p4_p5_vendor_extension(nfapi_p4_p5_message_header_t *header,
   return 0;
 }
 
-nfapi_p4_p5_message_header_t *aerial_vnf_allocate_p4_p5_vendor_ext(uint16_t message_id, uint16_t *msg_size)
+void *aerial_vnf_allocate_p4_p5_vendor_ext(uint16_t message_id, uint16_t *msg_size)
 {
   if (message_id == P5_VENDOR_EXT_RSP) {
     *msg_size = sizeof(vendor_ext_p5_rsp);
-    return (nfapi_p4_p5_message_header_t *)malloc(sizeof(vendor_ext_p5_rsp));
+    return malloc(sizeof(vendor_ext_p5_rsp));
   }
 
   return 0;
 }
 
-void aerial_vnf_deallocate_p4_p5_vendor_ext(nfapi_p4_p5_message_header_t *header)
+void aerial_vnf_deallocate_p4_p5_vendor_ext(void *header)
 {
   free(header);
 }
@@ -617,4 +608,3 @@ int oai_fapi_send_end_request(int cell, uint32_t frame, uint32_t slot){
   }
   return retval;
 }
-#endif

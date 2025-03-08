@@ -58,6 +58,8 @@ def eNB_CommitID
 def eNB_AllowMergeRequestProcess = false
 def eNB_TargetBranch
 
+def flexricOption = ""
+
 pipeline {
     agent {
         label pythonExecutor
@@ -148,18 +150,24 @@ pipeline {
                         allParametersPresent = false
                     }
 
+                    if (params.Flexric_Tag != null) {
+                        echo "This pipeline is configured to run with a FlexRIC deployment."
+                        echo "Appending FlexRicTag option to the list of options"
+                        flexricOption = "--FlexRicTag=${params.Flexric_Tag}"
+                        echo "Using new Flexric option: ${flexricOption}"
+                    }
+
                     if (allParametersPresent) {
                         echo "All parameters are present"
                         if (eNB_AllowMergeRequestProcess) {
                             sh "git fetch"
                             sh "./ci-scripts/doGitLabMerge.sh --src-branch ${eNB_Branch} --src-commit ${eNB_CommitID} --target-branch ${eNB_TargetBranch} --target-commit latest"
-                        } else {
+                        } else if (eNB_CommitID != 'develop') {
                             sh "git fetch"
                             sh "git checkout -f ${eNB_CommitID}"
                         }
                     } else {
-                        echo "Some parameters are missing"
-                        sh "./ci-scripts/fail.sh"
+                        error "Some parameters are missing"
                     }
                 }
             }
@@ -181,6 +189,8 @@ pipeline {
                                 if (fileExists(xmlFile)) {
                                     mainPythonAllXmlFiles += "--XMLTestFile=" + xmlFile + " "
                                     echo "Test XML file         :   ${xmlFile}"
+                                } else {
+                                    echo "Test XML file ${xmlFile}: no such file"
                                 }
                             }
                         }
@@ -188,13 +198,13 @@ pipeline {
                             [$class: 'UsernamePasswordMultiBinding', credentialsId: "${params.eNB_Credentials}", usernameVariable: 'eNB_Username', passwordVariable: 'eNB_Password'],
                             [$class: 'UsernamePasswordMultiBinding', credentialsId: "${params.EPC_Credentials}", usernameVariable: 'EPC_Username', passwordVariable: 'EPC_Password'],
                         ]) {
-                            sh "python3 main.py --mode=InitiateHtml --ranRepository=${eNB_Repository} --ranBranch=${eNB_Branch} --ranCommitID=${eNB_CommitID} --ranAllowMerge=${eNB_AllowMergeRequestProcess} --ranTargetBranch=${eNB_TargetBranch} ${mainPythonAllXmlFiles}"
+                            sh "python3 main.py --mode=InitiateHtml --ranRepository=${eNB_Repository} --ranBranch=${eNB_Branch} --ranCommitID=${eNB_CommitID} --ranAllowMerge=${eNB_AllowMergeRequestProcess} --ranTargetBranch=${eNB_TargetBranch} ${flexricOption} ${mainPythonAllXmlFiles}"
                             String[] myXmlTestSuite = testXMLFile.split("\\r?\\n")
                             for (xmlFile in myXmlTestSuite) {
                             if (fileExists(xmlFile)) {
                                 try {
                                   timeout (time: 60, unit: 'MINUTES') {
-                                    sh "python3 main.py --mode=TesteNB --eNBIPAddress=${params.eNB_IPAddress} --ranRepository=${eNB_Repository} --ranBranch=${eNB_Branch} --ranCommitID=${eNB_CommitID} --ranAllowMerge=${eNB_AllowMergeRequestProcess} --ranTargetBranch=${eNB_TargetBranch} --eNBUserName=${eNB_Username} --eNBPassword=${eNB_Password} --eNBSourceCodePath=${params.eNB_SourceCodePath} --EPCIPAddress=${params.EPC_IPAddress} --EPCType=${params.EPC_Type} --EPCUserName=${EPC_Username} --EPCPassword=${EPC_Password} --EPCSourceCodePath=${params.EPC_SourceCodePath} --XMLTestFile=${xmlFile}"
+                                    sh "python3 main.py --mode=TesteNB --ranRepository=${eNB_Repository} --ranBranch=${eNB_Branch} --ranCommitID=${eNB_CommitID} --ranAllowMerge=${eNB_AllowMergeRequestProcess} --ranTargetBranch=${eNB_TargetBranch} ${flexricOption} --eNBIPAddress=${params.eNB_IPAddress} --eNBUserName=${eNB_Username} --eNBPassword=${eNB_Password} --eNBSourceCodePath=${params.eNB_SourceCodePath} --EPCIPAddress=${params.EPC_IPAddress} --EPCType=${params.EPC_Type} --EPCUserName=${EPC_Username} --EPCPassword=${EPC_Password} --EPCSourceCodePath=${params.EPC_SourceCodePath} --XMLTestFile=${xmlFile}"
                                   }
                                 } catch (Exception e) {
                                     currentBuild.result = 'FAILURE'

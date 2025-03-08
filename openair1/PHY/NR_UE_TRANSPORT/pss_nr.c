@@ -342,14 +342,7 @@ void decimation_synchro_nr(PHY_VARS_NR_UE *PHY_vars_UE, int rate_change, int **r
   NR_DL_FRAME_PARMS *frame_parms = &(PHY_vars_UE->frame_parms);
   int samples_for_frame = 2*frame_parms->samples_per_frame;
 
-#if TEST_SYNCHRO_TIMING_PSS
-
-  opp_enabled = 1;
-
   start_meas(&generic_time[TIME_RATE_CHANGE]);
-
-#endif
-
 /* build with cic filter does not work properly. Performances are significantly deteriorated */
 #ifdef CIC_DECIMATOR
 
@@ -409,13 +402,7 @@ int pss_synchro_nr(const c16_t **rxdata,
 
 #endif
 
-#if TEST_SYNCHRO_TIMING_PSS
-
-  opp_enabled = 1;
-
   start_meas(&generic_time[TIME_PSS]);
-
-#endif
 
   VCD_SIGNAL_DUMPER_DUMP_FUNCTION_BY_NAME(VCD_SIGNAL_DUMPER_FUNCTIONS_PSS_SEARCH_TIME_NR, VCD_FUNCTION_IN);
 

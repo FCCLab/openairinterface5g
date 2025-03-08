@@ -47,8 +47,6 @@ int32_t sub_cpx_vector16(int16_t *x,
 
   }
 
-  simde_mm_empty();
-  simde_m_empty();
   return(0);
 }
 

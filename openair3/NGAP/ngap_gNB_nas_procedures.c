@@ -28,26 +28,36 @@
  * @ingroup _ngap
  */
 
- 
+#include "ngap_gNB_nas_procedures.h"
+#include <inttypes.h>
+#include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdint.h>
-
+#include <string.h>
+#include "BIT_STRING.h"
+#include "INTEGER.h"
+#include "ngap_msg_includes.h"
+#include "OCTET_STRING.h"
+#include "PHY/defs_common.h"
+#include "T.h"
+#include "aper_encoder.h"
+#include "asn_application.h"
+#include "asn_codecs.h"
 #include "assertions.h"
+#include "common/utils/T/T.h"
+#include "constr_TYPE.h"
 #include "conversions.h"
-
-#include "intertask_interface.h"
-
 #include "ngap_common.h"
 #include "ngap_gNB_defs.h"
-
-#include "ngap_gNB_itti_messaging.h"
-
 #include "ngap_gNB_encoder.h"
+#include "ngap_gNB_itti_messaging.h"
+#include "ngap_gNB_management_procedures.h"
 #include "ngap_gNB_nnsf.h"
 #include "ngap_gNB_ue_context.h"
-#include "ngap_gNB_nas_procedures.h"
-#include "ngap_gNB_management_procedures.h"
+#include "oai_asn1.h"
+#include "s1ap_messages_types.h"
+#include "xer_encoder.h"
 
 static void allocCopy(OCTET_STRING_t *out, ngap_pdu_t in)
 {
@@ -671,37 +681,7 @@ int ngap_gNB_initial_ctxt_resp(instance_t instance, ngap_initial_context_setup_r
       item->pDUSessionID = initial_ctxt_resp_p->pdusessions_failed[i].pdusession_id;
 
       /* cause */
-      switch(initial_ctxt_resp_p->pdusessions_failed[i].cause) {
-        case NGAP_CAUSE_RADIO_NETWORK:
-          pdusessionUnTransfer.cause.present = NGAP_Cause_PR_radioNetwork;
-          pdusessionUnTransfer.cause.choice.radioNetwork = initial_ctxt_resp_p->pdusessions_failed[i].cause_value;
-          break;
-
-        case NGAP_CAUSE_TRANSPORT:
-          pdusessionUnTransfer.cause.present = NGAP_Cause_PR_transport;
-          pdusessionUnTransfer.cause.choice.transport = initial_ctxt_resp_p->pdusessions_failed[i].cause_value;
-          break;
-
-        case NGAP_CAUSE_NAS:
-          pdusessionUnTransfer.cause.present = NGAP_Cause_PR_nas;
-          pdusessionUnTransfer.cause.choice.nas = initial_ctxt_resp_p->pdusessions_failed[i].cause_value;
-          break;
-
-        case NGAP_CAUSE_PROTOCOL:
-          pdusessionUnTransfer.cause.present = NGAP_Cause_PR_protocol;
-          pdusessionUnTransfer.cause.choice.protocol = initial_ctxt_resp_p->pdusessions_failed[i].cause_value;
-          break;
-
-        case NGAP_CAUSE_MISC:
-          pdusessionUnTransfer.cause.present = NGAP_Cause_PR_misc;
-          pdusessionUnTransfer.cause.choice.misc = initial_ctxt_resp_p->pdusessions_failed[i].cause_value;
-          break;
-
-        case NGAP_CAUSE_NOTHING:
-        default:
-          AssertFatal(false, "Unknown PDU session failure cause %d\n", initial_ctxt_resp_p->pdusessions_failed[i].cause);
-          break;
-      }
+      encode_ngap_cause(&pdusessionUnTransfer.cause, &initial_ctxt_resp_p->pdusessions_failed[i].cause);
 
       NGAP_INFO("initial context setup response: failed pdusession ID %ld\n", item->pDUSessionID);
       asn_encode_to_new_buffer_result_t res = asn_encode_to_new_buffer(NULL, ATS_ALIGNED_CANONICAL_PER, &asn_DEF_NGAP_PDUSessionResourceSetupUnsuccessfulTransfer, &pdusessionUnTransfer);
@@ -737,6 +717,89 @@ int ngap_gNB_initial_ctxt_resp(instance_t instance, ngap_initial_context_setup_r
     ngap_gNB_itti_send_sctp_data_req(ngap_gNB_instance_p->instance, ue_context_p->amf_ref->assoc_id, buffer, length, ue_context_p->tx_stream);
 
     return 0;
+}
+
+//---------------------------------------------------------------------------------------------------------
+int ngap_gNB_initial_ctxt_fail(instance_t instance, ngap_initial_context_setup_fail_t *initial_ctxt_fail)
+//---------------------------------------------------------------------------------------------------------
+{
+  ngap_gNB_instance_t *ngap_gNB_instance_p = NULL;
+  struct ngap_gNB_ue_context_s *ue_context_p = NULL;
+  NGAP_NGAP_PDU_t pdu;
+  uint8_t *buffer = NULL;
+  uint32_t length;
+
+  /* Retrieve the NGAP gNB instance associated with Mod_id */
+  ngap_gNB_instance_p = ngap_gNB_get_instance(instance);
+  DevAssert(initial_ctxt_fail != NULL);
+  DevAssert(ngap_gNB_instance_p != NULL);
+
+  if ((ue_context_p = ngap_get_ue_context(initial_ctxt_fail->gNB_ue_ngap_id)) == NULL) {
+    /* The context for this gNB ue ngap id doesn't exist in the map of gNB UEs */
+    NGAP_WARN("Failed to find ue context associated with gNB ue ngap id: 0x%08x\n", initial_ctxt_fail->gNB_ue_ngap_id);
+    return -1;
+  }
+  /* Uplink NAS transport can occur either during an ngap connected state
+   * or during initial attach (for example: NAS authentication).
+   */
+  if (!(ue_context_p->ue_state == NGAP_UE_CONNECTED || ue_context_p->ue_state == NGAP_UE_WAITING_CSR)) {
+    NGAP_WARN(
+        "You are attempting to send NAS data over non-connected "
+        "gNB ue ngap id: %08x, current state: %d\n",
+        initial_ctxt_fail->gNB_ue_ngap_id,
+        ue_context_p->ue_state);
+    return -1;
+  }
+
+  /* Prepare the NGAP message to encode */
+  memset(&pdu, 0, sizeof(pdu));
+  pdu.present = NGAP_NGAP_PDU_PR_unsuccessfulOutcome;
+  asn1cCalloc(pdu.choice.unsuccessfulOutcome, out);
+  out->procedureCode = NGAP_ProcedureCode_id_InitialContextSetup;
+  out->criticality = NGAP_Criticality_reject;
+  out->value.present = NGAP_UnsuccessfulOutcome__value_PR_InitialContextSetupFailure;
+  NGAP_InitialContextSetupFailure_t *fail = &out->value.choice.InitialContextSetupFailure;
+  /* mandatory */
+  {
+    asn1cSequenceAdd(fail->protocolIEs.list, NGAP_InitialContextSetupFailureIEs_t, ie);
+    ie->id = NGAP_ProtocolIE_ID_id_AMF_UE_NGAP_ID;
+    ie->criticality = NGAP_Criticality_ignore;
+    ie->value.present = NGAP_InitialContextSetupFailureIEs__value_PR_AMF_UE_NGAP_ID;
+    // ie->value.choice.AMF_UE_NGAP_ID = ue_context_p->amf_ue_ngap_id;
+    asn_uint642INTEGER(&ie->value.choice.AMF_UE_NGAP_ID, ue_context_p->amf_ue_ngap_id);
+  }
+  /* mandatory */
+  {
+    asn1cSequenceAdd(fail->protocolIEs.list, NGAP_InitialContextSetupFailureIEs_t, ie);
+    ie->id = NGAP_ProtocolIE_ID_id_RAN_UE_NGAP_ID;
+    ie->criticality = NGAP_Criticality_ignore;
+    ie->value.present = NGAP_InitialContextSetupFailureIEs__value_PR_RAN_UE_NGAP_ID;
+    ie->value.choice.RAN_UE_NGAP_ID = initial_ctxt_fail->gNB_ue_ngap_id;
+  }
+  /* mandatory */
+  {
+    asn1cSequenceAdd(fail->protocolIEs.list, NGAP_InitialContextSetupFailureIEs_t, ie);
+    ie->id = NGAP_ProtocolIE_ID_id_Cause;
+    ie->criticality = NGAP_Criticality_ignore;
+    ie->value.present = NGAP_InitialContextSetupFailureIEs__value_PR_Cause;
+    encode_ngap_cause(&ie->value.choice.Cause, &initial_ctxt_fail->cause);
+  }
+  if (asn1_xer_print) {
+    xer_fprint(stdout, &asn_DEF_NGAP_NGAP_PDU, &pdu);
+  }
+  if (ngap_gNB_encode_pdu(&pdu, &buffer, &length) < 0) {
+    NGAP_ERROR("Failed to encode InitialContextSetupFailure\n");
+    /* Encode procedure has failed... */
+    return -1;
+  }
+  /* UE associated signalling -> use the allocated stream */
+  LOG_I(NR_RRC, "Send message to sctp: NGAP_InitialContextSetupFailure\n");
+  ngap_gNB_itti_send_sctp_data_req(ngap_gNB_instance_p->instance,
+                                   ue_context_p->amf_ref->assoc_id,
+                                   buffer,
+                                   length,
+                                   ue_context_p->tx_stream);
+  return 0;
 }
 
 //------------------------------------------------------------------------------
@@ -939,37 +1002,7 @@ int ngap_gNB_pdusession_setup_resp(instance_t instance, ngap_pdusession_setup_re
       item->pDUSessionID = pdusession_failed->pdusession_id;
 
       /* cause */
-      switch(pdusession_failed->cause) {
-        case NGAP_CAUSE_RADIO_NETWORK:
-          pdusessionUnTransfer_p.cause.present = NGAP_Cause_PR_radioNetwork;
-          pdusessionUnTransfer_p.cause.choice.radioNetwork = pdusession_failed->cause_value;
-          break;
-
-        case NGAP_CAUSE_TRANSPORT:
-          pdusessionUnTransfer_p.cause.present = NGAP_Cause_PR_transport;
-          pdusessionUnTransfer_p.cause.choice.transport = pdusession_failed->cause_value;
-          break;
-
-        case NGAP_CAUSE_NAS:
-          pdusessionUnTransfer_p.cause.present = NGAP_Cause_PR_nas;
-          pdusessionUnTransfer_p.cause.choice.nas = pdusession_failed->cause_value;
-          break;
-
-        case NGAP_CAUSE_PROTOCOL:
-          pdusessionUnTransfer_p.cause.present = NGAP_Cause_PR_protocol;
-          pdusessionUnTransfer_p.cause.choice.protocol = pdusession_failed->cause_value;
-          break;
-
-        case NGAP_CAUSE_MISC:
-          pdusessionUnTransfer_p.cause.present = NGAP_Cause_PR_misc;
-          pdusessionUnTransfer_p.cause.choice.misc = pdusession_failed->cause_value;
-          break;
-
-        case NGAP_CAUSE_NOTHING:
-        default:
-          AssertFatal(false, "Unknown PDU session failure cause %d\n", pdusession_failed->cause);
-          break;
-      }
+      encode_ngap_cause(&pdusessionUnTransfer_p.cause, &pdusession_failed->cause);
       NGAP_INFO("pdusession setup response: failed pdusession ID %ld\n", item->pDUSessionID);
 
       asn_encode_to_new_buffer_result_t res = asn_encode_to_new_buffer(NULL, ATS_ALIGNED_CANONICAL_PER, &asn_DEF_NGAP_PDUSessionResourceSetupUnsuccessfulTransfer, &pdusessionUnTransfer_p);
@@ -1103,37 +1136,8 @@ int ngap_gNB_pdusession_modify_resp(instance_t instance, ngap_pdusession_modify_
 
       NGAP_PDUSessionResourceModifyUnsuccessfulTransfer_t pdusessionTransfer = {0};
 
-      switch(pdusession_modify_resp_p->pdusessions_failed[i].cause) {
-      case NGAP_CAUSE_RADIO_NETWORK:
-        pdusessionTransfer.cause.present = NGAP_Cause_PR_radioNetwork;
-        pdusessionTransfer.cause.choice.radioNetwork = pdusession_modify_resp_p->pdusessions_failed[i].cause_value;
-        break;
-
-      case NGAP_CAUSE_TRANSPORT:
-        pdusessionTransfer.cause.present = NGAP_Cause_PR_transport;
-        pdusessionTransfer.cause.choice.transport = pdusession_modify_resp_p->pdusessions_failed[i].cause_value;
-        break;
-
-      case NGAP_CAUSE_NAS:
-        pdusessionTransfer.cause.present = NGAP_Cause_PR_nas;
-        pdusessionTransfer.cause.choice.nas = pdusession_modify_resp_p->pdusessions_failed[i].cause_value;
-        break;
-
-      case NGAP_CAUSE_PROTOCOL:
-        pdusessionTransfer.cause.present = NGAP_Cause_PR_protocol;
-        pdusessionTransfer.cause.choice.protocol = pdusession_modify_resp_p->pdusessions_failed[i].cause_value;
-        break;
-
-      case NGAP_CAUSE_MISC:
-        pdusessionTransfer.cause.present = NGAP_Cause_PR_misc;
-        pdusessionTransfer.cause.choice.misc = pdusession_modify_resp_p->pdusessions_failed[i].cause_value;
-        break;
-
-      case NGAP_CAUSE_NOTHING:
-      default:
-        AssertFatal(false, "Unknown PDU session failure cause %d\n", pdusession_modify_resp_p->pdusessions_failed[i].cause);
-        break;
-      }
+      // NGAP cause
+      encode_ngap_cause(&pdusessionTransfer.cause, &pdusession_modify_resp_p->pdusessions_failed[i].cause);
 
       asn_encode_to_new_buffer_result_t res = {0};
       NGAP_PDUSessionResourceModifyUnsuccessfulTransfer_t *pdusessionTransfer_p = NULL;

@@ -32,7 +32,7 @@ FROM ran-build:latest AS gnb-build
 
 
 #start from scratch for target executable
-FROM $BASE_IMAGE as oai-gnb
+FROM $BASE_IMAGE AS oai-gnb
 ENV TZ=Europe/Paris
 
 RUN dnf update -y && \
@@ -68,6 +68,7 @@ COPY --from=gnb-build \
     /oai-ran/cmake_targets/ran_build/build/libldpc*.so \
     /oai-ran/cmake_targets/ran_build/build/libtelnetsrv.so \
     /oai-ran/cmake_targets/ran_build/build/libtelnetsrv_ci.so \
+    /oai-ran/cmake_targets/ran_build/build/libparams_yaml.so \
     /usr/local/lib/
 
 COPY --from=gnb-base \
@@ -123,4 +124,4 @@ WORKDIR /opt/oai-gnb
 
 COPY --from=gnb-base /tini /tini
 ENTRYPOINT ["/tini", "-v", "--", "/opt/oai-gnb/bin/entrypoint.sh"]
-CMD ["/opt/oai-gnb/bin/nr-softmodem", "-O", "/opt/oai-gnb/etc/gnb.conf"]
+CMD ["/opt/oai-gnb/bin/nr-softmodem"]

@@ -285,6 +285,29 @@ pipeline {
             }
           }
         }
+        stage ("OAI-FLEXRIC-RAN-Integration-Test") {
+          when { expression {do5Gtest} }
+          steps {
+            script {
+              triggerSlaveJob ('OAI-FLEXRIC-RAN-Integration-Test', 'OAI-FLEXRIC-RAN-Integration-Test')
+            }
+          }
+          post {
+            always {
+              script {
+                // Using a unique variable name for each test stage to avoid overwriting on a global variable
+                // due to parallel-time concurrency
+                flexricRAN5GStatus = finalizeSlaveJob('OAI-FLEXRIC-RAN-Integration-Test')
+              }
+            }
+            failure {
+              script {
+                currentBuild.result = 'FAILURE'
+                failingStages += flexricRAN5GStatus
+              }
+            }
+          }
+        }
         stage ("L2-Sim-Test-4G") {
           when { expression {do4Gtest} }
           steps {
@@ -493,29 +516,6 @@ pipeline {
             }
           }
         }
-        stage ("Interop-F1") {
-          when { expression {do5Gtest} }
-          steps {
-            script {
-              triggerSlaveJob ('RAN-Interop-F1', 'Interop-F1')
-            }
-          }
-          post {
-            always {
-              script {
-                // Using a unique variable name for each test stage to avoid overwriting on a global variable
-                // due to parallel-time concurrency
-                f1InteropStatus = finalizeSlaveJob('RAN-Interop-F1')
-              }
-            }
-            failure {
-              script {
-                currentBuild.result = 'FAILURE'
-                failingStages += f1InteropStatus
-              }
-            }
-          }
-        }
         stage ("Sanity-Check OAI-CN5G") {
           when { expression {do5Gtest} }
           steps {
@@ -585,6 +585,29 @@ pipeline {
             }
           }
         }
+        stage ("SA-FHI72-CN5G") {
+          when { expression {do5Gtest} }
+          steps {
+            script {
+              triggerSlaveJob ('RAN-SA-FHI72-CN5G', 'SA-FHI72-CN5G')
+            }
+          }
+          post {
+            always {
+              script {
+                // Using a unique variable name for each test stage to avoid overwriting on a global variable
+                // due to parallel-time concurrency
+                saFHI72Status = finalizeSlaveJob('RAN-SA-FHI72-CN5G')
+              }
+            }
+            failure {
+              script {
+                currentBuild.result = 'FAILURE'
+                failingStages += saFHI72Status
+              }
+            }
+          }
+        }
         stage ("SA-OAIUE-CN5G") {
           when { expression {do5Gtest} }
           steps {
@@ -635,9 +658,6 @@ pipeline {
         if ("MERGE".equals(env.gitlabActionType)) {
           addGitLabMRComment comment: message
           def message2 = message + " -- MergeRequest #" + env.gitlabMergeRequestIid + " (" + env.gitlabMergeRequestTitle + ")"
-          sendSocialMediaMessage('ci-enb', 'good', message2)
-        } else {
-          sendSocialMediaMessage('ci-enb', 'good', message)
         }
         echo "Pipeline is SUCCESSFUL"
       }
@@ -649,9 +669,6 @@ pipeline {
           def fullMessage = message + '\n\nList of failing test stages:' + failingStages
           addGitLabMRComment comment: fullMessage
           def message2 = message + " -- MergeRequest #" + env.gitlabMergeRequestIid + " (" + env.gitlabMergeRequestTitle + ")"
-          sendSocialMediaMessage('ci-enb', 'danger', message2)
-        } else {
-          sendSocialMediaMessage('ci-enb', 'danger', message)
         }
         echo "Pipeline FAILED"
       }
@@ -774,10 +791,4 @@ def finalizeSlaveJob(jobName) {
     artifactUrl = "\n * [${jobName}](${artifactUrl})"
     return artifactUrl
   }
-}
-
-// Abstraction function to send social media messages:
-// like on Slack or Mattermost
-def sendSocialMediaMessage(pipeChannel, pipeColor, pipeMessage) {
-  slackSend channel: pipeChannel, color: pipeColor, message: pipeMessage
 }

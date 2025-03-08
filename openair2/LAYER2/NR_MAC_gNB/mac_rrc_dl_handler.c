@@ -26,8 +26,12 @@
 #include "openair2/F1AP/f1ap_common.h"
 #include "openair2/LAYER2/nr_rlc/nr_rlc_oai_api.h"
 #include "F1AP_CauseRadioNetwork.h"
+#include "NR_HandoverPreparationInformation.h"
 #include "openair3/ocp-gtpu/gtp_itf.h"
 #include "openair2/LAYER2/nr_pdcp/nr_pdcp_oai_api.h"
+#include "lib/f1ap_interface_management.h"
+
+#include "executables/softmodem-common.h"
 
 #include "uper_decoder.h"
 #include "uper_encoder.h"
@@ -95,6 +99,50 @@ static bool check_plmn_identity(const f1ap_plmn_t *check_plmn, const f1ap_plmn_t
   return plmn->mcc == check_plmn->mcc && plmn->mnc_digit_length == check_plmn->mnc_digit_length && plmn->mnc == check_plmn->mnc;
 }
 
+/* not static, so we can call it from the outside (in telnet) */
+void du_clear_all_ue_states()
+{
+  gNB_MAC_INST *mac = RC.nrmac[0];
+  NR_SCHED_LOCK(&mac->sched_lock);
+
+  NR_UE_info_t *UE = *mac->UE_info.list;
+
+  instance_t f1inst = get_f1_gtp_instance();
+
+  while (UE != NULL) {
+    int rnti = UE->rnti;
+    nr_mac_release_ue(mac, rnti);
+    // free all F1 contexts
+    if (du_exists_f1_ue_data(rnti))
+      du_remove_f1_ue_data(rnti);
+    newGtpuDeleteAllTunnels(f1inst, rnti);
+    UE = *mac->UE_info.list;
+  }
+  NR_SCHED_UNLOCK(&mac->sched_lock);
+}
+
+void f1_reset_cu_initiated(const f1ap_reset_t *reset)
+{
+  LOG_I(MAC, "F1 Reset initiated by CU\n");
+
+  f1ap_reset_ack_t ack = {.transaction_id = reset->transaction_id};
+  if(reset->reset_type == F1AP_RESET_ALL) {
+    du_clear_all_ue_states();
+  } else {
+    // reset->reset_type == F1AP_RESET_PART_OF_F1_INTERFACE
+    AssertFatal(1==0, "Not implemented yet\n");
+  }
+
+  gNB_MAC_INST *mac = RC.nrmac[0];
+  mac->mac_rrc.f1_reset_acknowledge(&ack);
+}
+
+void f1_reset_acknowledge_du_initiated(const f1ap_reset_ack_t *ack)
+{
+  (void) ack;
+  AssertFatal(false, "%s() not implemented yet\n", __func__);
+}
+
 void f1_setup_response(const f1ap_setup_resp_t *resp)
 {
   LOG_I(MAC, "received F1 Setup Response from CU %s\n", resp->gNB_CU_name);
@@ -121,11 +169,27 @@ void f1_setup_response(const f1ap_setup_resp_t *resp)
 
   mac->f1_config.setup_resp = malloc(sizeof(*mac->f1_config.setup_resp));
   AssertFatal(mac->f1_config.setup_resp != NULL, "out of memory\n");
-  *mac->f1_config.setup_resp = *resp;
-  if (resp->gNB_CU_name)
-    mac->f1_config.setup_resp->gNB_CU_name = strdup(resp->gNB_CU_name);
-
+  // Copy F1AP message
+  *mac->f1_config.setup_resp = cp_f1ap_setup_response(resp);
   NR_SCHED_UNLOCK(&mac->sched_lock);
+
+  // NOTE: Before accepting any UEs, we should initialize the UE states.
+  // This is to handle cases when DU loses the existing SCTP connection,
+  // and reestablishes a new connection to either a new CU or the same CU.
+  // This triggers a new F1 Setup Request from DU to CU as per the specs.
+  // Reinitializing the UE states is necessary to avoid any inconsistent states
+  // between DU and CU.
+  // NOTE2: do not reset in phy_test, because there is a pre-configured UE in
+  // this case. Once NSA/phy-test use F1, this might be lifted, because
+  // creation of a UE will be requested from higher layers.
+
+  // TS38.473 [Sec 8.2.3.1]: "This procedure also re-initialises the F1AP UE-related
+  // contexts (if any) and erases all related signalling connections
+  // in the two nodes like a Reset procedure would do."
+  if (!get_softmodem_params()->phy_test) {
+    LOG_I(MAC, "Clearing the DU's UE states before, if any.\n");
+    du_clear_all_ue_states();
+  }
 }
 
 void f1_setup_failure(const f1ap_setup_failure_t *failure)
@@ -167,17 +231,26 @@ static int handle_ue_context_srbs_setup(NR_UE_info_t *UE,
     nr_lc_config_t c = {.lcid = rlc_BearerConfig->logicalChannelIdentity, .priority = priority};
     nr_mac_add_lcid(&UE->UE_sched_ctrl, &c);
 
-    (*resp_srbs)[i] = *srb;
+    (*resp_srbs)[i].srb_id = srb->srb_id;
+    (*resp_srbs)[i].lcid = c.lcid;
 
-    int ret = ASN_SEQUENCE_ADD(&cellGroupConfig->rlc_BearerToAddModList->list, rlc_BearerConfig);
-    DevAssert(ret == 0);
+    if (rlc_BearerConfig->logicalChannelIdentity == 1) {
+      // CU asks to add SRB1: when creating a cellGroupConfig, we always add it
+      // (see get_initial_cellGroupConfig())
+      const struct NR_CellGroupConfig__rlc_BearerToAddModList *addmod = cellGroupConfig->rlc_BearerToAddModList;
+      DevAssert(addmod->list.count >= 1 && addmod->list.array[0]->logicalChannelIdentity == 1);
+      ASN_STRUCT_FREE(asn_DEF_NR_RLC_BearerConfig, rlc_BearerConfig);
+    } else {
+      int ret = ASN_SEQUENCE_ADD(&cellGroupConfig->rlc_BearerToAddModList->list, rlc_BearerConfig);
+      DevAssert(ret == 0);
+    }
   }
   return srbs_len;
 }
 
 static NR_RLC_BearerConfig_t *get_bearerconfig_from_drb(const f1ap_drb_to_be_setup_t *drb)
 {
-  const NR_RLC_Config_PR rlc_conf = drb->rlc_mode == RLC_MODE_UM ? NR_RLC_Config_PR_um_Bi_Directional : NR_RLC_Config_PR_am;
+  const NR_RLC_Config_PR rlc_conf = drb->rlc_mode == F1AP_RLC_MODE_AM ? NR_RLC_Config_PR_am : NR_RLC_Config_PR_um_Bi_Directional;
   long priority = 13; // hardcoded for the moment
   return get_DRB_RLC_BearerConfig(get_lcid_from_drbid(drb->drb_id), drb->drb_id, rlc_conf, priority);
 }
@@ -195,11 +268,11 @@ static NR_QoS_config_t get_qos_config(const f1ap_qos_characteristics_t *qos_char
 {
   NR_QoS_config_t qos_c = {0};
   switch (qos_char->qos_type) {
-    case dynamic:
+    case DYNAMIC:
       qos_c.priority = qos_char->dynamic.qos_priority_level;
       qos_c.fiveQI = qos_char->dynamic.fiveqi > 0 ? qos_char->dynamic.fiveqi : 0;
       break;
-    case non_dynamic:
+    case NON_DYNAMIC:
       qos_c.fiveQI = qos_char->non_dynamic.fiveqi;
       qos_c.priority = get_non_dynamic_priority(qos_char->non_dynamic.fiveqi);
       break;
@@ -307,6 +380,33 @@ static int handle_ue_context_drbs_release(NR_UE_info_t *UE,
   return drbs_len;
 }
 
+static NR_UE_NR_Capability_t *get_nr_cap(const NR_UE_CapabilityRAT_ContainerList_t *clist)
+{
+  for (int i = 0; i < clist->list.count; i++) {
+    const NR_UE_CapabilityRAT_Container_t *c = clist->list.array[i];
+    if (c->rat_Type != NR_RAT_Type_nr) {
+      LOG_W(NR_MAC, "ignoring capability of type %ld\n", c->rat_Type);
+      continue;
+    }
+
+    NR_UE_NR_Capability_t *cap = NULL;
+    asn_dec_rval_t dec_rval = uper_decode(NULL,
+                                          &asn_DEF_NR_UE_NR_Capability,
+                                          (void **)&cap,
+                                          c->ue_CapabilityRAT_Container.buf,
+                                          c->ue_CapabilityRAT_Container.size,
+                                          0,
+                                          0);
+    if (dec_rval.code != RC_OK) {
+      LOG_W(NR_MAC, "cannot decode NR UE capability, ignoring\n");
+      ASN_STRUCT_FREE(asn_DEF_NR_UE_NR_Capability, cap);
+      continue;
+    }
+    return cap;
+  }
+  return NULL;
+}
+
 static NR_UE_NR_Capability_t *get_ue_nr_cap(int rnti, uint8_t *buf, uint32_t len)
 {
   if (buf == NULL || len == 0)
@@ -319,27 +419,37 @@ static NR_UE_NR_Capability_t *get_ue_nr_cap(int rnti, uint8_t *buf, uint32_t len
     return NULL;
   }
 
-  NR_UE_NR_Capability_t *cap = NULL;
-  for (int i = 0; i < clist->list.count; i++) {
-    const NR_UE_CapabilityRAT_Container_t *c = clist->list.array[i];
-    if (cap != NULL || c->rat_Type != NR_RAT_Type_nr) {
-      LOG_W(NR_MAC, "UE RNTI %04x: ignoring capability of type %ld\n", rnti, c->rat_Type);
-      continue;
-    }
+  NR_UE_NR_Capability_t *cap = get_nr_cap(clist);
+  ASN_STRUCT_FREE(asn_DEF_NR_UE_CapabilityRAT_ContainerList, clist);
+  return cap;
+}
 
-    asn_dec_rval_t dec_rval = uper_decode(NULL,
-                                          &asn_DEF_NR_UE_NR_Capability,
-                                          (void **)&cap,
-                                          c->ue_CapabilityRAT_Container.buf,
-                                          c->ue_CapabilityRAT_Container.size,
-                                          0,
-                                          0);
-    if (dec_rval.code != RC_OK) {
-      LOG_W(NR_MAC, "cannot decode NR UE capabilities of UE RNTI %04x, ignoring NR capability\n", rnti);
-      cap = NULL;
-      continue;
-    }
+/* \brief return UE capabilties from HandoverPreparationInformation.
+ *
+ * The HandoverPreparationInformation contains more, but for the moment, let's
+ * keep it simple and only handle that. The function asserts if other IEs are
+ * present. */
+static NR_UE_NR_Capability_t *get_ue_nr_cap_from_ho_prep_info(uint8_t *buf, uint32_t len)
+{
+  if (buf == NULL || len == 0)
+    return NULL;
+  NR_HandoverPreparationInformation_t *hpi = NULL;
+  asn_dec_rval_t dec_rval = uper_decode_complete(NULL, &asn_DEF_NR_HandoverPreparationInformation, (void **)&hpi, buf, len);
+  if (dec_rval.code != RC_OK) {
+    LOG_W(NR_MAC, "cannot decode HandoverPreparationInformation, ignoring capabilities\n");
+    return NULL;
   }
+  NR_UE_NR_Capability_t *cap = NULL;
+  if (hpi->criticalExtensions.present != NR_HandoverPreparationInformation__criticalExtensions_PR_c1
+      || hpi->criticalExtensions.choice.c1 == NULL
+      || hpi->criticalExtensions.choice.c1->present
+             != NR_HandoverPreparationInformation__criticalExtensions__c1_PR_handoverPreparationInformation
+      || hpi->criticalExtensions.choice.c1->choice.handoverPreparationInformation == NULL) {
+  } else {
+    const NR_HandoverPreparationInformation_IEs_t *hpi_ie = hpi->criticalExtensions.choice.c1->choice.handoverPreparationInformation;
+    cap = get_nr_cap(&hpi_ie->ue_CapabilityRAT_List);
+  }
+  ASN_STRUCT_FREE(asn_DEF_NR_HandoverPreparationInformation, hpi);
   return cap;
 }
 
@@ -355,6 +465,41 @@ NR_CellGroupConfig_t *clone_CellGroupConfig(const NR_CellGroupConfig_t *orig)
   return cloned;
 }
 
+static NR_UE_info_t *create_new_UE(gNB_MAC_INST *mac, uint32_t cu_id)
+{
+  int CC_id = 0;
+  const NR_COMMON_channels_t *cc = &mac->common_channels[CC_id];
+  rnti_t rnti;
+  bool found = nr_mac_get_new_rnti(&mac->UE_info, cc->ra, sizeofArray(cc->ra), &rnti);
+  if (!found)
+    return NULL;
+
+  NR_UE_info_t* UE = add_new_nr_ue(mac, rnti, NULL);
+  if (!UE)
+    return NULL;
+
+  f1_ue_data_t new_ue_data = {.secondary_ue = cu_id};
+  bool success = du_add_f1_ue_data(rnti, &new_ue_data);
+  DevAssert(success);
+
+  const NR_ServingCellConfigCommon_t *scc = mac->common_channels[CC_id].ServingCellConfigCommon;
+  const NR_ServingCellConfig_t *sccd = mac->common_channels[CC_id].pre_ServingCellConfig;
+  NR_CellGroupConfig_t *cellGroupConfig = get_initial_cellGroupConfig(UE->uid, scc, sccd, &mac->radio_config);
+  cellGroupConfig->spCellConfig->reconfigurationWithSync = get_reconfiguration_with_sync(UE->rnti, UE->uid, scc);
+  // note: we don't pass the cellGroupConfig to add_new_nr_ue() because we need
+  // the uid to create the CellGroupConfig (which is in the UE context created
+  // by add_new_nr_ue(); it's a kind of chicken-and-egg problem), so below we
+  // complete the UE context with the information that add_new_nr_ue() would
+  // have added
+  UE->Msg4_MsgB_ACKed = true;
+  UE->CellGroup = cellGroupConfig;
+
+  nr_rlc_activate_srb0(UE->rnti, UE, NULL);
+  nr_mac_prepare_ra_ue(mac, rnti, UE->CellGroup);
+  /* SRB1 is added to RLC and MAC in the handler later */
+  return UE;
+}
+
 void ue_context_setup_request(const f1ap_ue_context_setup_t *req)
 {
   gNB_MAC_INST *mac = RC.nrmac[0];
@@ -364,19 +509,34 @@ void ue_context_setup_request(const f1ap_ue_context_setup_t *req)
     .gNB_DU_ue_id = req->gNB_DU_ue_id,
   };
 
+  /* gNB-DU UE ID is optional. As of now, the F1AP module fills -1 (on uint, so
+   * 0xffffffff), but the DU uses the RNTI, so check if it's a legal RNTI in
+   * which case we consider; if not, assume no DU UE ID given */
+  bool ue_id_provided = resp.gNB_DU_ue_id > 0 && resp.gNB_DU_ue_id < 0xffff;
+
   NR_UE_NR_Capability_t *ue_cap = NULL;
   if (req->cu_to_du_rrc_information != NULL) {
-    AssertFatal(req->cu_to_du_rrc_information->cG_ConfigInfo == NULL, "CG-ConfigInfo not handled\n");
-    ue_cap = get_ue_nr_cap(req->gNB_DU_ue_id,
-                           req->cu_to_du_rrc_information->uE_CapabilityRAT_ContainerList,
-                           req->cu_to_du_rrc_information->uE_CapabilityRAT_ContainerList_length);
-    AssertFatal(req->cu_to_du_rrc_information->measConfig == NULL, "MeasConfig not handled\n");
+    const cu_to_du_rrc_information_t *cu2du = req->cu_to_du_rrc_information;
+    AssertFatal(cu2du->cG_ConfigInfo == NULL, "CG-ConfigInfo not handled\n");
+    if (cu2du->handoverPreparationInfo != NULL) {
+      ue_cap = get_ue_nr_cap_from_ho_prep_info(cu2du->handoverPreparationInfo, cu2du->handoverPreparationInfo_length);
+    } else if (cu2du->uE_CapabilityRAT_ContainerList != NULL) {
+      ue_cap = get_ue_nr_cap(req->gNB_DU_ue_id, cu2du->uE_CapabilityRAT_ContainerList, cu2du->uE_CapabilityRAT_ContainerList_length);
+    }
+    AssertFatal(cu2du->measConfig == NULL, "MeasConfig not handled\n");
   }
 
   NR_SCHED_LOCK(&mac->sched_lock);
 
-  NR_UE_info_t *UE = find_nr_UE(&RC.nrmac[0]->UE_info, req->gNB_DU_ue_id);
-  AssertFatal(UE, "did not find UE with RNTI %04x, but UE Context Setup Failed not implemented\n", req->gNB_DU_ue_id);
+  NR_UE_info_t *UE = NULL;
+  if (!ue_id_provided) {
+    UE = create_new_UE(mac, req->gNB_CU_ue_id);
+    resp.gNB_DU_ue_id = UE->rnti;
+    resp.crnti = &UE->rnti;
+  } else {
+    UE = find_nr_UE(&mac->UE_info, req->gNB_DU_ue_id);
+  }
+  AssertFatal(UE, "no UE found or could not be created, but UE Context Setup Failed not implemented\n");
 
   NR_CellGroupConfig_t *new_CellGroup = clone_CellGroupConfig(UE->CellGroup);
 
@@ -406,6 +566,14 @@ void ue_context_setup_request(const f1ap_ue_context_setup_t *req)
     // store the new UE capabilities, and update the cellGroupConfig
     NR_ServingCellConfigCommon_t *scc = mac->common_channels[0].ServingCellConfigCommon;
     update_cellGroupConfig(new_CellGroup, UE->uid, UE->capability, &mac->radio_config, scc);
+  }
+
+  if (!ue_id_provided) {
+    /* new UE: tell the UE to reestablish RLC */
+    struct NR_CellGroupConfig__rlc_BearerToAddModList *addmod = new_CellGroup->rlc_BearerToAddModList;
+    for (int i = 0; i < addmod->list.count; ++i) {
+      asn1cCallocOne(addmod->list.array[i]->reestablishRLC, NR_RLC_BearerConfig__reestablishRLC_true);
+    }
   }
 
   resp.du_to_cu_rrc_information = calloc(1, sizeof(du_to_cu_rrc_information_t));
@@ -520,6 +688,11 @@ void ue_context_modification_request(const f1ap_ue_context_modif_req_t *req)
   } else {
     ASN_STRUCT_FREE(asn_DEF_NR_CellGroupConfig, new_CellGroup); // we actually don't need it
   }
+
+  if (req->transm_action_ind != NULL) {
+    AssertFatal(*req->transm_action_ind == TransmActionInd_STOP, "Transmission Action Indicator restart not handled yet\n");
+    nr_transmission_action_indicator_stop(mac, UE);
+  }
   NR_SCHED_UNLOCK(&mac->sched_lock);
 
   /* some sanity checks, since we use the same type for request and response */
@@ -603,8 +776,12 @@ void ue_context_release_command(const f1ap_ue_context_release_cmd_t *cmd)
   NR_SCHED_LOCK(&mac->sched_lock);
   NR_UE_info_t *UE = find_nr_UE(&mac->UE_info, cmd->gNB_DU_ue_id);
   if (UE == NULL) {
-    LOG_E(MAC, "ERROR: unknown UE with RNTI %04x, ignoring UE Context Release Command\n", cmd->gNB_DU_ue_id);
     NR_SCHED_UNLOCK(&mac->sched_lock);
+    f1ap_ue_context_release_complete_t complete = {
+        .gNB_CU_ue_id = cmd->gNB_CU_ue_id,
+        .gNB_DU_ue_id = cmd->gNB_DU_ue_id,
+    };
+    mac->mac_rrc.ue_context_release_complete(&complete);
     return;
   }
 
@@ -615,6 +792,7 @@ void ue_context_release_command(const f1ap_ue_context_release_cmd_t *cmd)
   if (UE->UE_sched_ctrl.ul_failure || cmd->rrc_container_length == 0) {
     /* The UE is already not connected anymore or we have nothing to forward*/
     nr_mac_release_ue(mac, cmd->gNB_DU_ue_id);
+    nr_mac_trigger_release_complete(mac, cmd->gNB_DU_ue_id);
   } else {
     /* UE is in sync: forward release message and mark to be deleted
      * after UL failure */
@@ -644,9 +822,10 @@ void dl_rrc_message_transfer(const f1ap_dl_rrc_message_t *dl_rrc)
   pthread_mutex_unlock(&mac->sched_lock);
 
   if (!du_exists_f1_ue_data(dl_rrc->gNB_DU_ue_id)) {
-    LOG_I(NR_MAC, "No CU UE ID stored for UE RNTI %04x, adding CU UE ID %d\n", dl_rrc->gNB_DU_ue_id, dl_rrc->gNB_CU_ue_id);
+    LOG_D(NR_MAC, "No CU UE ID stored for UE RNTI %04x, adding CU UE ID %d\n", dl_rrc->gNB_DU_ue_id, dl_rrc->gNB_CU_ue_id);
     f1_ue_data_t new_ue_data = {.secondary_ue = dl_rrc->gNB_CU_ue_id};
-    du_add_f1_ue_data(dl_rrc->gNB_DU_ue_id, &new_ue_data);
+    bool success = du_add_f1_ue_data(dl_rrc->gNB_DU_ue_id, &new_ue_data);
+    DevAssert(success);
   }
 
   if (UE->expect_reconfiguration && dl_rrc->srb_id == 1) {
@@ -655,7 +834,8 @@ void dl_rrc_message_transfer(const f1ap_dl_rrc_message_t *dl_rrc)
      * the CellGroupConfig. Below, we trigger a timer, and the CellGroupConfig
      * will be applied after its expiry in nr_mac_apply_cellgroup().*/
     NR_SCHED_LOCK(&mac->sched_lock);
-    nr_mac_enable_ue_rrc_processing_timer(mac, UE, /* apply_cellGroup = */ true);
+    int delay = nr_mac_get_reconfig_delay_slots(UE->current_UL_BWP.scs);
+    nr_mac_interrupt_ue_transmission(mac, UE, FOLLOW_INSYNC_RECONFIG, delay);
     NR_SCHED_UNLOCK(&mac->sched_lock);
     UE->expect_reconfiguration = false;
     /* Re-establish RLC for all remaining bearers */
@@ -676,7 +856,7 @@ void dl_rrc_message_transfer(const f1ap_dl_rrc_message_t *dl_rrc)
      * the new UE context (with new C-RNTI), but set up everything to reuse the
      * old config. */
     NR_UE_info_t *oldUE = find_nr_UE(&mac->UE_info, *dl_rrc->old_gNB_DU_ue_id);
-    DevAssert(oldUE);
+    AssertFatal(oldUE, "CU claims we should know UE %04x, but we don't\n", *dl_rrc->old_gNB_DU_ue_id);
     pthread_mutex_lock(&mac->sched_lock);
     /* 38.331 5.3.7.2 says that the UE releases the spCellConfig, so we drop it
      * from the current configuration. Also, expect the reconfiguration from

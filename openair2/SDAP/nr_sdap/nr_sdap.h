@@ -22,9 +22,9 @@
 #ifndef _NR_SDAP_GNB_H_
 #define _NR_SDAP_GNB_H_
 
+#include <stdbool.h>
+#include <stdint.h>
 #include "common/platform_types.h"
-#include "common/utils/LOG/log.h"
-#include "nr_sdap_entity.h"
 
 /*
  * TS 37.324 4.4 Functions

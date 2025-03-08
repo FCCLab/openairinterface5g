@@ -179,26 +179,26 @@ e2_agent = {
   * start the gNB-mono
     ```bash
     cd oai/cmake_targets/ran_build/build
-    sudo ./nr-softmodem -O ../../../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band78.fr1.106PRB.usrpb210.conf --rfsim --sa -E
+    sudo ./nr-softmodem -O ../../../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band78.fr1.106PRB.usrpb210.conf --rfsim -E
     ```
 
   * if CU/DU split is used, start the gNB as follows
     ```bash
-    sudo ./nr-softmodem -O <path_to_du_conf_file> --rfsim --sa -E
-    sudo ./nr-softmodem -O <path_to_cu_conf_file> --sa
+    sudo ./nr-softmodem -O <path_to_du_conf_file> --rfsim -E
+    sudo ./nr-softmodem -O <path_to_cu_conf_file>
     ```
 
   * if CU-CP/CU-UP/DU split is used, start the gNB as follows
     ```bash
-    sudo ./nr-softmodem -O <path_to_du_conf_file> --rfsim --sa -E
-    sudo ./nr-softmodem -O <path_to_cu_cp_conf_file> --sa
-    sudo ./nr-cuup -O <path_to_cu_up_conf_file> --sa
+    sudo ./nr-softmodem -O <path_to_du_conf_file> --rfsim -E
+    sudo ./nr-softmodem -O <path_to_cu_cp_conf_file>
+    sudo ./nr-cuup -O <path_to_cu_up_conf_file>
     ```
 
 * start the nrUE
   ```bash
   cd oai/cmake_targets/ran_build/build
-  sudo ./nr-uesoftmodem -r 106 --numerology 1 --band 78 -C 3619200000 --rfsim --sa --uicc0.imsi 001010000000001 --rfsimulator.serveraddr 127.0.0.1
+  sudo ./nr-uesoftmodem -r 106 --numerology 1 --band 78 -C 3619200000 --rfsim --uicc0.imsi 001010000000001 --rfsimulator.serveraddr 127.0.0.1
   ```
 
 * start the nearRT-RIC

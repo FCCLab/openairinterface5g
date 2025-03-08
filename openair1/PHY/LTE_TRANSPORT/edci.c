@@ -235,8 +235,7 @@ void init_mpdcch2ss1tab_normal_regular_subframe_evenNRBDL(PHY_VARS_eNB *eNB) {
 
 extern uint8_t *generate_dci0(uint8_t *dci, uint8_t *e, uint8_t DCI_LENGTH, uint16_t coded_bits, uint16_t rnti);
 
-
-uint16_t        mpdcch_dmrs_tab[12 * 6];
+static uint16_t mpdcch_dmrs_tab[12 * 6];
 
 void init_mpdcch_dmrs_tab(uint16_t oss) {
   int             re = 5 * oss;

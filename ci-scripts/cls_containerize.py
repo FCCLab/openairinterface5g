@@ -36,20 +36,13 @@ import re	       # reg
 import logging
 import os
 import shutil
-import subprocess
 import time
-import pyshark
-import threading
-import cls_cmd
-from multiprocessing import Process, Lock, SimpleQueue
 from zipfile import ZipFile
 
 #-----------------------------------------------------------
 # OAI Testing modules
 #-----------------------------------------------------------
-import cls_cluster as OC
 import cls_cmd
-import sshconnection as SSH
 import helpreadme as HELP
 import constants as CONST
 import cls_oaicitest
@@ -58,43 +51,27 @@ import cls_oaicitest
 # Helper functions used here and in other classes
 # (e.g., cls_cluster.py)
 #-----------------------------------------------------------
-IMAGES = ['oai-enb', 'oai-lte-ru', 'oai-lte-ue', 'oai-gnb', 'oai-nr-cuup', 'oai-gnb-aw2s', 'oai-nr-ue', 'oai-gnb-asan', 'oai-nr-ue-asan', 'oai-nr-cuup-asan', 'oai-gnb-aerial', 'oai-gnb-fhi72']
+IMAGES = ['oai-enb', 'oai-lte-ru', 'oai-lte-ue', 'oai-gnb', 'oai-nr-cuup', 'oai-gnb-aw2s', 'oai-nr-ue', 'oai-enb-asan', 'oai-gnb-asan', 'oai-lte-ue-asan', 'oai-nr-ue-asan', 'oai-nr-cuup-asan', 'oai-gnb-aerial', 'oai-gnb-fhi72']
 
-def CreateWorkspace(sshSession, sourcePath, ranRepository, ranCommitID, ranTargetBranch, ranAllowMerge):
+def CreateWorkspace(host, sourcePath, ranRepository, ranCommitID, ranTargetBranch, ranAllowMerge):
 	if ranCommitID == '':
 		logging.error('need ranCommitID in CreateWorkspace()')
-		sys.exit('Insufficient Parameter in CreateWorkspace()')
+		raise ValueError('Insufficient Parameter in CreateWorkspace(): need ranCommitID')
 
-	sshSession.command(f'rm -rf {sourcePath}', '\$', 10)
-	sshSession.command('mkdir -p ' + sourcePath, '\$', 5)
-	sshSession.command('cd ' + sourcePath, '\$', 5)
-	# Recent version of git (>2.20?) should handle missing .git extension # without problems
-	if ranTargetBranch == 'null':
-		ranTargetBranch = 'develop'
-	baseBranch = re.sub('origin/', '', ranTargetBranch)
-	sshSession.command(f'git clone --filter=blob:none -n -b {baseBranch} {ranRepository} .', '\$', 60)
-	if sshSession.getBefore().count('error') > 0 or sshSession.getBefore().count('error') > 0:
-		sys.exit('error during clone')
-	sshSession.command('git config user.email "jenkins@openairinterface.org"', '\$', 5)
-	sshSession.command('git config user.name "OAI Jenkins"', '\$', 5)
-
-	sshSession.command('mkdir -p cmake_targets/log', '\$', 5)
-	# if the commit ID is provided use it to point to it
-	sshSession.command(f'git checkout -f {ranCommitID}', '\$', 30)
-	if sshSession.getBefore().count(f'HEAD is now at {ranCommitID[:6]}') != 1:
-		sshSession.command('git log --oneline | head -n5', '\$', 5)
-		logging.warning(f'problems during checkout, is at: {sshSession.getBefore()}')
-	else:
-		logging.debug('successful checkout')
-	# if the branch is not develop, then it is a merge request and we need to do
-	# the potential merge. Note that merge conflicts should already been checked earlier
+	script = "scripts/create_workspace.sh"
+	options = f"{sourcePath} {ranRepository} {ranCommitID}"
 	if ranAllowMerge:
 		if ranTargetBranch == '':
 			ranTargetBranch = 'develop'
-		logging.debug(f'Merging with the target branch: {ranTargetBranch}')
-		sshSession.command(f'git merge --ff origin/{ranTargetBranch} -m "Temporary merge for CI"', '\$', 30)
+		options += f" {ranTargetBranch}"
+	logging.info(f'execute "{script}" with options "{options}" on node {host}')
+	ret = cls_cmd.runScript(host, script, 90, options)
+	logging.debug(f'"{script}" finished with code {ret.returncode}, output:\n{ret.stdout}')
+	return ret.returncode == 0
 
-def ImageTagToUse(imageName, ranCommitID, ranBranch, ranAllowMerge):
+def CreateTag(ranCommitID, ranBranch, ranAllowMerge):
+	if ranCommitID == 'develop':
+		return 'develop'
 	shortCommit = ranCommitID[0:8]
 	if ranAllowMerge:
 		# Allowing contributor to have a name/branchName format
@@ -102,8 +79,7 @@ def ImageTagToUse(imageName, ranCommitID, ranBranch, ranAllowMerge):
 		tagToUse = f'{branchName}-{shortCommit}'
 	else:
 		tagToUse = f'develop-{shortCommit}'
-	fullTag = f'{imageName}:{tagToUse}'
-	return fullTag
+	return tagToUse
 
 def CopyLogsToExecutor(cmd, sourcePath, log_name):
 	cmd.cd(f'{sourcePath}/cmake_targets')
@@ -169,27 +145,140 @@ def AnalyzeBuildLogs(buildRoot, images, globalStatus):
 		collectInfo[image] = files
 	return collectInfo
 
-# pyshark livecapture launches 2 processes:
-# * One using dumpcap -i lIfs -w - (ie redirecting the packets to STDOUT)
-# * One using tshark -i - -w loFile (ie capturing from STDIN from previous process)
-# but in fact the packets are read by the following loop before being in fact
-# really written to loFile.
-# So it is mandatory to keep the loop
-def LaunchPySharkCapture(lIfs, lFilter, loFile):
-	capture = pyshark.LiveCapture(interface=lIfs, bpf_filter=lFilter, output_file=loFile, debug=False)
-	for packet in capture.sniff_continuously():
-		pass
+def GetImageName(ssh, svcName, file):
+	ret = ssh.run(f"docker compose -f {file} config --format json {svcName}  | jq -r '.services.\"{svcName}\".image'", silent=True)
+	if ret.returncode != 0:
+		return f"cannot retrieve image info for {containerName}: {ret.stdout}"
+	else:
+		return ret.stdout.strip()
 
-def StopPySharkCapture(testcase):
-	with cls_cmd.LocalCmd() as myCmd:
-		cmd = 'killall tshark'
-		myCmd.run(cmd, reportNonZero=False)
-		cmd = 'killall dumpcap'
-		myCmd.run(cmd, reportNonZero=False)
+def GetServiceHealth(ssh, svcName, file):
+	if svcName is None:
+		return False, f"Service {svcName} not found in {file}"
+	image = GetImageName(ssh, svcName, file)
+	if 'db_init' in svcName or 'db-init' in svcName: # exits with 0, there cannot be healthy
+		return True, f"Service {svcName} healthy, image {image}"
+	for _ in range(8):
+		result = ssh.run(f"docker compose -f {file} ps --format json {svcName}  | jq -r 'if type==\"array\" then .[0].Health else .Health end'", silent=True)
+		if result.stdout == 'healthy':
+			return True, f"Service {svcName} healthy, image {image}"
 		time.sleep(5)
-		cmd = f'mv /tmp/capture_{testcase}.pcap ../cmake_targets/log/{testcase}/.'
-		myCmd.run(cmd, timeout=100, reportNonZero=False)
-	return False
+	return False, f"Failed to deploy: service {svcName}"
+
+def ExistEnvFilePrint(ssh, wd, prompt='env vars in existing'):
+	ret = ssh.run(f'cat {wd}/.env', silent=True, reportNonZero=False)
+	if ret.returncode != 0:
+		return False
+	env_vars = ret.stdout.strip().splitlines()
+	logging.info(f'{prompt} {wd}/.env: {env_vars}')
+	return True
+
+def WriteEnvFile(ssh, services, wd, tag, flexric_tag):
+	ret = ssh.run(f'cat {wd}/.env', silent=True, reportNonZero=False)
+	registry = "oai-ci" # pull_images() gives us this registry path
+	envs = {"REGISTRY":registry, "TAG": tag, "FLEXRIC_TAG": flexric_tag}
+	if ret.returncode == 0: # it exists, we have to update
+		# transforms env file to dictionary
+		old_envs = {}
+		for l in ret.stdout.strip().splitlines():
+			var, val = l.split('=', 1)
+			old_envs[var] = val.strip('"')
+		# will retain the old environment variables
+		envs = {**envs, **old_envs}
+	for svc in services.split():
+		# In some scenarios we have the choice of either pulling normal images
+		# or -asan images. We need to detect which kind we did pull.
+		fullImageName = GetImageName(ssh, svc, f"{wd}/docker-compose.y*ml")
+		image = fullImageName.split("/")[-1].split(":")[0]
+		checkimg = f"{registry}/{image}-asan:{tag}"
+		ret = ssh.run(f'docker image inspect {checkimg}', reportNonZero=False)
+		if ret.returncode == 0:
+			logging.info(f"detected pulled image {checkimg}")
+			if "oai-enb" in image: envs["ENB_IMG"] = "oai-enb-asan"
+			elif "oai-gnb" in image: envs["GNB_IMG"] = "oai-gnb-asan"
+			elif "oai-lte-ue" in image: envs["LTEUE_IMG"] = "oai-lte-ue-asan"
+			elif "oai-nr-ue" in image: envs["NRUE_IMG"] = "oai-nr-ue-asan"
+			elif "oai-nr-cuup" in image: envs["NRCUUP_IMG"] = "oai-nr-cuup-asan"
+			else: logging.warning("undetected image format {image}, cannot use asan")
+	env_string = "\n".join([f"{var}=\"{val}\"" for var,val in envs.items()])
+	ssh.run(f'echo -e \'{env_string}\' > {wd}/.env', silent=True)
+	ExistEnvFilePrint(ssh, wd, prompt='New env vars in file')
+
+def GetServices(ssh, requested, file):
+    if requested == [] or requested is None or requested == "":
+        logging.warning('No service name given: starting all services in docker-compose.yml!')
+        ret = ssh.run(f'docker compose -f {file} config --services')
+        if ret.returncode != 0:
+            return ""
+        else:
+            return ' '.join(ret.stdout.splitlines())
+    else:
+        return requested
+
+def CopyinServiceLog(ssh, lSourcePath, yaml, svcName, wd_yaml, filename):
+	remote_filename = f"{lSourcePath}/cmake_targets/log/{filename}"
+	ssh.run(f'docker compose -f {wd_yaml} logs {svcName} --no-log-prefix &> {remote_filename}')
+	local_dir = f"{os.getcwd()}/../cmake_targets/log/{yaml}"
+	local_filename = f"{local_dir}/{filename}"
+	return ssh.copyin(remote_filename, local_filename)
+
+def GetRunningServices(ssh, file):
+	ret = ssh.run(f'docker compose -f {file} config --services')
+	if ret.returncode != 0:
+		return None
+	allServices = ret.stdout.splitlines()
+	running_services = []
+	for s in allServices:
+		# outputs the hash if the container is running
+		ret = ssh.run(f'docker compose -f {file} ps --all --quiet -- {s}')
+		if ret.returncode != 0:
+			logging.info(f"service {s}: {ret.stdout}")
+		elif ret.stdout == "":
+			logging.warning(f"could not retrieve information for service {s}")
+		else:
+			c = ret.stdout
+			logging.debug(f'running service {s} with container id {c}')
+			running_services.append((s, c))
+	logging.info(f'stopping services: {running_services}')
+	return running_services
+
+def CheckLogs(self, yaml, service_name, HTML, RAN):
+	logPath = f'{os.getcwd()}/../cmake_targets/log/{yaml}'
+	filename = f'{logPath}/{service_name}-{HTML.testCase_id}.log'
+	success = True
+	if (any(sub in service_name for sub in ['oai_ue','oai-nr-ue','lte_ue'])):
+		logging.debug(f'\u001B[1m Analyzing UE logfile {filename} \u001B[0m')
+		logStatus = cls_oaicitest.OaiCiTest().AnalyzeLogFile_UE(filename, HTML, RAN)
+		opt = f"UE log analysis for service {service_name}"
+		# usage of htmlUEFailureMsg/htmleNBFailureMsg is because Analyze log files
+		# abuse HTML to store their reports, and we here want to put custom options,
+		# which is not possible with CreateHtmlTestRow
+		# solution: use HTML templates, where we don't need different HTML write funcs
+		if (logStatus < 0):
+			HTML.CreateHtmlTestRowQueue(opt, 'KO', [HTML.htmlUEFailureMsg])
+			success = False
+		else:
+			HTML.CreateHtmlTestRowQueue(opt, 'OK', [HTML.htmlUEFailureMsg])
+		HTML.htmlUEFailureMsg = ""
+	elif service_name == 'nv-cubb':
+		msg = 'Undeploy PNF/Nvidia CUBB'
+		HTML.CreateHtmlTestRow(msg, 'OK', CONST.ALL_PROCESSES_OK)
+	elif (any(sub in service_name for sub in ['enb','rru','rcc','cu','du','gnb'])):
+		logging.debug(f'\u001B[1m Analyzing XnB logfile {filename}\u001B[0m')
+		logStatus = RAN.AnalyzeLogFile_eNB(filename, HTML, self.ran_checkers)
+		opt = f"xNB log analysis for service {service_name}"
+		if (logStatus < 0):
+			HTML.CreateHtmlTestRowQueue(opt, 'KO', [HTML.htmleNBFailureMsg])
+			success = False
+		else:
+			HTML.CreateHtmlTestRowQueue(opt, 'OK', [HTML.htmleNBFailureMsg])
+		HTML.htmleNBFailureMsg = ""
+	else:
+		logging.info(f'Skipping to analyze log for service name {service_name}')
+		HTML.CreateHtmlTestRowQueue(f"service {service_name}", 'OK', ["no analysis function"])
+	logging.debug(f"log check: service {service_name} passed analysis {success}")
+	return success
+
 #-----------------------------------------------------------
 # Class Declaration
 #-----------------------------------------------------------
@@ -219,11 +308,9 @@ class Containerize():
 		self.proxyCommit = None
 		self.eNB_instance = 0
 		self.eNB_serverId = ['', '', '']
-		self.deployKind = [True, True, True]
 		self.yamlPath = ['', '', '']
 		self.services = ['', '', '']
-		self.nb_healthy = [0, 0, 0]
-		self.exitStatus = 0
+		self.deploymentTag = ''
 		self.eNB_logFile = ['', '', '']
 
 		self.testCase_id = ''
@@ -235,7 +322,6 @@ class Containerize():
 
 		self.deployedContainers = []
 		self.tsharkStarted = False
-		self.displayedNewTags = False
 		self.pingContName = ''
 		self.pingOptions = ''
 		self.pingLossThreshold = ''
@@ -245,38 +331,33 @@ class Containerize():
 		self.cliOptions = ''
 
 		self.imageToCopy = ''
-		self.registrySvrId = ''
-		self.testSvrId = ''
-		self.imageToPull = []
 		#checkers from xml
 		self.ran_checkers={}
+		self.num_attempts = 1
+
+		self.flexricTag = ''
 
 #-----------------------------------------------------------
 # Container management functions
 #-----------------------------------------------------------
 
+	def GetCredentials(self, server_id):
+		if server_id == '0':
+			ip, path = self.eNBIPAddress, self.eNBSourceCodePath
+		elif server_id == '1':
+			ip, path = self.eNB1IPAddress, self.eNB1SourceCodePath
+		elif server_id == '2':
+			ip, path = self.eNB2IPAddress, self.eNB2SourceCodePath
+		else:
+			raise ValueError(f"unknown server ID '{server_id}'")
+		if ip == '' or path == '':
+			HELP.GenericHelp(CONST.Version)
+			raise ValueError(f'Insufficient Parameter: IP/node {ip}, path {path}')
+		return (ip, path)
+
 	def BuildImage(self, HTML):
-		if self.ranRepository == '' or self.ranBranch == '' or self.ranCommitID == '':
-			HELP.GenericHelp(CONST.Version)
-			sys.exit('Insufficient Parameter')
-		if self.eNB_serverId[self.eNB_instance] == '0':
-			lIpAddr = self.eNBIPAddress
-			lUserName = self.eNBUserName
-			lPassWord = self.eNBPassword
-			lSourcePath = self.eNBSourceCodePath
-		elif self.eNB_serverId[self.eNB_instance] == '1':
-			lIpAddr = self.eNB1IPAddress
-			lUserName = self.eNB1UserName
-			lPassWord = self.eNB1Password
-			lSourcePath = self.eNB1SourceCodePath
-		elif self.eNB_serverId[self.eNB_instance] == '2':
-			lIpAddr = self.eNB2IPAddress
-			lUserName = self.eNB2UserName
-			lPassWord = self.eNB2Password
-			lSourcePath = self.eNB2SourceCodePath
-		if lIpAddr == '' or lUserName == '' or lPassWord == '' or lSourcePath == '':
-			HELP.GenericHelp(CONST.Version)
-			sys.exit('Insufficient Parameter')
+		svr = self.eNB_serverId[self.eNB_instance]
+		lIpAddr, lSourcePath = self.GetCredentials(svr)
 		logging.debug('Building on server: ' + lIpAddr)
 		cmd = cls_cmd.RemoteCmd(lIpAddr)
 	
@@ -316,7 +397,9 @@ class Containerize():
 				imageNames.append(('oai-gnb-aerial', 'gNB.aerial', 'oai-gnb-aerial', ''))
 				# Building again the 5G images with Address Sanitizer
 				imageNames.append(('ran-build', 'build', 'ran-build-asan', '--build-arg "BUILD_OPTION=--sanitize"'))
+				imageNames.append(('oai-enb', 'eNB', 'oai-enb-asan', '--build-arg "BUILD_OPTION=--sanitize"'))
 				imageNames.append(('oai-gnb', 'gNB', 'oai-gnb-asan', '--build-arg "BUILD_OPTION=--sanitize"'))
+				imageNames.append(('oai-lte-ue', 'lteUE', 'oai-lte-ue-asan', '--build-arg "BUILD_OPTION=--sanitize"'))
 				imageNames.append(('oai-nr-ue', 'nrUE', 'oai-nr-ue-asan', '--build-arg "BUILD_OPTION=--sanitize"'))
 				imageNames.append(('oai-nr-cuup', 'nr-cuup', 'oai-nr-cuup-asan', '--build-arg "BUILD_OPTION=--sanitize"'))
 				imageNames.append(('ran-build-fhi72', 'build.fhi72', 'ran-build-fhi72', ''))
@@ -325,19 +408,11 @@ class Containerize():
 		if result is not None:
 			self.dockerfileprefix = '.ubuntu22.cross-arm64'
 		
-		# Workaround for some servers, we need to erase completely the workspace
-		if self.forcedWorkspaceCleanup:
-			cmd.run(f'sudo -S rm -Rf {lSourcePath}')
-	
 		self.testCase_id = HTML.testCase_id
-	
-		CreateWorkspace(cmd, lSourcePath, self.ranRepository, self.ranCommitID, self.ranTargetBranch, self.ranAllowMerge)
-
+		cmd.cd(lSourcePath)
 		# if asterix, copy the entitlement and subscription manager configurations
 		if self.host == 'Red Hat':
-			cmd.run('mkdir -p ./etc-pki-entitlement ./rhsm-conf ./rhsm-ca')
-			cmd.run('cp /etc/rhsm/rhsm.conf ./rhsm-conf/')
-			cmd.run('cp /etc/rhsm/ca/redhat-uep.pem ./rhsm-ca/')
+			cmd.run('mkdir -p ./etc-pki-entitlement')
 			cmd.run('cp /etc/pki/entitlement/*.pem ./etc-pki-entitlement/')
 
 		baseImage = 'ran-base'
@@ -480,50 +555,12 @@ class Containerize():
 			return False
 
 	def BuildProxy(self, HTML):
-		if self.ranRepository == '' or self.ranBranch == '' or self.ranCommitID == '':
-			HELP.GenericHelp(CONST.Version)
-			sys.exit('Insufficient Parameter')
-		if self.eNB_serverId[self.eNB_instance] == '0':
-			lIpAddr = self.eNBIPAddress
-			lUserName = self.eNBUserName
-			lPassWord = self.eNBPassword
-			lSourcePath = self.eNBSourceCodePath
-		elif self.eNB_serverId[self.eNB_instance] == '1':
-			lIpAddr = self.eNB1IPAddress
-			lUserName = self.eNB1UserName
-			lPassWord = self.eNB1Password
-			lSourcePath = self.eNB1SourceCodePath
-		elif self.eNB_serverId[self.eNB_instance] == '2':
-			lIpAddr = self.eNB2IPAddress
-			lUserName = self.eNB2UserName
-			lPassWord = self.eNB2Password
-			lSourcePath = self.eNB2SourceCodePath
-		if lIpAddr == '' or lUserName == '' or lPassWord == '' or lSourcePath == '':
-			HELP.GenericHelp(CONST.Version)
-			sys.exit('Insufficient Parameter')
-		if self.proxyCommit is None:
-			HELP.GenericHelp(CONST.Version)
-			sys.exit('Insufficient Parameter (need proxyCommit for proxy build)')
+		svr = self.eNB_serverId[self.eNB_instance]
+		lIpAddr, lSourcePath = self.GetCredentials(svr)
 		logging.debug('Building on server: ' + lIpAddr)
-		mySSH = SSH.SSHConnection()
-		mySSH.open(lIpAddr, lUserName, lPassWord)
+		ssh = cls_cmd.getConnection(lIpAddr)
 
-		# Check that we are on Ubuntu
-		mySSH.command('hostnamectl', '\$', 5)
-		result = re.search('Ubuntu',  mySSH.getBefore())
-		self.host = result.group(0)
-		if self.host != 'Ubuntu':
-			logging.error('\u001B[1m Can build proxy only on Ubuntu server\u001B[0m')
-			mySSH.close()
-			sys.exit(1)
-
-		self.cli = 'docker'
-		self.cliBuildOptions = ''
-
-		# Workaround for some servers, we need to erase completely the workspace
-		if self.forcedWorkspaceCleanup:
-			mySSH.command('echo ' + lPassWord + ' | sudo -S rm -Rf ' + lSourcePath, '\$', 15)
-
+		self.testCase_id = HTML.testCase_id
 		oldRanCommidID = self.ranCommitID
 		oldRanRepository = self.ranRepository
 		oldRanAllowMerge = self.ranAllowMerge
@@ -532,32 +569,38 @@ class Containerize():
 		self.ranRepository = 'https://github.com/EpiSci/oai-lte-5g-multi-ue-proxy.git'
 		self.ranAllowMerge = False
 		self.ranTargetBranch = 'master'
-		CreateWorkspace(mySSH, lSourcePath, self.ranRepository, self.ranCommitID, self.ranTargetBranch, self.ranAllowMerge)
-		# to prevent accidentally overwriting data that might be used later
-		self.ranCommitID = oldRanCommidID
-		self.ranRepository = oldRanRepository
-		self.ranAllowMerge = oldRanAllowMerge
-		self.ranTargetBranch = oldRanTargetBranch
 
 		# Let's remove any previous run artifacts if still there
-		mySSH.command(self.cli + ' image prune --force', '\$', 30)
+		ssh.run('docker image prune --force')
 		# Remove any previous proxy image
-		mySSH.command(self.cli + ' image rm oai-lte-multi-ue-proxy:latest || true', '\$', 30)
+		ssh.run('docker image rm oai-lte-multi-ue-proxy:latest')
 
 		tag = self.proxyCommit
 		logging.debug('building L2sim proxy image for tag ' + tag)
 		# check if the corresponding proxy image with tag exists. If not, build it
-		mySSH.command(self.cli + ' image inspect --format=\'Size = {{.Size}} bytes\' proxy:' + tag, '\$', 5)
-		buildProxy = mySSH.getBefore().count('o such image') != 0
+		ret = ssh.run(f'docker image inspect --format=\'Size = {{{{.Size}}}} bytes\' proxy:{tag}')
+		buildProxy = ret.returncode != 0 # if no image, build new proxy
 		if buildProxy:
-			mySSH.command(self.cli + ' build ' + self.cliBuildOptions + ' --target oai-lte-multi-ue-proxy --tag proxy:' + tag + ' --file docker/Dockerfile.ubuntu18.04 . > cmake_targets/log/proxy-build.log 2>&1', '\$', 180)
-			# Note: at this point, OAI images are flattened, but we cannot do this
-			# here, as the flatten script is not in the proxy repo
-			mySSH.command(self.cli + ' image inspect --format=\'Size = {{.Size}} bytes\' proxy:' + tag, '\$', 5)
-			mySSH.command(self.cli + ' image prune --force || true','\$', 15)
-			if mySSH.getBefore().count('o such image') != 0:
+			ssh.run(f'rm -Rf {lSourcePath}')
+			success = CreateWorkspace(lIpAddr, lSourcePath, self.ranRepository, self.ranCommitID, self.ranTargetBranch, self.ranAllowMerge)
+			if not success:
+				raise Exception("could not clone proxy repository")
+
+			filename = f'build_log_{self.testCase_id}'
+			fullpath = f'{lSourcePath}/{filename}'
+
+			ssh.run(f'docker build --target oai-lte-multi-ue-proxy --tag proxy:{tag} --file {lSourcePath}/docker/Dockerfile.ubuntu18.04 {lSourcePath} > {fullpath} 2>&1')
+			ssh.run(f'zip -r -qq {fullpath}.zip {fullpath}')
+			local_file = f"{os.getcwd()}/../cmake_targets/log/{filename}.zip"
+			ssh.copyin(f'{fullpath}.zip', local_file)
+			# don't delete such that we might recover the zips
+			#ssh.run(f'rm -f {fullpath}.zip')
+
+			ssh.run('docker image prune --force')
+			ret = ssh.run(f'docker image inspect --format=\'Size = {{{{.Size}}}} bytes\' proxy:{tag}')
+			if ret.returncode != 0:
 				logging.error('\u001B[1m Build of L2sim proxy failed\u001B[0m')
-				mySSH.close()
+				ssh.close()
 				HTML.CreateHtmlTestRow('commit ' + tag, 'KO', CONST.ALL_PROCESSES_OK)
 				HTML.CreateHtmlTabFooter(False)
 				return False
@@ -565,33 +608,20 @@ class Containerize():
 			logging.debug('L2sim proxy image for tag ' + tag + ' already exists, skipping build')
 
 		# retag the build images to that we pick it up later
-		mySSH.command('docker image tag proxy:' + tag + ' oai-lte-multi-ue-proxy:latest', '\$', 5)
-
-		# no merge: is a push to develop, tag the image so we can push it to the registry
-		if not self.ranAllowMerge:
-			mySSH.command('docker image tag proxy:' + tag + ' proxy:develop', '\$', 5)
+		ssh.run(f'docker image tag proxy:{tag} oai-lte-multi-ue-proxy:latest')
 
 		# we assume that the host on which this is built will also run the proxy. The proxy
 		# currently requires the following command, and the docker-compose up mechanism of
 		# the CI does not allow to run arbitrary commands. Note that the following actually
 		# belongs to the deployment, not the build of the proxy...
 		logging.warning('the following command belongs to deployment, but no mechanism exists to exec it there!')
-		mySSH.command('sudo ifconfig lo: 127.0.0.2 netmask 255.0.0.0 up', '\$', 5)
+		ssh.run('sudo ifconfig lo: 127.0.0.2 netmask 255.0.0.0 up')
 
-		# Analyzing the logs
-		if buildProxy:
-			self.testCase_id = HTML.testCase_id
-			mySSH.command('cd ' + lSourcePath + '/cmake_targets', '\$', 5)
-			mySSH.command('mkdir -p proxy_build_log_' + self.testCase_id, '\$', 5)
-			mySSH.command('mv log/* ' + 'proxy_build_log_' + self.testCase_id, '\$', 5)
-			if (os.path.isfile('./proxy_build_log_' + self.testCase_id + '.zip')):
-				os.remove('./proxy_build_log_' + self.testCase_id + '.zip')
-			if (os.path.isdir('./proxy_build_log_' + self.testCase_id)):
-				shutil.rmtree('./proxy_build_log_' + self.testCase_id)
-			mySSH.command('zip -r -qq proxy_build_log_' + self.testCase_id + '.zip proxy_build_log_' + self.testCase_id, '\$', 5)
-			mySSH.copyin(lIpAddr, lUserName, lPassWord, lSourcePath + '/cmake_targets/build_log_' + self.testCase_id + '.zip', '.')
-			# don't delete such that we might recover the zips
-			#mySSH.command('rm -f build_log_' + self.testCase_id + '.zip','\$', 5)
+		# to prevent accidentally overwriting data that might be used later
+		self.ranCommitID = oldRanCommidID
+		self.ranRepository = oldRanRepository
+		self.ranAllowMerge = oldRanAllowMerge
+		self.ranTargetBranch = oldRanTargetBranch
 
 		# we do not analyze the logs (we assume the proxy builds fine at this stage),
 		# but need to have the following information to correctly display the HTML
@@ -603,11 +633,11 @@ class Containerize():
 		files['Target Image Creation'] = errorandwarnings
 		collectInfo = {}
 		collectInfo['proxy'] = files
-		mySSH.command('docker image inspect --format=\'Size = {{.Size}} bytes\' proxy:' + tag, '\$', 5)
-		result = re.search('Size *= *(?P<size>[0-9\-]+) *bytes', mySSH.getBefore())
+		ret = ssh.run(f'docker image inspect --format=\'Size = {{{{.Size}}}} bytes\' proxy:{tag}')
+		result = re.search('Size *= *(?P<size>[0-9\-]+) *bytes', ret.stdout)
 		# Cleaning any created tmp volume
-		mySSH.command(self.cli + ' volume prune --force || true','\$', 15)
-		mySSH.close()
+		ssh.run('docker volume prune --force')
+		ssh.close()
 
 		allImagesSize = {}
 		if result is not None:
@@ -627,27 +657,8 @@ class Containerize():
 			return False
 
 	def BuildRunTests(self, HTML):
-		if self.ranRepository == '' or self.ranBranch == '' or self.ranCommitID == '':
-			HELP.GenericHelp(CONST.Version)
-			sys.exit('Insufficient Parameter')
-		if self.eNB_serverId[self.eNB_instance] == '0':
-			lIpAddr = self.eNBIPAddress
-			lUserName = self.eNBUserName
-			lPassWord = self.eNBPassword
-			lSourcePath = self.eNBSourceCodePath
-		elif self.eNB_serverId[self.eNB_instance] == '1':
-			lIpAddr = self.eNB1IPAddress
-			lUserName = self.eNB1UserName
-			lPassWord = self.eNB1Password
-			lSourcePath = self.eNB1SourceCodePath
-		elif self.eNB_serverId[self.eNB_instance] == '2':
-			lIpAddr = self.eNB2IPAddress
-			lUserName = self.eNB2UserName
-			lPassWord = self.eNB2Password
-			lSourcePath = self.eNB2SourceCodePath
-		if lIpAddr == '' or lUserName == '' or lPassWord == '' or lSourcePath == '':
-			HELP.GenericHelp(CONST.Version)
-			sys.exit('Insufficient Parameter')
+		svr = self.eNB_serverId[self.eNB_instance]
+		lIpAddr, lSourcePath = self.GetCredentials(svr)
 		logging.debug('Building on server: ' + lIpAddr)
 		cmd = cls_cmd.RemoteCmd(lIpAddr)
 		cmd.cd(lSourcePath)
@@ -694,7 +705,7 @@ class Containerize():
 		HTML.CreateHtmlTestRowQueue("Build unit tests", 'OK', [dockerfile])
 
 		# it worked, build and execute tests, and close connection
-		ret = cmd.run(f'docker run -a STDOUT --rm ran-unittests:{baseTag} ctest --output-on-failure --no-label-summary -j$(nproc)')
+		ret = cmd.run(f'docker run -a STDOUT --workdir /oai-ran/build/ --env LD_LIBRARY_PATH=/oai-ran/build/ --rm ran-unittests:{baseTag} ctest --output-on-failure --no-label-summary -j$(nproc)')
 		cmd.run(f'docker rmi ran-unittests:{baseTag}')
 		build_log_name = f'build_log_{self.testCase_id}'
 		CopyLogsToExecutor(cmd, lSourcePath, build_log_name)
@@ -709,34 +720,16 @@ class Containerize():
 			HTML.CreateHtmlTabFooter(False)
 			return False
 
-	def Push_Image_to_Local_Registry(self, HTML):
-		if self.registrySvrId == '0':
-			lIpAddr = self.eNBIPAddress
-			lUserName = self.eNBUserName
-			lPassWord = self.eNBPassword
-			lSourcePath = self.eNBSourceCodePath
-		elif self.registrySvrId == '1':
-			lIpAddr = self.eNB1IPAddress
-			lUserName = self.eNB1UserName
-			lPassWord = self.eNB1Password
-			lSourcePath = self.eNB1SourceCodePath
-		elif self.registrySvrId == '2':
-			lIpAddr = self.eNB2IPAddress
-			lUserName = self.eNB2UserName
-			lPassWord = self.eNB2Password
-			lSourcePath = self.eNB2SourceCodePath
-		if lIpAddr == '' or lUserName == '' or lPassWord == '' or lSourcePath == '':
-			HELP.GenericHelp(CONST.Version)
-			sys.exit('Insufficient Parameter')
+	def Push_Image_to_Local_Registry(self, HTML, svr_id):
+		lIpAddr, lSourcePath = self.GetCredentials(svr_id)
 		logging.debug('Pushing images from server: ' + lIpAddr)
-		mySSH = SSH.SSHConnection()
-		mySSH.open(lIpAddr, lUserName, lPassWord)
+		ssh = cls_cmd.getConnection(lIpAddr)
 		imagePrefix = 'porcepix.sboai.cs.eurecom.fr'
-		mySSH.command(f'docker login -u oaicicd -p oaicicd {imagePrefix}', '\$', 5)
-		if re.search('Login Succeeded', mySSH.getBefore()) is None:
+		ret = ssh.run(f'docker login -u oaicicd -p oaicicd {imagePrefix}')
+		if ret.returncode != 0:
 			msg = 'Could not log into local registry'
 			logging.error(msg)
-			mySSH.close()
+			ssh.close()
 			HTML.CreateHtmlTestRow(msg, 'KO', CONST.ALL_PROCESSES_OK)
 			return False
 
@@ -744,753 +737,187 @@ class Containerize():
 		if self.ranAllowMerge:
 			orgTag = 'ci-temp'
 		for image in IMAGES:
-			tagToUse = ImageTagToUse(image, self.ranCommitID, self.ranBranch, self.ranAllowMerge)
-			mySSH.command(f'docker image tag {image}:{orgTag} {imagePrefix}/{tagToUse}', '\$', 5)
-			if re.search('Error response from daemon: No such image:', mySSH.getBefore()) is not None:
+			tagToUse = CreateTag(self.ranCommitID, self.ranBranch, self.ranAllowMerge)
+			imageTag = f"{image}:{tagToUse}"
+			ret = ssh.run(f'docker image tag {image}:{orgTag} {imagePrefix}/{imageTag}')
+			if ret.returncode != 0:
 				continue
-			mySSH.command(f'docker push {imagePrefix}/{tagToUse}', '\$', 120)
-			if re.search(': digest:', mySSH.getBefore()) is None:
-				logging.debug(mySSH.getBefore())
-				msg = f'Could not push {image} to local registry : {tagToUse}'
+			ret = ssh.run(f'docker push {imagePrefix}/{imageTag}')
+			if ret.returncode != 0:
+				msg = f'Could not push {image} to local registry : {imageTag}'
 				logging.error(msg)
-				mySSH.close()
+				ssh.close()
 				HTML.CreateHtmlTestRow(msg, 'KO', CONST.ALL_PROCESSES_OK)
 				return False
-			mySSH.command(f'docker rmi {imagePrefix}/{tagToUse} {image}:{orgTag}', '\$', 30)
+			# Creating a develop tag on the local private registry
+			if not self.ranAllowMerge:
+				ssh.run(f'docker image tag {image}:{orgTag} {imagePrefix}/{image}:develop')
+				ssh.run(f'docker push {imagePrefix}/{image}:develop')
+				ssh.run(f'docker rmi {imagePrefix}/{image}:develop')
+			ssh.run(f'docker rmi {imagePrefix}/{imageTag} {image}:{orgTag}')
 
-		mySSH.command(f'docker logout {imagePrefix}', '\$', 5)
-		if re.search('Removing login credentials', mySSH.getBefore()) is None:
+		ret = ssh.run(f'docker logout {imagePrefix}')
+		if ret.returncode != 0:
 			msg = 'Could not log off from local registry'
 			logging.error(msg)
-			mySSH.close()
+			ssh.close()
 			HTML.CreateHtmlTestRow(msg, 'KO', CONST.ALL_PROCESSES_OK)
 			return False
 
-		mySSH.close()
+		ssh.close()
 		HTML.CreateHtmlTestRow('N/A', 'OK', CONST.ALL_PROCESSES_OK)
 		return True
 
-	def Pull_Image_from_Local_Registry(self, HTML):
-		# This method can be called either onto a remote server (different from python executor)
-		# or directly on the python executor (ie lIpAddr == 'none')
-		if self.testSvrId == '0':
-			lIpAddr = self.eNBIPAddress
-			lUserName = self.eNBUserName
-			lPassWord = self.eNBPassword
-			lSourcePath = self.eNBSourceCodePath
-		elif self.testSvrId == '1':
-			lIpAddr = self.eNB1IPAddress
-			lUserName = self.eNB1UserName
-			lPassWord = self.eNB1Password
-			lSourcePath = self.eNB1SourceCodePath
-		elif self.testSvrId == '2':
-			lIpAddr = self.eNB2IPAddress
-			lUserName = self.eNB2UserName
-			lPassWord = self.eNB2Password
-			lSourcePath = self.eNB2SourceCodePath
-		if lIpAddr == '' or lUserName == '' or lPassWord == '' or lSourcePath == '':
-			HELP.GenericHelp(CONST.Version)
-			sys.exit('Insufficient Parameter')
-		logging.debug('\u001B[1m Pulling image(s) on server: ' + lIpAddr + '\u001B[0m')
-		myCmd = cls_cmd.getConnection(lIpAddr)
-		imagePrefix = 'porcepix.sboai.cs.eurecom.fr'
-		response = myCmd.run(f'docker login -u oaicicd -p oaicicd {imagePrefix}')
-		if response.returncode != 0:
-			msg = 'Could not log into local registry'
-			logging.error(msg)
-			myCmd.close()
-			HTML.CreateHtmlTestRow(msg, 'KO', CONST.ALL_PROCESSES_OK)
-			return False
-		for image in self.imageToPull:
-			tagToUse = ImageTagToUse(image, self.ranCommitID, self.ranBranch, self.ranAllowMerge)
-			cmd = f'docker pull {imagePrefix}/{tagToUse}'
-			response = myCmd.run(cmd, timeout=120)
+	def Pull_Image(cmd, images, tag, registry, username, password):
+		if username is not None and password is not None:
+			logging.info(f"logging into registry {username}@{registry}")
+			response = cmd.run(f'docker login -u {username} -p {password} {registry}', silent=True, reportNonZero=False)
 			if response.returncode != 0:
-				logging.debug(response)
-				msg = f'Could not pull {image} from local registry : {tagToUse}'
+				msg = f'Could not log into registry {username}@{registry}'
 				logging.error(msg)
-				myCmd.close()
-				HTML.CreateHtmlTestRow('msg', 'KO', CONST.ALL_PROCESSES_OK)
+				return False, msg
+		pulled_images = []
+		for image in images:
+			imageTag = f"{image}:{tag}"
+			response = cmd.run(f'docker pull {registry}/{imageTag}')
+			if response.returncode != 0:
+				msg = f'Could not pull {image} from local registry: {imageTag}'
+				logging.error(msg)
+				return False, msg
+			cmd.run(f'docker tag {registry}/{imageTag} oai-ci/{imageTag}')
+			cmd.run(f'docker rmi {registry}/{imageTag}')
+			pulled_images += [f"oai-ci/{imageTag}"]
+		if username is not None and password is not None:
+			response = cmd.run(f'docker logout {registry}')
+			# we have the images, if logout fails it's no problem
+		msg = "Pulled Images:\n" + '\n'.join(pulled_images)
+		return True, msg
+
+	def Pull_Image_from_Registry(self, HTML, svr_id, images, tag=None, registry="porcepix.sboai.cs.eurecom.fr", username="oaicicd", password="oaicicd"):
+		lIpAddr, lSourcePath = self.GetCredentials(svr_id)
+		logging.debug('\u001B[1m Pulling image(s) on server: ' + lIpAddr + '\u001B[0m')
+		if not tag:
+			tag = CreateTag(self.ranCommitID, self.ranBranch, self.ranAllowMerge)
+		with cls_cmd.getConnection(lIpAddr) as cmd:
+			success, msg = Containerize.Pull_Image(cmd, images, tag, registry, username, password)
+		param = f"on node {lIpAddr}"
+		if success:
+			HTML.CreateHtmlTestRowQueue(param, 'OK', [msg])
+		else:
+			HTML.CreateHtmlTestRowQueue(param, 'KO', [msg])
+		return success
+
+	def Clean_Test_Server_Images(self, HTML, svr_id, images, tag=None):
+		lIpAddr, lSourcePath = self.GetCredentials(svr_id)
+		logging.debug(f'\u001B[1m Cleaning image(s) from server: {lIpAddr}\u001B[0m')
+		if not tag:
+			tag = CreateTag(self.ranCommitID, self.ranBranch, self.ranAllowMerge)
+
+		status = True
+		with cls_cmd.getConnection(lIpAddr) as myCmd:
+			removed_images = []
+			for image in images:
+				fullImage = f"oai-ci/{image}:{tag}"
+				cmd = f'docker rmi {fullImage}'
+				if myCmd.run(cmd).returncode != 0:
+					status = False
+				removed_images += [fullImage]
+
+		msg = "Removed Images:\n" + '\n'.join(removed_images)
+		s = 'OK' if status else 'KO'
+		param = f"on node {lIpAddr}"
+		HTML.CreateHtmlTestRowQueue(param, s, [msg])
+		return status
+
+	def Create_Workspace(self,HTML):
+		svr = self.eNB_serverId[self.eNB_instance]
+		lIpAddr, lSourcePath = self.GetCredentials(svr)
+		success = CreateWorkspace(lIpAddr, lSourcePath, self.ranRepository, self.ranCommitID, self.ranTargetBranch, self.ranAllowMerge)
+		if success:
+			HTML.CreateHtmlTestRowQueue('N/A', 'OK', [f"created workspace {lSourcePath}"])
+		else:
+			HTML.CreateHtmlTestRowQueue('N/A', 'KO', ["cannot create workspace"])
+		return success
+
+	def DeployObject(self, HTML):
+		svr = self.eNB_serverId[self.eNB_instance]
+		num_attempts = self.num_attempts
+		lIpAddr, lSourcePath = self.GetCredentials(svr)
+		logging.debug(f'Deploying OAI Object on server: {lIpAddr}')
+		yaml = self.yamlPath[self.eNB_instance].strip('/')
+		# creating the log folder by default
+		local_dir = f"{os.getcwd()}/../cmake_targets/log/{yaml.split('/')[-1]}"
+		os.system(f'mkdir -p {local_dir}')
+		wd = f'{lSourcePath}/{yaml}'
+		wd_yaml = f'{wd}/docker-compose.y*ml'
+		yaml_dir = yaml.split('/')[-1]
+		with cls_cmd.getConnection(lIpAddr) as ssh:
+			services = GetServices(ssh, self.services[self.eNB_instance], wd_yaml)
+			if services == [] or services == ' ' or services == None:
+				msg = 'Cannot determine services to start'
+				logging.error(msg)
+				HTML.CreateHtmlTestRowQueue('N/A', 'KO', [msg])
 				return False
-			myCmd.run(f'docker tag {imagePrefix}/{tagToUse} oai-ci/{tagToUse}')
-			myCmd.run(f'docker rmi {imagePrefix}/{tagToUse}')
-		response = myCmd.run(f'docker logout {imagePrefix}')
-		if response.returncode != 0:
-			msg = 'Could not log off from local registry'
-			logging.error(msg)
-			myCmd.close()
-			HTML.CreateHtmlTestRow(msg, 'KO', CONST.ALL_PROCESSES_OK)
-			return False
-		myCmd.close()
-		HTML.CreateHtmlTestRow('N/A', 'OK', CONST.ALL_PROCESSES_OK)
-		return True
-
-	def Clean_Test_Server_Images(self, HTML):
-		# This method can be called either onto a remote server (different from python executor)
-		# or directly on the python executor (ie lIpAddr == 'none')
-		if self.testSvrId == '0':
-			lIpAddr = self.eNBIPAddress
-			lUserName = self.eNBUserName
-			lPassWord = self.eNBPassword
-			lSourcePath = self.eNBSourceCodePath
-		elif self.testSvrId == '1':
-			lIpAddr = self.eNB1IPAddress
-			lUserName = self.eNB1UserName
-			lPassWord = self.eNB1Password
-			lSourcePath = self.eNB1SourceCodePath
-		elif self.testSvrId == '2':
-			lIpAddr = self.eNB2IPAddress
-			lUserName = self.eNB2UserName
-			lPassWord = self.eNB2Password
-			lSourcePath = self.eNB2SourceCodePath
-		if lIpAddr == '' or lUserName == '' or lPassWord == '' or lSourcePath == '':
-			HELP.GenericHelp(CONST.Version)
-			sys.exit('Insufficient Parameter')
-		if lIpAddr != 'none':
-			logging.debug('Removing test images from server: ' + lIpAddr)
-			myCmd = cls_cmd.RemoteCmd(lIpAddr)
+			ExistEnvFilePrint(ssh, wd)
+			WriteEnvFile(ssh, services, wd, self.deploymentTag, self.flexricTag)
+			if num_attempts <= 0:
+				raise ValueError(f'Invalid value for num_attempts: {num_attempts}, must be greater than 0')
+			for attempt in range(num_attempts):
+				imagesInfo = []
+				healthInfo = []
+				logging.info(f'will start services {services}')
+				status = ssh.run(f'docker compose -f {wd_yaml} up -d -- {services}')
+				if status.returncode != 0:
+					msg = f'cannot deploy services {services}: {status.stdout}'
+					logging.error(msg)
+					HTML.CreateHtmlTestRowQueue('N/A', 'NOK', [msg])
+					return False
+				for svc in services.split():
+					health, msg = GetServiceHealth(ssh, svc, f'{wd_yaml}')
+					logging.info(msg)
+					imagesInfo.append(msg)
+					healthInfo.append(health)
+				deployed = all(healthInfo)
+				if deployed:
+					break
+				elif (attempt < num_attempts - 1):
+					logging.warning(f'Failed to deploy on attempt {attempt}, restart services {services}')
+					for svc in services.split():
+						CopyinServiceLog(ssh, lSourcePath, yaml_dir, svc, wd_yaml, f'{svc}-{HTML.testCase_id}-attempt{attempt}.log')
+					ssh.run(f'docker compose -f {wd_yaml} down -- {services}')
+		if deployed:
+			HTML.CreateHtmlTestRowQueue('N/A', 'OK', ['\n'.join(imagesInfo)])
 		else:
-			logging.debug('Removing test images locally')
-			myCmd = cls_cmd.LocalCmd()
-
-		for image in IMAGES:
-			imageTag = ImageTagToUse(image, self.ranCommitID, self.ranBranch, self.ranAllowMerge)
-			cmd = f'docker rmi oai-ci/{imageTag}'
-			myCmd.run(cmd, reportNonZero=False)
-
-		myCmd.close()
-		HTML.CreateHtmlTestRow('N/A', 'OK', CONST.ALL_PROCESSES_OK)
-		return True
-
-	def DeployObject(self, HTML, EPC):
-		if self.eNB_serverId[self.eNB_instance] == '0':
-			lIpAddr = self.eNBIPAddress
-			lUserName = self.eNBUserName
-			lPassWord = self.eNBPassword
-			lSourcePath = self.eNBSourceCodePath
-		elif self.eNB_serverId[self.eNB_instance] == '1':
-			lIpAddr = self.eNB1IPAddress
-			lUserName = self.eNB1UserName
-			lPassWord = self.eNB1Password
-			lSourcePath = self.eNB1SourceCodePath
-		elif self.eNB_serverId[self.eNB_instance] == '2':
-			lIpAddr = self.eNB2IPAddress
-			lUserName = self.eNB2UserName
-			lPassWord = self.eNB2Password
-			lSourcePath = self.eNB2SourceCodePath
-		if lIpAddr == '' or lUserName == '' or lPassWord == '' or lSourcePath == '':
-			HELP.GenericHelp(CONST.Version)
-			sys.exit('Insufficient Parameter')
-		logging.debug('\u001B[1m Deploying OAI Object on server: ' + lIpAddr + '\u001B[0m')
-		self.deployKind[self.eNB_instance] = True
-
-		mySSH = SSH.SSHConnection()
-		mySSH.open(lIpAddr, lUserName, lPassWord)
-
-		CreateWorkspace(mySSH, lSourcePath, self.ranRepository, self.ranCommitID, self.ranTargetBranch, self.ranAllowMerge)
-
-		mySSH.command('cd ' + lSourcePath + '/' + self.yamlPath[self.eNB_instance], '\$', 5)
-		mySSH.command('cp docker-compose.y*ml ci-docker-compose.yml', '\$', 5)
-		for image in IMAGES:
-			imageTag = ImageTagToUse(image, self.ranCommitID, self.ranBranch, self.ranAllowMerge)
-			mySSH.command(f'sed -i -e "s#image: {image}:latest#image: oai-ci/{imageTag}#" ci-docker-compose.yml', '\$', 2)
-
-		# Currently support only one
-		svcName = self.services[self.eNB_instance]
-		if svcName == '':
-			logging.warning('no service name given: starting all services in ci-docker-compose.yml!')
-
-		mySSH.command(f'docker compose --file ci-docker-compose.yml up -d -- {svcName}', '\$', 30)
-
-		# Checking Status
-		mySSH.command(f'docker compose --file ci-docker-compose.yml config {svcName}', '\$', 5)
-		result = re.search('container_name: (?P<container_name>[a-zA-Z0-9\-\_]+)', mySSH.getBefore())
-		unhealthyNb = 0
-		healthyNb = 0
-		startingNb = 0
-		containerName = ''
-		usedImage = ''
-		imageInfo = ''
-		if result is not None:
-			containerName = result.group('container_name')
-			time.sleep(5)
-			cnt = 0
-			while (cnt < 3):
-				mySSH.command('docker inspect --format="{{.State.Health.Status}}" ' + containerName, '\$', 5)
-				unhealthyNb = mySSH.getBefore().count('unhealthy')
-				healthyNb = mySSH.getBefore().count('healthy') - unhealthyNb
-				startingNb = mySSH.getBefore().count('starting')
-				if healthyNb == 1:
-					cnt = 10
-				else:
-					time.sleep(10)
-					cnt += 1
-
-			mySSH.command('docker inspect --format="ImageUsed: {{.Config.Image}}" ' + containerName, '\$', 5)
-			for stdoutLine in mySSH.getBefore().split('\n'):
-				if stdoutLine.count('ImageUsed: oai-ci'):
-					usedImage = stdoutLine.replace('ImageUsed: oai-ci', 'oai-ci').strip()
-					logging.debug('Used image is ' + usedImage)
-			if usedImage != '':
-				mySSH.command('docker image inspect --format "* Size     = {{.Size}} bytes\n* Creation = {{.Created}}\n* Id       = {{.Id}}" ' + usedImage, '\$', 5, silent=True)
-				for stdoutLine in mySSH.getBefore().split('\n'):
-					if re.search('Size     = [0-9]', stdoutLine) is not None:
-						imageInfo += stdoutLine.strip() + '\n'
-					if re.search('Creation = [0-9]', stdoutLine) is not None:
-						imageInfo += stdoutLine.strip() + '\n'
-					if re.search('Id       = sha256', stdoutLine) is not None:
-						imageInfo += stdoutLine.strip() + '\n'
-		logging.debug(' -- ' + str(healthyNb) + ' healthy container(s)')
-		logging.debug(' -- ' + str(unhealthyNb) + ' unhealthy container(s)')
-		logging.debug(' -- ' + str(startingNb) + ' still starting container(s)')
-
-		self.testCase_id = HTML.testCase_id
-		self.eNB_logFile[self.eNB_instance] = 'enb_' + self.testCase_id + '.log'
-
-		status = False
-		if healthyNb == 1:
-			cnt = 0
-			while (cnt < 20):
-				mySSH.command('docker logs ' + containerName + ' | egrep --text --color=never -i "wait|sync|Starting|ready"', '\$', 30)
-				result = re.search('got sync|Starting E1AP at CU UP|Starting F1AP at CU|Got sync|Waiting for RUs to be configured|cuPHYController initialized|Received CONFIG.response, gNB is ready', mySSH.getBefore())
-				if result is None:
-					time.sleep(6)
-					cnt += 1
-				else:
-					cnt = 100
-					status = True
-					logging.info('\u001B[1m Deploying OAI object Pass\u001B[0m')
-		else:
-			# containers are unhealthy, so we won't start. However, logs are stored at the end
-			# in UndeployObject so we here store the logs of the unhealthy container to report it
-			logfilename = f'{lSourcePath}/cmake_targets/log/{self.eNB_logFile[self.eNB_instance]}'
-			mySSH.command(f'docker logs {containerName} > {logfilename}', '\$', 30)
-			mySSH.copyin(lIpAddr, lUserName, lPassWord, logfilename, '.')
-		mySSH.close()
-
-		message = ''
-		if usedImage != '':
-			message += f'Used Image = {usedImage} :\n'
-			message += imageInfo
-		else:
-			message += 'Could not retrieve used image info!\n'
-		if status:
-			message += '\nHealthy deployment!\n'
-		else:
-			message += '\nUnhealthy deployment! -- Check logs for reason!\n'
-		if status:
-			HTML.CreateHtmlTestRowQueue('N/A', 'OK', [message])
-		else:
-			self.exitStatus = 1
-			HTML.CreateHtmlTestRowQueue('N/A', 'KO', [message])
-
+			HTML.CreateHtmlTestRowQueue('N/A', 'KO', ['\n'.join(imagesInfo)])
+		return deployed
 
 	def UndeployObject(self, HTML, RAN):
-		if self.eNB_serverId[self.eNB_instance] == '0':
-			lIpAddr = self.eNBIPAddress
-			lUserName = self.eNBUserName
-			lPassWord = self.eNBPassword
-			lSourcePath = self.eNBSourceCodePath
-		elif self.eNB_serverId[self.eNB_instance] == '1':
-			lIpAddr = self.eNB1IPAddress
-			lUserName = self.eNB1UserName
-			lPassWord = self.eNB1Password
-			lSourcePath = self.eNB1SourceCodePath
-		elif self.eNB_serverId[self.eNB_instance] == '2':
-			lIpAddr = self.eNB2IPAddress
-			lUserName = self.eNB2UserName
-			lPassWord = self.eNB2Password
-			lSourcePath = self.eNB2SourceCodePath
-		if lIpAddr == '' or lUserName == '' or lPassWord == '' or lSourcePath == '':
-			HELP.GenericHelp(CONST.Version)
-			sys.exit('Insufficient Parameter')
+		svr = self.eNB_serverId[self.eNB_instance]
+		lIpAddr, lSourcePath = self.GetCredentials(svr)
 		logging.debug(f'\u001B[1m Undeploying OAI Object from server: {lIpAddr}\u001B[0m')
-		mySSH = cls_cmd.getConnection(lIpAddr)
-		yamlDir = f'{lSourcePath}/{self.yamlPath[self.eNB_instance]}'
-		mySSH.run(f'cd {yamlDir}')
-		svcName = self.services[self.eNB_instance]
-		forceDown = False
-		if svcName != '':
-			logging.warning(f'service name given, but will stop all services in ci-docker-compose.yml!')
-			svcName = ''
-
-		ret = mySSH.run(f'docker compose -f {yamlDir}/ci-docker-compose.yml config --services')
-		if ret.returncode != 0:
-			HTML.CreateHtmlTestRow(RAN.runtime_stats, 'KO', "cannot enumerate running services")
-			self.exitStatus = 1
-			return
-		# first line has command, last line has next command prompt
-		allServices = ret.stdout.splitlines()
-		services = []
-		for s in allServices:
-			# outputs the hash if the container is running
-			ret = mySSH.run(f'docker compose -f {yamlDir}/ci-docker-compose.yml ps --all --quiet -- {s}')
-			c = ret.stdout
-			logging.debug(f'running service {s} with container id {c}')
-			if ret.stdout != "" and ret.returncode == 0: # something is running for that service
-				services.append((s, c))
-		logging.info(f'stopping services {[s for s, _ in services]}')
-
-		mySSH.run(f'docker compose -f {yamlDir}/ci-docker-compose.yml stop -t3')
-		copyin_res = True
-		for service_name, container_id in services:
-			# head -n -1 suppresses the final "X exited with status code Y"
-			filename = f'{service_name}-{HTML.testCase_id}.log'
-			mySSH.run(f'docker logs {container_id} &> {lSourcePath}/cmake_targets/log/{filename}')
-			copyin_res = mySSH.copyin(f'{lSourcePath}/cmake_targets/log/{filename}', f'{filename}') and copyin_res
-
-		mySSH.run(f'docker compose -f {yamlDir}/ci-docker-compose.yml down -v')
-
-		# Analyzing log file!
-		if not copyin_res:
-			HTML.htmleNBFailureMsg='Could not copy logfile(s) to analyze it!'
-			HTML.CreateHtmlTestRow('N/A', 'KO', CONST.ENB_PROCESS_NOLOGFILE_TO_ANALYZE)
-			self.exitStatus = 1
-		# use function for UE log analysis, when oai-nr-ue container is used
-		elif any(service_name == 'oai-nr-ue' or service_name == 'lte_ue0' for service_name, _ in services):
-			self.exitStatus == 0
-			logging.debug(f'Analyzing UE logfile {filename}')
-			logStatus = cls_oaicitest.OaiCiTest().AnalyzeLogFile_UE(f'{filename}', HTML, RAN)
-			if (logStatus < 0):
-				HTML.CreateHtmlTestRow('UE log Analysis', 'KO', logStatus)
-				self.exitStatus = 1
+		yaml = self.yamlPath[self.eNB_instance].strip('/')
+		wd = f'{lSourcePath}/{yaml}'
+		yaml_dir = yaml.split('/')[-1]
+		with cls_cmd.getConnection(lIpAddr) as ssh:
+			ExistEnvFilePrint(ssh, wd)
+			services = GetRunningServices(ssh, f"{wd}/docker-compose.y*ml")
+			copyin_res = None
+			if services is not None:
+				all_serv = " ".join([s for s, _ in services])
+				ssh.run(f'docker compose -f {wd}/docker-compose.y*ml stop -- {all_serv}')
+				copyin_res = all(CopyinServiceLog(ssh, lSourcePath, yaml_dir, s, f"{wd}/docker-compose.y*ml", f'{s}-{HTML.testCase_id}.log') for s, c in services)
 			else:
-				HTML.CreateHtmlTestRow('UE log Analysis', 'OK', CONST.ALL_PROCESSES_OK)
+				logging.warning('could not identify services to stop => no log file')
+			ssh.run(f'docker compose -f {wd}/docker-compose.y*ml down -v')
+			ssh.run(f'rm {wd}/.env')
+		if not copyin_res:
+			HTML.CreateHtmlTestRowQueue('N/A', 'KO', ['Could not copy logfile(s)'])
+			return False
 		else:
-			for service_name, _ in services:
-				if service_name == 'nv-cubb':
-					msg = 'Undeploy PNF/Nvidia CUBB'
-					HTML.CreateHtmlTestRow(msg, 'OK', CONST.ALL_PROCESSES_OK)
-				else:
-					filename = f'{service_name}-{HTML.testCase_id}.log'
-					logging.debug(f'\u001B[1m Analyzing logfile {filename}\u001B[0m')
-					logStatus = RAN.AnalyzeLogFile_eNB(filename, HTML, self.ran_checkers)
-					if (logStatus < 0):
-						HTML.CreateHtmlTestRow(RAN.runtime_stats, 'KO', logStatus)
-						self.exitStatus = 1
-					else:
-						HTML.CreateHtmlTestRow(RAN.runtime_stats, 'OK', CONST.ALL_PROCESSES_OK)
-			# all the xNB run logs shall be on the server 0 for logCollecting
-			if self.eNB_serverId[self.eNB_instance] != '0':
-				mySSH.copyout(f'./*.log', f'{lSourcePath}/cmake_targets/', recursive=True)
-		if self.exitStatus == 0:
+			log_results = [CheckLogs(self, yaml_dir, s, HTML, RAN) for s, _ in services]
+			success = all(log_results)
+		if success:
 			logging.info('\u001B[1m Undeploying OAI Object Pass\u001B[0m')
 		else:
 			logging.error('\u001B[1m Undeploying OAI Object Failed\u001B[0m')
-		mySSH.close()
-
-	def DeployGenObject(self, HTML, RAN, UE):
-		self.exitStatus = 0
-		logging.debug('\u001B[1m Checking Services to deploy\u001B[0m')
-		# Implicitly we are running locally
-		myCmd = cls_cmd.LocalCmd(d = self.yamlPath[0])
-		self.deployKind[0] = False
-		cmd = 'docker-compose config --services'
-		listServices = myCmd.run(cmd)
-		if listServices.returncode != 0:
-			myCmd.close()
-			self.exitStatus = 1
-			HTML.CreateHtmlTestRow('SVC not Found', 'KO', CONST.ALL_PROCESSES_OK)
-			return
-		for reqSvc in self.services[0].split(' '):
-			res = re.search(reqSvc, listServices.stdout)
-			if res is None:
-				logging.error(reqSvc + ' not found in specified docker-compose')
-				self.exitStatus = 1
-		if (self.exitStatus == 1):
-			myCmd.close()
-			HTML.CreateHtmlTestRow('SVC not Found', 'KO', CONST.ALL_PROCESSES_OK)
-			return
-		cmd = 'cp docker-compose.y*ml docker-compose-ci.yml'
-		myCmd.run(cmd, silent=self.displayedNewTags)
-		imageNames = ['oai-enb', 'oai-gnb', 'oai-lte-ue', 'oai-nr-ue', 'oai-lte-ru', 'oai-nr-cuup']
-		for image in imageNames:
-			tagToUse = ImageTagToUse(image, self.ranCommitID, self.ranBranch, self.ranAllowMerge)
-			# In the scenario, for 5G images, we have the choice of either pulling normal images
-			# or -asan images. We need to detect which kind we did pull.
-			if image == 'oai-gnb' or image == 'oai-nr-ue' or image == 'oai-nr-cuup':
-				ret = myCmd.run(f'docker image inspect oai-ci/{tagToUse}', reportNonZero=False, silent=self.displayedNewTags)
-				if ret.returncode != 0:
-					tagToUse = tagToUse.replace('oai-gnb', 'oai-gnb-asan')
-					tagToUse = tagToUse.replace('oai-nr-ue', 'oai-nr-ue-asan')
-					tagToUse = tagToUse.replace('oai-nr-cuup', 'oai-nr-cuup-asan')
-					if not self.displayedNewTags:
-						logging.debug(f'\u001B[1m Using sanitized version of {image} with {tagToUse}\u001B[0m')
-			cmd = f'sed -i -e "s@oaisoftwarealliance/{image}:develop@oai-ci/{tagToUse}@" docker-compose-ci.yml'
-			myCmd.run(cmd, silent=self.displayedNewTags)
-		self.displayedNewTags = True
-
-		cmd = f'docker-compose -f docker-compose-ci.yml up -d {self.services[0]}'
-		deployStatus = myCmd.run(cmd, timeout=100)
-		if deployStatus.returncode != 0:
-			myCmd.close()
-			self.exitStatus = 1
-			logging.error('Could not deploy')
-			HTML.CreateHtmlTestRow('Could not deploy', 'KO', CONST.ALL_PROCESSES_OK)
-			return
-
-		logging.debug('\u001B[1m Checking if all deployed healthy\u001B[0m')
-		cmd = 'docker-compose -f docker-compose-ci.yml ps -a'
-		count = 0
-		healthy = 0
-		restarting = 0
-		newContainers = []
-		while (count < 10):
-			count += 1
-			containerStatus = []
-			deployStatus = myCmd.run(cmd, 30, silent=True)
-			healthy = 0
-			restarting = 0
-			for state in deployStatus.stdout.split('\n'):
-				state = state.strip()
-				res = re.search('Name|NAME|----------', state)
-				if res is not None:
-					continue
-				if len(state) == 0:
-					continue
-				res = re.search('^(?P<container_name>[a-zA-Z0-9\-\_]+) ', state)
-				if res is not None:
-					cName = res.group('container_name')
-					found = False
-					for alreadyDeployed in self.deployedContainers:
-						if cName == alreadyDeployed:
-							found = True
-					if not found:
-						newContainers.append(cName)
-						self.deployedContainers.append(cName)
-				if re.search('\(healthy\)', state) is not None:
-					healthy += 1
-				if re.search('rfsim4g-db-init.*Exit 0', state) is not None or re.search('rfsim4g-db-init.*Exited \(0\)', state) is not None:
-					myCmd.run('docker rm -f rfsim4g-db-init', timeout=30, silent=True, reportNonZero=False)
-				if re.search('l2sim4g-db-init.*Exit 0', state) is not None or re.search('l2sim4g-db-init.*Exited \(0\)', state) is not None:
-					myCmd.run('docker rm -f l2sim4g-db-init', timeout=30, silent=True, reportNonZero=False)
-				if re.search('Restarting', state) is None:
-					containerStatus.append(state)
-				else:
-					restarting += 1
-			if healthy == self.nb_healthy[0] and restarting == 0:
-				count = 100
-			else:
-				time.sleep(10)
-
-		html_cell = ''
-		for newCont in newContainers:
-			if newCont == 'rfsim4g-db-init':
-				continue
-			cmd = 'docker inspect -f "{{.Config.Image}}" ' + newCont
-			imageInspect = myCmd.run(cmd, timeout=30, silent=True)
-			imageName = str(imageInspect.stdout).strip()
-			cmd = 'docker image inspect --format \'{{.RepoTags}}\t{{.Size}} bytes\t{{index (split .Created ".") 0}}\n{{.Id}}\' ' + imageName
-			imageInspect = myCmd.run(cmd, 30, silent=True)
-			html_cell += imageInspect.stdout + '\n'
-		myCmd.close()
-
-		for cState in containerStatus:
-			html_cell += cState + '\n'
-		if count == 100 and healthy == self.nb_healthy[0]:
-			if self.tsharkStarted == False:
-				logging.debug('Starting tshark on public network')
-				self.CaptureOnDockerNetworks()
-			HTML.CreateHtmlTestRowQueue('n/a', 'OK', [html_cell])
-			for cState in containerStatus:
-				logging.debug(cState)
-			logging.info('\u001B[1m Deploying OAI Object(s) PASS\u001B[0m')
-		else:
-			HTML.CreateHtmlTestRowQueue('Could not deploy in time', 'KO', [html_cell])
-			for cState in containerStatus:
-				logging.debug(cState)
-			logging.error('\u001B[1m Deploying OAI Object(s) FAILED\u001B[0m')
-			HTML.testCase_id = 'AUTO-UNDEPLOY'
-			UE.testCase_id = 'AUTO-UNDEPLOY'
-			HTML.desc = 'Automatic Undeployment'
-			UE.desc = 'Automatic Undeployment'
-			UE.ShowTestID()
-			self.UndeployGenObject(HTML, RAN, UE)
-			self.exitStatus = 1
-
-	def CaptureOnDockerNetworks(self):
-		myCmd = cls_cmd.LocalCmd(d = self.yamlPath[0])
-		cmd = 'docker-compose -f docker-compose-ci.yml config | grep com.docker.network.bridge.name | sed -e "s@^.*name: @@"'
-		networkNames = myCmd.run(cmd, silent=True)
-		myCmd.close()
-		# Allow only: control plane RAN (SCTP), HTTP of control in CN (port 80), PFCP traffic (port 8805), MySQL (port 3306)
-		capture_filter = 'sctp or port 80 or port 8805 or icmp or port 3306'
-		interfaces = []
-		iInterfaces = ''
-		for name in networkNames.stdout.split('\n'):
-			if re.search('rfsim', name) is not None or re.search('l2sim', name) is not None:
-				interfaces.append(name)
-				iInterfaces += f'-i {name} '
-		ymlPath = self.yamlPath[0].split('/')
-		output_file = f'/tmp/capture_{ymlPath[1]}.pcap'
-		self.tsharkStarted = True
-		# On old systems (ubuntu 18), pyshark live-capture is buggy.
-		# Going back to old method
-		if sys.version_info < (3, 7):
-			cmd = f'nohup tshark -f "{capture_filter}" {iInterfaces} -w {output_file} > /tmp/tshark.log 2>&1 &'
-			myCmd = cls_cmd.LocalCmd()
-			myCmd.run(cmd, timeout=5, reportNonZero=False)
-			myCmd.close()
-			return
-		x = threading.Thread(target = LaunchPySharkCapture, args = (interfaces,capture_filter,output_file,))
-		x.daemon = True
-		x.start()
-
-	def UndeployGenObject(self, HTML, RAN, UE):
-		self.exitStatus = 0
-		# Implicitly we are running locally
-		ymlPath = self.yamlPath[0].split('/')
-		logPath = '../cmake_targets/log/' + ymlPath[1]
-		myCmd = cls_cmd.LocalCmd(d = self.yamlPath[0])
-		cmd = 'cp docker-compose.y*ml docker-compose-ci.yml'
-		myCmd.run(cmd)
-
-		# check which containers are running for log recovery later
-		cmd = 'docker-compose -f docker-compose-ci.yml ps --all'
-		deployStatusLogs = myCmd.run(cmd, timeout=30)
-
-		# Stop the containers to shut down objects
-		logging.debug('\u001B[1m Stopping containers \u001B[0m')
-		cmd = 'docker-compose -f docker-compose-ci.yml stop -t3'
-		deployStatus = myCmd.run(cmd, timeout=100)
-		if deployStatus.returncode != 0:
-			myCmd.close()
-			self.exitStatus = 1
-			logging.error('Could not stop containers')
-			HTML.CreateHtmlTestRow('Could not stop', 'KO', CONST.ALL_PROCESSES_OK)
-			logging.error('\u001B[1m Undeploying OAI Object(s) FAILED\u001B[0m')
-			return
-
-		anyLogs = False
-		logging.debug('Working dir is now . (ie ci-scripts)')
-		myCmd2 = cls_cmd.LocalCmd()
-		myCmd2.run(f'mkdir -p {logPath}')
-		myCmd2.cd(logPath)
-		for state in deployStatusLogs.stdout.split('\n'):
-			res = re.search('Name|NAME|----------', state)
-			if res is not None:
-				continue
-			if len(state) == 0:
-				continue
-			res = re.search('^(?P<container_name>[a-zA-Z0-9\-\_]+) ', state)
-			if res is not None:
-				anyLogs = True
-				cName = res.group('container_name')
-				cmd = f'docker logs {cName} > {cName}.log 2>&1'
-				myCmd2.run(cmd, timeout=30, reportNonZero=False)
-				if re.search('magma-mme', cName) is not None:
-					cmd = f'docker cp -L {cName}:/var/log/mme.log {cName}-full.log'
-					myCmd2.run(cmd, timeout=30, reportNonZero=False)
-		fullStatus = True
-		if anyLogs:
-			# Analyzing log file(s)!
-			listOfPossibleRanContainers = ['enb*', 'gnb*', 'cu*', 'du*']
-			for container in listOfPossibleRanContainers:
-				filenames = './*-oai-' + container + '.log'
-				cmd = f'ls {filenames}'
-				lsStatus = myCmd2.run(cmd, silent=True, reportNonZero=False)
-				if lsStatus.returncode != 0:
-					continue
-				filenames = str(lsStatus.stdout).strip()
-
-				for filename in filenames.split('\n'):
-					logging.debug('\u001B[1m Analyzing xNB logfile ' + filename + ' \u001B[0m')
-					logStatus = RAN.AnalyzeLogFile_eNB(f'{logPath}/{filename}', HTML, self.ran_checkers)
-					if (logStatus < 0):
-						fullStatus = False
-						self.exitStatus = 1
-						HTML.CreateHtmlTestRow(RAN.runtime_stats, 'KO', logStatus)
-					else:
-						HTML.CreateHtmlTestRow(RAN.runtime_stats, 'OK', CONST.ALL_PROCESSES_OK)
-
-			listOfPossibleUeContainers = ['lte-ue*', 'nr-ue*']
-			for container in listOfPossibleUeContainers:
-				filenames = './*-oai-' + container + '.log'
-				cmd = f'ls {filenames}'
-				lsStatus = myCmd2.run(cmd, silent=True, reportNonZero=False)
-				if lsStatus.returncode != 0:
-					continue
-				filenames = str(lsStatus.stdout).strip()
-
-				for filename in filenames.split('\n'):
-					logging.debug('\u001B[1m Analyzing UE logfile ' + filename + ' \u001B[0m')
-					logStatus = UE.AnalyzeLogFile_UE(f'{logPath}/{filename}', HTML, RAN)
-					if (logStatus < 0):
-						fullStatus = False
-						self.exitStatus = 1
-						HTML.CreateHtmlTestRow('UE log Analysis', 'KO', logStatus)
-					else:
-						HTML.CreateHtmlTestRow('UE log Analysis', 'OK', CONST.ALL_PROCESSES_OK)
-		myCmd2.close()
-		if self.tsharkStarted:
-			self.tsharkStarted = StopPySharkCapture(ymlPath[1])
-		logging.debug('\u001B[1m Undeploying \u001B[0m')
-		logging.debug(f'Working dir is back {self.yamlPath[0]}')
-		cmd = 'docker-compose -f docker-compose-ci.yml down -v'
-		deployStatus = myCmd.run(cmd, timeout=100)
-		if deployStatus.returncode != 0:
-			myCmd.close()
-			self.exitStatus = 1
-			logging.error('Could not undeploy')
-			HTML.CreateHtmlTestRow('Could not undeploy', 'KO', CONST.ALL_PROCESSES_OK)
-			logging.error('\u001B[1m Undeploying OAI Object(s) FAILED\u001B[0m')
-			return
-
-		self.deployedContainers = []
-		myCmd.close()
-
-		if fullStatus:
-			HTML.CreateHtmlTestRow('n/a', 'OK', CONST.ALL_PROCESSES_OK)
-			logging.info('\u001B[1m Undeploying OAI Object(s) PASS\u001B[0m')
-		else:
-			HTML.CreateHtmlTestRow('n/a', 'KO', CONST.ALL_PROCESSES_OK)
-			logging.error('\u001B[1m Undeploying OAI Object(s) FAIL\u001B[0m')
-
-	def StatsFromGenObject(self, HTML):
-		self.exitStatus = 0
-		ymlPath = self.yamlPath[0].split('/')
-		logPath = '../cmake_targets/log/' + ymlPath[1]
-
-		# if the containers are running, recover the logs!
-		myCmd = cls_cmd.LocalCmd(d = self.yamlPath[0])
-		cmd = 'docker-compose -f docker-compose-ci.yml ps --all'
-		deployStatus = myCmd.run(cmd, timeout=30)
-		cmd = 'docker stats --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}" '
-		anyLogs = False
-		for state in deployStatus.stdout.split('\n'):
-			res = re.search('Name|NAME|----------', state)
-			if res is not None:
-				continue
-			if len(state) == 0:
-				continue
-			res = re.search('^(?P<container_name>[a-zA-Z0-9\-\_]+) ', state)
-			if res is not None:
-				anyLogs = True
-				cmd += res.group('container_name') + ' '
-		message = ''
-		if anyLogs:
-			stats = myCmd.run(cmd, timeout=30)
-			for statLine in stats.stdout.split('\n'):
-				logging.debug(statLine)
-				message += statLine + '\n'
-		myCmd.close()
-
-		HTML.CreateHtmlTestRowQueue(self.pingOptions, 'OK', [message])
-
-	def CheckAndAddRoute(self, svrName, ipAddr, userName, password):
-		logging.debug('Checking IP routing on ' + svrName)
-		mySSH = SSH.SSHConnection()
-		if svrName == 'porcepix':
-			mySSH.open(ipAddr, userName, password)
-			# Check if route to asterix gnb exists
-			mySSH.command('ip route | grep --colour=never "192.168.68.64/26"', '\$', 10)
-			result = re.search('172.21.16.127', mySSH.getBefore())
-			if result is None:
-				mySSH.command('echo ' + password + ' | sudo -S ip route add 192.168.68.64/26 via 172.21.16.127 dev eno1', '\$', 10)
-			# Check if route to obelix enb exists
-			mySSH.command('ip route | grep --colour=never "192.168.68.128/26"', '\$', 10)
-			result = re.search('172.21.16.128', mySSH.getBefore())
-			if result is None:
-				mySSH.command('echo ' + password + ' | sudo -S ip route add 192.168.68.128/26 via 172.21.16.128 dev eno1', '\$', 10)
-			# Check if forwarding is enabled
-			mySSH.command('sysctl net.ipv4.conf.all.forwarding', '\$', 10)
-			result = re.search('net.ipv4.conf.all.forwarding = 1', mySSH.getBefore())
-			if result is None:
-				mySSH.command('echo ' + password + ' | sudo -S sysctl net.ipv4.conf.all.forwarding=1', '\$', 10)
-			# Check if iptables forwarding is accepted
-			mySSH.command('echo ' + password + ' | sudo -S iptables -L FORWARD', '\$', 10)
-			result = re.search('Chain FORWARD .*policy ACCEPT', mySSH.getBefore())
-			if result is None:
-				mySSH.command('echo ' + password + ' | sudo -S iptables -P FORWARD ACCEPT', '\$', 10)
-			mySSH.close()
-		if svrName == 'asterix':
-			mySSH.open(ipAddr, userName, password)
-			# Check if route to porcepix epc exists
-			mySSH.command('ip route | grep --colour=never "192.168.61.192/26"', '\$', 10)
-			result = re.search('172.21.16.136', mySSH.getBefore())
-			if result is None:
-				mySSH.command('echo ' + password + ' | sudo -S ip route add 192.168.61.192/26 via 172.21.16.136 dev em1', '\$', 10)
-			# Check if route to porcepix cn5g exists
-			mySSH.command('ip route | grep --colour=never "192.168.70.128/26"', '\$', 10)
-			result = re.search('172.21.16.136', mySSH.getBefore())
-			if result is None:
-				mySSH.command('echo ' + password + ' | sudo -S ip route add 192.168.70.128/26 via 172.21.16.136 dev em1', '\$', 10)
-			# Check if X2 route to obelix enb exists
-			mySSH.command('ip route | grep --colour=never "192.168.68.128/26"', '\$', 10)
-			result = re.search('172.21.16.128', mySSH.getBefore())
-			if result is None:
-				mySSH.command('echo ' + password + ' | sudo -S ip route add 192.168.68.128/26 via 172.21.16.128 dev em1', '\$', 10)
-			# Check if forwarding is enabled
-			mySSH.command('sysctl net.ipv4.conf.all.forwarding', '\$', 10)
-			result = re.search('net.ipv4.conf.all.forwarding = 1', mySSH.getBefore())
-			if result is None:
-				mySSH.command('echo ' + password + ' | sudo -S sysctl net.ipv4.conf.all.forwarding=1', '\$', 10)
-			# Check if iptables forwarding is accepted
-			mySSH.command('echo ' + password + ' | sudo -S iptables -L FORWARD', '\$', 10)
-			result = re.search('Chain FORWARD .*policy ACCEPT', mySSH.getBefore())
-			if result is None:
-				mySSH.command('echo ' + password + ' | sudo -S iptables -P FORWARD ACCEPT', '\$', 10)
-			mySSH.close()
-		if svrName == 'obelix':
-			mySSH.open(ipAddr, userName, password)
-			# Check if route to porcepix epc exists
-			mySSH.command('ip route | grep --colour=never "192.168.61.192/26"', '\$', 10)
-			result = re.search('172.21.16.136', mySSH.getBefore())
-			if result is None:
-				mySSH.command('echo ' + password + ' | sudo -S ip route add 192.168.61.192/26 via 172.21.16.136 dev eno1', '\$', 10)
-			# Check if X2 route to asterix gnb exists
-			mySSH.command('ip route | grep --colour=never "192.168.68.64/26"', '\$', 10)
-			result = re.search('172.21.16.127', mySSH.getBefore())
-			if result is None:
-				mySSH.command('echo ' + password + ' | sudo -S ip route add 192.168.68.64/26 via 172.21.16.127 dev eno1', '\$', 10)
-			# Check if X2 route to nepes gnb exists
-			mySSH.command('ip route | grep --colour=never "192.168.68.192/26"', '\$', 10)
-			result = re.search('172.21.16.137', mySSH.getBefore())
-			if result is None:
-				mySSH.command('echo ' + password + ' | sudo -S ip route add 192.168.68.192/26 via 172.21.16.137 dev eno1', '\$', 10)
-			# Check if forwarding is enabled
-			mySSH.command('sysctl net.ipv4.conf.all.forwarding', '\$', 10)
-			result = re.search('net.ipv4.conf.all.forwarding = 1', mySSH.getBefore())
-			if result is None:
-				mySSH.command('echo ' + password + ' | sudo -S sysctl net.ipv4.conf.all.forwarding=1', '\$', 10)
-			# Check if iptables forwarding is accepted
-			mySSH.command('echo ' + password + ' | sudo -S iptables -L FORWARD', '\$', 10)
-			result = re.search('Chain FORWARD .*policy ACCEPT', mySSH.getBefore())
-			if result is None:
-				mySSH.command('echo ' + password + ' | sudo -S iptables -P FORWARD ACCEPT', '\$', 10)
-			mySSH.close()
-		if svrName == 'nepes':
-			mySSH.open(ipAddr, userName, password)
-			# Check if route to ofqot gnb exists
-			mySSH.command('ip route | grep --colour=never "192.168.68.192/26"', '\$', 10)
-			result = re.search('172.21.16.109', mySSH.getBefore())
-			if result is None:
-				mySSH.command('echo ' + password + ' | sudo -S ip route add 192.168.68.192/26 via 172.21.16.109 dev enp0s31f6', '\$', 10)
-			mySSH.command('sysctl net.ipv4.conf.all.forwarding', '\$', 10)
-			result = re.search('net.ipv4.conf.all.forwarding = 1', mySSH.getBefore())
-			if result is None:
-				mySSH.command('echo ' + password + ' | sudo -S sysctl net.ipv4.conf.all.forwarding=1', '\$', 10)
-			# Check if iptables forwarding is accepted
-			mySSH.command('echo ' + password + ' | sudo -S iptables -L FORWARD', '\$', 10)
-			result = re.search('Chain FORWARD .*policy ACCEPT', mySSH.getBefore())
-			if result is None:
-				mySSH.command('echo ' + password + ' | sudo -S iptables -P FORWARD ACCEPT', '\$', 10)
-			mySSH.close()
-		if svrName == 'ofqot':
-			mySSH.open(ipAddr, userName, password)
-			# Check if X2 route to nepes enb/epc exists
-			mySSH.command('ip route | grep --colour=never "192.168.68.128/26"', '\$', 10)
-			result = re.search('172.21.16.137', mySSH.getBefore())
-			if result is None:
-				mySSH.command('echo ' + password + ' | sudo -S ip route add 192.168.68.128/26 via 172.21.16.137 dev enp2s0', '\$', 10)
-			# Check if forwarding is enabled
-			mySSH.command('sysctl net.ipv4.conf.all.forwarding', '\$', 10)
-			result = re.search('net.ipv4.conf.all.forwarding = 1', mySSH.getBefore())
-			if result is None:
-				mySSH.command('echo ' + password + ' | sudo -S sysctl net.ipv4.conf.all.forwarding=1', '\$', 10)
-			# Check if iptables forwarding is accepted
-			mySSH.command('echo ' + password + ' | sudo -S iptables -L FORWARD', '\$', 10)
-			result = re.search('Chain FORWARD .*policy ACCEPT', mySSH.getBefore())
-			if result is None:
-				mySSH.command('echo ' + password + ' | sudo -S iptables -P FORWARD ACCEPT', '\$', 10)
-			mySSH.close()
+		return success

@@ -39,6 +39,7 @@
 #include "PHY/sse_intrin.h"
 #include "common/utils/nr/nr_common.h"
 #include <openair1/PHY/TOOLS/phy_scope_interface.h>
+#include "openair1/PHY/NR_REFSIG/nr_refsig_common.h"
 
 #include "assertions.h"
 #include "T.h"
@@ -169,35 +170,16 @@ static void nr_pdcch_demapping_deinterleaving(c16_t *llr,
   }
 
   int rb_count = 0;
-  int data_sc = 9; // 9 sub-carriers with data per PRB
+  const int data_sc = 9; // 9 sub-carriers with data per PRB
   for (int c_id = 0; c_id < number_of_candidates; c_id++) {
     for (int symbol_idx = start_symbol; symbol_idx < start_symbol + coreset_time_dur; symbol_idx++) {
       for (int cce_count = 0; cce_count < L[c_id]; cce_count++) {
         for (int k = 0; k < NR_NB_REG_PER_CCE / reg_bundle_size_L; k++) { // loop over REG bundles
           int f = f_bundle_j_list_ord[c_id][k + NR_NB_REG_PER_CCE * cce_count / reg_bundle_size_L];
-          for (int rb = 0; rb < B_rb; rb++) { // loop over the RBs of the bundle
-            c16_t *out = e_rx + data_sc * rb_count;
-            c16_t *in = llr + (uint16_t)(f * B_rb + rb + symbol_idx * coreset_nbr_rb) * data_sc;
-            for (int i = 0; i < data_sc; i++) {
-              out[i] = in[i];
-#ifdef NR_PDCCH_DCI_DEBUG
-              LOG_I(NR_PHY_DCI,
-                    "[candidate=%d,symbol_idx=%d,cce=%d,REG bundle=%d,PRB=%d] z[%d]=(%d,%d) <-> \t llr[%d]=(%d,%d) \n",
-                    c_id,
-                    symbol_idx,
-                    cce_count,
-                    k,
-                    f * B_rb + rb,
-                    (index_z + i),
-                    out->r,
-                    out->i,
-                    index_llr + i,
-                    in.r,
-                    in.i);
-#endif
-            }
-            rb_count++;
-          }
+          c16_t *in = llr + (f * B_rb + symbol_idx * coreset_nbr_rb) * data_sc;
+          // loop over the RBs of the bundle
+          memcpy(e_rx + data_sc * rb_count, in, B_rb * data_sc * sizeof(*e_rx));
+          rb_count += B_rb;
         }
       }
     }
@@ -244,30 +226,12 @@ void nr_pdcch_channel_level(int32_t rx_size,
                             int nb_rb)
 {
   for (int aarx = 0; aarx < frame_parms->nb_antennas_rx; aarx++) {
-    //clear average level
-    simde__m128i avg128P = simde_mm_setzero_si128();
+
     simde__m128i *dl_ch128 = (simde__m128i *)&dl_ch_estimates_ext[aarx][symbol * nb_rb * 12];
 
-    for (int rb = 0; rb < (nb_rb * 3) >> 2; rb++) {
-      avg128P = simde_mm_add_epi32(avg128P,simde_mm_madd_epi16(dl_ch128[0],dl_ch128[0]));
-      avg128P = simde_mm_add_epi32(avg128P,simde_mm_madd_epi16(dl_ch128[1],dl_ch128[1]));
-      avg128P = simde_mm_add_epi32(avg128P,simde_mm_madd_epi16(dl_ch128[2],dl_ch128[2]));
-      //      for (int i=0;i<24;i+=2) printf("pdcch channel re %d (%d,%d)\n",(rb*12)+(i>>1),((int16_t*)dl_ch128)[i],((int16_t*)dl_ch128)[i+1]);
-      dl_ch128+=3;
-      /*
-      if (rb==0) {
-      print_shorts("dl_ch128",&dl_ch128[0]);
-      print_shorts("dl_ch128",&dl_ch128[1]);
-      print_shorts("dl_ch128",&dl_ch128[2]);
-      }
-      */
-    }
-
-    DevAssert(nb_rb);
-    avg[aarx] = 0;
-    for (int i = 0; i < 4; i++)
-      avg[aarx] += ((int32_t *)&avg128P)[i] / (nb_rb * 9);
-    LOG_DDD("Channel level : %d\n",avg[aarx]);
+    //compute average level
+    avg[aarx] = simde_mm_average(dl_ch128, nb_rb * 12, 0, nb_rb * 12);
+    //LOG_DDD("Channel level : %d\n", avg[aarx]);
   }
 }
 
@@ -655,25 +619,13 @@ static void nr_pdcch_unscrambling(c16_t *e_rx,
                                   uint16_t pdcch_DMRS_scrambling_id,
                                   int16_t *z2)
 {
-  int i;
-  uint8_t reset;
-  uint32_t x1 = 0, x2 = 0, s = 0;
-  uint16_t n_id; //{0,1,...,65535}
   uint32_t rnti = (uint32_t) scrambling_RNTI;
-  reset = 1;
-  // x1 is set in first call to lte_gold_generic
-  n_id = pdcch_DMRS_scrambling_id;
-  x2 = ((rnti << 16) + n_id) % (1U << 31); // this is c_init in 38.211 v15.1.0 Section 7.3.2.3
-
-  LOG_D(NR_PHY_DCI, "PDCCH Unscrambling x2 %x : scrambling_RNTI %x\n", x2, rnti);
+  uint16_t n_id = pdcch_DMRS_scrambling_id;
+  uint32_t *seq = gold_cache(((rnti << 16) + n_id) % (1U << 31), length / 32); // this is c_init in 38.211 v15.1.0 Section 7.3.2.3
+  LOG_D(NR_PHY_DCI, "PDCCH Unscrambling: scrambling_RNTI %x\n", rnti);
   int16_t *ptr = &e_rx[0].r;
-  for (i = 0; i < length; i++) {
-    if ((i & 0x1f) == 0) {
-      s = lte_gold_generic(&x1, &x2, reset);
-      reset = 0;
-    }
-
-    if (((s >> (i % 32)) & 1) == 1)
+  for (int i = 0; i < length; i++) {
+    if (seq[i / 32] & (1UL << (i % 32)))
       z2[i] = -ptr[i];
     else
       z2[i] = ptr[i];

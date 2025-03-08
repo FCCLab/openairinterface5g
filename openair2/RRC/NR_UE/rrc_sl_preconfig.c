@@ -215,7 +215,7 @@ static void prepare_NR_SL_BWPConfigCommon(NR_SL_BWP_ConfigCommon_r16_t *sl_bwp,
   // Value can be between symbols 0 to 7
   sl_bwp->sl_BWP_Generic_r16->sl_StartSymbol_r16 = calloc(1, sizeof(long));
 
-  sl_bwp->sl_BWP_Generic_r16->sl_PSBCH_Config_r16 = calloc(1,sizeof(NR_SL_PSBCH_Config_r16_t));
+  sl_bwp->sl_BWP_Generic_r16->sl_PSBCH_Config_r16 = calloc(1, sizeof(*sl_bwp->sl_BWP_Generic_r16->sl_PSBCH_Config_r16));
   // PSBCH CONFIG contains PO and alpha for PSBCH powercontrol.
   sl_bwp->sl_BWP_Generic_r16->sl_PSBCH_Config_r16->present = NR_SetupRelease_SL_PSBCH_Config_r16_PR_release;
 

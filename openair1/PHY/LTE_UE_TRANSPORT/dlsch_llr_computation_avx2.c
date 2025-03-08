@@ -1668,8 +1668,6 @@ void qam64_qam16_avx2(short *stream0_in,
 
   }
 
-  simde_mm_empty();
-  simde_m_empty();
 
 }
 
@@ -3499,8 +3497,6 @@ void qam64_qam64_avx2(int32_t *stream0_in,
 
   }
 
-  simde_mm_empty();
-  simde_m_empty();
 }
 
 #endif

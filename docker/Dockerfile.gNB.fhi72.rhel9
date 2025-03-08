@@ -25,13 +25,16 @@
 #
 #---------------------------------------------------------------------
 
-FROM ran-base:latest as gnb-base
+FROM ran-base:latest AS gnb-base
 
-FROM ran-build-fhi72:latest as gnb-build
+FROM ran-build-fhi72:latest AS gnb-build
 
 #start from scratch for target executable
-FROM registry.access.redhat.com/ubi9/ubi:latest as oai-gnb-fhi72
+FROM registry.access.redhat.com/ubi9/ubi:latest AS oai-gnb-fhi72
 ENV TZ=Europe/Paris
+
+# Install EPEL for RHEL9
+RUN dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm
 
 # Copy the entitlements
 COPY ./etc-pki-entitlement /etc/pki/entitlement
@@ -55,7 +58,8 @@ RUN rm -f /etc/rhsm-host && \
         python3 \
         python3-pip \
         net-tools \
-        iputils && \
+        iputils \
+        yaml-cpp-devel && \
     pip3 install six && \
     pip3 install requests && \
     echo "/usr/local/lib" > /etc/ld.so.conf.d/local-lib.conf && \
@@ -78,6 +82,7 @@ COPY --from=gnb-build \
     /oai-ran/cmake_targets/ran_build/build/libldpc*.so \
     /oai-ran/cmake_targets/ran_build/build/libtelnetsrv.so \
     /oai-ran/cmake_targets/ran_build/build/libtelnetsrv_ci.so \
+    /oai-ran/cmake_targets/ran_build/build/libparams_yaml.so \
     /usr/local/lib/
 
 ## Libxran library
@@ -122,4 +127,4 @@ RUN ldconfig && \
 WORKDIR /opt/oai-gnb
 COPY --from=gnb-base /tini /tini
 ENTRYPOINT ["/tini", "-v", "--", "/opt/oai-gnb/bin/entrypoint.sh"]
-CMD ["/opt/oai-gnb/bin/nr-softmodem", "-O", "/opt/oai-gnb/etc/gnb.conf"]
+CMD ["/opt/oai-gnb/bin/nr-softmodem"]

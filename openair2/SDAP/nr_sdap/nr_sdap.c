@@ -20,6 +20,10 @@
  */
 
 #include "nr_sdap.h"
+#include <inttypes.h>
+#include <stddef.h>
+#include "nr_sdap_entity.h"
+#include "common/utils/LOG/log.h"
 
 uint8_t nas_qfi;
 uint8_t nas_pduid;

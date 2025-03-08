@@ -36,10 +36,9 @@
 
 #define I0_SKIP_DC 1
 
-extern openair0_config_t openair0_cfg[MAX_CARDS];
-
-int nr_est_timing_advance_srs(const NR_DL_FRAME_PARMS *frame_parms, 
-                              const int32_t srs_estimated_channel_time[][frame_parms->ofdm_symbol_size]) {
+int nr_est_timing_advance_srs(const NR_DL_FRAME_PARMS *frame_parms,
+                              const c16_t srs_estimated_channel_time[][frame_parms->ofdm_symbol_size])
+{
   int timing_advance = 0;
   int max_val = 0;
 
@@ -119,7 +118,7 @@ void gNB_I0_measurements(PHY_VARS_gNB *gNB, int slot, int first_symb, int num_sy
   NR_DL_FRAME_PARMS *frame_parms = &gNB->frame_parms;
   NR_gNB_COMMON *common_vars = &gNB->common_vars;
   PHY_MEASUREMENTS_gNB *measurements = &gNB->measurements;
-  int rb, nb_symb[275]={0};
+  int nb_symb[275]={0};
 
   allocCast2D(n0_subband_power,
               unsigned int,
@@ -135,26 +134,26 @@ void gNB_I0_measurements(PHY_VARS_gNB *gNB, int slot, int first_symb, int num_sy
               frame_parms->N_RB_UL,
               false);
 
-  for (int s=first_symb;s<(first_symb+num_symb);s++) {
+  // TODO modify the measurements to take into account concurrent beams
+  for (int s = first_symb; s < first_symb + num_symb; s++) {
     int offset0 = ((slot&3)*frame_parms->symbols_per_slot + s) * frame_parms->ofdm_symbol_size;
-    for (rb=0; rb<frame_parms->N_RB_UL; rb++) {
+    for (int rb = 0; rb < frame_parms->N_RB_UL; rb++) {
       if ((rb_mask_ul[s][rb >> 5] & (1U << (rb & 31))) == 0 && // check that rb was not used in this subframe
           !(I0_SKIP_DC && rb == frame_parms->N_RB_UL >> 1)) { // skip middle PRB because of artificial noise possibly created by FFT
         int offset = offset0 + (frame_parms->first_carrier_offset + (rb*12))%frame_parms->ofdm_symbol_size;
         nb_symb[rb]++;
-        for (int aarx=0; aarx<frame_parms->nb_antennas_rx; aarx++) {
-          int32_t *ul_ch = (int32_t *)&common_vars->rxdataF[aarx][offset];
+        for (int aarx = 0; aarx < frame_parms->nb_antennas_rx; aarx++) {
+          c16_t *ul_ch = &common_vars->rxdataF[0][aarx][offset];
           int32_t signal_energy;
-          if (((frame_parms->N_RB_UL&1) == 1) &&
-              (rb==(frame_parms->N_RB_UL>>1))) {
+          if (((frame_parms->N_RB_UL & 1) == 1) && (rb == (frame_parms->N_RB_UL >> 1))) {
             signal_energy = signal_energy_nodc(ul_ch, 6);
-            ul_ch = (int32_t *)&common_vars->rxdataF[aarx][offset0];
+            ul_ch = &common_vars->rxdataF[0][aarx][offset0];
             signal_energy += signal_energy_nodc(ul_ch, 6);
           } else {
             signal_energy = signal_energy_nodc(ul_ch, 12);
           }
           n0_subband_power[aarx][rb] += signal_energy;
-          LOG_D(PHY,"slot %d symbol %d RB %d aarx %d n0_subband_power %d\n", slot, s, rb, aarx, signal_energy);
+          LOG_D(NR_PHY,"slot %d symbol %d RB %d aarx %d n0_subband_power %d\n", slot, s, rb, aarx, signal_energy);
         } //antenna
       }
     } //rb
@@ -177,7 +176,7 @@ void gNB_I0_measurements(PHY_VARS_gNB *gNB, int slot, int first_symb, int num_sy
       n0_subband_tot_perPRB/=frame_parms->nb_antennas_rx;
       measurements->n0_subband_power_tot_dB[rb] = dB_fixed(n0_subband_tot_perPRB);
       measurements->n0_subband_power_tot_dBm[rb] = measurements->n0_subband_power_tot_dB[rb] - gNB->rx_total_gain_dB - dB_fixed(frame_parms->N_RB_UL);
-      LOG_D(PHY,"n0_subband_power_tot_dB[%d] => %d, over %d symbols\n",rb,measurements->n0_subband_power_tot_dB[rb],nb_symb[rb]);
+      LOG_D(NR_PHY,"n0_subband_power_tot_dB[%d] => %d, over %d symbols\n",rb,measurements->n0_subband_power_tot_dB[rb],nb_symb[rb]);
       n0_subband_tot += n0_subband_tot_perPRB;
       nb_rb++;
     }
@@ -229,7 +228,7 @@ void nr_gnb_measurements(PHY_VARS_gNB *gNB,
 
     for (int aatx = 0; aatx < nrOfLayers; aatx++){
       rx_spatial_power[aatx][aarx] =
-          (signal_energy_nodc(&pusch_vars->ul_ch_estimates[aatx * fp->nb_antennas_rx + aarx][ch_offset],
+          (signal_energy_nodc((c16_t*)&pusch_vars->ul_ch_estimates[aatx * fp->nb_antennas_rx + aarx][ch_offset],
                               N_RB_UL * NR_NB_SC_PER_RB));
 
       if (rx_spatial_power[aatx][aarx] < 0) {

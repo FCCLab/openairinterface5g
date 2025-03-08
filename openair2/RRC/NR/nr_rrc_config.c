@@ -28,19 +28,37 @@
  * \email: raymond.knopp@eurecom.fr, kroempa@gmail.com
  */
 
-#include "openair3/UTILS/conversions.h"
 #include "nr_rrc_config.h"
+#include <endian.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "BIT_STRING.h"
+#include "NULL.h"
+#include "RRC/NR/MESSAGES/asn1_msg.h"
+#include "RRC/NR/nr_rrc_proto.h"
+#include "SIMULATION/TOOLS/sim.h"
+#include "T.h"
+#include "asn_SET_OF.h"
+#include "asn_codecs.h"
+#include "asn_internal.h"
+#include "assertions.h"
+#include "common/openairinterface5g_limits.h"
+#include "common/utils/T/T.h"
 #include "common/utils/nr/nr_common.h"
-#include "openair2/LAYER2/NR_MAC_gNB/nr_mac_gNB.h"
+#include "constr_TYPE.h"
 #include "executables/softmodem-common.h"
 #include "oai_asn1.h"
-#include "SIMULATION/TOOLS/sim.h" // for taus();
-
-#include "NR_MeasurementTimingConfiguration.h"
-
+#include "openair2/LAYER2/NR_MAC_gNB/mac_proto.h"
+#include "openair2/LAYER2/NR_MAC_gNB/nr_mac_gNB.h"
+#include "openair2/LAYER2/NR_MAC_gNB/mac_proto.h"
+#include "openair3/UTILS/conversions.h"
 #include "uper_decoder.h"
 #include "uper_encoder.h"
+#include "utils.h"
+#include "xer_encoder.h"
 
+#define PUCCH2_SIZE 8
 const uint8_t slotsperframe[5] = {10, 20, 40, 80, 160};
 
 static NR_BWP_t clone_generic_parameters(const NR_BWP_t *gp)
@@ -52,6 +70,50 @@ static NR_BWP_t clone_generic_parameters(const NR_BWP_t *gp)
     asn1cCallocOne(clone.cyclicPrefix, *gp->cyclicPrefix);
   }
   return clone;
+}
+
+/**
+ * @brief Verifies the aggregation level candidates
+ *
+ * This function checks the input aggregation level candidates and translates the value provided
+ * in the config to a valid field in RRC message.
+ *
+ * @param[in] num_cce_in_coreset number of CCE in coreset
+ * @param[in] in_num_agg_level_candidates input array of aggregation level candidates, interpreted as number of candidates.
+ * @param[in] coresetid coreset id
+ * @param[in] searchspaceid searchspace id
+ * @param[out] out_num_agg_level_candidates array of aggregation level candidates, output is a valid 3gpp field value.
+ * 
+ */
+static void verify_agg_levels(int num_cce_in_coreset,
+                              const int in_num_agg_level_candidates[NUM_PDCCH_AGG_LEVELS],
+                              int coresetid,
+                              int searchspaceid,
+                              int out_num_agg_level_candidates[NUM_PDCCH_AGG_LEVELS])
+{
+  int agg_level_to_n_cces[] = {1, 2, 4, 8, 16};
+  for (int i = 0; i < NUM_PDCCH_AGG_LEVELS; i++) {
+    // 7 is not a valid value, the mapping in 38.331 is from 0-7 mapped to 0-8 candidates and value 7 means 8 candidates instead. If
+    // the user wants 7 candidates round it up to 8.
+    int num_agg_level_candidates = in_num_agg_level_candidates[i];
+    if (num_agg_level_candidates == 7) {
+      num_agg_level_candidates = 8;
+    }
+    if (num_agg_level_candidates * agg_level_to_n_cces[i] > num_cce_in_coreset) {
+      int new_agg_level_candidates = num_cce_in_coreset / agg_level_to_n_cces[i];
+      LOG_E(NR_RRC,
+            "Invalid configuration: Not enough CCEs in coreset %d, searchspace %d, agg_level %d, number of requested "
+            "candidates = %d, number of CCES in coreset %d. Aggregation level candidates limited to %d\n",
+            coresetid,
+            searchspaceid,
+            agg_level_to_n_cces[i],
+            in_num_agg_level_candidates[i],
+            num_cce_in_coreset,
+            new_agg_level_candidates);
+      num_agg_level_candidates = new_agg_level_candidates;
+    }
+    out_num_agg_level_candidates[i] = min(num_agg_level_candidates, 7);
+  }
 }
 
 static NR_SetupRelease_RACH_ConfigCommon_t *clone_rach_configcommon(const NR_SetupRelease_RACH_ConfigCommon_t *rcc)
@@ -68,6 +130,25 @@ static NR_SetupRelease_RACH_ConfigCommon_t *clone_rach_configcommon(const NR_Set
   AssertFatal(enc_rval.encoded > 0 && enc_rval.encoded < sizeof(buf), "could not clone NR_RACH_ConfigCommon: problem while encoding\n");
   asn_dec_rval_t dec_rval = uper_decode(NULL, &asn_DEF_NR_RACH_ConfigCommon, (void **)&clone->choice.setup, buf, enc_rval.encoded, 0, 0);
   AssertFatal(dec_rval.code == RC_OK && dec_rval.consumed == enc_rval.encoded, "could not clone NR_RACH_ConfigCommon: problem while decoding\n");
+  return clone;
+}
+
+static NR_SetupRelease_MsgA_ConfigCommon_r16_t *clone_msga_configcommon(const NR_SetupRelease_MsgA_ConfigCommon_r16_t *mcc)
+{
+  if (mcc == NULL || mcc->present == NR_SetupRelease_MsgA_ConfigCommon_r16_PR_NOTHING)
+    return NULL;
+  NR_SetupRelease_MsgA_ConfigCommon_r16_t *clone = calloc_or_fail(1, sizeof(*clone));
+  clone->present = mcc->present;
+  if (clone->present == NR_SetupRelease_MsgA_ConfigCommon_r16_PR_release)
+    return clone;
+  uint8_t buf[1024];
+  asn_enc_rval_t enc_rval = uper_encode_to_buffer(&asn_DEF_NR_MsgA_ConfigCommon_r16, NULL, mcc->choice.setup, buf, sizeof(buf));
+  AssertFatal(enc_rval.encoded > 0 && enc_rval.encoded < sizeof(buf),
+              "could not clone NR_MsgA_ConfigCommon_r16: problem while encoding\n");
+  asn_dec_rval_t dec_rval =
+      uper_decode(NULL, &asn_DEF_NR_MsgA_ConfigCommon_r16, (void **)&clone->choice.setup, buf, enc_rval.encoded, 0, 0);
+  AssertFatal(dec_rval.code == RC_OK && dec_rval.consumed == enc_rval.encoded,
+              "could not clone NR_MsgA_ConfigCommon_r16:: problem while decoding\n");
   return clone;
 }
 
@@ -153,9 +234,29 @@ static NR_PUSCH_Config_t *clone_pusch_config(const NR_PUSCH_Config_t *pc)
   return clone;
 }
 
-NR_SearchSpace_t *rrc_searchspace_config(bool is_common, int searchspaceid, int coresetid)
+static int get_nb_pucch2_per_slot(const NR_ServingCellConfigCommon_t *scc, int bwp_size)
 {
+  const NR_TDD_UL_DL_Pattern_t *tdd = scc->tdd_UL_DL_ConfigurationCommon ? &scc->tdd_UL_DL_ConfigurationCommon->pattern1 : NULL;
+  const int n_slots_frame = slotsperframe[*scc->ssbSubcarrierSpacing];
+  int ul_slots_period = tdd ? tdd->nrofUplinkSlots + (tdd->nrofUplinkSymbols > 0) : n_slots_frame;
+  int n_slots_period = tdd ? n_slots_frame/get_nb_periods_per_frame(tdd->dl_UL_TransmissionPeriodicity) : n_slots_frame;
+  int max_meas_report_period = 320; // slots
+  int max_csi_reports = MAX_MOBILES_PER_GNB << 1; // 2 reports per UE (RSRP and RI-PMI-CQI)
+  int available_report_occasions = max_meas_report_period * ul_slots_period / n_slots_period;
+  int nb_pucch2 = (max_csi_reports / (available_report_occasions + 1)) + 1;
+  // in current implementation we need (nb_pucch2 * PUCCH2_SIZE) prbs for PUCCH2
+  // and MAX_MOBILES_PER_GNB prbs for PUCCH1
+  AssertFatal((nb_pucch2 * PUCCH2_SIZE) + MAX_MOBILES_PER_GNB <= bwp_size,
+              "Cannot allocate all required PUCCH resources for max number of %d UEs in BWP with %d PRBs\n",
+              MAX_MOBILES_PER_GNB, bwp_size);
+  return nb_pucch2;
+}
 
+NR_SearchSpace_t *rrc_searchspace_config(bool is_common,
+                                         int searchspaceid,
+                                         int coresetid,
+                                         const int num_agg_level_candidates[NUM_PDCCH_AGG_LEVELS])
+{
   NR_SearchSpace_t *ss = calloc(1,sizeof(*ss));
   ss->searchSpaceId = searchspaceid;
   ss->controlResourceSetId = calloc(1,sizeof(*ss->controlResourceSetId));
@@ -171,23 +272,12 @@ NR_SearchSpace_t *rrc_searchspace_config(bool is_common, int searchspaceid, int 
   ss->monitoringSymbolsWithinSlot->buf[1] = 0x0;
   ss->monitoringSymbolsWithinSlot->bits_unused = 2;
   ss->nrofCandidates = calloc(1,sizeof(*ss->nrofCandidates));
-  // TODO temporary hardcoded implementation
-  ss->nrofCandidates->aggregationLevel1 = NR_SearchSpace__nrofCandidates__aggregationLevel1_n0;
-  if (get_softmodem_params()->usim_test) {
-    ss->nrofCandidates->aggregationLevel2 = NR_SearchSpace__nrofCandidates__aggregationLevel2_n0;
-    ss->nrofCandidates->aggregationLevel4 = NR_SearchSpace__nrofCandidates__aggregationLevel4_n1;
-    ss->nrofCandidates->aggregationLevel8 = NR_SearchSpace__nrofCandidates__aggregationLevel8_n1;
-  } else {
-    if (is_common) {
-      ss->nrofCandidates->aggregationLevel2 = NR_SearchSpace__nrofCandidates__aggregationLevel2_n0;
-      ss->nrofCandidates->aggregationLevel4 = NR_SearchSpace__nrofCandidates__aggregationLevel4_n1;
-    } else {
-      ss->nrofCandidates->aggregationLevel2 = NR_SearchSpace__nrofCandidates__aggregationLevel2_n2;
-      ss->nrofCandidates->aggregationLevel4 = NR_SearchSpace__nrofCandidates__aggregationLevel4_n0;
-    }
-    ss->nrofCandidates->aggregationLevel8 = NR_SearchSpace__nrofCandidates__aggregationLevel8_n0;
-  }
-  ss->nrofCandidates->aggregationLevel16 = NR_SearchSpace__nrofCandidates__aggregationLevel16_n0;
+  ss->nrofCandidates->aggregationLevel1 = num_agg_level_candidates[PDCCH_AGG_LEVEL1];
+  ss->nrofCandidates->aggregationLevel2 = num_agg_level_candidates[PDCCH_AGG_LEVEL2];
+  ss->nrofCandidates->aggregationLevel4 = num_agg_level_candidates[PDCCH_AGG_LEVEL4];
+  ss->nrofCandidates->aggregationLevel8 = num_agg_level_candidates[PDCCH_AGG_LEVEL8];
+  ss->nrofCandidates->aggregationLevel16 = num_agg_level_candidates[PDCCH_AGG_LEVEL16];
+
   ss->searchSpaceType = calloc(1,sizeof(*ss->searchSpaceType));
   if (is_common) {
     ss->searchSpaceType->present = NR_SearchSpace__searchSpaceType_PR_common;
@@ -259,9 +349,13 @@ static uint64_t get_ssb_bitmap(const NR_ServingCellConfigCommon_t *scc)
   return bitmap;
 }
 
-static int set_ideal_period(const int n_slots_period, const int n_ul_slots_period)
+static int set_ideal_period(bool is_csi)
 {
-  return MAX_MOBILES_PER_GNB * 2 * n_slots_period / n_ul_slots_period; // 2 reports per UE
+  const frame_structure_t *fs = &RC.nrmac[0]->frame_structure;
+  const int nb_slots_per_period = fs->numb_slots_period;
+  const int n_ul_slots_per_period = get_ul_slots_per_period(fs); // full UL + mixed with UL symbols
+  // 2 reports per UE (RSRP and RI-PMI-CQI)
+  return is_csi ? MAX_MOBILES_PER_GNB * 2 * nb_slots_per_period / n_ul_slots_per_period : nb_slots_per_period * MAX_MOBILES_PER_GNB;
 }
 
 static void set_csirs_periodicity(NR_NZP_CSI_RS_Resource_t *nzpcsi0,
@@ -273,7 +367,6 @@ static void set_csirs_periodicity(NR_NZP_CSI_RS_Resource_t *nzpcsi0,
   nzpcsi0->periodicityAndOffset = calloc(1,sizeof(*nzpcsi0->periodicityAndOffset));
   // TODO ideal period to be set according to estimation by the gNB on how fast the channel changes
   const int offset = nb_slots_per_period * id;
-
   if (ideal_period < 5) {
     nzpcsi0->periodicityAndOffset->present = NR_CSI_ResourcePeriodicityAndOffset_PR_slots4;
     nzpcsi0->periodicityAndOffset->choice.slots4 = offset;
@@ -337,16 +430,6 @@ static void config_csirs(const NR_ServingCellConfigCommon_t *servingcellconfigco
     nzpcsirs0->aperiodicTriggeringOffset = NULL;
     nzpcsirs0->trs_Info = NULL;
     asn1cSeqAdd(&csi_MeasConfig->nzp_CSI_RS_ResourceSetToAddModList->list,nzpcsirs0);
-
-    const NR_TDD_UL_DL_Pattern_t *tdd = servingcellconfigcommon->tdd_UL_DL_ConfigurationCommon ?
-                                        &servingcellconfigcommon->tdd_UL_DL_ConfigurationCommon->pattern1 : NULL;
-
-    const int n_slots_frame = slotsperframe[*servingcellconfigcommon->ssbSubcarrierSpacing];
-    const int nb_slots_per_period = tdd ? n_slots_frame/get_nb_periods_per_frame(tdd->dl_UL_TransmissionPeriodicity): n_slots_frame;
-    const int nb_dl_slots_period = tdd ? tdd->nrofDownlinkSlots : n_slots_frame;
-    const int n_ul_slots_period = tdd ? (tdd->nrofUplinkSlots + (tdd->nrofUplinkSymbols > 0)) : n_slots_frame;
-    const int ideal_period = set_ideal_period(nb_slots_per_period, n_ul_slots_period); // same periodicity as CSI measurement report
-
     if(!csi_MeasConfig->nzp_CSI_RS_ResourceToAddModList)
       csi_MeasConfig->nzp_CSI_RS_ResourceToAddModList = calloc(1,sizeof(*csi_MeasConfig->nzp_CSI_RS_ResourceToAddModList));
     NR_NZP_CSI_RS_Resource_t *nzpcsi0 = calloc(1,sizeof(*nzpcsi0));
@@ -395,7 +478,12 @@ static void config_csirs(const NR_ServingCellConfigCommon_t *servingcellconfigco
     nzpcsi0->powerControlOffsetSS = calloc(1,sizeof(*nzpcsi0->powerControlOffsetSS));
     *nzpcsi0->powerControlOffsetSS = NR_NZP_CSI_RS_Resource__powerControlOffsetSS_db0;
     nzpcsi0->scramblingID = *servingcellconfigcommon->physCellId;
-    set_csirs_periodicity(nzpcsi0, id, ideal_period, nb_slots_per_period, nb_dl_slots_period);
+
+    const int ideal_period = set_ideal_period(true); // same periodicity as CSI measurement report
+    const frame_structure_t *fs = &(RC.nrmac[0]->frame_structure);
+    const int nb_dl_slots_period = get_full_dl_slots_per_period(fs); // full DL slots
+    set_csirs_periodicity(nzpcsi0, id, ideal_period, fs->numb_slots_period, nb_dl_slots_period);
+
     nzpcsi0->qcl_InfoPeriodicCSI_RS = calloc(1,sizeof(*nzpcsi0->qcl_InfoPeriodicCSI_RS));
     *nzpcsi0->qcl_InfoPeriodicCSI_RS = 0;
     asn1cSeqAdd(&csi_MeasConfig->nzp_CSI_RS_ResourceToAddModList->list,nzpcsi0);
@@ -513,9 +601,8 @@ static void config_csiim(int do_csirs,
 void set_dl_maxmimolayers(NR_PDSCH_ServingCellConfig_t *pdsch_servingcellconfig,
                           const NR_ServingCellConfigCommon_t *scc,
                           const NR_UE_NR_Capability_t *uecap,
-			  int maxMIMO_layers)
+                          int maxMIMO_layers)
 {
-
   if(!pdsch_servingcellconfig->ext1)
     pdsch_servingcellconfig->ext1=calloc(1,sizeof(*pdsch_servingcellconfig->ext1));
   if(!pdsch_servingcellconfig->ext1->maxMIMO_Layers)
@@ -523,13 +610,13 @@ void set_dl_maxmimolayers(NR_PDSCH_ServingCellConfig_t *pdsch_servingcellconfig,
 
   NR_SCS_SpecificCarrier_t *scs_carrier = scc->downlinkConfigCommon->frequencyInfoDL->scs_SpecificCarrierList.list.array[0];
   int band = *scc->downlinkConfigCommon->frequencyInfoDL->frequencyBandList.list.array[0];
-  const frequency_range_t freq_range = band < 100 ? FR1 : FR2;
+  const frequency_range_t freq_range = band < 257 ? FR1 : FR2;
   const int scs = scs_carrier->subcarrierSpacing;
   const int bw_size = scs_carrier->carrierBandwidth;
 
   NR_FeatureSets_t *fs = uecap ? uecap->featureSets : NULL;
   if (fs) {
-    const int bw_mhz = get_supported_bw_mhz(freq_range, scs, bw_size);
+    const int bw_mhz = get_supported_bw_mhz(freq_range, get_supported_band_index(scs, freq_range, bw_size));
     // go through UL feature sets and look for one with current SCS
     for (int i = 0; i < fs->featureSetsDownlinkPerCC->list.count; i++) {
       NR_FeatureSetDownlinkPerCC_t *dl_fs = fs->featureSetsDownlinkPerCC->list.array[i];
@@ -576,15 +663,12 @@ long rrc_get_max_nr_csrs(const int max_rbs, const long b_SRS) {
 static struct NR_SRS_Resource__resourceType__periodic *configure_periodic_srs(const NR_ServingCellConfigCommon_t *scc,
                                                                               const int uid)
 {
+  frame_structure_t *fs = &RC.nrmac[0]->frame_structure;
+  int offset = get_ul_slot_offset(fs, uid, false); // only full UL slots for SRS
 
-  const NR_TDD_UL_DL_Pattern_t *tdd = scc->tdd_UL_DL_ConfigurationCommon ? &scc->tdd_UL_DL_ConfigurationCommon->pattern1 : NULL;
-  const int n_slots_frame = slotsperframe[*scc->ssbSubcarrierSpacing];
-  const int ul_slots_period = tdd ? tdd->nrofUplinkSlots : n_slots_frame;
-  const int n_slots_period = tdd ? n_slots_frame/get_nb_periods_per_frame(tdd->dl_UL_TransmissionPeriodicity) : n_slots_frame;
-  const int first_full_ul_slot = n_slots_period - ul_slots_period;
-  const int ideal_period = n_slots_period * MAX_MOBILES_PER_GNB;
-  const int offset = first_full_ul_slot + (uid % ul_slots_period) + (n_slots_period * (uid / ul_slots_period));
   AssertFatal(offset < 2560, "Cannot allocate SRS configuration for uid %d, not enough resources\n", uid);
+  const int ideal_period = set_ideal_period(false);
+
   struct NR_SRS_Resource__resourceType__periodic *periodic_srs = calloc(1,sizeof(*periodic_srs));
   if (ideal_period < 5) {
     periodic_srs->periodicityAndOffset_p.present = NR_SRS_PeriodicityAndOffset_PR_sl4;
@@ -772,6 +856,48 @@ static NR_SetupRelease_SRS_Config_t *get_config_srs(const NR_ServingCellConfigCo
   return setup_release_srs_Config;
 }
 
+static int get_SupportedBandwidth_fr1_bw_index(int bw_index)
+{
+  int val = -1;
+
+  switch (bw_index) {
+    case NR_SupportedBandwidth_v1700__fr1_r17_mhz5:
+    case NR_SupportedBandwidth_v1700__fr1_r17_mhz10:
+    case NR_SupportedBandwidth_v1700__fr1_r17_mhz15:
+    case NR_SupportedBandwidth_v1700__fr1_r17_mhz20:
+    case NR_SupportedBandwidth_v1700__fr1_r17_mhz25:
+      val = bw_index;
+      break;
+    case NR_SupportedBandwidth_v1700__fr1_r17_mhz30:
+    case NR_SupportedBandwidth_v1700__fr1_r17_mhz35:
+      val = NR_SupportedBandwidth__fr1_mhz30;
+      break;
+    case NR_SupportedBandwidth_v1700__fr1_r17_mhz40:
+    case NR_SupportedBandwidth_v1700__fr1_r17_mhz45:
+      val = NR_SupportedBandwidth__fr1_mhz40;
+      break;
+    case NR_SupportedBandwidth_v1700__fr1_r17_mhz50:
+      val = NR_SupportedBandwidth__fr1_mhz50;
+      break;
+    case NR_SupportedBandwidth_v1700__fr1_r17_mhz60:
+      val = NR_SupportedBandwidth__fr1_mhz60;
+      break;
+    case NR_SupportedBandwidth_v1700__fr1_r17_mhz70:
+    case NR_SupportedBandwidth_v1700__fr1_r17_mhz80:
+      val = NR_SupportedBandwidth__fr1_mhz80;
+      break;
+    case NR_SupportedBandwidth_v1700__fr1_r17_mhz90:
+    case NR_SupportedBandwidth_v1700__fr1_r17_mhz100:
+      val = NR_SupportedBandwidth__fr1_mhz100;
+      break;
+    default:
+      AssertFatal(1==0, "Invalid bw index\n");
+  }
+
+  return val;
+}
+
+
 void prepare_sim_uecap(NR_UE_NR_Capability_t *cap,
                        NR_ServingCellConfigCommon_t *scc,
                        int numerology,
@@ -808,26 +934,41 @@ void prepare_sim_uecap(NR_UE_NR_Capability_t *cap,
     fs->featureSetsDownlinkPerCC = calloc(1, sizeof(*fs->featureSetsDownlinkPerCC));
     NR_FeatureSetDownlinkPerCC_t *fs_cc = calloc(1, sizeof(*fs_cc));
     fs_cc->supportedSubcarrierSpacingDL = numerology;
-    int bw = get_supported_band_index(numerology, freq_range, rbsize);
-    if (bw == 10) // 90MHz
+    int bw_index = get_supported_band_index(numerology, freq_range, rbsize);
+    int bw = get_supported_bw_mhz(freq_range, bw_index);
+    if (bw == 90) // 90MHz
       fs_cc->channelBW_90mhz = calloc(1, sizeof(*fs_cc->channelBW_90mhz));
-    if (bw == 11) // 100MHz
-      bw--;
     if(freq_range == FR2) {
       fs_cc->supportedBandwidthDL.present = NR_SupportedBandwidth_PR_fr2;
-      fs_cc->supportedBandwidthDL.choice.fr2 = bw;
+      fs_cc->supportedBandwidthDL.choice.fr2 = bw_index;
     }
     else{
       fs_cc->supportedBandwidthDL.present = NR_SupportedBandwidth_PR_fr1;
-      fs_cc->supportedBandwidthDL.choice.fr1 = bw;
+      fs_cc->supportedBandwidthDL.choice.fr1 = get_SupportedBandwidth_fr1_bw_index(bw_index);
     }
+    fs_cc->maxNumberMIMO_LayersPDSCH = calloc(1, sizeof(*fs_cc->maxNumberMIMO_LayersPDSCH));
+    *fs_cc->maxNumberMIMO_LayersPDSCH = NR_MIMO_LayersDL_fourLayers;
     fs_cc->supportedModulationOrderDL = calloc(1, sizeof(*fs_cc->supportedModulationOrderDL));
     *fs_cc->supportedModulationOrderDL = NR_ModulationOrder_qam256;
     asn1cSeqAdd(&fs->featureSetsDownlinkPerCC->list, fs_cc);
+
+    if (bw == 35 || bw == 45 || bw == 70) {
+      fs->ext6 = calloc(1, sizeof(*fs->ext6));
+      fs->ext6->featureSetsDownlinkPerCC_v1700 = calloc(1, sizeof(*fs->ext6->featureSetsDownlinkPerCC_v1700));
+      NR_FeatureSetDownlinkPerCC_v1700_t *fs_dlcc_v1700 = calloc(1, sizeof(*fs_dlcc_v1700));
+      fs_dlcc_v1700->supportedBandwidthDL_v1710 = calloc(1, sizeof(*fs_dlcc_v1700->supportedBandwidthDL_v1710));
+      fs_dlcc_v1700->supportedBandwidthDL_v1710->present = NR_SupportedBandwidth_v1700_PR_fr1_r17;
+      fs_dlcc_v1700->supportedBandwidthDL_v1710->choice.fr1_r17 = bw_index;
+      asn1cSeqAdd(&fs->ext6->featureSetsDownlinkPerCC_v1700->list, fs_dlcc_v1700);
+    }
   }
 
   phy_Parameters->phy_ParametersFRX_Diff = calloc(1, sizeof(*phy_Parameters->phy_ParametersFRX_Diff));
   phy_Parameters->phy_ParametersFRX_Diff->pucch_F0_2WithoutFH = NULL;
+
+  if (LOG_DEBUGFLAG(DEBUG_ASN1)) {
+    xer_fprint(stdout, &asn_DEF_NR_UE_NR_Capability, cap);
+  }
 }
 
 void nr_rrc_config_dl_tda(struct NR_PDSCH_TimeDomainResourceAllocationList *pdsch_TimeDomainAllocationList,
@@ -855,7 +996,17 @@ void nr_rrc_config_dl_tda(struct NR_PDSCH_TimeDomainResourceAllocationList *pdsc
   if(frame_type==TDD) {
     // TDD
     if(tdd_UL_DL_ConfigurationCommon) {
-      int dl_symb = tdd_UL_DL_ConfigurationCommon->pattern1.nrofDownlinkSymbols;
+      int dl_symb = 0;
+      if (tdd_UL_DL_ConfigurationCommon->pattern2 && tdd_UL_DL_ConfigurationCommon->pattern2->nrofDownlinkSymbols)
+        AssertFatal(tdd_UL_DL_ConfigurationCommon->pattern2->nrofDownlinkSymbols == tdd_UL_DL_ConfigurationCommon->pattern1.nrofDownlinkSymbols,
+                    "nrofDownlinkSymbols in pattern1 %ld and pattern2 %ld must be the same in current implementation\n",
+                    tdd_UL_DL_ConfigurationCommon->pattern2->nrofDownlinkSymbols,
+                    tdd_UL_DL_ConfigurationCommon->pattern1.nrofDownlinkSymbols);
+      if (tdd_UL_DL_ConfigurationCommon->pattern1.nrofDownlinkSymbols != 0) {
+        dl_symb = tdd_UL_DL_ConfigurationCommon->pattern1.nrofDownlinkSymbols;
+      } else if (tdd_UL_DL_ConfigurationCommon->pattern2) {
+        dl_symb = tdd_UL_DL_ConfigurationCommon->pattern2->nrofDownlinkSymbols;
+      }
       if(dl_symb > 1) {
         // mixed slot TDA with TDA index 2
         struct NR_PDSCH_TimeDomainResourceAllocation *timedomainresourceallocation2 = CALLOC(1,sizeof(NR_PDSCH_TimeDomainResourceAllocation_t));
@@ -867,63 +1018,91 @@ void nr_rrc_config_dl_tda(struct NR_PDSCH_TimeDomainResourceAllocationList *pdsc
   }
 }
 
+static struct NR_PUSCH_TimeDomainResourceAllocation *set_TimeDomainResourceAllocation(const int k2, uint8_t index, int ul_symb)
+{
+  struct NR_PUSCH_TimeDomainResourceAllocation *puschTdrAlloc = calloc_or_fail(1, sizeof(*puschTdrAlloc));
+  puschTdrAlloc->k2 = calloc_or_fail(1, sizeof(*puschTdrAlloc->k2));
+  *puschTdrAlloc->k2 = k2;
+  puschTdrAlloc->mappingType = NR_PUSCH_TimeDomainResourceAllocation__mappingType_typeB;
+  switch (index) {
+    case 0:
+      puschTdrAlloc->startSymbolAndLength = get_SLIV(0, 13);
+      break;
+    case 1:
+      puschTdrAlloc->startSymbolAndLength = get_SLIV(0, 12);
+      break;
+    case 2:
+      // UL TDA index 2 for mixed slot (TDD)
+      puschTdrAlloc->startSymbolAndLength =
+          get_SLIV(NR_NUMBER_OF_SYMBOLS_PER_SLOT - ul_symb, ul_symb - 1); // starting in fist ul symbol til the last but one
+      break;
+    case 3: {
+      // UL TDA index 3 for msg3 in the mixed slot (TDD)
+      int no_mix_slot = ul_symb < 3 ? 1 : 0; // we need at least 2 symbols for scheduling Msg3
+      *puschTdrAlloc->k2 += no_mix_slot;
+      if (no_mix_slot)
+        puschTdrAlloc->startSymbolAndLength = get_SLIV(0, 13); // full allocation if there is no mixed slot
+      else
+        puschTdrAlloc->startSymbolAndLength =
+            get_SLIV(NR_NUMBER_OF_SYMBOLS_PER_SLOT - ul_symb, ul_symb - 1); // starting in fist ul symbol til the last but one
+      }
+      break;
+    default:
+      break;
+  }
+  return puschTdrAlloc;
+}
 
-void nr_rrc_config_ul_tda(NR_ServingCellConfigCommon_t *scc, int min_fb_delay){
-
+void nr_rrc_config_ul_tda(NR_ServingCellConfigCommon_t *scc, int min_fb_delay)
+{
   //TODO change to accomodate for SRS
 
-  frame_type_t frame_type = get_frame_type(*scc->downlinkConfigCommon->frequencyInfoDL->frequencyBandList.list.array[0], *scc->ssbSubcarrierSpacing);
-  const int k2 = min_fb_delay;
+  const NR_PUSCH_TimeDomainResourceAllocationList_t *tda =
+      scc->uplinkConfigCommon->initialUplinkBWP->pusch_ConfigCommon->choice.setup->pusch_TimeDomainAllocationList;
+  AssertFatal(tda->list.count == 0, "already have pusch_TimeDomainAllocationList members\n");
 
+  const int k2 = min_fb_delay;
   uint8_t DELTA[4]= {2,3,4,6}; // Delta parameter for Msg3
   int mu = scc->uplinkConfigCommon->initialUplinkBWP->genericParameters.subcarrierSpacing;
+  struct NR_SetupRelease_PUSCH_ConfigCommon *pusch_ConfigCommon = scc->uplinkConfigCommon->initialUplinkBWP->pusch_ConfigCommon;
 
   // UL TDA index 0 is basic slot configuration starting in symbol 0 til the last but one symbol
-  struct NR_PUSCH_TimeDomainResourceAllocation *pusch_timedomainresourceallocation = CALLOC(1,sizeof(struct NR_PUSCH_TimeDomainResourceAllocation));
-  pusch_timedomainresourceallocation->k2 = CALLOC(1,sizeof(long));
-  *pusch_timedomainresourceallocation->k2 = k2;
-  pusch_timedomainresourceallocation->mappingType = NR_PUSCH_TimeDomainResourceAllocation__mappingType_typeB;
-  pusch_timedomainresourceallocation->startSymbolAndLength = get_SLIV(0, 13);
-  asn1cSeqAdd(&scc->uplinkConfigCommon->initialUplinkBWP->pusch_ConfigCommon->choice.setup->pusch_TimeDomainAllocationList->list,pusch_timedomainresourceallocation); 
+  asn1cSeqAdd(&pusch_ConfigCommon->choice.setup->pusch_TimeDomainAllocationList->list, set_TimeDomainResourceAllocation(k2, 0, 0));
 
   // UL TDA index 1 in case of SRS
-  struct NR_PUSCH_TimeDomainResourceAllocation *pusch_timedomainresourceallocation1 = CALLOC(1,sizeof(struct NR_PUSCH_TimeDomainResourceAllocation));
-  pusch_timedomainresourceallocation1->k2 = CALLOC(1,sizeof(long));
-  *pusch_timedomainresourceallocation1->k2 = k2;
-  pusch_timedomainresourceallocation1->mappingType = NR_PUSCH_TimeDomainResourceAllocation__mappingType_typeB;
-  pusch_timedomainresourceallocation1->startSymbolAndLength = get_SLIV(0, 12);
-  asn1cSeqAdd(&scc->uplinkConfigCommon->initialUplinkBWP->pusch_ConfigCommon->choice.setup->pusch_TimeDomainAllocationList->list,pusch_timedomainresourceallocation1);
+  asn1cSeqAdd(&pusch_ConfigCommon->choice.setup->pusch_TimeDomainAllocationList->list, set_TimeDomainResourceAllocation(k2, 1, 0));
 
-  if(frame_type==TDD) {
-    if(scc->tdd_UL_DL_ConfigurationCommon) {
-      int ul_symb = scc->tdd_UL_DL_ConfigurationCommon->pattern1.nrofUplinkSymbols;
-      if (ul_symb>1) {
-        // UL TDA index 2 for mixed slot (TDD)
-        pusch_timedomainresourceallocation = CALLOC(1,sizeof(struct NR_PUSCH_TimeDomainResourceAllocation));
-        pusch_timedomainresourceallocation->k2 = CALLOC(1,sizeof(long));
-        *pusch_timedomainresourceallocation->k2 = k2;
-        pusch_timedomainresourceallocation->mappingType = NR_PUSCH_TimeDomainResourceAllocation__mappingType_typeB;
-        pusch_timedomainresourceallocation->startSymbolAndLength = get_SLIV(14 - ul_symb, ul_symb - 1); // starting in fist ul symbol til the last but one
-        asn1cSeqAdd(&scc->uplinkConfigCommon->initialUplinkBWP->pusch_ConfigCommon->choice.setup->pusch_TimeDomainAllocationList->list,pusch_timedomainresourceallocation);
-      }
-      // UL TDA index 3 for msg3 in the mixed slot (TDD)
-      int nb_periods_per_frame = get_nb_periods_per_frame(scc->tdd_UL_DL_ConfigurationCommon->pattern1.dl_UL_TransmissionPeriodicity);
-      int nb_slots_per_period = ((1 << mu) * 10) / nb_periods_per_frame;
-      struct NR_PUSCH_TimeDomainResourceAllocation *pusch_timedomainresourceallocation_msg3 = CALLOC(1,sizeof(struct NR_PUSCH_TimeDomainResourceAllocation));
-      pusch_timedomainresourceallocation_msg3->k2 = CALLOC(1,sizeof(long));
-      int no_mix_slot = ul_symb < 3 ? 1 : 0; // we need at least 2 symbols for scheduling Msg3
-      *pusch_timedomainresourceallocation_msg3->k2 = nb_slots_per_period - DELTA[mu] + no_mix_slot;
-      if(*pusch_timedomainresourceallocation_msg3->k2 < min_fb_delay)
-        *pusch_timedomainresourceallocation_msg3->k2 += nb_slots_per_period;
-      AssertFatal(*pusch_timedomainresourceallocation_msg3->k2 < 33,"Computed k2 for msg3 %ld is larger than the range allowed by RRC (0..32)\n",
-                  *pusch_timedomainresourceallocation_msg3->k2);
-      pusch_timedomainresourceallocation_msg3->mappingType = NR_PUSCH_TimeDomainResourceAllocation__mappingType_typeB;
-      if(no_mix_slot)
-        pusch_timedomainresourceallocation_msg3->startSymbolAndLength = get_SLIV(0, 13); // full allocation if there is no mixed slot
-      else
-        pusch_timedomainresourceallocation_msg3->startSymbolAndLength = get_SLIV(14 - ul_symb, ul_symb - 1); // starting in fist ul symbol til the last but one
-      asn1cSeqAdd(&scc->uplinkConfigCommon->initialUplinkBWP->pusch_ConfigCommon->choice.setup->pusch_TimeDomainAllocationList->list,pusch_timedomainresourceallocation_msg3);
+  if (scc->tdd_UL_DL_ConfigurationCommon) {
+    int ul_symb = 0;
+    NR_TDD_UL_DL_Pattern_t *p1 = &scc->tdd_UL_DL_ConfigurationCommon->pattern1;
+    NR_TDD_UL_DL_Pattern_t *p2 = scc->tdd_UL_DL_ConfigurationCommon->pattern2;
+    if (p2 && p2->nrofUplinkSymbols)
+      AssertFatal(p2->nrofUplinkSymbols == p1->nrofUplinkSymbols,
+                  "nrofDownlinkSymbols in pattern1 %ld and pattern2 %ld must be the same in current implementation\n",
+                  p1->nrofUplinkSymbols,
+                  p2->nrofUplinkSymbols);
+    if (p1->nrofUplinkSymbols) {
+      ul_symb = p1->nrofUplinkSymbols;
+    } else if (p2) {
+      ul_symb = p1->nrofUplinkSymbols;
     }
+    if (ul_symb>1) {
+      // UL TDA index 2 for mixed slot (TDD)
+      asn1cSeqAdd(&pusch_ConfigCommon->choice.setup->pusch_TimeDomainAllocationList->list,
+                  set_TimeDomainResourceAllocation(k2, 2, ul_symb));
+    }
+    // UL TDA index 3 for msg3 in the mixed slot (TDD)
+    int tdd_period_idx = get_tdd_period_idx(scc->tdd_UL_DL_ConfigurationCommon);
+    int nb_periods_per_frame = get_nb_periods_per_frame(tdd_period_idx);
+    int nb_slots_per_period = ((1 << mu) * 10) / nb_periods_per_frame;
+    int k2_msg3 = nb_slots_per_period - DELTA[mu];
+    struct NR_PUSCH_TimeDomainResourceAllocation *puschTdrAllocMsg3 = set_TimeDomainResourceAllocation(k2_msg3, 3, ul_symb);
+    if (*puschTdrAllocMsg3->k2 < min_fb_delay)
+      *puschTdrAllocMsg3->k2 += nb_slots_per_period;
+    AssertFatal(*puschTdrAllocMsg3->k2 < 33,
+                "Computed k2 for msg3 %ld is larger than the range allowed by RRC (0..32)\n",
+                *puschTdrAllocMsg3->k2);
+    asn1cSeqAdd(&pusch_ConfigCommon->choice.setup->pusch_TimeDomainAllocationList->list, puschTdrAllocMsg3);
   }
 }
 
@@ -940,7 +1119,11 @@ static void set_dl_DataToUL_ACK(NR_PUCCH_Config_t *pucch_Config, int min_feedbac
 }
 
 // PUCCH resource set 0 for configuration with O_uci <= 2 bits and/or a positive or negative SR (section 9.2.1 of 38.213)
-static void config_pucch_resset0(NR_PUCCH_Config_t *pucch_Config, int uid, int curr_bwp, const NR_UE_NR_Capability_t *uecap)
+static void config_pucch_resset0(NR_PUCCH_Config_t *pucch_Config,
+                                 int uid,
+                                 int curr_bwp,
+                                 int num_pucch2,
+                                 const NR_UE_NR_Capability_t *uecap)
 {
   NR_PUCCH_ResourceSet_t *pucchresset = calloc(1,sizeof(*pucchresset));
   pucchresset->pucch_ResourceSetId = 0;
@@ -956,7 +1139,7 @@ static void config_pucch_resset0(NR_PUCCH_Config_t *pucch_Config, int uid, int c
 
   NR_PUCCH_Resource_t *pucchres0 = calloc(1,sizeof(*pucchres0));
   pucchres0->pucch_ResourceId = *pucchid;
-  pucchres0->startingPRB = 8 + uid;
+  pucchres0->startingPRB = (PUCCH2_SIZE * num_pucch2) + uid;
   AssertFatal(pucchres0->startingPRB < curr_bwp, "Not enough resources in current BWP (size %d) to allocate uid %d\n", curr_bwp, uid);
   pucchres0->intraSlotFrequencyHopping = NULL;
   pucchres0->secondHopPRB = NULL;
@@ -972,7 +1155,10 @@ static void config_pucch_resset0(NR_PUCCH_Config_t *pucch_Config, int uid, int c
 
 
 // PUCCH resource set 1 for configuration with O_uci > 2 bits (currently format2)
-static void config_pucch_resset1(NR_PUCCH_Config_t *pucch_Config, const NR_UE_NR_Capability_t *uecap)
+static void config_pucch_resset1(NR_PUCCH_Config_t *pucch_Config,
+                                 int uid,
+                                 int num_pucch2,
+                                 const NR_UE_NR_Capability_t *uecap)
 {
   NR_PUCCH_ResourceSet_t *pucchresset=calloc(1,sizeof(*pucchresset));
   pucchresset->pucch_ResourceSetId = 1;
@@ -988,12 +1174,12 @@ static void config_pucch_resset1(NR_PUCCH_Config_t *pucch_Config, const NR_UE_NR
 
   NR_PUCCH_Resource_t *pucchres2 = calloc(1,sizeof(*pucchres2));
   pucchres2->pucch_ResourceId = *pucchressetid;
-  pucchres2->startingPRB = 0;
+  pucchres2->startingPRB = PUCCH2_SIZE * (uid % num_pucch2);
   pucchres2->intraSlotFrequencyHopping = NULL;
   pucchres2->secondHopPRB = NULL;
   pucchres2->format.present = NR_PUCCH_Resource__format_PR_format2;
   pucchres2->format.choice.format2 = calloc(1,sizeof(*pucchres2->format.choice.format2));
-  pucchres2->format.choice.format2->nrofPRBs = 8;
+  pucchres2->format.choice.format2->nrofPRBs = PUCCH2_SIZE;
   pucchres2->format.choice.format2->nrofSymbols = 1;
   pucchres2->format.choice.format2->startingSymbolIndex = 13;
   asn1cSeqAdd(&pucch_Config->resourceToAddModList->list,pucchres2);
@@ -1055,10 +1241,10 @@ void set_pucch_power_config(NR_PUCCH_Config_t *pucch_Config, int do_csirs) {
 
 static void set_SR_periodandoffset(NR_SchedulingRequestResourceConfig_t *schedulingRequestResourceConfig, const NR_ServingCellConfigCommon_t *scc, int scs)
 {
-  const NR_TDD_UL_DL_Pattern_t *tdd = scc->tdd_UL_DL_ConfigurationCommon ? &scc->tdd_UL_DL_ConfigurationCommon->pattern1 : NULL;
+  const frame_structure_t *fs = &RC.nrmac[0]->frame_structure;
   int sr_slot = 1; // in FDD SR in slot 1
-  if(tdd)
-    sr_slot = get_first_ul_slot(tdd->nrofDownlinkSlots, tdd->nrofDownlinkSymbols, tdd->nrofUplinkSymbols);
+  if (fs->frame_type == TDD)
+    sr_slot = get_first_ul_slot(fs, true);
 
   schedulingRequestResourceConfig->periodicityAndOffset = calloc(1,sizeof(*schedulingRequestResourceConfig->periodicityAndOffset));
 
@@ -1340,7 +1526,8 @@ static void config_downlinkBWP(NR_BWP_Downlink_t *bwp,
                                int dl_antenna_ports,
                                bool force_256qam_off,
                                int bwp_loop,
-                               bool is_SA)
+                               bool is_SA,
+                               const int num_agg_level_candidates[NUM_PDCCH_AGG_LEVELS])
 {
   bwp->bwp_Common = calloc(1,sizeof(*bwp->bwp_Common));
 
@@ -1372,8 +1559,12 @@ static void config_downlinkBWP(NR_BWP_Downlink_t *bwp,
   bwp->bwp_Common->pdcch_ConfigCommon->choice.setup->commonSearchSpaceList=NULL;
   bwp->bwp_Common->pdcch_ConfigCommon->choice.setup->commonSearchSpaceList=calloc(1,sizeof(*bwp->bwp_Common->pdcch_ConfigCommon->choice.setup->commonSearchSpaceList));
 
-  NR_SearchSpace_t *ss = rrc_searchspace_config(true, 5+bwp->bwp_Id, coreset->controlResourceSetId);
-  asn1cSeqAdd(&bwp->bwp_Common->pdcch_ConfigCommon->choice.setup->commonSearchSpaceList->list,ss);
+  int searchspaceid = 5 + bwp->bwp_Id;
+  int rrc_num_agg_level_candidates[NUM_PDCCH_AGG_LEVELS];
+  int num_cces = get_coreset_num_cces(coreset->frequencyDomainResources.buf, coreset->duration);
+  verify_agg_levels(num_cces, num_agg_level_candidates, coreset->controlResourceSetId, searchspaceid, rrc_num_agg_level_candidates);
+  NR_SearchSpace_t *ss = rrc_searchspace_config(true, searchspaceid, coreset->controlResourceSetId, rrc_num_agg_level_candidates);
+  asn1cSeqAdd(&bwp->bwp_Common->pdcch_ConfigCommon->choice.setup->commonSearchSpaceList->list, ss);
 
   bwp->bwp_Common->pdcch_ConfigCommon->choice.setup->searchSpaceSIB1=NULL;
   bwp->bwp_Common->pdcch_ConfigCommon->choice.setup->searchSpaceOtherSystemInformation=NULL;
@@ -1408,7 +1599,11 @@ static void config_downlinkBWP(NR_BWP_Downlink_t *bwp,
   NR_ControlResourceSet_t *coreset2 = get_coreset_config(bwp->bwp_Id, curr_bwp, ssb_bitmap);
   asn1cSeqAdd(&bwp->bwp_Dedicated->pdcch_Config->choice.setup->controlResourceSetToAddModList->list, coreset2);
 
-  NR_SearchSpace_t *ss2 = rrc_searchspace_config(false, 10+bwp->bwp_Id, coreset2->controlResourceSetId);
+  searchspaceid = 10 + bwp->bwp_Id;
+  num_cces = get_coreset_num_cces(coreset2->frequencyDomainResources.buf, coreset2->duration);
+  verify_agg_levels(num_cces, num_agg_level_candidates, coreset->controlResourceSetId, searchspaceid, rrc_num_agg_level_candidates);
+  NR_SearchSpace_t *ss2 =
+      rrc_searchspace_config(false, searchspaceid, coreset2->controlResourceSetId, rrc_num_agg_level_candidates);
   asn1cSeqAdd(&bwp->bwp_Dedicated->pdcch_Config->choice.setup->searchSpacesToAddModList->list, ss2);
 
   bwp->bwp_Dedicated->pdcch_Config->choice.setup->searchSpacesToReleaseList = NULL;
@@ -1467,8 +1662,9 @@ static void config_uplinkBWP(NR_BWP_Uplink_t *ubwp,
   pucch_Config->resourceSetToReleaseList = NULL;
   pucch_Config->resourceToAddModList = calloc(1,sizeof(*pucch_Config->resourceToAddModList));
   pucch_Config->resourceToReleaseList = NULL;
-  config_pucch_resset0(pucch_Config, uid, curr_bwp, uecap);
-  config_pucch_resset1(pucch_Config, uecap);
+  int num_pucch2 = get_nb_pucch2_per_slot(scc, curr_bwp);
+  config_pucch_resset0(pucch_Config, uid, curr_bwp, num_pucch2, uecap);
+  config_pucch_resset1(pucch_Config, uid, num_pucch2, uecap);
   set_pucch_power_config(pucch_Config, configuration->do_CSIRS);
   scheduling_request_config(scc, pucch_Config, ubwp->bwp_Common->genericParameters.subcarrierSpacing);
   set_dl_DataToUL_ACK(pucch_Config, configuration->minRXTXTIME, ubwp->bwp_Common->genericParameters.subcarrierSpacing);
@@ -1511,16 +1707,20 @@ static void set_phr_config(NR_MAC_CellGroupConfig_t *mac_CellGroupConfig)
   mac_CellGroupConfig->phr_Config->choice.setup->phr_Tx_PowerFactorChange = NR_PHR_Config__phr_Tx_PowerFactorChange_dB1;
 }
 
-static void set_csi_meas_periodicity(const NR_ServingCellConfigCommon_t *scc, NR_CSI_ReportConfig_t *csirep, int uid, bool is_rsrp)
+static void set_csi_meas_periodicity(const NR_ServingCellConfigCommon_t *scc,
+                                     NR_CSI_ReportConfig_t *csirep,
+                                     int uid,
+                                     int curr_bwp,
+                                     bool is_rsrp)
 {
-  const NR_TDD_UL_DL_Pattern_t *tdd = scc->tdd_UL_DL_ConfigurationCommon ? &scc->tdd_UL_DL_ConfigurationCommon->pattern1 : NULL;
-  const int n_slots_frame = slotsperframe[*scc->ssbSubcarrierSpacing];
-  const int n_ul_slots_period = tdd ? (tdd->nrofUplinkSlots + (tdd->nrofUplinkSymbols > 0)) : n_slots_frame;
-  const int n_slots_period = tdd ? n_slots_frame / get_nb_periods_per_frame(tdd->dl_UL_TransmissionPeriodicity) : n_slots_frame;
-  const int ideal_period = set_ideal_period(n_slots_period, n_ul_slots_period);
-  const int first_ul_slot_period = tdd ? get_first_ul_slot(tdd->nrofDownlinkSlots, tdd->nrofDownlinkSymbols, tdd->nrofUplinkSymbols) : 0;
-  const int idx = (uid << 1) + is_rsrp;
-  const int offset = first_ul_slot_period + idx % n_ul_slots_period + (idx / n_ul_slots_period) * n_slots_period;
+  const int ideal_period = set_ideal_period(true);
+  const int num_pucch2 = get_nb_pucch2_per_slot(scc, curr_bwp);
+  const int idx = (uid * 2 / num_pucch2) + is_rsrp;
+
+  frame_structure_t *fs = &RC.nrmac[0]->frame_structure;
+  int offset = get_ul_slot_offset(fs, idx, true);
+
+  LOG_D(NR_MAC, "set_csi_meas_periodicity: uid = %d, offset = %d, ideal_period = %d", uid, offset, ideal_period);
   AssertFatal(offset < 320, "Not enough UL slots to accomodate all possible UEs. Need to rework the implementation\n");
 
   if (ideal_period < 5) {
@@ -1669,7 +1869,8 @@ static void config_csi_meas_report(NR_CSI_MeasConfig_t *csi_MeasConfig,
                                    const nr_pdsch_AntennaPorts_t *antennaports,
                                    const int max_layers,
                                    int rep_id,
-                                   int uid)
+                                   int uid,
+                                   int curr_bwp)
 {
   int resource_id = -1;
   int im_id = -1;
@@ -1698,7 +1899,7 @@ static void config_csi_meas_report(NR_CSI_MeasConfig_t *csi_MeasConfig,
   csirep->nzp_CSI_RS_ResourcesForInterference = NULL;
   csirep->reportConfigType.present = NR_CSI_ReportConfig__reportConfigType_PR_periodic;
   csirep->reportConfigType.choice.periodic = calloc(1, sizeof(*csirep->reportConfigType.choice.periodic));
-  set_csi_meas_periodicity(servingcellconfigcommon, csirep, uid, false);
+  set_csi_meas_periodicity(servingcellconfigcommon, csirep, uid, curr_bwp, false);
   asn1cSeqAdd(&csirep->reportConfigType.choice.periodic->pucch_CSI_ResourceList.list, pucchcsires);
   csirep->reportQuantity.present = NR_CSI_ReportConfig__reportQuantity_PR_cri_RI_PMI_CQI;
   csirep->reportQuantity.choice.cri_RI_PMI_CQI = (NULL_t)0;
@@ -1733,6 +1934,7 @@ static void config_rsrp_meas_report(NR_CSI_MeasConfig_t *csi_MeasConfig,
                                     int do_csi, // if rsrp is based on CSI or SSB
                                     int rep_id,
                                     int uid,
+                                    int curr_bwp,
                                     int num_antenna_ports)
 {
   int resource_id = -1;
@@ -1759,7 +1961,7 @@ static void config_rsrp_meas_report(NR_CSI_MeasConfig_t *csi_MeasConfig,
   csirep->nzp_CSI_RS_ResourcesForInterference = NULL;
   csirep->reportConfigType.present = NR_CSI_ReportConfig__reportConfigType_PR_periodic;
   csirep->reportConfigType.choice.periodic = calloc(1, sizeof(*csirep->reportConfigType.choice.periodic));
-  set_csi_meas_periodicity(servingcellconfigcommon, csirep, uid, true);
+  set_csi_meas_periodicity(servingcellconfigcommon, csirep, uid, curr_bwp, true);
   asn1cSeqAdd(&csirep->reportConfigType.choice.periodic->pucch_CSI_ResourceList.list, pucchcsires);
   if (do_csi && num_antenna_ports < 4) {
     csirep->reportQuantity.present = NR_CSI_ReportConfig__reportQuantity_PR_cri_RSRP;
@@ -1816,7 +2018,7 @@ NR_BCCH_BCH_Message_t *get_new_MIB_NR(const NR_ServingCellConfigCommon_t *scc)
 
   AssertFatal(scc->ssbSubcarrierSpacing != NULL, "scc->ssbSubcarrierSpacing is null\n");
   int ssb_subcarrier_offset = 31; // default value for NSA
-  if (get_softmodem_params()->sa) {
+  if (IS_SA_MODE(get_softmodem_params())) {
     ssb_subcarrier_offset = get_ssb_subcarrier_offset(*scc->downlinkConfigCommon->frequencyInfoDL->absoluteFrequencySSB,
                                                       scc->downlinkConfigCommon->frequencyInfoDL->absoluteFrequencyPointA,
                                                       *scc->ssbSubcarrierSpacing);
@@ -1971,7 +2173,8 @@ NR_MeasurementTimingConfiguration_t *get_new_MeasurementTimingConfiguration(cons
 int encode_MeasurementTimingConfiguration(const struct NR_MeasurementTimingConfiguration *mtc, uint8_t *buf, int buf_len)
 {
   DevAssert(mtc != NULL);
-  xer_fprint(stdout, &asn_DEF_NR_MeasurementTimingConfiguration, mtc);
+  if (LOG_DEBUGFLAG(DEBUG_ASN1))
+    xer_fprint(stdout, &asn_DEF_NR_MeasurementTimingConfiguration, mtc);
   asn_enc_rval_t enc_rval = uper_encode_to_buffer(&asn_DEF_NR_MeasurementTimingConfiguration, NULL, mtc, buf, buf_len);
   AssertFatal(enc_rval.encoded > 0, "ASN1 message encoding failed (%s, %lu)!\n", enc_rval.failed_type->name, enc_rval.encoded);
   return (enc_rval.encoded + 7) / 8;
@@ -2146,6 +2349,19 @@ static long get_NR_UE_TimersAndConstants_t319(const nr_mac_timers_t *timer_confi
   }
 }
 
+static bool is_ntn_band(int band)
+{
+  // TS 3GPP 38.101-5 V1807 Section 5.2.2
+  if (band >= 254 && band <= 256) // FR1 NTN
+    return true;
+
+  // TS 3GPP 38.101-5 V1807 Section 5.2.3
+  if (band >= 510 && band <= 512) // FR2 NTN
+    return true;
+
+  return false;
+}
+
 NR_BCCH_DL_SCH_Message_t *get_SIB1_NR(const NR_ServingCellConfigCommon_t *scc,
                                       const f1ap_plmn_t *plmn,
                                       uint64_t cellID,
@@ -2190,7 +2406,7 @@ NR_BCCH_DL_SCH_Message_t *get_SIB1_NR(const NR_ServingCellConfigCommon_t *scc,
     int mnc = plmn->mnc;
     if (plmn->mnc_digit_length == 3) {
       asn1cSequenceAdd(nr_plmn->mnc.list, NR_MCC_MNC_Digit_t, mnc0);
-      *mnc0 = (0 / 100) % 10;
+      *mnc0 = (mnc / 100) % 10;
     }
     asn1cSequenceAdd(nr_plmn->mnc.list, NR_MCC_MNC_Digit_t, mnc1);
     *mnc1 = (mnc / 10) % 10;
@@ -2244,6 +2460,43 @@ NR_BCCH_DL_SCH_Message_t *get_SIB1_NR(const NR_ServingCellConfigCommon_t *scc,
 
   asn1cSeqAdd(&sib1->si_SchedulingInfo->schedulingInfoList.list,schedulingInfo);*/
 
+  const NR_FreqBandIndicatorNR_t band = *scc->downlinkConfigCommon->frequencyInfoDL->frequencyBandList.list.array[0];
+  if (is_ntn_band(band)) {
+    sib1->nonCriticalExtension = CALLOC(1, sizeof(struct NR_SIB1_v1610_IEs));
+    sib1->nonCriticalExtension->nonCriticalExtension = CALLOC(1, sizeof(struct NR_SIB1_v1630_IEs));
+    sib1->nonCriticalExtension->nonCriticalExtension->nonCriticalExtension = CALLOC(1, sizeof(struct NR_SIB1_v1700_IEs));
+    // If cell provides NTN access, set cellBarredNTN to notBarred.
+    struct NR_SIB1_v1700_IEs *sib1_v1700 = sib1->nonCriticalExtension->nonCriticalExtension->nonCriticalExtension;
+    sib1_v1700->cellBarredNTN_r17 = CALLOC(1, sizeof(long));
+    *sib1_v1700->cellBarredNTN_r17 = NR_SIB1_v1700_IEs__cellBarredNTN_r17_notBarred;
+  }
+
+  // sib19 scheduling info
+  // ensure ntn-config is initialized
+  if (scc->ext2 && scc->ext2->ntn_Config_r17) {
+    if (sib1->nonCriticalExtension == NULL)
+      sib1->nonCriticalExtension = CALLOC(1, sizeof(struct NR_SIB1_v1610_IEs));
+    if (sib1->nonCriticalExtension->nonCriticalExtension == NULL)
+      sib1->nonCriticalExtension->nonCriticalExtension = CALLOC(1, sizeof(struct NR_SIB1_v1630_IEs));
+    if (sib1->nonCriticalExtension->nonCriticalExtension->nonCriticalExtension == NULL)
+      sib1->nonCriticalExtension->nonCriticalExtension->nonCriticalExtension = CALLOC(1, sizeof(struct NR_SIB1_v1700_IEs));
+
+    struct NR_SI_SchedulingInfo_v1700 *sib_v17_scheduling_info = CALLOC(1, sizeof(struct NR_SI_SchedulingInfo_v1700));
+
+    struct NR_SchedulingInfo2_r17 *si_schedulinginfo2_r17 = CALLOC(1, sizeof(struct NR_SchedulingInfo2_r17));
+    si_schedulinginfo2_r17->si_BroadcastStatus_r17 = NR_SchedulingInfo2_r17__si_BroadcastStatus_r17_broadcasting;
+    si_schedulinginfo2_r17->si_WindowPosition_r17 = 2;
+    si_schedulinginfo2_r17->si_Periodicity_r17 = NR_SchedulingInfo2_r17__si_Periodicity_r17_rf8;
+
+    struct NR_SIB_TypeInfo_v1700 *sib_type_info = CALLOC(1, sizeof(struct NR_SIB_TypeInfo_v1700));
+    sib_type_info->sibType_r17.present = NR_SIB_TypeInfo_v1700__sibType_r17_PR_type1_r17;
+    sib_type_info->sibType_r17.choice.type1_r17 = NR_SIB_TypeInfo_v1700__sibType_r17__type1_r17_sibType19;
+
+    asn1cSeqAdd(&si_schedulinginfo2_r17->sib_MappingInfo_r17.list, sib_type_info);
+    asn1cSeqAdd(&sib_v17_scheduling_info->schedulingInfoList2_r17.list, si_schedulinginfo2_r17);
+    sib1->nonCriticalExtension->nonCriticalExtension->nonCriticalExtension->si_SchedulingInfo_v1700 = sib_v17_scheduling_info;
+  }
+
   // servingCellConfigCommon
   asn1cCalloc(sib1->servingCellConfigCommon, ServCellCom);
   NR_BWP_DownlinkCommon_t *initialDownlinkBWP = &ServCellCom->downlinkConfigCommon.initialDownlinkBWP;
@@ -2258,8 +2511,7 @@ NR_BCCH_DL_SCH_Message_t *get_SIB1_NR(const NR_ServingCellConfigCommon_t *scc,
         frequencyInfoDL->frequencyBandList.list.array[i];
   }
 
-  const NR_FreqBandIndicatorNR_t band = *scc->downlinkConfigCommon->frequencyInfoDL->frequencyBandList.list.array[0];
-  frequency_range_t frequency_range = band < 100 ? FR1 : FR2;
+  frequency_range_t frequency_range = band > 256 ? FR2 : FR1;
   sib1->servingCellConfigCommon->downlinkConfigCommon.frequencyInfoDL.offsetToPointA = get_ssb_offset_to_pointA(*scc->downlinkConfigCommon->frequencyInfoDL->absoluteFrequencySSB,
                                scc->downlinkConfigCommon->frequencyInfoDL->absoluteFrequencyPointA,
                                scc->downlinkConfigCommon->initialDownlinkBWP->genericParameters.subcarrierSpacing,
@@ -2328,6 +2580,17 @@ NR_BCCH_DL_SCH_Message_t *get_SIB1_NR(const NR_ServingCellConfigCommon_t *scc,
 
   UL->initialUplinkBWP.genericParameters = clone_generic_parameters(&scc->uplinkConfigCommon->initialUplinkBWP->genericParameters);
   UL->initialUplinkBWP.rach_ConfigCommon = clone_rach_configcommon(scc->uplinkConfigCommon->initialUplinkBWP->rach_ConfigCommon);
+
+  if (scc->uplinkConfigCommon->initialUplinkBWP->ext1) {
+    NR_SetupRelease_MsgA_ConfigCommon_r16_t *msgA_configcommon =
+        clone_msga_configcommon(scc->uplinkConfigCommon->initialUplinkBWP->ext1->msgA_ConfigCommon_r16);
+    if (msgA_configcommon) {
+      // Add the struct ext1
+      UL->initialUplinkBWP.ext1 = calloc(1, sizeof(*UL->initialUplinkBWP.ext1));
+      UL->initialUplinkBWP.ext1->msgA_ConfigCommon_r16 = msgA_configcommon;
+    }
+  }
+
   UL->initialUplinkBWP.pusch_ConfigCommon = clone_pusch_configcommon(scc->uplinkConfigCommon->initialUplinkBWP->pusch_ConfigCommon);
   free(UL->initialUplinkBWP.pusch_ConfigCommon->choice.setup->groupHoppingEnabledTransformPrecoding);
   UL->initialUplinkBWP.pusch_ConfigCommon->choice.setup->groupHoppingEnabledTransformPrecoding = NULL;
@@ -2393,7 +2656,10 @@ NR_BCCH_DL_SCH_Message_t *get_SIB1_NR(const NR_ServingCellConfigCommon_t *scc,
     AssertFatal(ServCellCom->tdd_UL_DL_ConfigurationCommon != NULL, "out of memory\n");
     ServCellCom->tdd_UL_DL_ConfigurationCommon->referenceSubcarrierSpacing = scc->tdd_UL_DL_ConfigurationCommon->referenceSubcarrierSpacing;
     ServCellCom->tdd_UL_DL_ConfigurationCommon->pattern1 = scc->tdd_UL_DL_ConfigurationCommon->pattern1;
-    ServCellCom->tdd_UL_DL_ConfigurationCommon->pattern2 = scc->tdd_UL_DL_ConfigurationCommon->pattern2;
+    if (scc->tdd_UL_DL_ConfigurationCommon->pattern2) {
+      ServCellCom->tdd_UL_DL_ConfigurationCommon->pattern2 = calloc_or_fail(1, sizeof(struct NR_TDD_UL_DL_Pattern));
+      *ServCellCom->tdd_UL_DL_ConfigurationCommon->pattern2 = *scc->tdd_UL_DL_ConfigurationCommon->pattern2;
+    }
   }
   ServCellCom->ss_PBCH_BlockPower = scc->ss_PBCH_BlockPower;
 
@@ -2434,7 +2700,10 @@ NR_BCCH_DL_SCH_Message_t *get_SIB1_NR(const NR_ServingCellConfigCommon_t *scc,
   // nonCriticalExtension
   // TODO: add nonCriticalExtension
 
-  //xer_fprint(stdout, &asn_DEF_NR_SIB1, (const void*)sib1_message->message.choice.c1->choice.systemInformationBlockType1);
+  if (LOG_DEBUGFLAG(DEBUG_ASN1)) {
+    xer_fprint(stdout, &asn_DEF_NR_BCCH_DL_SCH_Message, sib1_message);
+  }
+
   return sib1_message;
 }
 
@@ -2452,6 +2721,53 @@ int encode_SIB1_NR(NR_BCCH_DL_SCH_Message_t *sib1, uint8_t *buffer, int max_buff
   asn_enc_rval_t enc_rval = uper_encode_to_buffer(&asn_DEF_NR_BCCH_DL_SCH_Message, NULL, sib1, buffer, max_buffer_size);
   AssertFatal(enc_rval.encoded > 0 && enc_rval.encoded <= max_buffer_size * 8, "ASN1 message encoding failed (%s, %lu)!\n", enc_rval.failed_type->name, enc_rval.encoded);
   return (enc_rval.encoded + 7) / 8;
+}
+
+NR_BCCH_DL_SCH_Message_t *get_SIB19_NR(const NR_ServingCellConfigCommon_t *scc)
+{
+  NR_BCCH_DL_SCH_Message_t *sib_message = CALLOC(1, sizeof(NR_BCCH_DL_SCH_Message_t));
+  sib_message->message.present = NR_BCCH_DL_SCH_MessageType_PR_c1;
+  sib_message->message.choice.c1 = CALLOC(1,sizeof(struct NR_BCCH_DL_SCH_MessageType__c1));
+  sib_message->message.choice.c1->present = NR_BCCH_DL_SCH_MessageType__c1_PR_systemInformation;
+  sib_message->message.choice.c1->choice.systemInformation = CALLOC(1,sizeof(struct NR_SystemInformation));
+
+  struct NR_SystemInformation *sib = sib_message->message.choice.c1->choice.systemInformation;
+  sib->criticalExtensions.present = NR_SystemInformation__criticalExtensions_PR_systemInformation;
+  sib->criticalExtensions.choice.systemInformation = CALLOC(1, sizeof(struct NR_SystemInformation_IEs));
+
+  struct NR_SystemInformation_IEs *ies = sib->criticalExtensions.choice.systemInformation;
+
+  SystemInformation_IEs__sib_TypeAndInfo__Member *sib19 = NULL;
+  sib19 = CALLOC(1, sizeof(SystemInformation_IEs__sib_TypeAndInfo__Member));
+  sib19->present = NR_SystemInformation_IEs__sib_TypeAndInfo__Member_PR_sib19_v1700;
+  sib19->choice.sib19_v1700 = CALLOC(1, sizeof(struct NR_SIB19_r17));
+
+  // use ntn-config from NR_ServingCellConfigCommon_t
+  const int copy_result = asn_copy(&asn_DEF_NR_NTN_Config_r17, (void **) &sib19->choice.sib19_v1700->ntn_Config_r17, scc->ext2->ntn_Config_r17);
+  AssertFatal(copy_result == 0, "Was unable to copy ntn_Config_r17 from scc to SIB19 structure\n");
+
+  asn1cSeqAdd(&ies->sib_TypeAndInfo.list, sib19);
+
+  if (LOG_DEBUGFLAG(DEBUG_ASN1)) {
+    xer_fprint(stdout, &asn_DEF_NR_BCCH_DL_SCH_Message, sib_message);
+  }
+
+  return sib_message;
+}
+
+int encode_SIB19_NR(NR_BCCH_DL_SCH_Message_t *sib19, uint8_t *buffer, int max_buffer_size)
+{
+  asn_enc_rval_t enc_rval;
+
+  enc_rval = uper_encode_to_buffer(&asn_DEF_NR_BCCH_DL_SCH_Message, NULL, sib19, buffer, 150);
+  AssertFatal(enc_rval.encoded > 0, "ASN1 message encoding failed (%s, %lu)!\n", enc_rval.failed_type->name, enc_rval.encoded);
+
+  return ((enc_rval.encoded + 7) / 8);
+}
+
+void free_SIB19_NR(NR_BCCH_DL_SCH_Message_t *sib19)
+{
+  ASN_STRUCT_FREE(asn_DEF_NR_BCCH_DL_SCH_Message, sib19);
 }
 
 static NR_PhysicalCellGroupConfig_t *configure_phy_cellgroup(void)
@@ -2599,6 +2915,107 @@ static NR_MAC_CellGroupConfig_t *configure_mac_cellgroup(const nr_mac_timers_t *
   return mac_CellGroupConfig;
 }
 
+// Set HARQ related IEs according to the number of DL, UL harqprocesses configured
+static void fill_harq_IEs(NR_ServingCellConfig_t *scc, int num_dlharq, int num_ulharq)
+{
+
+  AssertFatal(scc && scc->pdsch_ServingCellConfig &&
+              scc->pdsch_ServingCellConfig->present == NR_SetupRelease_PDSCH_ServingCellConfig_PR_setup,
+              "PDSCH_Servingcellconfig IEs NOT present\n");
+
+  NR_PDSCH_ServingCellConfig_t *pdsch_scc = scc->pdsch_ServingCellConfig->choice.setup;
+
+  switch (num_dlharq) {
+    case 2:
+      *pdsch_scc->nrofHARQ_ProcessesForPDSCH = NR_PDSCH_ServingCellConfig__nrofHARQ_ProcessesForPDSCH_n2;
+      break;
+    case 4:
+      *pdsch_scc->nrofHARQ_ProcessesForPDSCH = NR_PDSCH_ServingCellConfig__nrofHARQ_ProcessesForPDSCH_n4;
+      break;
+    case 6:
+      *pdsch_scc->nrofHARQ_ProcessesForPDSCH = NR_PDSCH_ServingCellConfig__nrofHARQ_ProcessesForPDSCH_n6;
+      break;
+    case 8:
+      // 8 if IEs nrofHARQ_ProcessesForPDSCH and nrofHARQ_ProcessesForPDSCH_v1700 are not present
+      free_and_zero(pdsch_scc->nrofHARQ_ProcessesForPDSCH);
+      break;
+    case 10:
+      *pdsch_scc->nrofHARQ_ProcessesForPDSCH = NR_PDSCH_ServingCellConfig__nrofHARQ_ProcessesForPDSCH_n10;
+      break;
+    case 12:
+      *pdsch_scc->nrofHARQ_ProcessesForPDSCH = NR_PDSCH_ServingCellConfig__nrofHARQ_ProcessesForPDSCH_n12;
+      break;
+    case 16:
+      *pdsch_scc->nrofHARQ_ProcessesForPDSCH = NR_PDSCH_ServingCellConfig__nrofHARQ_ProcessesForPDSCH_n16;
+      break;
+    case 32:
+      if (!pdsch_scc->ext3)
+        pdsch_scc->ext3 = calloc(1, sizeof(*pdsch_scc->ext3));
+      asn1cCallocOne(pdsch_scc->ext3->nrofHARQ_ProcessesForPDSCH_v1700,
+                     NR_PDSCH_ServingCellConfig__ext3__nrofHARQ_ProcessesForPDSCH_v1700_n32);
+      NR_BWP_DownlinkDedicated_t *dlbwp = scc->initialDownlinkBWP;
+      if (dlbwp && dlbwp->pdsch_Config &&
+          dlbwp->pdsch_Config->present == NR_SetupRelease_PDSCH_Config_PR_setup) {
+        NR_PDSCH_Config_t *dlcfg = scc->initialDownlinkBWP->pdsch_Config->choice.setup;
+        if (!dlcfg->ext3)
+          dlcfg->ext3 = calloc(1, sizeof(*dlcfg->ext3));
+        asn1cCallocOne(dlcfg->ext3->harq_ProcessNumberSizeDCI_1_1_r17, 5);
+      }
+      int num_dl_bwp = 0;
+      if (scc->downlinkBWP_ToAddModList)
+        num_dl_bwp = scc->downlinkBWP_ToAddModList->list.count;
+      for (int i = 0;i < num_dl_bwp; i++) {
+        dlbwp = scc->downlinkBWP_ToAddModList->list.array[i]->bwp_Dedicated;
+        if (dlbwp && dlbwp->pdsch_Config &&
+            dlbwp->pdsch_Config->present == NR_SetupRelease_PDSCH_Config_PR_setup) {
+          NR_PDSCH_Config_t *dlcfg = dlbwp->pdsch_Config->choice.setup;
+          if (!dlcfg->ext3)
+            dlcfg->ext3 = calloc(1, sizeof(*dlcfg->ext3));
+          asn1cCallocOne(dlcfg->ext3->harq_ProcessNumberSizeDCI_1_1_r17, 5);
+        }
+      }
+      break;
+    default: // Already IE should have been set to 16 harq processes
+      break;
+  }
+
+
+  AssertFatal(scc->uplinkConfig,"uplinkConfig IE NOT present\n");
+
+  if (num_ulharq == 32) {
+    if (!scc->uplinkConfig->pusch_ServingCellConfig)
+      scc->uplinkConfig->pusch_ServingCellConfig = calloc(1, sizeof(*scc->uplinkConfig->pusch_ServingCellConfig));
+    scc->uplinkConfig->pusch_ServingCellConfig->present = NR_SetupRelease_PUSCH_ServingCellConfig_PR_setup;
+    if (!scc->uplinkConfig->pusch_ServingCellConfig->choice.setup)
+      scc->uplinkConfig->pusch_ServingCellConfig->choice.setup = calloc(1, sizeof(NR_PUSCH_ServingCellConfig_t));
+    NR_PUSCH_ServingCellConfig_t *pusch_scc = scc->uplinkConfig->pusch_ServingCellConfig->choice.setup;
+    if (!pusch_scc->ext3)
+      pusch_scc->ext3 = calloc(1, sizeof(*pusch_scc->ext3));
+    asn1cCallocOne(pusch_scc->ext3->nrofHARQ_ProcessesForPUSCH_r17,
+                   NR_PUSCH_ServingCellConfig__ext3__nrofHARQ_ProcessesForPUSCH_r17_n32);
+    NR_BWP_UplinkDedicated_t *ulbwp = scc->uplinkConfig->initialUplinkBWP;
+    if (ulbwp && ulbwp->pusch_Config &&
+        ulbwp->pusch_Config->present == NR_SetupRelease_PUSCH_Config_PR_setup) {
+      NR_PUSCH_Config_t *ulcfg = ulbwp->pusch_Config->choice.setup;
+      if (!ulcfg->ext2)
+        ulcfg->ext2 = calloc(1, sizeof(*ulcfg->ext2));
+      asn1cCallocOne(ulcfg->ext2->harq_ProcessNumberSizeDCI_0_1_r17, 5);
+    }
+    int num_ul_bwp = 0;
+    if (scc->uplinkConfig->uplinkBWP_ToAddModList)
+      num_ul_bwp = scc->uplinkConfig->uplinkBWP_ToAddModList->list.count;
+    for (int i = 0;i < num_ul_bwp; i++) {
+      ulbwp = scc->uplinkConfig->uplinkBWP_ToAddModList->list.array[i]->bwp_Dedicated;
+      if (ulbwp && ulbwp->pusch_Config &&
+          ulbwp->pusch_Config->present == NR_SetupRelease_PUSCH_Config_PR_setup) {
+        NR_PUSCH_Config_t *ulcfg = ulbwp->pusch_Config->choice.setup;
+        if (!ulcfg->ext2)
+          ulcfg->ext2 = calloc(1, sizeof(*ulcfg->ext2));
+        asn1cCallocOne(ulcfg->ext2->harq_ProcessNumberSizeDCI_0_1_r17, 5);
+      }
+    }
+  }
+}
 
 static NR_SpCellConfig_t *get_initial_SpCellConfig(int uid,
                                                    const NR_ServingCellConfigCommon_t *scc,
@@ -2628,8 +3045,9 @@ static NR_SpCellConfig_t *get_initial_SpCellConfig(int uid,
   pucch_Config->resourceSetToReleaseList = NULL;
   pucch_Config->resourceToAddModList = calloc(1, sizeof(*pucch_Config->resourceToAddModList));
   pucch_Config->resourceToReleaseList = NULL;
-  config_pucch_resset0(pucch_Config, uid, curr_bwp, NULL);
-  config_pucch_resset1(pucch_Config, NULL);
+  int num_pucch2 = get_nb_pucch2_per_slot(scc, curr_bwp);
+  config_pucch_resset0(pucch_Config, uid, curr_bwp, num_pucch2, NULL);
+  config_pucch_resset1(pucch_Config, uid, num_pucch2, NULL);
   set_pucch_power_config(pucch_Config, configuration->do_CSIRS);
 
   initialUplinkBWP->pusch_Config = config_pusch(NULL, configuration->use_deltaMCS, scc, NULL);
@@ -2667,7 +3085,15 @@ static NR_SpCellConfig_t *get_initial_SpCellConfig(int uid,
 
   asn1cSeqAdd(&bwp_Dedicated->pdcch_Config->choice.setup->controlResourceSetToAddModList->list, coreset);
 
-  NR_SearchSpace_t *ss2 = rrc_searchspace_config(false, 5, coreset->controlResourceSetId);
+  int searchspaceid = 5;
+  int rrc_num_agg_level_candidates[NUM_PDCCH_AGG_LEVELS];
+  int num_cces = get_coreset_num_cces(coreset->frequencyDomainResources.buf, coreset->duration);
+  verify_agg_levels(num_cces,
+                    configuration->num_agg_level_candidates,
+                    coreset->controlResourceSetId,
+                    searchspaceid,
+                    rrc_num_agg_level_candidates);
+  NR_SearchSpace_t *ss2 = rrc_searchspace_config(false, searchspaceid, coreset->controlResourceSetId, rrc_num_agg_level_candidates);
   asn1cSeqAdd(&bwp_Dedicated->pdcch_Config->choice.setup->searchSpacesToAddModList->list, ss2);
 
   bwp_Dedicated->pdsch_Config = config_pdsch(bitmap, 0, pdsch_AntennaPorts);
@@ -2681,12 +3107,12 @@ static NR_SpCellConfig_t *get_initial_SpCellConfig(int uid,
 
   pdsch_servingcellconfig->codeBlockGroupTransmission = NULL;
   pdsch_servingcellconfig->xOverhead = NULL;
-  pdsch_servingcellconfig->nrofHARQ_ProcessesForPDSCH = calloc(1, sizeof(*pdsch_servingcellconfig->nrofHARQ_ProcessesForPDSCH));
-  *pdsch_servingcellconfig->nrofHARQ_ProcessesForPDSCH = NR_PDSCH_ServingCellConfig__nrofHARQ_ProcessesForPDSCH_n16;
+  asn1cCallocOne(pdsch_servingcellconfig->nrofHARQ_ProcessesForPDSCH, NR_PDSCH_ServingCellConfig__nrofHARQ_ProcessesForPDSCH_n16);
   pdsch_servingcellconfig->pucch_Cell = NULL;
   set_dl_maxmimolayers(pdsch_servingcellconfig, scc, NULL, configuration->maxMIMO_layers);
   if (configuration->disable_harq) {
-    pdsch_servingcellconfig->ext3 = calloc(1, sizeof(*pdsch_servingcellconfig->ext3));
+    if (!pdsch_servingcellconfig->ext3)
+      pdsch_servingcellconfig->ext3 = calloc(1, sizeof(*pdsch_servingcellconfig->ext3));
     pdsch_servingcellconfig->ext3->downlinkHARQ_FeedbackDisabled_r17 = calloc(1, sizeof(*pdsch_servingcellconfig->ext3->downlinkHARQ_FeedbackDisabled_r17));
     pdsch_servingcellconfig->ext3->downlinkHARQ_FeedbackDisabled_r17->present = NR_SetupRelease_DownlinkHARQ_FeedbackDisabled_r17_PR_setup;
     pdsch_servingcellconfig->ext3->downlinkHARQ_FeedbackDisabled_r17->choice.setup.buf = calloc(4, sizeof(uint8_t));
@@ -2704,23 +3130,23 @@ static NR_SpCellConfig_t *get_initial_SpCellConfig(int uid,
       && servingcellconfigdedicated->downlinkBWP_ToAddModList->list.count > 0) {
     n_dl_bwp = servingcellconfigdedicated->downlinkBWP_ToAddModList->list.count;
   }
+  int default_dl_bwp = 0;
+  int first_active_dl_bwp = 0;
   if (n_dl_bwp > 0) {
     SpCellConfig->spCellConfigDedicated->downlinkBWP_ToAddModList =
         calloc(1, sizeof(*SpCellConfig->spCellConfigDedicated->downlinkBWP_ToAddModList));
     for (int bwp_loop = 0; bwp_loop < n_dl_bwp; bwp_loop++) {
       NR_BWP_Downlink_t *bwp = calloc(1, sizeof(*bwp));
-      config_downlinkBWP(bwp, scc, servingcellconfigdedicated, NULL, 0, false, bwp_loop, true);
+      config_downlinkBWP(bwp, scc, servingcellconfigdedicated, NULL, 0, false, bwp_loop, true, configuration->num_agg_level_candidates);
       asn1cSeqAdd(&SpCellConfig->spCellConfigDedicated->downlinkBWP_ToAddModList->list, bwp);
     }
-    SpCellConfig->spCellConfigDedicated->firstActiveDownlinkBWP_Id =
-        calloc(1, sizeof(*SpCellConfig->spCellConfigDedicated->firstActiveDownlinkBWP_Id));
-    *SpCellConfig->spCellConfigDedicated->firstActiveDownlinkBWP_Id =
-        servingcellconfigdedicated->firstActiveDownlinkBWP_Id ? *servingcellconfigdedicated->firstActiveDownlinkBWP_Id : 1;
-    SpCellConfig->spCellConfigDedicated->defaultDownlinkBWP_Id =
-        calloc(1, sizeof(*SpCellConfig->spCellConfigDedicated->defaultDownlinkBWP_Id));
-    *SpCellConfig->spCellConfigDedicated->defaultDownlinkBWP_Id =
-        servingcellconfigdedicated->defaultDownlinkBWP_Id ? *servingcellconfigdedicated->defaultDownlinkBWP_Id : 1;
+    const NR_BWP_Id_t *firstActiveDownlinkBWP_Id = servingcellconfigdedicated->firstActiveDownlinkBWP_Id;
+    first_active_dl_bwp = firstActiveDownlinkBWP_Id ? *firstActiveDownlinkBWP_Id : 1;
+    const NR_BWP_Id_t	*defaultDownlinkBWP_Id = servingcellconfigdedicated->defaultDownlinkBWP_Id;
+    default_dl_bwp = defaultDownlinkBWP_Id ? *defaultDownlinkBWP_Id : 1;
   }
+  asn1cCallocOne(SpCellConfig->spCellConfigDedicated->firstActiveDownlinkBWP_Id, first_active_dl_bwp);
+  asn1cCallocOne(SpCellConfig->spCellConfigDedicated->defaultDownlinkBWP_Id, default_dl_bwp);
 
   // Uplink BWPs
   int n_ul_bwp = 0;
@@ -2729,6 +3155,7 @@ static NR_SpCellConfig_t *get_initial_SpCellConfig(int uid,
       && servingcellconfigdedicated->uplinkConfig->uplinkBWP_ToAddModList->list.count > 0) {
     n_ul_bwp = servingcellconfigdedicated->uplinkConfig->uplinkBWP_ToAddModList->list.count;
   }
+  int first_active_ul_bwp = 0;
   if (n_ul_bwp > 0) {
     uplinkConfig->uplinkBWP_ToAddModList = calloc(1, sizeof(*uplinkConfig->uplinkBWP_ToAddModList));
     for (int bwp_loop = 0; bwp_loop < n_ul_bwp; bwp_loop++) {
@@ -2736,11 +3163,10 @@ static NR_SpCellConfig_t *get_initial_SpCellConfig(int uid,
       config_uplinkBWP(ubwp, bwp_loop, true, uid, configuration, servingcellconfigdedicated, scc, NULL);
       asn1cSeqAdd(&uplinkConfig->uplinkBWP_ToAddModList->list, ubwp);
     }
-    uplinkConfig->firstActiveUplinkBWP_Id = calloc(1, sizeof(*uplinkConfig->firstActiveUplinkBWP_Id));
-    *uplinkConfig->firstActiveUplinkBWP_Id = servingcellconfigdedicated->uplinkConfig->firstActiveUplinkBWP_Id
-                                                 ? *servingcellconfigdedicated->uplinkConfig->firstActiveUplinkBWP_Id
-                                                 : 1;
+    const NR_BWP_Id_t *firstActiveUplinkBWP_Id = servingcellconfigdedicated->uplinkConfig->firstActiveUplinkBWP_Id;
+    first_active_ul_bwp = firstActiveUplinkBWP_Id ? *firstActiveUplinkBWP_Id : 1;
   }
+  asn1cCallocOne(uplinkConfig->firstActiveUplinkBWP_Id, first_active_ul_bwp);
 
   SpCellConfig->spCellConfigDedicated->csi_MeasConfig = calloc(1, sizeof(*SpCellConfig->spCellConfigDedicated->csi_MeasConfig));
   SpCellConfig->spCellConfigDedicated->csi_MeasConfig->present = NR_SetupRelease_CSI_MeasConfig_PR_setup;
@@ -2840,13 +3266,16 @@ static NR_SpCellConfig_t *get_initial_SpCellConfig(int uid,
                              &configuration->pdsch_AntennaPorts,
                              *pdsch_servingcellconfig->ext1->maxMIMO_Layers,
                              bwp_id,
-                             uid);
+                             uid,
+                             curr_bwp);
     }
     NR_PUCCH_CSI_Resource_t *pucchrsrp = calloc(1, sizeof(*pucchrsrp));
     pucchrsrp->uplinkBandwidthPartId = bwp_id;
     pucchrsrp->pucch_Resource = pucch_Resource;
-    config_rsrp_meas_report(csi_MeasConfig, scc, pucchrsrp, configuration->do_CSIRS, bwp_id + 10, uid, pdsch_AntennaPorts);
+    config_rsrp_meas_report(csi_MeasConfig, scc, pucchrsrp, configuration->do_CSIRS, bwp_id + 10, uid, curr_bwp, pdsch_AntennaPorts);
   }
+
+  fill_harq_IEs(SpCellConfig->spCellConfigDedicated, configuration->num_dlharq, configuration->num_ulharq);
 
   if (LOG_DEBUGFLAG(DEBUG_ASN1)) {
     xer_fprint(stdout, &asn_DEF_NR_SpCellConfig, SpCellConfig);
@@ -2883,8 +3312,6 @@ NR_CellGroupConfig_t *get_initial_cellGroupConfig(int uid,
   return cellGroupConfig;
 }
 
-#include "common/ran_context.h"
-#include "nr_rrc_defs.h"
 void update_cellGroupConfig(NR_CellGroupConfig_t *cellGroupConfig,
                             const int uid,
                             NR_UE_NR_Capability_t *uecap,
@@ -2936,16 +3363,15 @@ void update_cellGroupConfig(NR_CellGroupConfig_t *cellGroupConfig,
       }
       *pusch_Config->maxRank = ul_max_layers;
     }
-    if (uplinkConfig->pusch_ServingCellConfig == NULL) {
+    if (!uplinkConfig->pusch_ServingCellConfig)
       uplinkConfig->pusch_ServingCellConfig = calloc(1, sizeof(*uplinkConfig->pusch_ServingCellConfig));
-      uplinkConfig->pusch_ServingCellConfig->present = NR_SetupRelease_PUSCH_ServingCellConfig_PR_setup;
+    uplinkConfig->pusch_ServingCellConfig->present = NR_SetupRelease_PUSCH_ServingCellConfig_PR_setup;
+    if (!uplinkConfig->pusch_ServingCellConfig->choice.setup)
       uplinkConfig->pusch_ServingCellConfig->choice.setup = calloc(1, sizeof(*uplinkConfig->pusch_ServingCellConfig->choice.setup));
+    if (!uplinkConfig->pusch_ServingCellConfig->choice.setup->ext1)
       uplinkConfig->pusch_ServingCellConfig->choice.setup->ext1 =
           calloc(1, sizeof(*uplinkConfig->pusch_ServingCellConfig->choice.setup->ext1));
-      uplinkConfig->pusch_ServingCellConfig->choice.setup->ext1->maxMIMO_Layers =
-          calloc(1, sizeof(*uplinkConfig->pusch_ServingCellConfig->choice.setup->ext1->maxMIMO_Layers));
-    }
-    *uplinkConfig->pusch_ServingCellConfig->choice.setup->ext1->maxMIMO_Layers = ul_max_layers;
+    asn1cCallocOne(uplinkConfig->pusch_ServingCellConfig->choice.setup->ext1->maxMIMO_Layers, ul_max_layers);
   }
 
   long maxMIMO_Layers = uplinkConfig && uplinkConfig->pusch_ServingCellConfig
@@ -3088,46 +3514,8 @@ NR_CellGroupConfig_t *get_default_secondaryCellGroup(const NR_ServingCellConfigC
   secondaryCellGroup->spCellConfig->reconfigurationWithSync =
       calloc(1, sizeof(*secondaryCellGroup->spCellConfig->reconfigurationWithSync));
 
-  NR_ReconfigurationWithSync_t *reconfigurationWithSync = secondaryCellGroup->spCellConfig->reconfigurationWithSync;
-  reconfigurationWithSync->spCellConfigCommon = clone_ServingCellConfigCommon(servingcellconfigcommon);
-  reconfigurationWithSync->newUE_Identity =
-      (get_softmodem_params()->phy_test == 1) ? 0x1234 : (taus() & 0xffff);
-  reconfigurationWithSync->t304 = NR_ReconfigurationWithSync__t304_ms2000;
-  reconfigurationWithSync->rach_ConfigDedicated = NULL;
-  reconfigurationWithSync->ext1 = NULL;
-
-  // For 2-step contention-free random access procedure
-  reconfigurationWithSync->rach_ConfigDedicated = calloc(1, sizeof(*reconfigurationWithSync->rach_ConfigDedicated));
-  reconfigurationWithSync->rach_ConfigDedicated->present = NR_ReconfigurationWithSync__rach_ConfigDedicated_PR_uplink;
-  reconfigurationWithSync->rach_ConfigDedicated->choice.uplink = calloc(1, sizeof(struct NR_RACH_ConfigDedicated));
-  reconfigurationWithSync->rach_ConfigDedicated->choice.uplink->cfra = calloc(1, sizeof(struct NR_CFRA));
-  reconfigurationWithSync->rach_ConfigDedicated->choice.uplink->ra_Prioritization = NULL;
-  reconfigurationWithSync->rach_ConfigDedicated->choice.uplink->cfra->occasions = calloc(1, sizeof(struct NR_CFRA__occasions));
-  memcpy(&reconfigurationWithSync->rach_ConfigDedicated->choice.uplink->cfra->occasions->rach_ConfigGeneric,
-         &servingcellconfigcommon->uplinkConfigCommon->initialUplinkBWP->rach_ConfigCommon->choice.setup->rach_ConfigGeneric,
-         sizeof(NR_RACH_ConfigGeneric_t));
-  asn1cCallocOne(reconfigurationWithSync->rach_ConfigDedicated->choice.uplink->cfra->occasions->ssb_perRACH_Occasion,
-                 NR_CFRA__occasions__ssb_perRACH_Occasion_one);
-  reconfigurationWithSync->rach_ConfigDedicated->choice.uplink->cfra->resources.present = NR_CFRA__resources_PR_ssb;
-  reconfigurationWithSync->rach_ConfigDedicated->choice.uplink->cfra->resources.choice.ssb =
-      calloc(1, sizeof(struct NR_CFRA__resources__ssb));
-  reconfigurationWithSync->rach_ConfigDedicated->choice.uplink->cfra->resources.choice.ssb->ra_ssb_OccasionMaskIndex = 0;
-
-  int n_ssb = 0;
-  struct NR_CFRA_SSB_Resource *ssbElem[64];
-  for (int i = 0; i < 64; i++) {
-    if ((bitmap >> (63 - i)) & 0x01) {
-      ssbElem[n_ssb] = calloc(1, sizeof(struct NR_CFRA_SSB_Resource));
-      ssbElem[n_ssb]->ssb = i;
-      ssbElem[n_ssb]->ra_PreambleIndex = 63 - (uid % 64);
-      asn1cSeqAdd(&secondaryCellGroup->spCellConfig->reconfigurationWithSync->rach_ConfigDedicated->choice.uplink->cfra->resources
-                       .choice.ssb->ssb_ResourceList.list,
-                  ssbElem[n_ssb]);
-      n_ssb++;
-    }
-  }
-
-  secondaryCellGroup->spCellConfig->reconfigurationWithSync->rach_ConfigDedicated->choice.uplink->cfra->ext1 = NULL;
+  rnti_t rnti = get_softmodem_params()->phy_test == 1 ? 0x1234 : (taus() & 0xffff);
+  secondaryCellGroup->spCellConfig->reconfigurationWithSync = get_reconfiguration_with_sync(rnti, uid, servingcellconfigcommon);
 
   secondaryCellGroup->spCellConfig->rlf_TimersAndConstants =
       calloc(1, sizeof(*secondaryCellGroup->spCellConfig->rlf_TimersAndConstants));
@@ -3211,7 +3599,8 @@ NR_CellGroupConfig_t *get_default_secondaryCellGroup(const NR_ServingCellConfigC
                          dl_antenna_ports,
                          configuration->force_256qam_off,
                          bwp_loop,
-                         false);
+                         false,
+                         configuration->num_agg_level_candidates);
       asn1cSeqAdd(&secondaryCellGroup->spCellConfig->spCellConfigDedicated->downlinkBWP_ToAddModList->list, bwp);
     }
     secondaryCellGroup->spCellConfig->spCellConfigDedicated->firstActiveDownlinkBWP_Id =
@@ -3249,18 +3638,23 @@ NR_CellGroupConfig_t *get_default_secondaryCellGroup(const NR_ServingCellConfigC
   secondaryCellGroup->spCellConfig->spCellConfigDedicated->downlinkBWP_ToReleaseList = NULL;
   secondaryCellGroup->spCellConfig->spCellConfigDedicated->uplinkConfig->uplinkBWP_ToReleaseList = NULL;
 
-  secondaryCellGroup->spCellConfig->spCellConfigDedicated->uplinkConfig->pusch_ServingCellConfig =
-      calloc(1, sizeof(*secondaryCellGroup->spCellConfig->spCellConfigDedicated->uplinkConfig->pusch_ServingCellConfig));
-  NR_PUSCH_ServingCellConfig_t *pusch_scc = calloc(1, sizeof(*pusch_scc));
+  if (!secondaryCellGroup->spCellConfig->spCellConfigDedicated->uplinkConfig->pusch_ServingCellConfig)
+    secondaryCellGroup->spCellConfig->spCellConfigDedicated->uplinkConfig->pusch_ServingCellConfig =
+        calloc(1, sizeof(*secondaryCellGroup->spCellConfig->spCellConfigDedicated->uplinkConfig->pusch_ServingCellConfig));
   secondaryCellGroup->spCellConfig->spCellConfigDedicated->uplinkConfig->pusch_ServingCellConfig->present =
       NR_SetupRelease_PUSCH_ServingCellConfig_PR_setup;
-  secondaryCellGroup->spCellConfig->spCellConfigDedicated->uplinkConfig->pusch_ServingCellConfig->choice.setup = pusch_scc;
+  if (!secondaryCellGroup->spCellConfig->spCellConfigDedicated->uplinkConfig->pusch_ServingCellConfig->choice.setup)
+    secondaryCellGroup->spCellConfig->spCellConfigDedicated->uplinkConfig->pusch_ServingCellConfig->choice.setup = calloc(
+        1,
+        sizeof(*secondaryCellGroup->spCellConfig->spCellConfigDedicated->uplinkConfig->pusch_ServingCellConfig->choice.setup));
+  NR_PUSCH_ServingCellConfig_t *pusch_scc =
+      secondaryCellGroup->spCellConfig->spCellConfigDedicated->uplinkConfig->pusch_ServingCellConfig->choice.setup;
   pusch_scc->codeBlockGroupTransmission = NULL;
   pusch_scc->rateMatching = NULL;
   pusch_scc->xOverhead = NULL;
-  pusch_scc->ext1 = calloc(1, sizeof(*pusch_scc->ext1));
-  pusch_scc->ext1->maxMIMO_Layers = calloc(1, sizeof(*pusch_scc->ext1->maxMIMO_Layers));
-  *pusch_scc->ext1->maxMIMO_Layers = 1;
+  if (!pusch_scc->ext1)
+    pusch_scc->ext1 = calloc(1, sizeof(*pusch_scc->ext1));
+  asn1cCallocOne(pusch_scc->ext1->maxMIMO_Layers, 1);
   pusch_scc->ext1->processingType2Enabled = NULL;
 
   secondaryCellGroup->spCellConfig->spCellConfigDedicated->uplinkConfig->carrierSwitching = NULL;
@@ -3275,13 +3669,13 @@ NR_CellGroupConfig_t *get_default_secondaryCellGroup(const NR_ServingCellConfigC
   secondaryCellGroup->spCellConfig->spCellConfigDedicated->pdsch_ServingCellConfig->choice.setup = pdsch_servingcellconfig;
   pdsch_servingcellconfig->codeBlockGroupTransmission = NULL;
   pdsch_servingcellconfig->xOverhead = NULL;
-  pdsch_servingcellconfig->nrofHARQ_ProcessesForPDSCH = calloc(1, sizeof(*pdsch_servingcellconfig->nrofHARQ_ProcessesForPDSCH));
-  *pdsch_servingcellconfig->nrofHARQ_ProcessesForPDSCH = NR_PDSCH_ServingCellConfig__nrofHARQ_ProcessesForPDSCH_n16;
+  asn1cCallocOne(pdsch_servingcellconfig->nrofHARQ_ProcessesForPDSCH, NR_PDSCH_ServingCellConfig__nrofHARQ_ProcessesForPDSCH_n16);
   pdsch_servingcellconfig->pucch_Cell = NULL;
   set_dl_maxmimolayers(pdsch_servingcellconfig, servingcellconfigcommon, uecap, configuration->maxMIMO_layers);
   pdsch_servingcellconfig->ext1->processingType2Enabled = NULL;
   if (configuration->disable_harq) {
-    pdsch_servingcellconfig->ext3 = calloc(1, sizeof(*pdsch_servingcellconfig->ext3));
+    if (!pdsch_servingcellconfig->ext3)
+      pdsch_servingcellconfig->ext3 = calloc(1, sizeof(*pdsch_servingcellconfig->ext3));
     pdsch_servingcellconfig->ext3->downlinkHARQ_FeedbackDisabled_r17 = calloc(1, sizeof(*pdsch_servingcellconfig->ext3->downlinkHARQ_FeedbackDisabled_r17));
     pdsch_servingcellconfig->ext3->downlinkHARQ_FeedbackDisabled_r17->present = NR_SetupRelease_DownlinkHARQ_FeedbackDisabled_r17_PR_setup;
     pdsch_servingcellconfig->ext3->downlinkHARQ_FeedbackDisabled_r17->choice.setup.buf = calloc(4, sizeof(uint8_t));
@@ -3375,8 +3769,23 @@ NR_CellGroupConfig_t *get_default_secondaryCellGroup(const NR_ServingCellConfigC
     pucchcsires1->uplinkBandwidthPartId = bwp->bwp_Id;
     pucchcsires1->pucch_Resource = 2;
 
-    config_csi_meas_report(csi_MeasConfig, servingcellconfigcommon, pucchcsires1, bwp->bwp_Dedicated->pdsch_Config, pdschap, *pdsch_servingcellconfig->ext1->maxMIMO_Layers, bwp->bwp_Id, uid);
-    config_rsrp_meas_report(csi_MeasConfig, servingcellconfigcommon, pucchcsires1, do_csirs, bwp->bwp_Id + 10, uid, dl_antenna_ports);
+    config_csi_meas_report(csi_MeasConfig,
+                           servingcellconfigcommon,
+                           pucchcsires1,
+                           bwp->bwp_Dedicated->pdsch_Config,
+                           pdschap,
+                           *pdsch_servingcellconfig->ext1->maxMIMO_Layers,
+                           bwp->bwp_Id,
+                           uid,
+                           curr_bwp);
+    config_rsrp_meas_report(csi_MeasConfig,
+                            servingcellconfigcommon,
+                            pucchcsires1,
+                            do_csirs,
+                            bwp->bwp_Id + 10,
+                            uid,
+                            curr_bwp,
+                            dl_antenna_ports);
   }
   secondaryCellGroup->spCellConfig->spCellConfigDedicated->sCellDeactivationTimer = NULL;
   secondaryCellGroup->spCellConfig->spCellConfigDedicated->crossCarrierSchedulingConfig = NULL;
@@ -3385,8 +3794,50 @@ NR_CellGroupConfig_t *get_default_secondaryCellGroup(const NR_ServingCellConfigC
   secondaryCellGroup->spCellConfig->spCellConfigDedicated->pathlossReferenceLinking = NULL;
   secondaryCellGroup->spCellConfig->spCellConfigDedicated->servingCellMO = NULL;
 
+  fill_harq_IEs(secondaryCellGroup->spCellConfig->spCellConfigDedicated, configuration->num_dlharq, configuration->num_ulharq);
+
   if (LOG_DEBUGFLAG(DEBUG_ASN1)) {
     xer_fprint(stdout, &asn_DEF_NR_SpCellConfig, (void *)secondaryCellGroup->spCellConfig);
   }
   return secondaryCellGroup;
+}
+
+NR_ReconfigurationWithSync_t *get_reconfiguration_with_sync(rnti_t rnti, uid_t uid, const NR_ServingCellConfigCommon_t *scc)
+{
+  NR_ReconfigurationWithSync_t *reconfigurationWithSync = calloc(1, sizeof(*reconfigurationWithSync));
+  reconfigurationWithSync->newUE_Identity = rnti;
+  reconfigurationWithSync->t304 = NR_ReconfigurationWithSync__t304_ms2000;
+  reconfigurationWithSync->rach_ConfigDedicated = NULL;
+  reconfigurationWithSync->ext1 = NULL;
+
+  reconfigurationWithSync->spCellConfigCommon = clone_ServingCellConfigCommon(scc);
+
+  reconfigurationWithSync->rach_ConfigDedicated = calloc(1, sizeof(*reconfigurationWithSync->rach_ConfigDedicated));
+  reconfigurationWithSync->rach_ConfigDedicated->present = NR_ReconfigurationWithSync__rach_ConfigDedicated_PR_uplink;
+  NR_RACH_ConfigDedicated_t *uplink = calloc(1, sizeof(*uplink));
+  reconfigurationWithSync->rach_ConfigDedicated->choice.uplink = uplink;
+  uplink->ra_Prioritization = NULL;
+  uplink->cfra = calloc(1, sizeof(struct NR_CFRA));
+  uplink->cfra->ext1 = NULL;
+  uplink->cfra->occasions = calloc(1, sizeof(struct NR_CFRA__occasions));
+  memcpy(&uplink->cfra->occasions->rach_ConfigGeneric,
+         &scc->uplinkConfigCommon->initialUplinkBWP->rach_ConfigCommon->choice.setup->rach_ConfigGeneric,
+         sizeof(NR_RACH_ConfigGeneric_t));
+  asn1cCallocOne(uplink->cfra->occasions->ssb_perRACH_Occasion, NR_CFRA__occasions__ssb_perRACH_Occasion_one);
+  uplink->cfra->resources.present = NR_CFRA__resources_PR_ssb;
+  uplink->cfra->resources.choice.ssb = calloc(1, sizeof(struct NR_CFRA__resources__ssb));
+  uplink->cfra->resources.choice.ssb->ra_ssb_OccasionMaskIndex = 0;
+
+  uint64_t bitmap = get_ssb_bitmap(scc);
+  for (int i = 0; i < 64; i++) {
+    if (((bitmap >> (63 - i)) & 0x01) == 0)
+      continue;
+
+    NR_CFRA_SSB_Resource_t *ssbElem = calloc(1, sizeof(*ssbElem));
+    ssbElem->ssb = i;
+    ssbElem->ra_PreambleIndex = 63 - (uid % 64);
+    asn1cSeqAdd(&uplink->cfra->resources.choice.ssb->ssb_ResourceList.list, ssbElem);
+  }
+
+  return reconfigurationWithSync;
 }

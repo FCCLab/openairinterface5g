@@ -25,13 +25,13 @@
 #
 #---------------------------------------------------------------------
 
-FROM ran-base:latest as gnb-base
+FROM ran-base:latest AS gnb-base
 
-FROM ran-build-fhi72:latest as gnb-build
+FROM ran-build-fhi72:latest AS gnb-build
 
 
 #start from scratch for target executable
-FROM ubuntu:jammy as oai-gnb
+FROM ubuntu:jammy AS oai-gnb
 ARG BUILD_OPTION
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Europe
@@ -58,7 +58,8 @@ RUN apt-get update && \
         libnuma-dev \
         python3 \
         python3-six \
-        python3-requests &&\
+        python3-requests \
+        libyaml-cpp-dev && \
 # if the --sanitize option was used to build, additional packages are required
     /bin/bash -c 'if [[ "$BUILD_OPTION" = "--sanitize" ]]; then DEBIAN_FRONTEND=noninteractive apt-get install --yes \
         libasan5 \
@@ -80,6 +81,7 @@ COPY --from=gnb-build \
     /oai-ran/cmake_targets/ran_build/build/libldpc*.so \
     /oai-ran/cmake_targets/ran_build/build/libtelnetsrv.so \
     /oai-ran/cmake_targets/ran_build/build/libtelnetsrv_ci.so \
+    /oai-ran/cmake_targets/ran_build/build/libparams_yaml.so \
     /usr/local/lib/
 
 ## Libxran library
@@ -110,4 +112,4 @@ RUN ldconfig && \
 WORKDIR /opt/oai-gnb
 COPY --from=gnb-base /tini /tini
 ENTRYPOINT ["/tini", "-v", "--", "/opt/oai-gnb/bin/entrypoint.sh"]
-CMD ["/opt/oai-gnb/bin/nr-softmodem", "-O", "/opt/oai-gnb/etc/gnb.conf"]
+CMD ["/opt/oai-gnb/bin/nr-softmodem"]

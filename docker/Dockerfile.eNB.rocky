@@ -32,7 +32,7 @@ FROM ran-build:latest AS enb-build
 
 
 #start from scratch for target executable
-FROM $BASE_IMAGE as oai-enb
+FROM $BASE_IMAGE AS oai-enb
 ENV TZ=Europe/Paris
 
 RUN dnf update -y && \

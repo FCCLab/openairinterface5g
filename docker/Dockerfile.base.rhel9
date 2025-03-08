@@ -29,6 +29,7 @@
 FROM registry.access.redhat.com/ubi9/ubi:latest AS ran-base
 LABEL MAINTAINER OpenAirInterface <contact@openairinterface.org>
 ARG NEEDED_GIT_PROXY
+ARG TARGETARCH
 ENV TZ=Europe/Paris
 ENV BUILD_UHD_FROM_SOURCE=True
 ENV UHD_VERSION=4.4.0.0
@@ -57,8 +58,9 @@ RUN rm -f /etc/rhsm-host && \
        python3-devel \
        numactl-libs \
        numactl-devel \
-       gcc-toolset-12-gcc \
-       gcc-toolset-12-gcc-c++ \
+       #use gcc-13 to avoid problems of default gcc-11 in FlexRIC
+       gcc-toolset-13-gcc \
+       gcc-toolset-13-gcc-c++ \
        # python3-pip and pyyaml are used for conf template generation
        python3-pip && \
     pip3 install --ignore-installed pyyaml && \
@@ -67,8 +69,8 @@ RUN rm -f /etc/rhsm-host && \
 
 # Add "Tini - A tiny but valid init for containers", https://github.com/krallin/tini
 # it will be copied into target containers, to print exit numbers and handle signals properly
-ENV TINI_VERSION v0.19.0
-ADD https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini /tini
+ENV TINI_VERSION=v0.19.0
+ADD https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-${TARGETARCH} /tini
 RUN chmod +x /tini
 
 # In some network environments, GIT proxy is required
@@ -90,6 +92,6 @@ COPY oaienv .
 RUN /bin/sh oaienv && \
     cd cmake_targets && \
     mkdir -p log && \
-    scl enable gcc-toolset-12 "\
+    scl enable gcc-toolset-13 "\
     ./build_oai -I --install-optional-packages -w USRP" && \
     rm /etc/pki/entitlement/*pem

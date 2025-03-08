@@ -253,7 +253,8 @@ static void *_nas_network_mngr(void *args)
   /* Network receiving loop */
   while (true) {
     /* Read the network data message */
-    bytes = network_api_read_data (*fd);
+    char _network_api_recv_buffer[NETWORK_API_RECV_BUFFER_SIZE] = {0};
+    bytes = network_api_read_data(*fd, _network_api_recv_buffer);
 
     if (bytes == RETURNerror) {
       /* Failed to read data from the network sublayer;
@@ -269,7 +270,8 @@ static void *_nas_network_mngr(void *args)
     }
 
     /* Decode the network data message */
-    network_message_id = network_api_decode_data (bytes);
+    as_message_t _as_data = {};
+    network_message_id = network_api_decode_data(bytes, &_as_data);
 
     if (network_message_id == RETURNerror) {
       /* Failed to decode data read from the network sublayer */
@@ -277,8 +279,7 @@ static void *_nas_network_mngr(void *args)
     }
 
     /* Process the network data message */
-    ret_code = nas_network_process_data (user, network_message_id,
-                                         network_api_get_data ());
+    ret_code = nas_network_process_data(user, network_message_id, &_as_data);
 
     if (ret_code != RETURNok) {
       /* The network data message has not been successfully

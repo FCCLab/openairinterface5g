@@ -38,7 +38,7 @@
    @param nb_prefix_samples The number of prefix/suffix/zero samples
    @param etype Type of extension (CYCLIC_PREFIX,CYCLIC_SUFFIX,ZEROS)
 */
-void PHY_ofdm_mod(int *input,
+void PHY_ofdm_mod(const int *input,
                   int *output,
                   int fftsize,
                   unsigned char nb_symbols,

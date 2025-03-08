@@ -30,31 +30,37 @@
 
  */
 
-#include "common/platform_types.h"
-#include "common/platform_constants.h"
-#include "common/ran_context.h"
-#include "common/utils/nr/nr_common.h"
-#include "common/utils/LOG/log.h"
-#include "common/utils/LOG/vcd_signal_dumper.h"
-
+#include <complex.h>
+#include <math.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include "BIT_STRING.h"
+#include "LAYER2/NR_MAC_COMMON/nr_mac_common.h"
+#include "LAYER2/NR_MAC_gNB/mac_proto.h"
+#include "NR_MIB.h"
+#include "NR_MAC_COMMON/nr_mac_extern.h"
+#include "NR_MAC_gNB/nr_mac_gNB.h"
 #include "NR_BCCH-BCH-Message.h"
 #include "NR_ServingCellConfigCommon.h"
-#include "uper_encoder.h"
-
-#include "LAYER2/NR_MAC_gNB/mac_proto.h"
-#include "SCHED_NR/phy_frame_config_nr.h"
-#include "openair1/PHY/defs_gNB.h"
-
 #include "NR_MIB.h"
-#include "LAYER2/NR_MAC_COMMON/nr_mac_common.h"
-#include "../../../../nfapi/oai_integration/vendor_ext.h"
-/* Softmodem params */
+#include "PHY/TOOLS/tools_defs.h"
+#include "PHY/defs_common.h"
+#include "RRC/NR/nr_rrc_config.h"
+#include "SCHED_NR/phy_frame_config_nr.h"
+#include "T.h"
+#include "asn_internal.h"
+#include "assertions.h"
+#include "common/ran_context.h"
+#include "common/utils/T/T.h"
+#include "common/utils/nr/nr_common.h"
 #include "executables/softmodem-common.h"
-#include <complex.h>
-
-extern RAN_CONTEXT_t RC;
-//extern int l2_init_gNB(void);
-extern uint8_t nfapi_mode;
+#include "f1ap_messages_types.h"
+#include "nfapi/oai_integration/vendor_ext.h"
+#include "nfapi_interface.h"
+#include "nfapi_nr_interface.h"
+#include "nfapi_nr_interface_scf.h"
+#include "utils.h"
 
 c16_t convert_precoder_weight(double complex c_in)
 {
@@ -137,7 +143,7 @@ int precoding_weigths_generation(nfapi_nr_pm_list_t *mat,
               double complex res_code;
               for (int i_rows = 0; i_rows < N1 * N2; i_rows++) {
                 nfapi_nr_pm_weights_t *weights = &mat->pmi_pdu[pmiq].weights[j_col][i_rows];
-                res_code = sqrt(1 / (double)(L * num_antenna_ports)) * v_lm[llc][mmc][i_rows];
+                res_code = sqrt(1 / (double)L) * v_lm[llc][mmc][i_rows];
                 c16_t precoder_weight = convert_precoder_weight(res_code);
                 weights->precoder_weight_Re = precoder_weight.r;
                 weights->precoder_weight_Im = precoder_weight.i;
@@ -154,7 +160,7 @@ int precoding_weigths_generation(nfapi_nr_pm_list_t *mat,
               }
               for (int i_rows = N1 * N2; i_rows < 2 * N1 * N2; i_rows++) {
                 nfapi_nr_pm_weights_t *weights = &mat->pmi_pdu[pmiq].weights[j_col][i_rows];
-                res_code = sqrt(1 / (double)(L * num_antenna_ports)) * (phase_sign)*theta_n[nn] * v_lm[llc][mmc][i_rows - N1 * N2];
+                res_code = sqrt(1 / (double)L) * (phase_sign)*theta_n[nn] * v_lm[llc][mmc][i_rows - N1 * N2];
                 c16_t precoder_weight = convert_precoder_weight(res_code);
                 weights->precoder_weight_Re = precoder_weight.r;
                 weights->precoder_weight_Im = precoder_weight.i;
@@ -273,19 +279,145 @@ nfapi_nr_pm_list_t init_DL_MIMO_codebook(gNB_MAC_INST *gNB, nr_pdsch_AntennaPort
   return mat;
 }
 
-static void config_common(gNB_MAC_INST *nrmac, nr_pdsch_AntennaPorts_t pdsch_AntennaPorts, int pusch_AntennaPorts, NR_ServingCellConfigCommon_t *scc)
+/**
+ * @brief Get the first UL slot index in period
+ * @param fs frame structure
+ * @param mixed indicates whether to include in the count also mixed slot with UL symbols or only full UL slot
+ * @return slot index
+ */
+int get_first_ul_slot(const frame_structure_t *fs, bool mixed)
+{
+  DevAssert(fs);
+
+  if (fs->frame_type == TDD) {
+    for (int i = 0; i < fs->numb_slots_period; i++) {
+      if ((mixed && is_ul_slot(i, fs)) || fs->period_cfg.tdd_slot_bitmap[i].slot_type == TDD_NR_UPLINK_SLOT) {
+        return i;
+      }
+    }
+  }
+
+  return 0; // FDD
+}
+
+/**
+ * @brief Get number of DL slots per period (full DL slots + mixed slots with DL symbols)
+ */
+int get_dl_slots_per_period(const frame_structure_t *fs)
+{
+  return fs->frame_type == TDD ? fs->period_cfg.num_dl_slots : fs->numb_slots_frame;
+}
+
+/**
+ * @brief Get number of UL slots per period (full UL slots + mixed slots with UL symbols)
+ */
+int get_ul_slots_per_period(const frame_structure_t *fs)
+{
+  return fs->frame_type == TDD ? fs->period_cfg.num_ul_slots : fs->numb_slots_frame;
+}
+
+/**
+ * @brief Get number of full UL slots per period
+ * @param fs Pointer to the frame structure
+ * @return Number of full UL slots
+ */
+int get_full_ul_slots_per_period(const frame_structure_t *fs)
+{
+  DevAssert(fs);
+
+  if (fs->frame_type == FDD)
+    return fs->numb_slots_frame;
+
+  int count = 0;
+
+  for (int i = 0; i < fs->numb_slots_period; i++)
+    if (fs->period_cfg.tdd_slot_bitmap[i].slot_type == TDD_NR_UPLINK_SLOT)
+      count++;
+
+  LOG_D(NR_MAC, "Full UL slots in TDD period: %d\n", count);
+  return count;
+}
+
+/**
+ * @brief Get number of full DL slots per period
+ * @param fs Pointer to the frame structure
+ * @return Number of full DL slots
+ */
+int get_full_dl_slots_per_period(const frame_structure_t *fs)
+{
+  DevAssert(fs);
+
+  if (fs->frame_type == FDD)
+    return fs->numb_slots_frame;
+
+  int count = 0;
+
+  for (int i = 0; i < fs->numb_slots_period; i++)
+    if (fs->period_cfg.tdd_slot_bitmap[i].slot_type == TDD_NR_DOWNLINK_SLOT)
+      count++;
+
+  LOG_D(NR_MAC, "Full DL slots in TDD period: %d\n", count);
+  return count;
+}
+
+/**
+ * @brief Get number of UL slots per frame
+ */
+int get_ul_slots_per_frame(const frame_structure_t *fs)
+{
+  return fs->frame_type == TDD ? fs->numb_period_frame * get_ul_slots_per_period(fs) : fs->numb_slots_frame;
+}
+
+/**
+ * @brief Get the nth UL slot offset for UE index idx in a TDD period using the frame structure bitmap
+ * @param fs frame structure
+ * @param idx UE index
+ * @param count_mixed indicates whether counting mixed slot with UL symbols (e.g. for SRS) or only full UL slots
+ * @return slot index offset
+ */
+int get_ul_slot_offset(const frame_structure_t *fs, int idx, bool count_mixed)
+{
+  DevAssert(fs);
+
+  // FDD
+  if (fs->frame_type == FDD)
+    return idx;
+
+  // UL slots indexes in period
+  int ul_slot_idxs[fs->numb_slots_period];
+  int ul_slot_count = 0;
+
+  /* Populate the indices of UL slots in the TDD period from the bitmap
+  count also mixed slots with UL symbols if flag count_mixed is present */
+  for (int i = 0; i < fs->numb_slots_period; i++) {
+    if ((count_mixed && is_ul_slot(i, fs)) || fs->period_cfg.tdd_slot_bitmap[i].slot_type == TDD_NR_UPLINK_SLOT) {
+      ul_slot_idxs[ul_slot_count++] = i;
+    }
+  }
+
+  // Compute slot index offset
+  int period_idx = idx / ul_slot_count; // wrap up the count of complete TDD periods spanned by the index
+  int ul_slot_idx_in_period = idx % ul_slot_count; // wrap up the UL slot index within the current TDD period
+
+  return ul_slot_idxs[ul_slot_idx_in_period] + period_idx * fs->numb_slots_period;
+}
+
+static void config_common(gNB_MAC_INST *nrmac,
+                          const nr_mac_config_t *config,
+                          NR_ServingCellConfigCommon_t *scc)
 {
   nfapi_nr_config_request_scf_t *cfg = &nrmac->config[0];
   nrmac->common_channels[0].ServingCellConfigCommon = scc;
 
   // Carrier configuration
   struct NR_FrequencyInfoDL *frequencyInfoDL = scc->downlinkConfigCommon->frequencyInfoDL;
-  cfg->carrier_config.dl_bandwidth.value = get_supported_bw_mhz(*frequencyInfoDL->frequencyBandList.list.array[0] > 256 ? FR2 : FR1,
-                                                                frequencyInfoDL->scs_SpecificCarrierList.list.array[0]->subcarrierSpacing,
-                                                                frequencyInfoDL->scs_SpecificCarrierList.list.array[0]->carrierBandwidth);
+  frequency_range_t frequency_range = *frequencyInfoDL->frequencyBandList.list.array[0] > 256 ? FR2 : FR1;
+  int bw_index = get_supported_band_index(frequencyInfoDL->scs_SpecificCarrierList.list.array[0]->subcarrierSpacing,
+                                          frequency_range,
+                                          frequencyInfoDL->scs_SpecificCarrierList.list.array[0]->carrierBandwidth);
+  cfg->carrier_config.dl_bandwidth.value = get_supported_bw_mhz(frequency_range, bw_index);
   cfg->carrier_config.dl_bandwidth.tl.tag = NFAPI_NR_CONFIG_DL_BANDWIDTH_TAG; // temporary
   cfg->num_tlv++;
-  LOG_I(NR_MAC, "DL_Bandwidth:%d\n", cfg->carrier_config.dl_bandwidth.value);
 
   cfg->carrier_config.dl_frequency.value = from_nrarfcn(*frequencyInfoDL->frequencyBandList.list.array[0],
                                                         *scc->ssbSubcarrierSpacing,
@@ -308,12 +440,13 @@ static void config_common(gNB_MAC_INST *nrmac, nr_pdsch_AntennaPorts_t pdsch_Ant
     }
   }
   struct NR_FrequencyInfoUL *frequencyInfoUL = scc->uplinkConfigCommon->frequencyInfoUL;
-  cfg->carrier_config.uplink_bandwidth.value = get_supported_bw_mhz(*frequencyInfoUL->frequencyBandList->list.array[0] > 256 ? FR2 : FR1,
-                                                                    frequencyInfoUL->scs_SpecificCarrierList.list.array[0]->subcarrierSpacing,
-                                                                    frequencyInfoUL->scs_SpecificCarrierList.list.array[0]->carrierBandwidth);
+  int scs = frequencyInfoUL->scs_SpecificCarrierList.list.array[0]->subcarrierSpacing;
+  frequency_range = *frequencyInfoUL->frequencyBandList->list.array[0] > 256 ? FR2 : FR1;
+  bw_index =
+      get_supported_band_index(scs, frequency_range, frequencyInfoUL->scs_SpecificCarrierList.list.array[0]->carrierBandwidth);
+  cfg->carrier_config.uplink_bandwidth.value = get_supported_bw_mhz(frequency_range, bw_index);
   cfg->carrier_config.uplink_bandwidth.tl.tag = NFAPI_NR_CONFIG_UPLINK_BANDWIDTH_TAG; // temporary
   cfg->num_tlv++;
-  LOG_I(NR_MAC, "DL_Bandwidth:%d\n", cfg->carrier_config.uplink_bandwidth.value);
 
   int UL_pointA;
   if (frequencyInfoUL->absoluteFrequencyPointA == NULL)
@@ -329,7 +462,7 @@ static void config_common(gNB_MAC_INST *nrmac, nr_pdsch_AntennaPorts_t pdsch_Ant
   cfg->num_tlv++;
 
   for (int i = 0; i < 5; i++) {
-    if (i == frequencyInfoUL->scs_SpecificCarrierList.list.array[0]->subcarrierSpacing) {
+    if (i == scs) {
       cfg->carrier_config.ul_grid_size[i].value = frequencyInfoUL->scs_SpecificCarrierList.list.array[0]->carrierBandwidth;
       cfg->carrier_config.ul_k0[i].value = frequencyInfoUL->scs_SpecificCarrierList.list.array[0]->offsetToCarrier;
       cfg->carrier_config.ul_grid_size[i].tl.tag = NFAPI_NR_CONFIG_UL_GRID_SIZE_TAG;
@@ -342,10 +475,8 @@ static void config_common(gNB_MAC_INST *nrmac, nr_pdsch_AntennaPorts_t pdsch_Ant
     }
   }
 
-  uint32_t band = *frequencyInfoDL->frequencyBandList.list.array[0];
-  frequency_range_t frequency_range = band < 100 ? FR1 : FR2;
-
-  frame_type_t frame_type = get_frame_type(*frequencyInfoDL->frequencyBandList.list.array[0], *scc->ssbSubcarrierSpacing);
+  NR_FreqBandIndicatorNR_t band = *frequencyInfoDL->frequencyBandList.list.array[0];
+  frame_type_t frame_type = get_frame_type(band, *scc->ssbSubcarrierSpacing);
   nrmac->common_channels[0].frame_type = frame_type;
 
   // Cell configuration
@@ -381,17 +512,25 @@ static void config_common(gNB_MAC_INST *nrmac, nr_pdsch_AntennaPorts_t pdsch_Ant
   cfg->prach_config.prach_sequence_length.tl.tag = NFAPI_NR_CONFIG_PRACH_SEQUENCE_LENGTH_TAG;
   cfg->num_tlv++;
 
+  cfg->prach_config.prach_ConfigurationIndex.value = rach_ConfigCommon->rach_ConfigGeneric.prach_ConfigurationIndex;
+  cfg->prach_config.prach_ConfigurationIndex.tl.tag = NFAPI_NR_CONFIG_PRACH_CONFIG_INDEX_TAG;
+  cfg->num_tlv++;
+
   if (rach_ConfigCommon->msg1_SubcarrierSpacing)
     cfg->prach_config.prach_sub_c_spacing.value = *rach_ConfigCommon->msg1_SubcarrierSpacing;
-  else
-    cfg->prach_config.prach_sub_c_spacing.value = frequencyInfoDL->scs_SpecificCarrierList.list.array[0]->subcarrierSpacing;
+  else {
+    // If absent, use SCS as derived from the prach-ConfigurationIndex (for 839)
+    int config_index = rach_ConfigCommon->rach_ConfigGeneric.prach_ConfigurationIndex;
+    int frame_type = get_frame_type(band, frequencyInfoUL->scs_SpecificCarrierList.list.array[0]->subcarrierSpacing);
+    const int64_t *prach_config_info_p = get_prach_config_info(frequency_range, config_index, frame_type);
+    int format = prach_config_info_p[0];
+    cfg->prach_config.prach_sub_c_spacing.value = get_delta_f_RA_long(format);
+  }
+
   cfg->prach_config.prach_sub_c_spacing.tl.tag = NFAPI_NR_CONFIG_PRACH_SUB_C_SPACING_TAG;
   cfg->num_tlv++;
   cfg->prach_config.restricted_set_config.value = rach_ConfigCommon->restrictedSetConfig;
   cfg->prach_config.restricted_set_config.tl.tag = NFAPI_NR_CONFIG_RESTRICTED_SET_CONFIG_TAG;
-  cfg->num_tlv++;
-  cfg->prach_config.prach_ConfigurationIndex.value = rach_ConfigCommon->rach_ConfigGeneric.prach_ConfigurationIndex;
-  cfg->prach_config.prach_ConfigurationIndex.tl.tag = NFAPI_NR_CONFIG_PRACH_CONFIG_INDEX_TAG;
   cfg->num_tlv++;
 
   switch (rach_ConfigCommon->rach_ConfigGeneric.msg1_FDM) {
@@ -413,10 +552,6 @@ static void config_common(gNB_MAC_INST *nrmac, nr_pdsch_AntennaPorts_t pdsch_Ant
   cfg->prach_config.num_prach_fd_occasions.tl.tag = NFAPI_NR_CONFIG_NUM_PRACH_FD_OCCASIONS_TAG;
   cfg->num_tlv++;
 
-  cfg->prach_config.prach_ConfigurationIndex.value = rach_ConfigCommon->rach_ConfigGeneric.prach_ConfigurationIndex;
-  cfg->prach_config.prach_ConfigurationIndex.tl.tag = NFAPI_NR_CONFIG_PRACH_CONFIG_INDEX_TAG;
-  cfg->num_tlv++;
-
   cfg->prach_config.num_prach_fd_occasions_list = (nfapi_nr_num_prach_fd_occasions_t *)malloc(
        cfg->prach_config.num_prach_fd_occasions.value * sizeof(nfapi_nr_num_prach_fd_occasions_t));
   for (int i = 0; i < cfg->prach_config.num_prach_fd_occasions.value; i++) {
@@ -431,21 +566,15 @@ static void config_common(gNB_MAC_INST *nrmac, nr_pdsch_AntennaPorts_t pdsch_Ant
     prach_fd_occasion->k1.value =
         NRRIV2PRBOFFSET(scc->uplinkConfigCommon->initialUplinkBWP->genericParameters.locationAndBandwidth, MAX_BWP_SIZE)
         + rach_ConfigCommon->rach_ConfigGeneric.msg1_FrequencyStart
-        + (get_N_RA_RB(cfg->prach_config.prach_sub_c_spacing.value,
-                       frequencyInfoUL->scs_SpecificCarrierList.list.array[0]->subcarrierSpacing)
-           * i);
-    if (get_softmodem_params()->sa) {
+        + (get_N_RA_RB(cfg->prach_config.prach_sub_c_spacing.value, scs) * i);
+    if (IS_SA_MODE(get_softmodem_params())) {
       prach_fd_occasion->k1.value =
           NRRIV2PRBOFFSET(scc->uplinkConfigCommon->initialUplinkBWP->genericParameters.locationAndBandwidth, MAX_BWP_SIZE)
           + rach_ConfigCommon->rach_ConfigGeneric.msg1_FrequencyStart
-          + (get_N_RA_RB(cfg->prach_config.prach_sub_c_spacing.value,
-                         frequencyInfoUL->scs_SpecificCarrierList.list.array[0]->subcarrierSpacing)
-             * i);
+          + (get_N_RA_RB(cfg->prach_config.prach_sub_c_spacing.value, scs) * i);
     } else {
       prach_fd_occasion->k1.value = rach_ConfigCommon->rach_ConfigGeneric.msg1_FrequencyStart
-                                    + (get_N_RA_RB(cfg->prach_config.prach_sub_c_spacing.value,
-                                                   frequencyInfoUL->scs_SpecificCarrierList.list.array[0]->subcarrierSpacing)
-                                       * i);
+                                    + (get_N_RA_RB(cfg->prach_config.prach_sub_c_spacing.value, scs) * i);
     }
     prach_fd_occasion->k1.tl.tag = NFAPI_NR_CONFIG_K1_TAG;
     cfg->num_tlv++;
@@ -463,6 +592,14 @@ static void config_common(gNB_MAC_INST *nrmac, nr_pdsch_AntennaPorts_t pdsch_Ant
   cfg->prach_config.ssb_per_rach.value = rach_ConfigCommon->ssb_perRACH_OccasionAndCB_PreamblesPerSSB->present - 1;
   cfg->prach_config.ssb_per_rach.tl.tag = NFAPI_NR_CONFIG_SSB_PER_RACH_TAG;
   cfg->num_tlv++;
+
+  // compute and store prach duration in slots from rach_ConfigCommon
+  NR_RACH_ConfigGeneric_t *rachConfig =
+      &scc->uplinkConfigCommon->initialUplinkBWP->rach_ConfigCommon->choice.setup->rach_ConfigGeneric;
+  NR_COMMON_channels_t *cc = nrmac->common_channels;
+  const uint32_t pointA = scc->downlinkConfigCommon->frequencyInfoDL->absoluteFrequencyPointA;
+  const int prach_fmt = (get_nr_prach_format_from_index(rachConfig->prach_ConfigurationIndex, pointA, cc->frame_type) & 0xff);
+  cc->prach_len = (prach_fmt < 4) ? get_long_prach_dur(prach_fmt, *scc->ssbSubcarrierSpacing) : 1;
 
   // SSB Table Configuration
 
@@ -491,14 +628,14 @@ static void config_common(gNB_MAC_INST *nrmac, nr_pdsch_AntennaPorts_t pdsch_Ant
 
   nrmac->ssb_SubcarrierOffset = cfg->ssb_table.ssb_subcarrier_offset.value;
   nrmac->ssb_OffsetPointA = cfg->ssb_table.ssb_offset_point_a.value;
-  LOG_I(NR_MAC,
+  LOG_D(NR_MAC,
         "ssb_OffsetPointA %d, ssb_SubcarrierOffset %d\n",
         cfg->ssb_table.ssb_offset_point_a.value,
         cfg->ssb_table.ssb_subcarrier_offset.value);
 
   switch (scc->ssb_PositionsInBurst->present) {
     case 1:
-      cfg->ssb_table.ssb_mask_list[0].ssb_mask.value = scc->ssb_PositionsInBurst->choice.shortBitmap.buf[0] << 24;
+      cfg->ssb_table.ssb_mask_list[0].ssb_mask.value = ((uint32_t)scc->ssb_PositionsInBurst->choice.shortBitmap.buf[0]) << 24;
       cfg->ssb_table.ssb_mask_list[1].ssb_mask.value = 0;
       break;
     case 2:
@@ -524,6 +661,7 @@ static void config_common(gNB_MAC_INST *nrmac, nr_pdsch_AntennaPorts_t pdsch_Ant
   cfg->num_tlv += 2;
 
   // logical antenna ports
+  nr_pdsch_AntennaPorts_t pdsch_AntennaPorts = config->pdsch_AntennaPorts;
   int num_pdsch_antenna_ports = pdsch_AntennaPorts.N1 * pdsch_AntennaPorts.N2 * pdsch_AntennaPorts.XP;
   cfg->carrier_config.num_tx_ant.value = num_pdsch_antenna_ports;
   AssertFatal(num_pdsch_antenna_ports > 0 && num_pdsch_antenna_ports < 33, "pdsch_AntennaPorts in 1...32\n");
@@ -547,55 +685,90 @@ static void config_common(gNB_MAC_INST *nrmac, nr_pdsch_AntennaPorts_t pdsch_Ant
     cfg->num_tlv++;
   }
 
+  int pusch_AntennaPorts = config->pusch_AntennaPorts;
   cfg->carrier_config.num_rx_ant.value = pusch_AntennaPorts;
   AssertFatal(pusch_AntennaPorts > 0 && pusch_AntennaPorts < 13, "pusch_AntennaPorts in 1...12\n");
   cfg->carrier_config.num_rx_ant.tl.tag = NFAPI_NR_CONFIG_NUM_RX_ANT_TAG;
   LOG_I(NR_MAC,
-        "Set RX antenna number to %d, Set TX antenna number to %d (num ssb %d: %x,%x)\n",
+        "Set TX antenna number to %d, Set RX antenna number to %d (num ssb %d: %x,%x)\n",
         cfg->carrier_config.num_tx_ant.value,
         cfg->carrier_config.num_rx_ant.value,
         num_ssb,
         cfg->ssb_table.ssb_mask_list[0].ssb_mask.value,
         cfg->ssb_table.ssb_mask_list[1].ssb_mask.value);
   AssertFatal(cfg->carrier_config.num_tx_ant.value > 0,
-              "carrier_config.num_tx_ant.value %d !\n",
+              "carrier_config.num_tx_ant.value %d!\n",
               cfg->carrier_config.num_tx_ant.value);
   cfg->num_tlv++;
   cfg->num_tlv++;
 
-  // TDD Table Configuration
+  // Frame structure configuration
+  uint8_t mu = frequencyInfoUL->scs_SpecificCarrierList.list.array[0]->subcarrierSpacing;
   if (cfg->cell_config.frame_duplex_type.value == TDD) {
     cfg->tdd_table.tdd_period.tl.tag = NFAPI_NR_CONFIG_TDD_PERIOD_TAG;
     cfg->num_tlv++;
-    if (scc->tdd_UL_DL_ConfigurationCommon->pattern1.ext1 == NULL) {
-      cfg->tdd_table.tdd_period.value = scc->tdd_UL_DL_ConfigurationCommon->pattern1.dl_UL_TransmissionPeriodicity;
-    } else {
-      AssertFatal(scc->tdd_UL_DL_ConfigurationCommon->pattern1.ext1->dl_UL_TransmissionPeriodicity_v1530 != NULL,
-                  "In %s: scc->tdd_UL_DL_ConfigurationCommon->pattern1.ext1->dl_UL_TransmissionPeriodicity_v1530 is null\n",
-                  __FUNCTION__);
-      cfg->tdd_table.tdd_period.value = *scc->tdd_UL_DL_ConfigurationCommon->pattern1.ext1->dl_UL_TransmissionPeriodicity_v1530;
-    }
-    LOG_I(NR_MAC, "Setting TDD configuration period to %d\n", cfg->tdd_table.tdd_period.value);
-    int periods_per_frame = set_tdd_config_nr(cfg,
-                                              frequencyInfoUL->scs_SpecificCarrierList.list.array[0]->subcarrierSpacing,
-                                              scc->tdd_UL_DL_ConfigurationCommon->pattern1.nrofDownlinkSlots,
-                                              scc->tdd_UL_DL_ConfigurationCommon->pattern1.nrofDownlinkSymbols,
-                                              scc->tdd_UL_DL_ConfigurationCommon->pattern1.nrofUplinkSlots,
-                                              scc->tdd_UL_DL_ConfigurationCommon->pattern1.nrofUplinkSymbols);
+    cfg->tdd_table.tdd_period.value = get_tdd_period_idx(scc->tdd_UL_DL_ConfigurationCommon);
+    LOG_D(NR_MAC, "Setting TDD configuration period to %d\n", cfg->tdd_table.tdd_period.value);
+  }
+  frame_structure_t *fs = &nrmac->frame_structure;
+  config_frame_structure(mu,
+                         scc->tdd_UL_DL_ConfigurationCommon,
+                         cfg->tdd_table.tdd_period.value,
+                         cfg->cell_config.frame_duplex_type.value,
+                         fs);
+  if (cfg->cell_config.frame_duplex_type.value == TDD)
+    set_tdd_config_nr(cfg, fs);
 
-    AssertFatal(periods_per_frame > 0, "TDD configuration cannot be configured\n");
-    if (frequency_range == FR2) {
-      LOG_I(NR_MAC, "Configuring TDD beam association to default\n");
-      nrmac->tdd_beam_association = malloc16(periods_per_frame * sizeof(int16_t));
-      for (int i = 0; i < periods_per_frame; ++i)
-        nrmac->tdd_beam_association[i] = -1; /* default: beams not configured */
-    } else {
-      nrmac->tdd_beam_association = NULL; /* default: no beams */
+  int nb_tx = config->nb_bfw[0]; // number of tx antennas
+  int nb_beams = config->nb_bfw[1]; // number of beams
+  // precoding matrix configuration (to be improved)
+  cfg->pmi_list = init_DL_MIMO_codebook(nrmac, pdsch_AntennaPorts);
+  // beamforming matrix configuration
+  cfg->dbt_config.num_dig_beams = nb_beams;
+  if (nb_beams > 0) {
+    cfg->dbt_config.num_txrus = nb_tx;
+    cfg->dbt_config.dig_beam_list = malloc16(nb_beams * sizeof(*cfg->dbt_config.dig_beam_list));
+    AssertFatal(cfg->dbt_config.dig_beam_list, "out of memory\n");
+    for (int i = 0; i < nb_beams; i++) {
+      nfapi_nr_dig_beam_t *beam = &cfg->dbt_config.dig_beam_list[i];
+      beam->beam_idx = i;
+      beam->txru_list = malloc16(nb_tx * sizeof(*beam->txru_list));
+      for (int j = 0; j < nb_tx; j++) {
+        nfapi_nr_txru_t *txru = &beam->txru_list[j];
+        txru->dig_beam_weight_Re = config->bw_list[j + i * nb_tx] & 0xffff;
+        txru->dig_beam_weight_Im = (config->bw_list[j + i * nb_tx] >> 16) & 0xffff;
+        LOG_D(NR_MAC, "Beam %d Tx %d Weight (%d, %d)\n", i, j, txru->dig_beam_weight_Re, txru->dig_beam_weight_Im);
+      }
     }
   }
 
-  // precoding matrix configuration (to be improved)
-  cfg->pmi_list = init_DL_MIMO_codebook(nrmac, pdsch_AntennaPorts);
+  if (nrmac->beam_info.beam_allocation) {
+    cfg->analog_beamforming_ve.num_beams_period_vendor_ext.tl.tag = NFAPI_NR_FAPI_NUM_BEAMS_PERIOD_VENDOR_EXTENSION_TAG;
+    cfg->analog_beamforming_ve.num_beams_period_vendor_ext.value = nrmac->beam_info.beams_per_period;
+    cfg->num_tlv++;
+    cfg->analog_beamforming_ve.analog_bf_vendor_ext.tl.tag = NFAPI_NR_FAPI_ANALOG_BF_VENDOR_EXTENSION_TAG;
+    cfg->analog_beamforming_ve.analog_bf_vendor_ext.value = 1;  // analog BF enabled
+    cfg->num_tlv++;
+  }
+}
+
+static void initialize_beam_information(NR_beam_info_t *beam_info, int mu, int slots_per_frame)
+{
+  if (!beam_info->beam_allocation)
+    return;
+
+  int size = mu == 0 ? slots_per_frame << 1 : slots_per_frame;
+  // slots in beam duration gives the number of consecutive slots tied the the same beam
+  AssertFatal(size % beam_info->beam_duration == 0,
+              "Beam duration %d should be divider of number of slots per frame %d\n",
+              beam_info->beam_duration,
+              slots_per_frame);
+  beam_info->beam_allocation_size = size / beam_info->beam_duration;
+  for (int i = 0; i < beam_info->beams_per_period; i++) {
+    beam_info->beam_allocation[i] = malloc16(beam_info->beam_allocation_size * sizeof(int));
+    for (int j = 0; j < beam_info->beam_allocation_size; j++)
+      beam_info->beam_allocation[i][j] = -1;
+  }
 }
 
 void nr_mac_config_scc(gNB_MAC_INST *nrmac, NR_ServingCellConfigCommon_t *scc, const nr_mac_config_t *config)
@@ -609,21 +782,29 @@ void nr_mac_config_scc(gNB_MAC_INST *nrmac, NR_ServingCellConfigCommon_t *scc, c
               scc->ssb_PositionsInBurst->present);
 
   const int NTN_gNB_Koffset = get_NTN_Koffset(scc);
-  const int n = nr_slots_per_frame[*scc->ssbSubcarrierSpacing];
+  const int n = get_slots_per_frame_from_scs(*scc->ssbSubcarrierSpacing);
   const int size = n << (int)ceil(log2((NTN_gNB_Koffset + 13) / n + 1)); // 13 is upper limit for max_fb_time
-
   nrmac->vrb_map_UL_size = size;
-  nrmac->common_channels[0].vrb_map_UL = calloc(size * MAX_BWP_SIZE, sizeof(uint16_t));
-  AssertFatal(nrmac->common_channels[0].vrb_map_UL,
-              "could not allocate memory for RC.nrmac[]->common_channels[0].vrb_map_UL\n");
+
+  int num_beams = 1;
+  if(nrmac->beam_info.beam_allocation)
+    num_beams = nrmac->beam_info.beams_per_period;
+  for (int i = 0; i < num_beams; i++) {
+    nrmac->common_channels[0].vrb_map_UL[i] = calloc(size * MAX_BWP_SIZE, sizeof(uint16_t));
+    AssertFatal(nrmac->common_channels[0].vrb_map_UL[i],
+                "could not allocate memory for RC.nrmac[]->common_channels[0].vrb_map_UL[%d]\n", i);
+  }
 
   nrmac->UL_tti_req_ahead_size = size;
   nrmac->UL_tti_req_ahead[0] = calloc(size, sizeof(nfapi_nr_ul_tti_request_t));
   AssertFatal(nrmac->UL_tti_req_ahead[0], "could not allocate memory for nrmac->UL_tti_req_ahead[0]\n");
 
-  LOG_I(NR_MAC, "Configuring common parameters from NR ServingCellConfig\n");
+  initialize_beam_information(&nrmac->beam_info, *scc->ssbSubcarrierSpacing, n);
 
-  config_common(nrmac, config->pdsch_AntennaPorts, config->pusch_AntennaPorts, scc);
+  LOG_D(NR_MAC, "Configuring common parameters from NR ServingCellConfig\n");
+
+  config_common(nrmac, config, scc);
+  fapi_beam_index_allocation(scc, nrmac);
 
   if (NFAPI_MODE == NFAPI_MONOLITHIC) {
     // nothing to be sent in the other cases
@@ -634,51 +815,38 @@ void nr_mac_config_scc(gNB_MAC_INST *nrmac, NR_ServingCellConfigCommon_t *scc, c
 
   find_SSB_and_RO_available(nrmac);
 
-  const NR_TDD_UL_DL_Pattern_t *tdd = scc->tdd_UL_DL_ConfigurationCommon ? &scc->tdd_UL_DL_ConfigurationCommon->pattern1 : NULL;
-
-  int nr_slots_period = n;
-  int nr_dl_slots = n;
-  int nr_ulstart_slot = 0;
-  if (tdd) {
-    nr_dl_slots = tdd->nrofDownlinkSlots + (tdd->nrofDownlinkSymbols != 0);
-    nr_ulstart_slot = get_first_ul_slot(tdd->nrofDownlinkSlots, tdd->nrofDownlinkSymbols, tdd->nrofUplinkSymbols);
-    nr_slots_period /= get_nb_periods_per_frame(tdd->dl_UL_TransmissionPeriodicity);
-  } else {
-    // if TDD configuration is not present and the band is not FDD, it means it is a dynamic TDD configuration
-    AssertFatal(nrmac->common_channels[0].frame_type == FDD,"Dynamic TDD not handled yet\n");
-  }
-
-  for (int slot = 0; slot < n; ++slot) {
-    nrmac->dlsch_slot_bitmap[slot / 64] |= (uint64_t)((slot % nr_slots_period) < nr_dl_slots) << (slot % 64);
-    nrmac->ulsch_slot_bitmap[slot / 64] |= (uint64_t)((slot % nr_slots_period) >= nr_ulstart_slot) << (slot % 64);
-
-    LOG_D(NR_MAC,
-          "slot %d DL %d UL %d\n",
-          slot,
-          (nrmac->dlsch_slot_bitmap[slot / 64] & ((uint64_t)1 << (slot % 64))) != 0,
-          (nrmac->ulsch_slot_bitmap[slot / 64] & ((uint64_t)1 << (slot % 64))) != 0);
-  }
-
-  if (get_softmodem_params()->phy_test) {
-    nrmac->pre_processor_dl = nr_preprocessor_phytest;
-    nrmac->pre_processor_ul = nr_ul_preprocessor_phytest;
-  } else {
-    nrmac->pre_processor_dl = nr_init_fr1_dlsch_preprocessor(0);
-    nrmac->pre_processor_ul = nr_init_fr1_ulsch_preprocessor(0);
-  }
-
   NR_COMMON_channels_t *cc = &nrmac->common_channels[0];
   NR_SCHED_LOCK(&nrmac->sched_lock);
   for (int n = 0; n < NR_NB_RA_PROC_MAX; n++) {
     NR_RA_t *ra = &cc->ra[n];
     nr_clear_ra_proc(ra);
   }
+
+  nr_fill_sched_osi(nrmac, scc->downlinkConfigCommon->initialDownlinkBWP->pdcch_ConfigCommon);
   NR_SCHED_UNLOCK(&nrmac->sched_lock);
+}
+
+void nr_fill_sched_osi(gNB_MAC_INST *nrmac, const struct NR_SetupRelease_PDCCH_ConfigCommon *pdcch_ConfigCommon)
+{
+  NR_SearchSpaceId_t *osi_SearchSpace = pdcch_ConfigCommon->choice.setup->searchSpaceOtherSystemInformation;
+  if (osi_SearchSpace) {
+    nrmac->sched_osi = CALLOC(1, sizeof(*nrmac->sched_osi));
+
+    struct NR_PDCCH_ConfigCommon__commonSearchSpaceList *commonSearchSpaceList =
+        pdcch_ConfigCommon->choice.setup->commonSearchSpaceList;
+    AssertFatal(commonSearchSpaceList->list.count > 0, "common SearchSpace list has 0 elements\n");
+    for (int i = 0; i < commonSearchSpaceList->list.count; i++) {
+      NR_SearchSpace_t *ss = commonSearchSpaceList->list.array[i];
+      if (ss->searchSpaceId == *osi_SearchSpace)
+        nrmac->sched_osi->search_space = ss;
+    }
+    AssertFatal(nrmac->sched_osi->search_space != NULL, "SearchSpace cannot be null for OSI\n");
+  }
 }
 
 void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const f1ap_plmn_t *plmn, uint64_t cellID, int tac)
 {
-  AssertFatal(get_softmodem_params()->sa > 0, "error: SIB1 only applicable for SA\n");
+  AssertFatal(IS_SA_MODE(get_softmodem_params()), "error: SIB1 only applicable for SA\n");
 
   NR_COMMON_channels_t *cc = &nrmac->common_channels[0];
   NR_ServingCellConfigCommon_t *scc = cc->ServingCellConfigCommon;
@@ -686,6 +854,17 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const f1ap_plmn_t *plmn, uint64_
   cc->sib1 = sib1;
   cc->sib1_bcch_length = encode_SIB1_NR(sib1, cc->sib1_bcch_pdu, sizeof(cc->sib1_bcch_pdu));
   AssertFatal(cc->sib1_bcch_length > 0, "could not encode SIB1\n");
+}
+
+void nr_mac_configure_sib19(gNB_MAC_INST *nrmac)
+{
+  AssertFatal(IS_SA_MODE(get_softmodem_params()), "error: SIB19 only applicable for SA\n");
+  NR_COMMON_channels_t *cc = &nrmac->common_channels[0];
+  NR_ServingCellConfigCommon_t *scc = cc->ServingCellConfigCommon;
+  NR_BCCH_DL_SCH_Message_t *sib19 = get_SIB19_NR(scc);
+  cc->sib19 = sib19;
+  cc->sib19_bcch_length = encode_SIB19_NR(sib19, cc->sib19_bcch_pdu, sizeof(cc->sib19_bcch_pdu));
+  AssertFatal(cc->sib19_bcch_length > 0, "could not encode SIB19\n");
 }
 
 bool nr_mac_add_test_ue(gNB_MAC_INST *nrmac, uint32_t rnti, NR_CellGroupConfig_t *CellGroup)
@@ -758,9 +937,9 @@ bool nr_mac_prepare_ra_ue(gNB_MAC_INST *nrmac, uint32_t rnti, NR_CellGroupConfig
 /* Prepare a new CellGroupConfig to be applied for this UE. We cannot
  * immediatly apply it, as we have to wait for the reconfiguration through RRC.
  * This function sets up everything to apply the reconfiguration. Later, we
- * will trigger the timer with nr_mac_enable_ue_rrc_processing_timer(); upon
- * expiry nr_mac_apply_cellgroup() will apply the CellGroupConfig (radio config
- * etc). */
+ * will trigger the UE inactivity with nr_mac_interrupt_ue_transmission(); upon
+ * expiry, nr_mac_apply_cellgroup() will apply the CellGroupConfig (radio
+ * config etc). */
 bool nr_mac_prepare_cellgroup_update(gNB_MAC_INST *nrmac, NR_UE_info_t *UE, NR_CellGroupConfig_t *CellGroup)
 {
   DevAssert(nrmac != NULL);

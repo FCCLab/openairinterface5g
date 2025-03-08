@@ -25,7 +25,7 @@
 #
 #---------------------------------------------------------------------
 
-FROM ran-base:latest as ran-build
+FROM ran-base:latest AS ran-build
 
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get upgrade --yes && \
@@ -58,7 +58,7 @@ RUN /bin/sh oaienv && \
 
 
 #start from scratch for target executable
-FROM ubuntu:jammy as oai-gnb-aerial
+FROM ubuntu:jammy AS oai-gnb-aerial
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Europe
 
@@ -78,7 +78,8 @@ RUN apt-get update && \
         iputils-ping \
         gdb \
         moreutils \
-        libusb-1.0-0 && \
+        libusb-1.0-0 \
+        libyaml-cpp-dev && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt/oai-gnb/bin
@@ -92,6 +93,7 @@ COPY --from=ran-build \
     /oai-ran/cmake_targets/ran_build/build/libparams_libconfig.so \
     /oai-ran/cmake_targets/ran_build/build/libdfts.so \
     /oai-ran/cmake_targets/ran_build/build/libldpc*.so \
+    /oai-ran/cmake_targets/ran_build/build/libparams_yaml.so \
     /usr/local/lib/
 
 #copy files from nvIPC
@@ -113,4 +115,4 @@ RUN ldconfig && \
 WORKDIR /opt/oai-gnb
 COPY --from=ran-build /tini /tini
 ENTRYPOINT ["/tini", "-v", "--", "/opt/oai-gnb/bin/entrypoint.sh"]
-CMD ["/opt/oai-gnb/bin/nr-softmodem", "-O", "/opt/oai-gnb/etc/gnb.conf"]
+CMD ["/opt/oai-gnb/bin/nr-softmodem"]

@@ -25,13 +25,13 @@
 #
 #---------------------------------------------------------------------
 
-FROM ran-base:latest as enb-base
+FROM ran-base:latest AS enb-base
 
 FROM ran-build:latest AS enb-build
 
 
 #start from scratch for target executable
-FROM ubuntu:jammy as oai-enb
+FROM ubuntu:jammy AS oai-enb
 ARG BUILD_OPTION
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Europe/Paris

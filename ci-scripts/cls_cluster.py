@@ -41,9 +41,8 @@ import cls_cmd
 IMAGE_REGISTRY_SERVICE_NAME = "image-registry.openshift-image-registry.svc"
 NAMESPACE = "oaicicd-ran"
 OCUrl = "https://api.oai.cs.eurecom.fr:6443"
-OCRegistry = "default-route-openshift-image-registry.apps.oai.cs.eurecom.fr/"
+OCRegistry = "default-route-openshift-image-registry.apps.oai.cs.eurecom.fr"
 CI_OC_RAN_NAMESPACE = "oaicicd-ran"
-CI_OC_CORE_NAMESPACE = "oaicicd-core-for-ci-ran"
 CN_IMAGES = ["mysql", "oai-nrf", "oai-amf", "oai-smf", "oai-upf", "oai-ausf", "oai-udm", "oai-udr", "oai-traffic-server"]
 CN_CONTAINERS = ["", "-c nrf", "-c amf", "-c smf", "-c upf", "-c ausf", "-c udm", "-c udr", ""]
 
@@ -51,9 +50,9 @@ CN_CONTAINERS = ["", "-c nrf", "-c amf", "-c smf", "-c upf", "-c ausf", "-c udm"
 def OC_login(cmd, ocUserName, ocPassword, ocProjectName):
 	if ocUserName == '' or ocPassword == '' or ocProjectName == '':
 		HELP.GenericHelp(CONST.Version)
-		sys.exit('Insufficient Parameter: no OC Credentials')
-	if OCRegistry.startswith("http") and not self.OCRegistry.endswith("/"):
-		sys.exit(f'ocRegistry {OCRegistry} should not start with http:// or https:// and end on a slash /')
+		raise ValueError('Insufficient Parameter: no OC Credentials')
+	if OCRegistry.startswith("http") or OCRegistry.endswith("/"):
+		raise ValueError(f'ocRegistry {OCRegistry} should not start with http:// or https:// and not end on a slash /')
 	ret = cmd.run(f'oc login -u {ocUserName} -p {ocPassword} --server {OCUrl}')
 	if ret.returncode != 0:
 		logging.error('\u001B[1m OC Cluster Login Failed\u001B[0m')
@@ -68,14 +67,13 @@ def OC_login(cmd, ocUserName, ocPassword, ocProjectName):
 def OC_logout(cmd):
 	cmd.run(f'oc logout')
 
-def OC_deploy_CN(cmd, ocUserName, ocPassword):
-	logging.debug('OC OAI CN5G: Deploying OAI CN5G on Openshift Cluster')
-	path = "/opt/oai-cn5g-fed-develop-2024-april-00102"
-	succeeded = OC_login(cmd, ocUserName, ocPassword, CI_OC_CORE_NAMESPACE)
+def OC_deploy_CN(cmd, ocUserName, ocPassword, ocNamespace, path):
+	logging.debug(f'OC OAI CN5G: Deploying OAI CN5G on Openshift Cluster: {ocNamespace}')
+	succeeded = OC_login(cmd, ocUserName, ocPassword, ocNamespace)
 	if not succeeded:
 		return False, CONST.OC_LOGIN_FAIL
 	cmd.run('helm uninstall oai5gcn --wait --timeout 60s')
-	ret = cmd.run(f'helm install --wait --timeout 60s oai5gcn {path}/ci-scripts/charts/oai-5g-basic/.')
+	ret = cmd.run(f'helm install --wait --timeout 120s oai5gcn {path}/ci-scripts/charts/oai-5g-basic/.')
 	if ret.returncode != 0:
 		logging.error('OC OAI CN5G: Deployment failed')
 		OC_logout(cmd)
@@ -84,10 +82,9 @@ def OC_deploy_CN(cmd, ocUserName, ocPassword):
 	OC_logout(cmd)
 	return True, report
 
-def OC_undeploy_CN(cmd, ocUserName, ocPassword):
-	logging.debug('OC OAI CN5G: Terminating CN on Openshift Cluster')
-	path = "/opt/oai-cn5g-fed-develop-2024-april-00102"
-	succeeded = OC_login(cmd, ocUserName, ocPassword, CI_OC_CORE_NAMESPACE)
+def OC_undeploy_CN(cmd, ocUserName, ocPassword, ocNamespace, path):
+	logging.debug(f'OC OAI CN5G: Terminating CN on Openshift Cluster: {ocNamespace}')
+	succeeded = OC_login(cmd, ocUserName, ocPassword, ocNamespace)
 	if not succeeded:
 		return False, CONST.OC_LOGIN_FAIL
 	cmd.run(f'rm -Rf {path}/logs')
@@ -121,32 +118,20 @@ class Cluster:
 		self.OCUserName = ""
 		self.OCPassword = ""
 		self.OCProjectName = ""
-		self.OCUrl = "https://api.oai.cs.eurecom.fr:6443"
-		self.OCRegistry = "default-route-openshift-image-registry.apps.oai.cs.eurecom.fr/"
+		self.OCUrl = OCUrl
+		self.OCRegistry = OCRegistry
 		self.ranRepository = ""
 		self.ranBranch = ""
 		self.ranCommitID = ""
 		self.ranAllowMerge = False
 		self.ranTargetBranch = ""
 		self.cmd = None
-		self.imageToPull = ''
-		self.testSvrId = None
 
 	def _recreate_entitlements(self):
 		# recreating entitlements, don't care if deletion fails
-		self.cmd.run('oc delete secret etc-pki-entitlement')
-		ret = self.cmd.run('ls /etc/pki/entitlement/???????????????????.pem | tail -1', silent=True)
-		regres1 = re.search(r"/etc/pki/entitlement/[0-9]+.pem", ret.stdout)
-		ret = self.cmd.run('ls /etc/pki/entitlement/???????????????????-key.pem | tail -1', silent=True)
-		regres2 = re.search(r"/etc/pki/entitlement/[0-9]+-key.pem", ret.stdout)
-		if regres1 is None or regres2 is None:
-			logging.error("could not find entitlements")
-			return False
-		file1 = regres1.group(0)
-		file2 = regres2.group(0)
-		ret = self.cmd.run(f'oc create secret generic etc-pki-entitlement --from-file {file1} --from-file {file2}')
-		regres = re.search(r"secret/etc-pki-entitlement created", ret.stdout)
-		if ret.returncode != 0 or regres is None:
+		self.cmd.run(f'oc delete secret etc-pki-entitlement')
+		ret = self.cmd.run(f"oc get secret etc-pki-entitlement -n openshift-config-managed -o json | jq 'del(.metadata.resourceVersion)' | jq 'del(.metadata.creationTimestamp)' | jq 'del(.metadata.uid)' | jq 'del(.metadata.namespace)' | oc create -f -", silent=True)
+		if ret.returncode != 0:
 			logging.error("could not create secret/etc-pki-entitlement")
 			return False
 		return True
@@ -223,7 +208,7 @@ class Cluster:
 			return -1
 		return int(result.group("size"))
 
-	def _deploy_pod(self, filename, timeout = 30):
+	def _deploy_pod(self, filename, timeout = 120):
 		ret = self.cmd.run(f'oc create -f {filename}')
 		result = re.search(f'pod/(?P<pod>[a-zA-Z0-9_\-]+) created', ret.stdout)
 		if result is None:
@@ -231,11 +216,9 @@ class Cluster:
 			return None
 		pod = result.group("pod")
 		logging.debug(f'checking if pod {pod} is in Running state')
-		while timeout > 0:
-			ret = self.cmd.run(f'oc get pod {pod} -o json | jq -Mc .status.phase', silent=True)
-			if re.search('"Running"', ret.stdout) is not None: return pod
-			timeout -= 1
-			time.sleep(1)
+		ret = self.cmd.run(f'oc wait --for=condition=ready pod {pod} --timeout={timeout}s', silent=True)
+		if ret.returncode == 0:
+			return pod
 		logging.error(f'pod {pod} did not reach Running state')
 		self._undeploy_pod(filename)
 		return None
@@ -243,59 +226,47 @@ class Cluster:
 	def _undeploy_pod(self, filename):
 		self.cmd.run(f'oc delete -f {filename}')
 
-	def PullClusterImage(self, HTML, RAN):
-		if self.testSvrId == None: self.testSvrId = self.eNBIPAddress
-		if self.imageToPull == '':
-			HELP.GenericHelp(CONST.Version)
-			sys.exit('Insufficient Parameter')
-		logging.debug(f'Pull OC image {self.imageToPull} to server {self.testSvrId}')
+	def PullClusterImage(self, HTML, node, images):
+		logging.debug(f'Pull OC image {images} to server {node}')
 		self.testCase_id = HTML.testCase_id
-		cmd = cls_cmd.getConnection(self.testSvrId)
-		succeeded = OC_login(cmd, self.OCUserName, self.OCPassword, CI_OC_RAN_NAMESPACE)
-		if not succeeded:
-			logging.error('\u001B[1m OC Cluster Login Failed\u001B[0m')
-			HTML.CreateHtmlTestRow('N/A', 'KO', CONST.OC_LOGIN_FAIL)
-			return False
-		ret = cmd.run(f'oc whoami -t | docker login -u oaicicd --password-stdin {self.OCRegistry}')
-		if ret.returncode != 0:
-			logging.error(f'\u001B[1m Unable to access OC project {CI_OC_RAN_NAMESPACE}\u001B[0m')
-			OC_logout(cmd)
-			cmd.close()
-			HTML.CreateHtmlTestRow('N/A', 'KO', CONST.OC_LOGIN_FAIL)
-			return False
-		for image in self.imageToPull:
-			imagePrefix = f'{self.OCRegistry}{CI_OC_RAN_NAMESPACE}'
-			imageTag = cls_containerize.ImageTagToUse(image, self.ranCommitID, self.ranBranch, self.ranAllowMerge)
-			ret = cmd.run(f'docker pull {imagePrefix}/{imageTag}')
-			if ret.returncode != 0:
-				logging.error(f'Could not pull {image} from local registry : {self.OCRegistry}')
-				OC_logout(cmd)
-				cmd.close()
-				HTML.CreateHtmlTestRow('msg', 'KO', CONST.ALL_PROCESSES_OK)
+		with cls_cmd.getConnection(node) as cmd:
+			succeeded = OC_login(cmd, self.OCUserName, self.OCPassword, CI_OC_RAN_NAMESPACE)
+			if not succeeded:
+				HTML.CreateHtmlTestRow('N/A', 'KO', CONST.OC_LOGIN_FAIL)
 				return False
-			cmd.run(f'docker tag {imagePrefix}/{imageTag} oai-ci/{imageTag}')
-			cmd.run(f'docker rmi {imagePrefix}/{imageTag}')
-		OC_logout(cmd)
-		cmd.close()
-		HTML.CreateHtmlTestRow('N/A', 'OK', CONST.ALL_PROCESSES_OK)
-		return True
+			ret = cmd.run(f'oc whoami -t | docker login -u oaicicd --password-stdin {self.OCRegistry}')
+			if ret.returncode != 0:
+				logging.error(f'cannot authenticate at registry')
+				OC_logout(cmd)
+				HTML.CreateHtmlTestRow('N/A', 'KO', CONST.OC_LOGIN_FAIL)
+				return False
+			tag = cls_containerize.CreateTag(self.ranCommitID, self.ranBranch, self.ranAllowMerge)
+			registry = f'{self.OCRegistry}/{CI_OC_RAN_NAMESPACE}'
+			success, msg = cls_containerize.Containerize.Pull_Image(cmd, images, tag, registry, None, None)
+			OC_logout(cmd)
+		param = f"on node {node}"
+		if success:
+			HTML.CreateHtmlTestRowQueue(param, 'OK', [msg])
+		else:
+			HTML.CreateHtmlTestRowQueue(param, 'KO', [msg])
+		return success
 
 	def BuildClusterImage(self, HTML):
 		if self.ranRepository == '' or self.ranBranch == '' or self.ranCommitID == '':
 			HELP.GenericHelp(CONST.Version)
-			sys.exit(f'Insufficient Parameter: ranRepository {self.ranRepository} ranBranch {ranBranch} ranCommitID {self.ranCommitID}')
+			raise ValueError(f'Insufficient Parameter: ranRepository {self.ranRepository} ranBranch {ranBranch} ranCommitID {self.ranCommitID}')
 		lIpAddr = self.eNBIPAddress
 		lSourcePath = self.eNBSourceCodePath
 		if lIpAddr == '' or lSourcePath == '':
-			sys.exit('Insufficient Parameter: eNBSourceCodePath missing')
+			raise ValueError('Insufficient Parameter: eNBSourceCodePath missing')
 		ocUserName = self.OCUserName
 		ocPassword = self.OCPassword
 		ocProjectName = self.OCProjectName
 		if ocUserName == '' or ocPassword == '' or ocProjectName == '':
 			HELP.GenericHelp(CONST.Version)
-			sys.exit('Insufficient Parameter: no OC Credentials')
-		if self.OCRegistry.startswith("http") and not self.OCRegistry.endswith("/"):
-			sys.exit(f'ocRegistry {self.OCRegistry} should not start with http:// or https:// and end on a slash /')
+			raise ValueError('Insufficient Parameter: no OC Credentials')
+		if self.OCRegistry.startswith("http") or self.OCRegistry.endswith("/"):
+			raise ValueError(f'ocRegistry {self.OCRegistry} should not start with http:// or https:// and not end on a slash /')
 
 		logging.debug(f'Building on cluster triggered from server: {lIpAddr}')
 		self.cmd = cls_cmd.RemoteCmd(lIpAddr)
@@ -303,10 +274,7 @@ class Cluster:
 		self.testCase_id = HTML.testCase_id
 
 		# Workaround for some servers, we need to erase completely the workspace
-		if self.forcedWorkspaceCleanup:
-			self.cmd.run(f'rm -Rf {lSourcePath}')
-		cls_containerize.CreateWorkspace(self.cmd, lSourcePath, self.ranRepository, self.ranCommitID, self.ranTargetBranch, self.ranAllowMerge)
-
+		self.cmd.cd(lSourcePath)
 		# to reduce the amount of data send to OpenShift, we
 		# manually delete all generated files in the workspace
 		self.cmd.run(f'rm -rf {lSourcePath}/cmake_targets/ran_build');
@@ -347,9 +315,9 @@ class Cluster:
 
 		# delete old images by Sagar Arora <sagar.arora@openairinterface.org>:
 		# 1. retrieve all images and their timestamp
-		# 2. awk retrieves those whose timestamp is older than 4 weeks
+		# 2. awk retrieves those whose timestamp is older than 3 weeks
 		# 3. issue delete command on corresponding istags (the images are dangling and will be cleaned by the registry)
-		delete_cmd = "oc get istag -o go-template --template '{{range .items}}{{.metadata.name}} {{.metadata.creationTimestamp}}{{\"\\n\"}}{{end}}' | awk '$2 <= \"'$(date -d '-4weeks' -Ins --utc | sed 's/+0000/Z/')'\" { print $1 }' | xargs --no-run-if-empty oc delete istag"
+		delete_cmd = "oc get istag -o go-template --template '{{range .items}}{{.metadata.name}} {{.metadata.creationTimestamp}}{{\"\\n\"}}{{end}}' | awk '$2 <= \"'$(date -d '-3weeks' -Ins --utc | sed 's/+0000/Z/')'\" { print $1 }' | xargs --no-run-if-empty oc delete istag"
 		response = self.cmd.run(delete_cmd)
 		logging.debug(f"deleted images:\n{response.stdout}")
 

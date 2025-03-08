@@ -175,15 +175,9 @@ uint8_t sl_determine_if_SSB_slot(uint16_t frame, uint16_t slot, uint16_t slots_p
   return 0;
 }
 
-static uint8_t sl_psbch_scheduler(sl_nr_ue_mac_params_t *sl_mac_params, int ue_id, int frame, int slot)
+static uint8_t sl_psbch_scheduler(sl_nr_ue_mac_params_t *sl_mac_params, int ue_id, int frame, int slot, int slots_per_frame)
 {
-
   uint8_t config_type = 0, is_psbch_rx_slot = 0, is_psbch_tx_slot = 0;
-
-  sl_nr_phy_config_request_t *sl_cfg = &sl_mac_params->sl_phy_config.sl_config_req;
-  uint16_t scs = sl_cfg->sl_bwp_config.sl_scs;
-  uint16_t slots_per_frame = nr_slots_per_frame[scs];
-
   if (sl_mac_params->rx_sl_bch.status) {
     is_psbch_rx_slot = sl_determine_if_SSB_slot(frame, slot, slots_per_frame, &sl_mac_params->rx_sl_bch);
 
@@ -259,16 +253,9 @@ static void sl_adjust_indices_based_on_timing(sl_nr_ue_mac_params_t *sl_mac,
 }
 
 // Adjust indices as new timing is acquired
-static void sl_actions_after_new_timing(sl_nr_ue_mac_params_t *sl_mac,
-                                        int ue_id,
-                                        int frame, int slot)
+static void sl_actions_after_new_timing(sl_nr_ue_mac_params_t *sl_mac, int ue_id, int frame, int slot, int slots_per_frame)
 {
-
-  uint8_t mu = sl_mac->sl_phy_config.sl_config_req.sl_bwp_config.sl_scs;
-  uint8_t slots_per_frame = nr_slots_per_frame[mu];
-
   sl_determine_slot_bitmap(sl_mac, ue_id);
-
   sl_mac->N_SL_SLOTS = sl_determine_num_sidelink_slots(sl_mac, ue_id, &sl_mac->N_SSB_16frames);
   sl_adjust_indices_based_on_timing(sl_mac, ue_id, frame, slot, slots_per_frame);
 }
@@ -385,7 +372,7 @@ void nr_ue_sidelink_scheduler(nr_sidelink_indication_t *sl_ind, NR_UE_MAC_INST_t
 
   // Adjust indices as new timing is acquired
   if (sl_mac->timing_acquired) {
-    sl_actions_after_new_timing(sl_mac, ue_id, sl_ind->frame_tx, sl_ind->slot_tx);
+    sl_actions_after_new_timing(sl_mac, ue_id, sl_ind->frame_tx, sl_ind->slot_tx, mac->frame_structure.numb_slots_frame);
     sl_mac->timing_acquired = false;
   }
 
@@ -399,7 +386,7 @@ void nr_ue_sidelink_scheduler(nr_sidelink_indication_t *sl_ind, NR_UE_MAC_INST_t
       uint8_t tti_action = 0;
 
       // Check if PSBCH slot and PSBCH should be transmitted or Received
-      tti_action = sl_psbch_scheduler(sl_mac, ue_id, frame, slot);
+      tti_action = sl_psbch_scheduler(sl_mac, ue_id, frame, slot, mac->frame_structure.numb_slots_frame);
 
 #if 0 // To be expanded later
       // TBD .. Check for Actions coming out of TX resource pool

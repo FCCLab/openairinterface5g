@@ -320,7 +320,7 @@ typedef struct timer_elm_s {
                  (char *)itti_get_task_name(task_id),
                  -1,
                  OAI_PRIORITY_RT);
-    LOG_I(ITTI,"Created Posix thread %s\n",  itti_get_task_name(task_id) );
+    LOG_D(ITTI,"Created Posix thread %s\n",  itti_get_task_name(task_id) );
     return 0;
   }
 
@@ -434,7 +434,7 @@ typedef struct timer_elm_s {
   void itti_send_terminate_message(task_id_t task_id) {
   }
 
-  sem_t itti_sem_block;
+  static sem_t itti_sem_block;
   void itti_wait_tasks_unblock()
   {
     int rc = sem_post(&itti_sem_block);

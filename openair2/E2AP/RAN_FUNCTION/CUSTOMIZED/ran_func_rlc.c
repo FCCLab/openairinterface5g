@@ -174,6 +174,8 @@ void read_rlc_setup_sm(void* data)
 sm_ag_if_ans_t write_ctrl_rlc_sm(void const* data)
 {
   (void)data;
-  assert(0!=0 && "Not supported");
+  printf("write_ctrl callback for RLC SM: operation not supported\n");
+  sm_ag_if_ans_t ans = {0};
+  return ans;
 }
 

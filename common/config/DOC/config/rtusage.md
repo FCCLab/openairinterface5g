@@ -68,7 +68,6 @@ To get help on supported parameters you can use specific options:
     --worker-config: two option for worker 'WORKER_DISABLE' or 'WORKER_ENABLE'
     --nbiot-disable: disable nb-iot, even if defined in config
     --noS1: Disable s1 interface
-    --nokrnmod: (noS1 only): Use tun instead of namesh module
 --------------------------------------------------------------------
 
 [LIBCONFIG] (root): 4/4 parameters successfully set, (4 to default value)

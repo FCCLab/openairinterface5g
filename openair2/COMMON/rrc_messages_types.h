@@ -76,6 +76,7 @@
 #define NAS_UPLINK_DATA_REQ(mSGpTR)     (mSGpTR)->ittiMsg.nas_ul_data_req
 #define NAS_DETACH_REQ(mSGpTR)          (mSGpTR)->ittiMsg.nas_detach_req
 #define NAS_DEREGISTRATION_REQ(mSGpTR)  (mSGpTR)->ittiMsg.nas_deregistration_req
+#define NAS_5GMM_IND(mSGpTR)            (mSGpTR)->ittiMsg.nas_5gmm_ind
 
 #define NAS_RAB_ESTABLI_RSP(mSGpTR)     (mSGpTR)->ittiMsg.nas_rab_est_rsp
 
@@ -84,6 +85,7 @@
 #define NAS_PAGING_IND(mSGpTR)          (mSGpTR)->ittiMsg.nas_paging_ind
 #define NAS_CONN_ESTABLI_CNF(mSGpTR)    (mSGpTR)->ittiMsg.nas_conn_establi_cnf
 #define NAS_CONN_RELEASE_IND(mSGpTR)    (mSGpTR)->ittiMsg.nas_conn_release_ind
+#define NR_NAS_CONN_ESTABLISH_IND(mSGpTR) (mSGpTR)->ittiMsg.nr_nas_conn_establish_ind
 #define NR_NAS_CONN_RELEASE_IND(mSGpTR) (mSGpTR)->ittiMsg.nr_nas_conn_release_ind
 #define NAS_UPLINK_DATA_CNF(mSGpTR)     (mSGpTR)->ittiMsg.nas_ul_data_cnf
 #define NAS_DOWNLINK_DATA_IND(mSGpTR)   (mSGpTR)->ittiMsg.nas_dl_data_ind
@@ -96,10 +98,16 @@
 
 #define NAS_OAI_TUN_NSA(mSGpTR)         (mSGpTR)->ittiMsg.nas_oai_tun_nsa
 #define NAS_PDU_SESSION_REQ(mSGpTR) (mSGpTR)->ittiMsg.nas_pdu_session_req
+#define NR_MAC_RRC_CONFIG_RESET(mSGpTR) (mSGpTR)->ittiMsg.nr_mac_rrc_config_reset
+#define NR_MAC_RRC_CONFIG_CG(mSGpTR) (mSGpTR)->ittiMsg.nr_mac_rrc_config_cg
+#define NR_MAC_RRC_CONFIG_MIB(mSGpTR) (mSGpTR)->ittiMsg.nr_mac_rrc_config_mib
+#define NR_MAC_RRC_CONFIG_SIB1(mSGpTR) (mSGpTR)->ittiMsg.nr_mac_rrc_config_sib1
+#define NR_MAC_RRC_CONFIG_OTHER_SIB(mSGpTR) (mSGpTR)->ittiMsg.nr_mac_rrc_config_other_sib
 
-//-------------------------------------------------------------------------------------------//
+#define NR_RRC_RLC_MAXRTX(mSGpTR) (mSGpTR)->ittiMsg.nr_rlc_maxrtx_indication
+
 typedef struct RrcStateInd_s {
-  Rrc_State_t     state;
+  Rrc_State_t state;
   Rrc_Sub_State_t sub_state;
 } RrcStateInd;
 
@@ -422,28 +430,7 @@ typedef struct NRDuDlReq_s {
   rnti_t rnti;
   uint8_t *buf;
   uint64_t srb_id;
-}  NRDuDlReq_t; 
-
-// UE: NAS -> RRC messages
-typedef kenb_refresh_req_t      NasKenbRefreshReq;
-typedef cell_info_req_t         NasCellSelectionReq;
-typedef nas_establish_req_t     NasConnEstabliReq;
-typedef ul_info_transfer_req_t  NasUlDataReq;
-typedef nas_deregistration_req_t NasDeregistrationReq;
-typedef nas_detach_req_t        NasDetachReq;
-
-typedef rab_establish_rsp_t     NasRabEstRsp;
-
-typedef nas_oai_tun_nsa_t       NasOaiTunNsa;
-
-// UE: RRC -> NAS messages
-typedef cell_info_cnf_t         NasCellSelectionCnf;
-typedef cell_info_ind_t         NasCellSelectionInd;
-typedef paging_ind_t            NasPagingInd;
-typedef nas_establish_cnf_t     NasConnEstabCnf;
-typedef nas_release_ind_t       NasConnReleaseInd;
-typedef ul_info_transfer_cnf_t  NasUlDataCnf;
-typedef dl_info_transfer_ind_t  NasDlDataInd;
+}  NRDuDlReq_t;
 
 // eNB: realtime -> RRC messages
 typedef struct rrc_subframe_process_s {
@@ -473,5 +460,30 @@ typedef struct rlc_sdu_indication_s {
   int srb_id;
   int message_id;
 } RlcSduIndication;
+
+typedef struct {
+  int ue_id;
+} RlcMaxRtxIndication;
+
+#include "openair2/RRC/NR_UE/rrc_defs.h"
+typedef struct {
+  NR_ReestablishmentCause_t cause;
+} nr_mac_rrc_config_reset_t;
+typedef struct {
+  NR_CellGroupConfig_t *cellGroupConfig;
+  NR_UE_NR_Capability_t *UE_NR_Capability;
+} nr_mac_rrc_config_cg_t;
+typedef struct {
+  NR_BCCH_BCH_Message_t *bcch;
+  int get_sib;
+} nr_mac_rrc_config_mib_t;
+typedef struct {
+  NR_SIB1_t *sib1;
+  bool can_start_ra;
+} nr_mac_rrc_config_sib1_t;
+typedef struct {
+  NR_SIB19_r17_t *sib19;
+  bool can_start_ra;
+} nr_mac_rrc_config_other_sib_t;
 
 #endif /* RRC_MESSAGES_TYPES_H_ */

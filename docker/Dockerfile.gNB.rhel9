@@ -31,8 +31,11 @@ FROM ran-build:latest AS gnb-build
 
 
 #start from scratch for target executable
-FROM registry.access.redhat.com/ubi9/ubi:latest as oai-gnb
+FROM registry.access.redhat.com/ubi9/ubi:latest AS oai-gnb
 ENV TZ=Europe/Paris
+
+# Install EPEL for RHEL9
+RUN dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm
 
 RUN dnf update -y && \
     dnf install -y \
@@ -46,7 +49,8 @@ RUN dnf update -y && \
         python3 \
         python3-pip \
         net-tools \
-        iputils && \
+        iputils \
+        yaml-cpp-devel && \
     pip3 install six && \
     pip3 install requests && \
     echo "/usr/local/lib" > /etc/ld.so.conf.d/local-lib.conf && \
@@ -67,6 +71,7 @@ COPY --from=gnb-build \
     /oai-ran/cmake_targets/ran_build/build/libldpc*.so \
     /oai-ran/cmake_targets/ran_build/build/libtelnetsrv.so \
     /oai-ran/cmake_targets/ran_build/build/libtelnetsrv_ci.so \
+    /oai-ran/cmake_targets/ran_build/build/libparams_yaml.so \
     /usr/local/lib/
 
 COPY --from=gnb-base \
@@ -92,6 +97,9 @@ COPY --from=gnb-base \
 COPY --from=gnb-base /usr/local/bin/uhd_find_devices /usr/local/bin
 COPY --from=gnb-base /usr/local/lib64/libuhd.so.4.4.0 /usr/local/lib64
 COPY --from=gnb-base /usr/local/lib64/uhd/utils/uhd_images_downloader.py /opt/oai-gnb/bin
+
+## Copy E2 SM models
+COPY --from=gnb-build /usr/local/lib64/flexric /usr/local/lib64/flexric
 
 WORKDIR /usr/local/share/uhd/rfnoc
 COPY --from=gnb-base /usr/local/share/uhd/rfnoc/ .
@@ -122,4 +130,4 @@ WORKDIR /opt/oai-gnb
 
 COPY --from=gnb-base /tini /tini
 ENTRYPOINT ["/tini", "-v", "--", "/opt/oai-gnb/bin/entrypoint.sh"]
-CMD ["/opt/oai-gnb/bin/nr-softmodem", "-O", "/opt/oai-gnb/etc/gnb.conf"]
+CMD ["/opt/oai-gnb/bin/nr-softmodem"]

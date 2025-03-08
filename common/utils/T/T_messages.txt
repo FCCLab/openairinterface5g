@@ -9,6 +9,11 @@ ID = USRP_RX_ANT0
     GROUP = ALL:HEAVY
     FORMAT = int,timestap : buffer,data
 
+ID = USRP_TX_ANT0
+    DESC = TX IQ data as sent by USRP driver on antenna 0
+    GROUP = ALL:HEAVY
+    FORMAT = int,timestap : buffer,data
+
 #PHY logs
 ID = ENB_PHY_UL_TICK
     DESC = eNodeB uplink tick - one tick per ms at start of uplink processing
@@ -82,6 +87,10 @@ ID = ENB_PHY_INITIATE_RA_PROCEDURE
     DESC = eNodeB initiates a random access procedure after detecting enough energy for one of the preambles
     GROUP = ALL:PHY:ENB:WIRESHARK
     FORMAT = int,eNB_ID : int,frame : int,subframe : int,preamble : int,energy : int,delay
+ID = UE_PHY_INITIATE_RA_PROCEDURE
+    DESC = UE initiates a random access procedure with a given preamble (can be used for both LTE and NR)
+    GROUP = ALL:PHY:UE:WIRESHARK
+    FORMAT = int,frame : int,subframe_or_slot : int,preamble : int,power
 ID = GNB_PHY_DL_TICK
     DESC = gNodeB downlink tick - one tick per ms at start of downlink processing
     GROUP = ALL:PHY:GRAPHIC:GNB
@@ -94,6 +103,10 @@ ID = GNB_PHY_MIB
     DESC = NR MIB data
     GROUP = ALL:PHY:GNB:WIRESHARK
     FORMAT = int,gNB_ID : int,frame : int,slot : buffer,data
+ID = NRUE_PHY_MIB
+    DESC = NR MIB data as received by an UE
+    GROUP = ALL:PHY:UE:WIRESHARK
+    FORMAT = int,frame : int,slot : int,ssb_index : buffer,data
 ID = GNB_PHY_PUCCH_PUSCH_IQ
     DESC = gNodeB input data in the frequency domain for a slot where some PUCCH or PUSCH detection was done
     GROUP = ALL:PHY:GRAPHIC:HEAVY:GNB
@@ -176,6 +189,18 @@ ID = GNB_MAC_RETRANSMISSION_DL_PDU_WITH_DATA
     DESC = NR MAC downlink retransmitted PDU for an UE
     GROUP = ALL:MAC:GNB:WIRESHARK
     FORMAT = int,gNB_ID : int,CC_id : int,rnti : int,frame : int,slot : int,harq_pid : int,round : buffer,data
+ID = NRUE_MAC_DL_PDU_WITH_DATA
+    DESC = NR MAC downlink PDU for an UE
+    GROUP = ALL:MAC:UE:WIRESHARK
+    FORMAT = int,rnti : int,frame : int,slot : int,harq_pid : buffer,data
+ID = NRUE_MAC_UL_PDU_WITH_DATA
+    DESC = NR MAC uplink PDU for an UE
+    GROUP = ALL:MAC:UE:WIRESHARK
+    FORMAT = int,rnti : int,frame : int,slot : int,harq_pid : buffer,data
+ID = NRUE_MAC_DL_RAR_PDU_WITH_DATA
+    DESC = NR MAC downlink PDU for RAR
+    GROUP = ALL:MAC:UE:WIRESHARK
+    FORMAT = int,rnti : int,frame : int,slot : buffer,data
 
 #RLC logs
 ID = ENB_RLC_DL

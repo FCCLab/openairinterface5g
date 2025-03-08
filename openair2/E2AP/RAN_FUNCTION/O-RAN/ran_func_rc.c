@@ -169,7 +169,7 @@ static void fill_rc_report(ran_func_def_report_t* report)
   // Mandatory
   // 9.3.8
   // [1- 4294967295]
-  report_style->ran_param[0].id = RRC_STATE_CHANGED_TO_E2SM_RC_RAN_PARAM_ID;
+  report_style->ran_param[0].id = E2SM_RC_RS4_RRC_STATE_CHANGED_TO;
 
   // RAN Parameter Name
   // Mandatory
@@ -476,14 +476,11 @@ void read_rc_setup_sm(void* data)
   DevAssert(ret == 0);
 }
 
-
-RB_PROTOTYPE(ric_id_2_param_id_trees, ric_req_id_s, entries, cmp_ric_req_id);
-
 static seq_ran_param_t fill_rrc_state_change_seq_ran(const rc_sm_rrc_state_e rrc_state)
 {
   seq_ran_param_t seq_ran_param = {0};
 
-  seq_ran_param.ran_param_id = RRC_STATE_CHANGED_TO_E2SM_RC_RAN_PARAM_ID;
+  seq_ran_param.ran_param_id = E2SM_RC_RS4_RRC_STATE_CHANGED_TO;
   seq_ran_param.ran_param_val.type = ELEMENT_KEY_FLAG_FALSE_RAN_PARAMETER_VAL_TYPE;
   seq_ran_param.ran_param_val.flag_false = calloc(1, sizeof(ran_parameter_value_t));
   assert(seq_ran_param.ran_param_val.flag_false != NULL && "Memory exhausted");
@@ -528,23 +525,40 @@ static rc_ind_data_t* fill_ue_rrc_state_change(const gNB_RRC_UE_t *rrc_ue_contex
   return rc_ind;
 }
 
+static void send_aper_ric_ind(const uint32_t ric_req_id, rc_ind_data_t* rc_ind_data)
+{
+  async_event_agent_api(ric_req_id, rc_ind_data);
+  printf("[E2 AGENT] Event for RIC request ID %d generated\n", ric_req_id);
+}
+
+static void check_rrc_state(const gNB_RRC_UE_t *rrc_ue_context, const rc_sm_rrc_state_e rrc_state, const uint32_t ric_req_id, const e2sm_rc_ev_trg_frmt_4_t *frmt_4)
+{
+  for (size_t i = 0; i < frmt_4->sz_ue_info_chng; i++) {
+    const rrc_state_lst_t *rrc_elem = &frmt_4->ue_info_chng[i].rrc_state;
+    for (size_t j = 0; j < rrc_elem->sz_rrc_state; j++) {
+      const rrc_state_e2sm_rc_e ev_tr_rrc_state = rrc_elem->state_chng_to[j].state_chngd_to;
+      if (ev_tr_rrc_state == (rrc_state_e2sm_rc_e)rrc_state || ev_tr_rrc_state == ANY_RRC_STATE_E2SM_RC) {
+        rc_ind_data_t* rc_ind_data = fill_ue_rrc_state_change(rrc_ue_context, rrc_state);
+        send_aper_ric_ind(ric_req_id, rc_ind_data);
+      }
+    }
+  }
+}
+
 void signal_rrc_state_changed_to(const gNB_RRC_UE_t *rrc_ue_context, const rc_sm_rrc_state_e rrc_state)
-{ 
+{
   pthread_mutex_lock(&rc_mutex);
-  if (rc_subs_data.rb[RRC_STATE_CHANGED_TO_E2SM_RC_RAN_PARAM_ID].rbh_root == NULL) {
+  if (rc_subs_data.rs4_param202.data == NULL) {
     pthread_mutex_unlock(&rc_mutex);
     return;
   }
-  
-  struct ric_req_id_s *node;
-  RB_FOREACH(node, ric_id_2_param_id_trees, &rc_subs_data.rb[RRC_STATE_CHANGED_TO_E2SM_RC_RAN_PARAM_ID]) {
-    rc_ind_data_t* rc_ind_data = fill_ue_rrc_state_change(rrc_ue_context, rrc_state);
 
-    // Needs review: memory ownership of the type rc_ind_data_t is transferred to the E2 Agent. Bad
-    async_event_agent_api(node->ric_req_id, rc_ind_data);
-    printf( "Event for RIC Req ID %u generated\n", node->ric_req_id);
+  const size_t num_subs = seq_arr_size(&rc_subs_data.rs4_param202);
+  for (size_t sub_idx = 0; sub_idx < num_subs; sub_idx++) {
+    const ran_param_data_t data = *(const ran_param_data_t *)seq_arr_at(&rc_subs_data.rs4_param202, sub_idx);
+    check_rrc_state(rrc_ue_context, rrc_state, data.ric_req_id, &data.ev_tr.frmt_4);
   }
-  
+
   pthread_mutex_unlock(&rc_mutex);
 }
 
@@ -553,38 +567,65 @@ static void free_aperiodic_subscription(uint32_t ric_req_id)
   remove_rc_subs_data(&rc_subs_data, ric_req_id);
 }
 
+static seq_arr_t *get_sa(const e2sm_rc_event_trigger_t *ev_tr, const uint32_t ran_param_id)
+{
+  seq_arr_t *sa = NULL;
+
+  switch (ev_tr->format) {
+    case FORMAT_4_E2SM_RC_EV_TRIGGER_FORMAT:
+      if (ran_param_id == E2SM_RC_RS4_RRC_STATE_CHANGED_TO) {
+        sa = &rc_subs_data.rs4_param202;
+      }
+      break;
+
+    default:
+      printf("[E2 AGENT] RC REPORT Style %d not yet implemented.\n", ev_tr->format + 1);
+      break;
+  }
+
+  return sa;
+}
+
+static void get_list_for_report_style(const uint32_t ric_req_id, const e2sm_rc_event_trigger_t *ev_tr, const size_t sz, const param_report_def_t *param_def)
+{
+  for (size_t i = 0; i < sz; i++) {
+    seq_arr_t *sa = get_sa(ev_tr, param_def[i].ran_param_id);
+    if (!sa) {
+      printf("[E2 AGENT] Requested RAN Parameter ID %d not yet implemented", param_def[i].ran_param_id);
+    } else {
+      struct ran_param_data data = { .ric_req_id = ric_req_id, .ev_tr = cp_e2sm_rc_event_trigger(ev_tr) };
+      insert_rc_subs_data(sa, &data);
+    }
+  }
+}
+
 sm_ag_if_ans_t write_subs_rc_sm(void const* src)
 {
   assert(src != NULL); // && src->type == RAN_CTRL_SUBS_V1_03);
-
   wr_rc_sub_data_t* wr_rc = (wr_rc_sub_data_t*)src;
-
   assert(wr_rc->rc.ad != NULL && "Cannot be NULL");
 
+  sm_ag_if_ans_t ans = {0};
+
+  const uint32_t ric_req_id = wr_rc->ric_req_id;
+  const uint32_t report_style = wr_rc->rc.ad->ric_style_type;
   // 9.2.1.2  RIC ACTION DEFINITION IE
   switch (wr_rc->rc.ad->format) {
-    case FORMAT_1_E2SM_RC_ACT_DEF: {
+    case FORMAT_1_E2SM_RC_ACT_DEF: { // for all REPORT styles
       // Parameters to be Reported List
       // [1-65535]
-      const uint32_t ric_req_id = wr_rc->ric_req_id;
-      arr_ran_param_id_t* arr_ran_param_id = calloc(1, sizeof(arr_ran_param_id_t));
-      assert(arr_ran_param_id != NULL && "Memory exhausted");
-      arr_ran_param_id->len = wr_rc->rc.ad->frmt_1.sz_param_report_def;
-      arr_ran_param_id->ran_param_id = calloc(arr_ran_param_id->len, sizeof(ran_param_id_e));
-
-      const size_t sz = arr_ran_param_id->len;
-      for(size_t i = 0; i < sz; i++) {    
-        arr_ran_param_id->ran_param_id[i] = wr_rc->rc.ad->frmt_1.param_report_def[i].ran_param_id;
+      if (wr_rc->rc.et.format + 1 != report_style) { // wr_rc->rc.et.format is an enum -> initialization starts from 0
+        AssertError(false, return ans, "[E2 AGENT] Event Trigger Definition Format %d doesn't correspond to REPORT style %d.\n", wr_rc->rc.et.format + 1, report_style);
       }
-      insert_rc_subs_data(&rc_subs_data, ric_req_id, arr_ran_param_id);
+      get_list_for_report_style(ric_req_id, &wr_rc->rc.et, wr_rc->rc.ad->frmt_1.sz_param_report_def, wr_rc->rc.ad->frmt_1.param_report_def);
       break;
     }
-  
+
     default:
-      AssertFatal(wr_rc->rc.ad->format == FORMAT_1_E2SM_RC_ACT_DEF, "Action Definition Format %d not yet implemented", wr_rc->rc.ad->format);
+      AssertError(wr_rc->rc.ad->format == FORMAT_1_E2SM_RC_ACT_DEF, return ans, "[E2 AGENT] Action Definition Format %d not yet implemented", wr_rc->rc.ad->format + 1);
   }
 
-  sm_ag_if_ans_t ans = {.type = SUBS_OUTCOME_SM_AG_IF_ANS_V0};
+  ans.type = SUBS_OUTCOME_SM_AG_IF_ANS_V0;
   ans.subs_out.type = APERIODIC_SUBSCRIPTION_FLRC;
   ans.subs_out.aper.free_aper_subs = free_aperiodic_subscription;
 

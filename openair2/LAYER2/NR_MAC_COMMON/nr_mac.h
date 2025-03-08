@@ -122,6 +122,11 @@ static inline int get_mac_len(uint8_t *pdu, uint32_t pdu_len, uint16_t *mac_ce_l
     *mac_subheader_len = sizeof(*s);
     *mac_ce_len = s->L;
   }
+  if (*mac_ce_len > pdu_len) {
+    LOG_E(NR_MAC, "MAC sdu len impossible (%d)\n", *mac_ce_len);
+    return false;
+  }
+
   return true;
 }
 
@@ -133,8 +138,6 @@ typedef struct {
   uint8_t LcgID: 3;        // octet 1 MSB
 } __attribute__ ((__packed__)) NR_BSR_SHORT;
 
-typedef NR_BSR_SHORT NR_BSR_SHORT_TRUNCATED;
-
 // Long BSR for all logical channel group ID
 typedef struct {
   uint8_t LcgID0: 1;        // octet 1 [0]
@@ -144,18 +147,8 @@ typedef struct {
   uint8_t LcgID4: 1;        // octet 1 [4]
   uint8_t LcgID5: 1;        // octet 1 [5]
   uint8_t LcgID6: 1;        // octet 1 [6]
-  uint8_t LcgID7: 1;        // octet 1 [7]
-  uint8_t Buffer_size0: 8;  // octet 2 [7:0]
-  uint8_t Buffer_size1: 8;  // octet 3 [7:0]
-  uint8_t Buffer_size2: 8;  // octet 4 [7:0]
-  uint8_t Buffer_size3: 8;  // octet 5 [7:0]
-  uint8_t Buffer_size4: 8;  // octet 6 [7:0]
-  uint8_t Buffer_size5: 8;  // octet 7 [7:0]
-  uint8_t Buffer_size6: 8;  // octet 8 [7:0]
-  uint8_t Buffer_size7: 8;  // octet 9 [7:0]
+  uint8_t LcgID7: 1; // octet 1 [7]
 } __attribute__ ((__packed__)) NR_BSR_LONG;
-
-typedef NR_BSR_LONG NR_BSR_LONG_TRUNCATED;
 
 // 38.321 ch. 6.1.3.4
 typedef struct {
@@ -244,6 +237,12 @@ typedef struct {
   uint8_t E: 1;
 } __attribute__ ((__packed__)) NR_RA_HEADER_RAPID;
 
+typedef struct {
+  uint8_t RAPID: 6;
+  uint8_t T1: 1;
+  uint8_t E: 1;
+} __attribute__((__packed__)) NR_RA_HEADER_RAPID_MSGB;
+
 /*!\brief RAR MAC subheader with Backoff Indicator */
 typedef struct {
   uint8_t BI: 4;
@@ -252,7 +251,23 @@ typedef struct {
   uint8_t E: 1;
 } __attribute__ ((__packed__)) NR_RA_HEADER_BI;
 
-// TS 38.321 ch. 6.2.3
+typedef struct {
+  uint8_t BI: 4;
+  uint8_t R: 1;
+  uint8_t T2: 1;
+  uint8_t T1: 1;
+  uint8_t E: 1;
+} __attribute__((__packed__)) NR_RA_HEADER_BI_MSGB;
+
+typedef struct {
+  uint8_t R: 4;
+  uint8_t S: 1;
+  uint8_t T2: 1;
+  uint8_t T1: 1;
+  uint8_t E: 1;
+} __attribute__((__packed__)) NR_RA_HEADER_SUCCESS_RAR_MSGB;
+
+// TS 38.321 Sec. 6.2.3
 typedef struct {
   uint8_t TA1: 7;         // octet 1 [6:0]
   uint8_t R: 1;           // octet 1 [7]
@@ -264,6 +279,38 @@ typedef struct {
   uint8_t TCRNTI_1: 8;    // octet 6 [7:0]
   uint8_t TCRNTI_2: 8;    // octet 7 [7:0]
 } __attribute__ ((__packed__)) NR_MAC_RAR;
+
+// TS 38.321 Sec. 6.2.3
+typedef struct {
+  uint8_t TA1: 7; // octet 1 [6:0]
+  uint8_t R: 1; // octet 1 [7]
+  uint8_t UL_GRANT_1: 3; // octet 2 [2:0]
+  uint8_t TA2: 5; // octet 2 [7:3]
+  uint8_t UL_GRANT_2: 8; // octet 3 [7:0]
+  uint8_t UL_GRANT_3: 8; // octet 4 [7:0]
+  uint8_t UL_GRANT_4: 8; // octet 5 [7:0]
+  uint8_t TCRNTI_1: 8; // octet 6 [7:0]
+  uint8_t TCRNTI_2: 8; // octet 7 [7:0]
+} __attribute__((__packed__)) NR_MAC_RAR_MSGB;
+
+// TS 38.321 Sec. 6.2.3
+typedef struct {
+  uint8_t CONT_RES_1: 8; // octet 1 [7:0]
+  uint8_t CONT_RES_2: 8; // octet 2 [7:0]
+  uint8_t CONT_RES_3: 8; // octet 3 [7:0]
+  uint8_t CONT_RES_4: 8; // octet 4 [7:0]
+  uint8_t CONT_RES_5: 8; // octet 5 [7:0]
+  uint8_t CONT_RES_6: 8; // octet 6 [7:0]
+  uint8_t HARQ_FTI: 3; // octet 7 [2:0]
+  uint8_t TPC: 2; // octet 7 [4:3]
+  uint8_t CH_ACESS_CPEXT: 2; // octet 7 [6:5]
+  uint8_t R: 1; // octet 7 [7]
+  uint8_t TA1: 4; // octet 8 [3:0]
+  uint8_t PUCCH_RI: 4; // octet 8 [7:4]
+  uint8_t TA2: 8; // octet 9 [7:0]
+  uint8_t CRNTI_1: 8; // octet 10 [7:0]
+  uint8_t CRNTI_2: 8; // octet 11 [7:0]
+} __attribute__((__packed__)) NR_MAC_SUCCESS_RAR;
 
 // DCI pdu structures. Used by both gNB and UE.
 typedef struct {
@@ -278,7 +325,8 @@ typedef struct {
      NRUE MAC layer already does in get_downlink_ack(). */
   int active_dl_harq_sfn;
   int active_dl_harq_slot;
-  int active_ul_harq_sfn_slot;
+  int active_ul_harq_sfn;
+  int active_ul_harq_slot;
   bool active;
 } emul_l1_harq_t;
 
@@ -308,7 +356,7 @@ typedef struct {
   uint8_t     mcs; //5 bits
   uint8_t     ndi; //1 bit
   uint8_t     rv; //2 bits
-  uint8_t     harq_pid; //4 bits
+  dci_field_t harq_pid; // 4/5 bits
   uint8_t     tpc; //2 bits
   uint8_t     short_messages_indicator; //2 bits
   uint8_t     short_messages; //8 bits
@@ -380,12 +428,24 @@ typedef struct {
 #define DL_SCH_LCID_CON_RES_ID                     0x3E
 #define DL_SCH_LCID_PADDING                        0x3F
 
-#define UL_SCH_LCID_CCCH1                          0x00
+#define UL_SCH_LCID_CCCH_64_BITS                   0x00
 #define UL_SCH_LCID_SRB1                           0x01
 #define UL_SCH_LCID_SRB2                           0x02
 #define UL_SCH_LCID_SRB3                           0x03
 #define UL_SCH_LCID_DTCH                           0x04
-#define UL_SCH_LCID_CCCH                           0x34
+#define UL_SCH_LCID_EXTENDED_LCID_2_OCT            0x21
+#define UL_SCH_LCID_EXTENDED_LCID_1_OCT            0x22
+#define UL_SCH_LCID_CCCH_48_BITS_REDCAP            0x23
+#define UL_SCH_LCID_CCCH_64_BITS_REDCAP            0x24
+#define UL_SCH_LCID_TRUNCATED_ENHANCED_BFR         0x2B
+#define UL_SCH_LCID_TIMING_ADVANCE_REPORT          0x2C
+#define UL_SCH_LCID_TRUNCATED_SIDELINK_BSR         0x2D
+#define UL_SCH_LCID_SIDELINK_BSR                   0x2E
+#define UL_SCH_LCID_LBT_FAILURE_4_OCT              0x30
+#define UL_SCH_LCID_LBT_FAILURE_1_OCT              0x31
+#define UL_SCH_LCID_BFR                            0x32
+#define UL_SCH_LCID_TRUNCATED_BFR                  0x33
+#define UL_SCH_LCID_CCCH_48_BITS                   0x34
 #define UL_SCH_LCID_RECOMMENDED_BITRATE_QUERY      0x35
 #define UL_SCH_LCID_MULTI_ENTRY_PHR_4_OCT          0x36
 #define UL_SCH_LCID_CONFIGURED_GRANT_CONFIRMATION  0x37
@@ -474,7 +534,6 @@ typedef struct Type0_PDCCH_CSS_config_s {
   uint32_t first_symbol_index;
   uint32_t search_space_duration;
   uint32_t search_space_frame_period;  // in slots
-  uint32_t ssb_length;
   uint32_t ssb_index;
   int32_t cset_start_rb;
   NR_SubcarrierSpacing_t scs_pdcch;
@@ -506,8 +565,8 @@ typedef struct nr_csi_report {
   NR_CSI_ReportConfig__reportQuantity_PR reportQuantity_type;
   long periodicity;
   uint16_t offset;
-  long ** SSB_Index_list;
-  long ** CSI_Index_list;
+  long **SSB_Index_list;
+  long **CSI_Index_list;
 //  uint8_t nb_of_nzp_csi_report;
   uint8_t nb_of_csi_ssb_report;
   L1_RSRP_bitlen_t CSI_report_bitlen;
@@ -560,6 +619,7 @@ typedef struct NR_UE_UL_BWP {
   uint16_t BWPSize;
   uint16_t BWPStart;
   NR_RACH_ConfigCommon_t *rach_ConfigCommon;
+  NR_MsgA_ConfigCommon_r16_t *msgA_ConfigCommon_r16;
   NR_PUSCH_TimeDomainResourceAllocationList_t *tdaList_Common;
   NR_ConfiguredGrantConfig_t *configuredGrantConfig;
   NR_PUSCH_Config_t *pusch_Config;
@@ -573,6 +633,13 @@ typedef struct NR_UE_UL_BWP {
   nr_dci_format_t dci_format;
   int max_fb_time;
   long *p0_NominalWithGrant;
+  // UE Channel bandwidth according to 38.101 5.3.2
+  int channel_bandwidth;
+  // Minimum transmission power according to 38.101 6.3.1
+  float P_CMIN;
+  // SRS power control adjustment state
+  int h_b_f_c;
+  bool srs_power_control_initialized;
 } NR_UE_UL_BWP_t;
 
 // non-BWP serving cell configuration
@@ -600,6 +667,8 @@ typedef struct {
   int ul_bw_tbslbrm;
   NR_NTN_Config_r17_t *ntn_Config_r17;
   NR_DownlinkHARQ_FeedbackDisabled_r17_t *downlinkHARQ_FeedbackDisabled_r17;
+  long *nrofHARQ_ProcessesForPDSCH_v1700;
+  long *nrofHARQ_ProcessesForPUSCH_r17;
 } NR_UE_ServingCell_Info_t;
 
 typedef enum {
@@ -620,6 +689,11 @@ typedef struct NR_tda_info {
   long k2;
   bool valid_tda;
 } NR_tda_info_t;
+
+typedef enum {
+  RA_4_STEP = 0,
+  RA_2_STEP = 1,
+} nr_ra_type_t;
 
 #endif /*__LAYER2_MAC_H__ */
 

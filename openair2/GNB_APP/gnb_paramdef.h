@@ -131,18 +131,25 @@ typedef enum {
 #define GNB_CONFIG_STRING_DRBS                          "drbs"
 #define GNB_CONFIG_STRING_USE_DELTA_MCS                 "use_deltaMCS"
 #define GNB_CONFIG_HLP_USE_DELTA_MCS                    "Use deltaMCS-based power headroom reporting in PUSCH-Config"
-#define GNB_CONFIG_HLP_FORCEUL256QAMOFF                   "suppress activation of UL 256 QAM despite UE support"
+#define GNB_CONFIG_HLP_FORCEUL256QAMOFF                 "suppress activation of UL 256 QAM despite UE support"
 #define GNB_CONFIG_STRING_FORCEUL256QAMOFF              "force_UL256qam_off"
-#define GNB_CONFIG_STRING_GNB_DU_ID "gNB_DU_ID"
-#define GNB_CONFIG_STRING_GNB_CU_UP_ID "gNB_CU_UP_ID"
+#define GNB_CONFIG_STRING_GNB_DU_ID                     "gNB_DU_ID"
+#define GNB_CONFIG_STRING_GNB_CU_UP_ID                  "gNB_CU_UP_ID"
+#define GNB_CONFIG_STRING_NUM_DL_HARQPROCESSES          "num_dlharq"
+#define GNB_CONFIG_STRING_NUM_UL_HARQPROCESSES          "num_ulharq"
+#define GNB_CONFIG_STRING_BEAM_WEIGHTS_LIST             "beam_weights"
+#define GNB_CONFIG_STRING_UESS_AGG_LEVEL_LIST           "uess_agg_levels"
 
 #define GNB_CONFIG_HLP_STRING_ENABLE_SDAP               "enable the SDAP layer\n"
 #define GNB_CONFIG_HLP_FORCE256QAMOFF                   "suppress activation of 256 QAM despite UE support"
 #define GNB_CONFIG_HLP_MAXMIMOLAYERS                    "limit on maxMIMO-layers for DL"
 #define GNB_CONFIG_HLP_DISABLE_HARQ                     "disable feedback for all HARQ processes (REL17 feature)"
 #define GNB_CONFIG_HLP_STRING_DRBS                      "Number of total DRBs to establish, including the mandatory for PDU SEssion (default=1)\n"
-#define GNB_CONFIG_HLP_GNB_DU_ID "defines the gNB-DU ID (only applicable for DU)"
-#define GNB_CONFIG_HLP_GNB_CU_UP_ID "defines the gNB-CU-UP ID (only applicable for CU-UP)"
+#define GNB_CONFIG_HLP_GNB_DU_ID                        "defines the gNB-DU ID (only applicable for DU)"
+#define GNB_CONFIG_HLP_GNB_CU_UP_ID                     "defines the gNB-CU-UP ID (only applicable for CU-UP)"
+#define GNB_CONFIG_HLP_NUM_DL_HARQ                      "Set Num DL harq processes. Valid values 2,4,6,8,10,12,16,32. Default 16"
+#define GNB_CONFIG_HLP_NUM_UL_HARQ                      "Set Num UL harq processes. Valid values 16,32. Default 16"
+#define GNB_CONFIG_HLP_UESS_AGG_LEVEL_LIST              "List of aggregation levels with number of candidates per level. Element 0 - aggregation level 1"
 
 /*-----------------------------------------------------------------------------------------------------------------------------------------*/
 /*                                            cell configuration parameters                                                                */
@@ -183,6 +190,11 @@ typedef enum {
 {GNB_CONFIG_STRING_FORCEUL256QAMOFF, GNB_CONFIG_HLP_FORCEUL256QAMOFF, 0,.iptr=NULL, .defintval=0,                 TYPE_INT,       0},  \
 {GNB_CONFIG_STRING_MAXMIMOLAYERS, GNB_CONFIG_HLP_MAXMIMOLAYERS, 0,     .iptr=NULL,  .defintval=-1,                TYPE_INT,       0},  \
 {GNB_CONFIG_STRING_DISABLE_HARQ, GNB_CONFIG_HLP_DISABLE_HARQ, PARAMFLAG_BOOL, .iptr=NULL, .defintval=0,           TYPE_INT,       0},  \
+{GNB_CONFIG_STRING_NUM_DL_HARQPROCESSES, GNB_CONFIG_HLP_NUM_DL_HARQ, 0, .iptr=NULL, .defintval=16,                TYPE_INT,       0},  \
+{GNB_CONFIG_STRING_NUM_UL_HARQPROCESSES, GNB_CONFIG_HLP_NUM_UL_HARQ, 0, .iptr=NULL, .defintval=16,                TYPE_INT,       0},  \
+{GNB_CONFIG_STRING_BEAM_WEIGHTS_LIST,            NULL,   0,       .iptr=NULL,       .defintarrayval=0,            TYPE_INTARRAY,  0},  \
+{GNB_CONFIG_STRING_UESS_AGG_LEVEL_LIST, \
+                    GNB_CONFIG_HLP_UESS_AGG_LEVEL_LIST,  0,       .iptr=NULL,       .defintarrayval=NULL,         TYPE_INTARRAY,  0},  \
 }
 // clang-format on
 
@@ -220,8 +232,15 @@ typedef enum {
 #define GNB_FORCEUL256QAMOFF_IDX        30
 #define GNB_MAXMIMOLAYERS_IDX           31
 #define GNB_DISABLE_HARQ_IDX            32
+#define GNB_NUM_DL_HARQ_IDX             33
+#define GNB_NUM_UL_HARQ_IDX             34
+#define GNB_BEAMWEIGHTS_IDX             35
+#define GNB_UESS_AGG_LEVEL_LIST_IDX     36
 
 #define TRACKING_AREA_CODE_OKRANGE {0x0001,0xFFFD}
+#define NUM_DL_HARQ_OKVALUES {2,4,6,8,10,12,16,32}
+#define NUM_UL_HARQ_OKVALUES {16,32}
+
 #define GNBPARAMS_CHECK {                                         \
   { .s5 = { NULL } },                                             \
   { .s5 = { NULL } },                                             \
@@ -254,6 +273,10 @@ typedef enum {
   { .s5 = { NULL } },                                             \
   { .s5 = { NULL } },                                             \
   { .s5 = { NULL } },                                             \
+  { .s5 = { NULL } },                                             \
+  { .s5 = { NULL } },                                             \
+  { .s1 =  { config_check_intval, NUM_DL_HARQ_OKVALUES,8 } },     \
+  { .s1 =  { config_check_intval, NUM_UL_HARQ_OKVALUES,2 } },     \
   { .s5 = { NULL } },                                             \
   { .s5 = { NULL } },                                             \
 }
@@ -311,12 +334,12 @@ typedef enum {
 #define MEASUREMENT_EVENTS_THRESHOLD "threshold"
 #define MEASUREMENT_EVENTS_PERIODICAL_BEAM_MEASUREMENT "includeBeamMeasurements"
 #define MEASUREMENT_EVENTS_PERIODICAL_NR_OF_RS_INDEXES "maxNrofRS_IndexesToReport"
-#define MEASUREMENT_EVENTS_CELL_ID "cell_id"
+#define MEASUREMENT_EVENTS_PCI_ID "physCellId"
 #define MEASUREMENT_EVENT_ENABLE "enable"
 // clang-format off
 #define MEASUREMENT_A3_GLOBALPARAMS_DESC                                                                                      \
   {                                                                                                                               \
-        {MEASUREMENT_EVENTS_CELL_ID, "neighbour cellId for A3Report", 0, .i64ptr = NULL, .defint64val = -1, TYPE_INT64, 0},           \
+        {MEASUREMENT_EVENTS_PCI_ID, "neighbour PCI for A3Report", 0, .i64ptr = NULL, .defint64val = -1, TYPE_INT64, 0},           \
         {MEASUREMENT_EVENTS_TIME_TO_TRIGGER, "a3 time to trigger", 0, .i64ptr = NULL, .defint64val = 1, TYPE_INT64, 0}, \
         {MEASUREMENT_EVENTS_OFFSET, "a3 offset", 0, .i64ptr = NULL, .defint64val = 60, TYPE_INT64, 0},                  \
         {MEASUREMENT_EVENTS_HYSTERESIS, "a3 hysteresis", 0, .i64ptr = NULL, .defint64val = 0, TYPE_INT64, 0},           \
@@ -337,7 +360,7 @@ typedef enum {
   }
 // clang-format on
 
-#define MEASUREMENT_EVENTS_CELL_ID_IDX 0
+#define MEASUREMENT_EVENTS_PCI_ID_IDX 0
 #define MEASUREMENT_EVENTS_ENABLE_IDX 0
 #define MEASUREMENT_EVENTS_TIMETOTRIGGER_IDX 1
 #define MEASUREMENT_EVENTS_A2_THRESHOLD_IDX 2
@@ -591,33 +614,6 @@ typedef enum {
 #define MACRLC_REMOTE_S_PORTD_IDX                              14
 #define MACRLC_SCHED_MODE_IDX                                  15
 
-
-/* thread configuration parameters section name */
-#define THREAD_CONFIG_STRING_THREAD_STRUCT                "THREAD_STRUCT"
-
-/* thread configuration parameters names   */
-#define THREAD_CONFIG_STRING_PARALLEL              "parallel_config"
-#define THREAD_CONFIG_STRING_WORKER                "worker_config"
-
-
-#define THREAD_PARALLEL_IDX          0
-#define THREAD_WORKER_IDX            1
-
-/*-------------------------------------------------------------------------------------------------------------------------------------------------------------*/
-/*                                                             thread configuration parameters                                                                 */
-/*   optname                                          helpstr   paramflags    XXXptr       defXXXval                                 type           numelt     */
-/*-------------------------------------------------------------------------------------------------------------------------------------------------------------*/
-#define THREAD_CONF_DESC {  \
-{THREAD_CONFIG_STRING_PARALLEL,          CONFIG_HLP_PARALLEL,      0,       .strptr=NULL,   .defstrval="PARALLEL_RU_L1_TRX_SPLIT",   TYPE_STRING,   0},          \
-{THREAD_CONFIG_STRING_WORKER,            CONFIG_HLP_WORKER,        0,       .strptr=NULL,   .defstrval="WORKER_ENABLE",              TYPE_STRING,   0}           \
-}
-
-
-#define CONFIG_HLP_WORKER                          "coding and FEP worker thread WORKER_DISABLE or WORKER_ENABLE\n"
-#define CONFIG_HLP_PARALLEL                        "PARALLEL_SINGLE_THREAD, PARALLEL_RU_L1_SPLIT, or PARALLEL_RU_L1_TRX_SPLIT(RU_L1_TRX_SPLIT by defult)\n"
-/*-------------------------------------------------------------------------------------------------------------------------------------------------------------*/
-
-
 /*----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 /* security configuration                                                                                                                                                           */
 /*----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
@@ -647,3 +643,4 @@ typedef enum {
 /*----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
 #endif
+

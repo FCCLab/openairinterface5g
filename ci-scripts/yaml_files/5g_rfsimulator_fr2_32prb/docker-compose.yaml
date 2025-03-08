@@ -82,12 +82,12 @@ services:
             retries: 5
 
     oai-gnb:
-        image: oaisoftwarealliance/oai-gnb:develop
+        image: ${REGISTRY:-oaisoftwarealliance}/${GNB_IMG:-oai-gnb}:${TAG:-develop}
         container_name: rfsim5g-oai-gnb
         cap_drop:
             - ALL
         environment:
-            USE_ADDITIONAL_OPTIONS: --sa --rfsim --log_config.global_log_options level,nocolor,time
+            USE_ADDITIONAL_OPTIONS: --rfsim --log_config.global_log_options level,nocolor,time
             ASAN_OPTIONS: detect_leaks=0
         networks:
             public_net:
@@ -101,7 +101,7 @@ services:
             retries: 5
 
     oai-nr-ue:
-        image: oaisoftwarealliance/oai-nr-ue:develop
+        image: ${REGISTRY:-oaisoftwarealliance}/${NRUE_IMG:-oai-nr-ue}:${TAG:-develop}
         container_name: rfsim5g-oai-nr-ue
         cap_drop:
             - ALL
@@ -109,7 +109,7 @@ services:
             - NET_ADMIN  # for interface bringup
             - NET_RAW    # for ping
         environment:
-            USE_ADDITIONAL_OPTIONS: --sa --rfsim
+            USE_ADDITIONAL_OPTIONS: --rfsim
                                     --rfsimulator.serveraddr 192.168.71.140 --log_config.global_log_options level,nocolor,time
                                     -r 32 --numerology 3 --band 261 -C 27533160000 --ssb 73
             ASAN_OPTIONS: detect_leaks=0

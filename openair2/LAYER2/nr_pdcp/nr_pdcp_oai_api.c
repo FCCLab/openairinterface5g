@@ -22,27 +22,50 @@
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
-#include "nr_pdcp_asn1_utils.h"
-#include "nr_pdcp_ue_manager.h"
-#include "nr_pdcp_timer_thread.h"
-#include "NR_RadioBearerConfig.h"
-#include "NR_RLC-BearerConfig.h"
-#include "NR_RLC-Config.h"
-#include "NR_CellGroupConfig.h"
-#include "openair2/RRC/NR/nr_rrc_proto.h"
-#include "common/utils/mem/oai_memory.h"
-#include <stdint.h>
-
-/* from OAI */
-#include "oai_asn1.h"
 #include "nr_pdcp_oai_api.h"
-#include "LAYER2/nr_rlc/nr_rlc_oai_api.h"
-#include "openair2/F1AP/f1ap_ids.h"
+#include <errno.h>
+#include <fcntl.h>
 #include <openair3/ocp-gtpu/gtp_itf.h>
-#include "openair2/SDAP/nr_sdap/nr_sdap.h"
-#include "gnb_config.h"
-#include "executables/softmodem-common.h"
+#include <pthread.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include "LAYER2/MAC/mac_extern.h"
+#include "LTE_DRB-ToAddModList.h"
+#include "LTE_DRB-ToReleaseList.h"
+#include "LTE_PMCH-InfoList-r9.h"
+#include "LTE_SRB-ToAddModList.h"
+#include "NR_DRB-ToAddMod.h"
+#include "NR_QFI.h"
+#include "NR_SDAP-Config.h"
+#include "NR_SRB-ToAddMod.h"
+#include "SDAP/nr_sdap/nr_sdap_entity.h"
+#include "assertions.h"
+#include "common/ngran_types.h"
+#include "common/platform_constants.h"
+#include "common/ran_context.h"
+#include "common/utils/T/T.h"
+#include "common/utils/tun_if.h"
 #include "cuup_cucp_if.h"
+#include "executables/lte-softmodem.h"
+#include "executables/softmodem-common.h"
+#include "f1ap_messages_types.h"
+#include "gnb_config.h"
+#include "gtpv1_u_messages_types.h"
+#include "hashtable.h"
+#include "intertask_interface.h"
+#include "common/utils/LOG/log.h"
+#include "nfapi/oai_integration/vendor_ext.h"
+#include "nr_pdcp_asn1_utils.h"
+#include "nr_pdcp_timer_thread.h"
+#include "nr_pdcp_ue_manager.h"
+#include "openair2/F1AP/f1ap_ids.h"
+#include "openair2/SDAP/nr_sdap/nr_sdap.h"
+#include "pdcp.h"
+#include "pdcp_messages_types.h"
+#include "rlc.h"
+#include "utils.h"
 
 #define TODO do { \
     printf("%s:%d:%s: todo\n", __FILE__, __LINE__, __FUNCTION__); \
@@ -367,14 +390,14 @@ static void enqueue_pdcp_data_ind(const protocol_ctxt_t *const ctxt_pP,
   if (pthread_mutex_unlock(&pq.m) != 0) abort();
 }
 
-bool pdcp_data_ind(const protocol_ctxt_t *const ctxt_pP,
-                   const srb_flag_t srb_flagP,
-                   const MBMS_flag_t MBMS_flagP,
-                   const rb_id_t rb_id,
-                   const sdu_size_t sdu_buffer_size,
-                   uint8_t *const sdu_buffer,
-                   const uint32_t *const srcID,
-                   const uint32_t *const dstID)
+bool nr_pdcp_data_ind(const protocol_ctxt_t *const ctxt_pP,
+                      const srb_flag_t srb_flagP,
+                      const MBMS_flag_t MBMS_flagP,
+                      const rb_id_t rb_id,
+                      const sdu_size_t sdu_buffer_size,
+                      uint8_t *const sdu_buffer,
+                      const uint32_t *const srcID,
+                      const uint32_t *const dstID)
 {
   enqueue_pdcp_data_ind(ctxt_pP,
                         srb_flagP,
@@ -566,7 +589,7 @@ void pdcp_layer_init(void)
   abort();
 }
 
-void nr_pdcp_layer_init(bool uses_e1)
+void nr_pdcp_layer_init(void)
 {
   /* hack: be sure to initialize only once */
   static pthread_mutex_t m = PTHREAD_MUTEX_INITIALIZER;
@@ -586,15 +609,17 @@ void nr_pdcp_layer_init(bool uses_e1)
   if ((RC.nrrrc == NULL) || (!NODE_IS_CU(node_type))) {
     init_nr_rlc_data_req_queue();
   }
-
-  nr_pdcp_e1_if_init(uses_e1);
+  nr_pdcp_e1_if_init(node_type == ngran_gNB_CUUP || node_type == ngran_gNB_CUCP);
   init_nr_pdcp_data_ind_queue();
   nr_pdcp_init_timer_thread(nr_pdcp_ue_manager);
+  if (NODE_IS_CU(node_type)) {
+    nr_pdcp_init_tick_thread();
+  }
 }
 
 #include "nfapi/oai_integration/vendor_ext.h"
 #include "executables/lte-softmodem.h"
-#include "openair2/RRC/NAS/nas_config.h"
+#include "common/utils/tun_if.h"
 
 uint64_t nr_pdcp_module_init(uint64_t _pdcp_optmask, int id)
 {
@@ -608,48 +633,39 @@ uint64_t nr_pdcp_module_init(uint64_t _pdcp_optmask, int id)
   initialized = 1;
   if (pthread_mutex_unlock(&m) != 0) abort();
 
-#if 0
-  pdcp_optmask = _pdcp_optmask;
-  return pdcp_optmask;
-#endif
-  /* temporary enforce netlink when UE_NAS_USE_TUN is set,
-     this is while switching from noS1 as build option
-     to noS1 as config option                               */
-  if ( _pdcp_optmask & UE_NAS_USE_TUN_BIT) {
-    pdcp_optmask = pdcp_optmask | PDCP_USE_NETLINK_BIT ;
-  }
-
   pdcp_optmask = pdcp_optmask | _pdcp_optmask ;
-  LOG_I(PDCP, "pdcp init,%s %s\n",
-        ((LINK_ENB_PDCP_TO_GTPV1U)?"usegtp":""),
-        ((PDCP_USE_NETLINK)?"usenetlink":""));
 
-  if (PDCP_USE_NETLINK) {
-    nas_getparams();
-
-    if(UE_NAS_USE_TUN) {
-      char *ifsuffix_ue = get_softmodem_params()->nsa ? "nrue" : "ue";
-      int num_if = (NFAPI_MODE == NFAPI_UE_STUB_PNF || IS_SOFTMODEM_SIML1 || NFAPI_MODE == NFAPI_MODE_STANDALONE_PNF)? MAX_MOBILES_PER_ENB : 1;
-      netlink_init_tun(ifsuffix_ue, num_if, id);
-      //Add --nr-ip-over-lte option check for next line
-      if (IS_SOFTMODEM_NOS1){
-        nas_config(1, 1, !get_softmodem_params()->nsa ? 2 : 3, ifsuffix_ue);
-        set_qfi_pduid(7, 10);
-      }
-      LOG_I(PDCP, "UE pdcp will use tun interface\n");
-      start_pdcp_tun_ue();
-    } else if(ENB_NAS_USE_TUN) {
-      char *ifsuffix_base_s = get_softmodem_params()->nsa ? "gnb" : "enb";
-      netlink_init_tun(ifsuffix_base_s, 1, id);
-      nas_config(1, 1, 1, ifsuffix_base_s);
-      LOG_I(PDCP, "ENB pdcp will use tun interface\n");
-      start_pdcp_tun_enb();
-    } else {
-      LOG_I(PDCP, "pdcp will use kernel modules\n");
-      abort();
-      netlink_init();
+  if (UE_NAS_USE_TUN) {
+    char *ifprefix = get_softmodem_params()->nsa ? "oaitun_nrue" : "oaitun_ue";
+    int num_if = (NFAPI_MODE == NFAPI_UE_STUB_PNF || IS_SOFTMODEM_SIML1 || NFAPI_MODE == NFAPI_MODE_STANDALONE_PNF)
+                     ? MAX_MOBILES_PER_ENB
+                     : 1;
+    int begx = (id == 0) ? 0 : id - 1;
+    int endx = (id == 0) ? num_if : id;
+    for (int i = begx; i < endx; i++) {
+      char ifname[IFNAMSIZ];
+      tun_generate_ifname(ifname, ifprefix, i);
+      tun_init(ifname, i);
     }
+    if (IS_SOFTMODEM_NOS1) {
+      const char *ip = !get_softmodem_params()->nsa ? "10.0.1.2" : "10.0.1.3";
+      char ifname[IFNAMSIZ];
+      tun_generate_ifname(ifname, ifprefix, id);
+      tun_config(ifname, ip, NULL);
+      set_qfi_pduid(7, 10);
+    }
+    LOG_I(PDCP, "UE pdcp will use tun interface\n");
+    start_pdcp_tun_ue();
+  } else if (ENB_NAS_USE_TUN) {
+    char *ifprefix = get_softmodem_params()->nsa ? "oaitun_gnb" : "oaitun_enb";
+    char ifname[IFNAMSIZ];
+    tun_generate_ifname(ifname, ifprefix, id);
+    tun_init(ifname, id);
+    tun_config(ifname, "10.0.1.1", NULL);
+    LOG_I(PDCP, "ENB pdcp will use tun interface\n");
+    start_pdcp_tun_enb();
   }
+
   return pdcp_optmask ;
 }
 
@@ -712,23 +728,9 @@ static void deliver_pdu_drb_gnb(void *deliver_pdu_data, ue_id_t ue_id, int rb_id
   protocol_ctxt_t ctxt = { .enb_flag = 1, .rntiMaybeUEid = ue_data.secondary_ue };
 
   if (NODE_IS_CU(node_type)) {
-    MessageDef  *message_p = itti_alloc_new_message_sized(TASK_PDCP_ENB, 0,
-							  GTPV1U_TUNNEL_DATA_REQ,
-							  sizeof(gtpv1u_tunnel_data_req_t)
-							  + size
-							  + GTPU_HEADER_OVERHEAD_MAX);
-    AssertFatal(message_p != NULL, "OUT OF MEMORY");
-    gtpv1u_tunnel_data_req_t *req=&GTPV1U_TUNNEL_DATA_REQ(message_p);
-    uint8_t *gtpu_buffer_p = (uint8_t*)(req+1);
-    memcpy(gtpu_buffer_p + GTPU_HEADER_OVERHEAD_MAX, buf, size);
-    req->buffer        = gtpu_buffer_p;
-    req->length        = size;
-    req->offset        = GTPU_HEADER_OVERHEAD_MAX;
-    req->ue_id = ue_id; // use CU UE ID as GTP will use that to look up TEID
-    req->bearer_id = rb_id;
     LOG_D(PDCP, "%s() (drb %d) sending message to gtp size %d\n", __func__, rb_id, size);
     extern instance_t CUuniqInstance;
-    itti_send_msg_to_task(TASK_GTPV1_U, CUuniqInstance, message_p);
+    gtpv1uSendDirect(CUuniqInstance, ue_id, rb_id, (uint8_t *)buf, size, false, false);
   } else {
     uint8_t *memblock = malloc16(size);
     memcpy(memblock, buf, size);
@@ -1313,7 +1315,7 @@ bool cu_f1u_data_req(protocol_ctxt_t  *ctxt_pP,
     exit(1);
   }
   memcpy(memblock, sdu_buffer, sdu_buffer_size);
-  int ret=pdcp_data_ind(ctxt_pP,srb_flagP, false, rb_id, sdu_buffer_size, memblock, NULL, NULL);
+  int ret = nr_pdcp_data_ind(ctxt_pP, srb_flagP, false, rb_id, sdu_buffer_size, memblock, NULL, NULL);
   if (!ret) {
     LOG_E(RLC, "%s:%d:%s: ERROR: pdcp_data_ind failed\n", __FILE__, __LINE__, __FUNCTION__);
     /* what to do in case of failure? for the moment: nothing */
@@ -1335,16 +1337,6 @@ bool pdcp_data_req(protocol_ctxt_t  *ctxt_pP,
 {
   abort();
   return false;
-}
-
-void pdcp_set_pdcp_data_ind_func(pdcp_data_ind_func_t pdcp_data_ind)
-{
-  /* nothing to do */
-}
-
-void pdcp_set_rlc_data_req_func(send_rlc_data_req_func_t send_rlc_data_req)
-{
-  /* nothing to do */
 }
 
 //Dummy function needed due to LTE dependencies

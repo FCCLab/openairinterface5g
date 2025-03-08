@@ -293,12 +293,16 @@ configmodule_interface_t *load_configmodule(int argc,
   } else if ( i == 1 ) {
     /* -O argument doesn't contain ":" separator, assume -O <conf file> option, default cfgmode to libconfig
        with one parameter, the path to the configuration file cfgmode must not be NULL */
-    modeparams=cfgmode;
-    cfgmode=strdup(CONFIG_LIBCONFIGFILE);
+    modeparams = cfgmode;
+    if (strstr(modeparams, ".yaml") != NULL || strstr(modeparams, ".yml") != NULL) {
+      cfgmode = strdup("yaml");
+    } else {
+      cfgmode = strdup(CONFIG_LIBCONFIGFILE);
+    }
   }
   static configmodule_interface_t *cfgptr;
   if (cfgptr)
-    printf("ERROR: Call load_configmodule more than one time\n");
+    fprintf(stderr, "ERROR: Call load_configmodule more than one time\n");
 
   // The macros are not thread safe print_params and similar
   cfgptr = calloc(sizeof(configmodule_interface_t), 1);
@@ -365,8 +369,7 @@ configmodule_interface_t *load_configmodule(int argc,
   if (strstr(cfgparam,CONFIG_CMDLINEONLY) == NULL) {
     i=load_config_sharedlib(cfgptr);
 
-    if (i ==  0) {
-      printf("[CONFIG] config module %s loaded\n",cfgmode);
+    if (i == 0) {
       int idx = config_paramidx_fromname(Config_Params, sizeofArray(Config_Params), CONFIGP_DEBUGFLAGS);
       Config_Params[idx].uptr = &(cfgptr->rtflags);
       idx = config_paramidx_fromname(Config_Params, sizeofArray(Config_Params), CONFIGP_TMPDIR);
@@ -383,7 +386,7 @@ configmodule_interface_t *load_configmodule(int argc,
     cfgptr->end = (configmodule_endfunc_t)nooptfunc;
   }
 
-  printf("[CONFIG] debug flags: 0x%08x\n", cfgptr->rtflags);
+  printf_params(cfgptr, "[CONFIG] debug flags: 0x%08x\n", cfgptr->rtflags);
 
   if (modeparams != NULL) free(modeparams);
 
@@ -409,7 +412,7 @@ void write_parsedcfg(configmodule_interface_t *cfgptr)
                   cfgptr->status->num_write);
   }
   if (cfgptr->write_parsedcfg != NULL) {
-    printf("[CONFIG] calling config module write_parsedcfg function...\n");
+    printf_params(cfgptr, "[CONFIG] calling config module write_parsedcfg function...\n");
     cfgptr->write_parsedcfg(cfgptr);
   }
 }
@@ -421,12 +424,11 @@ void end_configmodule(configmodule_interface_t *cfgptr)
   if (cfgptr != NULL) {
     write_parsedcfg(cfgptr);
     if (cfgptr->end != NULL) {
-      printf ("[CONFIG] calling config module end function...\n");
+      printf_params(cfgptr, "[CONFIG] calling config module end function...\n");
       cfgptr->end(cfgptr);
     }
 
     pthread_mutex_lock(&cfgptr->memBlocks_mutex);
-    printf ("[CONFIG] free %u config value pointers\n",cfgptr->numptrs);
 
     for(int i=0; i<cfgptr->numptrs ; i++) {
       if (cfgptr->oneBlock[i].ptrs != NULL && cfgptr->oneBlock[i].ptrsAllocated== true && cfgptr->oneBlock[i].toFree) {

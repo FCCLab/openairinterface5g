@@ -22,7 +22,6 @@
 #define __NR_CHAN_MODEL_H__
 
 #include "common/platform_types.h"
-#include <nfapi_nr_interface_scf.h>
 #include "openair2/NR_PHY_INTERFACE/NR_IF_Module.h"
 
 #define NR_NUM_MCS 29

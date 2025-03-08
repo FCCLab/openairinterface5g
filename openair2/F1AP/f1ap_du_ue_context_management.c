@@ -45,13 +45,13 @@ static void f1ap_read_drb_qos_param(const F1AP_QoSFlowLevelQoSParameters_t *asn1
   const F1AP_QoS_Characteristics_t *dRB_QoS_Char = &asn1_qos->qoS_Characteristics;
 
   if (dRB_QoS_Char->present == F1AP_QoS_Characteristics_PR_non_Dynamic_5QI) {
-    drb_qos_char->qos_type = non_dynamic;
+    drb_qos_char->qos_type = NON_DYNAMIC;
     drb_qos_char->non_dynamic.fiveqi = dRB_QoS_Char->choice.non_Dynamic_5QI->fiveQI;
     drb_qos_char->non_dynamic.qos_priority_level = (dRB_QoS_Char->choice.non_Dynamic_5QI->qoSPriorityLevel != NULL)
                                                        ? *dRB_QoS_Char->choice.non_Dynamic_5QI->qoSPriorityLevel
                                                        : -1;
   } else {
-    drb_qos_char->qos_type = dynamic;
+    drb_qos_char->qos_type = DYNAMIC;
     drb_qos_char->dynamic.fiveqi =
         (dRB_QoS_Char->choice.dynamic_5QI->fiveQI != NULL) ? *dRB_QoS_Char->choice.dynamic_5QI->fiveQI : -1;
     drb_qos_char->dynamic.qos_priority_level = dRB_QoS_Char->choice.dynamic_5QI->qoSPriorityLevel;
@@ -84,13 +84,13 @@ static void f1ap_read_flows_mapped(const F1AP_Flows_Mapped_To_DRB_List_t *asn1_f
       const F1AP_QoS_Characteristics_t *Flow_QoS_Char = &Flow_QoS->qoS_Characteristics;
 
       if (Flow_QoS_Char->present == F1AP_QoS_Characteristics_PR_non_Dynamic_5QI) {
-        flow_qos_char->qos_type = non_dynamic;
+        flow_qos_char->qos_type = NON_DYNAMIC;
         flow_qos_char->non_dynamic.fiveqi = Flow_QoS_Char->choice.non_Dynamic_5QI->fiveQI;
         flow_qos_char->non_dynamic.qos_priority_level = (Flow_QoS_Char->choice.non_Dynamic_5QI->qoSPriorityLevel != NULL)
                                                             ? *Flow_QoS_Char->choice.non_Dynamic_5QI->qoSPriorityLevel
                                                             : -1;
       } else {
-        flow_qos_char->qos_type = dynamic;
+        flow_qos_char->qos_type = DYNAMIC;
         flow_qos_char->dynamic.fiveqi =
             (Flow_QoS_Char->choice.dynamic_5QI->fiveQI != NULL) ? *Flow_QoS_Char->choice.dynamic_5QI->fiveQI : -1;
         flow_qos_char->dynamic.qos_priority_level = Flow_QoS_Char->choice.dynamic_5QI->qoSPriorityLevel;
@@ -111,8 +111,9 @@ static void f1ap_read_drb_nssai(const F1AP_SNSSAI_t *asn1_nssai, nssai_t *nssai)
 {
   OCTET_STRING_TO_INT8(&asn1_nssai->sST, nssai->sst);
   nssai->sd = 0xffffff;
-  if (asn1_nssai->sD != NULL)
-    memcpy((uint8_t *)&nssai->sd, asn1_nssai->sD->buf, 3);
+  if (asn1_nssai->sD != NULL) {
+    BUFFER_TO_INT24(asn1_nssai->sD->buf, nssai->sd);
+  }
 }
 
 int DU_handle_UE_CONTEXT_SETUP_REQUEST(instance_t instance, sctp_assoc_t assoc_id, uint32_t stream, F1AP_F1AP_PDU_t *pdu)
@@ -132,8 +133,13 @@ int DU_handle_UE_CONTEXT_SETUP_REQUEST(instance_t instance, sctp_assoc_t assoc_i
   /* GNB_DU_UE_F1AP_ID */
   F1AP_UEContextSetupRequestIEs_t *ieDU_UE;
   F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_UEContextSetupRequestIEs_t, ieDU_UE, container,
-                             F1AP_ProtocolIE_ID_id_gNB_DU_UE_F1AP_ID, true);
-  f1ap_ue_context_setup_req->gNB_DU_ue_id = ieDU_UE->value.choice.GNB_DU_UE_F1AP_ID;
+                             F1AP_ProtocolIE_ID_id_gNB_DU_UE_F1AP_ID, false);
+  // this should be optional. At present, the DU uses the RNTI, and hence, this
+  // value cannot exceed 0xffff (or something below, whatever is a valid
+  // C-RNTI). So we use a value > 0xffff to mark optionality
+  f1ap_ue_context_setup_req->gNB_DU_ue_id = -1; // 0xffffffff
+  if (ieDU_UE != NULL)
+    f1ap_ue_context_setup_req->gNB_DU_ue_id = ieDU_UE->value.choice.GNB_DU_UE_F1AP_ID;
 
   /* SpCell_ID */
   F1AP_UEContextSetupRequestIEs_t *ieNet;
@@ -170,11 +176,33 @@ int DU_handle_UE_CONTEXT_SETUP_REQUEST(instance_t instance, sctp_assoc_t assoc_i
       F1AP_ProtocolIE_ID_id_CUtoDURRCInformation, false);
   if(ieCuRrcInfo!=NULL){
     f1ap_ue_context_setup_req->cu_to_du_rrc_information = (cu_to_du_rrc_information_t *)calloc(1,sizeof(cu_to_du_rrc_information_t));
-    if(ieCuRrcInfo->value.choice.CUtoDURRCInformation.uE_CapabilityRAT_ContainerList!=NULL){
-      f1ap_ue_context_setup_req->cu_to_du_rrc_information->uE_CapabilityRAT_ContainerList = (uint8_t *)calloc(1,ieCuRrcInfo->value.choice.CUtoDURRCInformation.uE_CapabilityRAT_ContainerList->size);
-      memcpy(f1ap_ue_context_setup_req->cu_to_du_rrc_information->uE_CapabilityRAT_ContainerList, ieCuRrcInfo->value.choice.CUtoDURRCInformation.uE_CapabilityRAT_ContainerList->buf, ieCuRrcInfo->value.choice.CUtoDURRCInformation.uE_CapabilityRAT_ContainerList->size);
-      f1ap_ue_context_setup_req->cu_to_du_rrc_information->uE_CapabilityRAT_ContainerList_length = ieCuRrcInfo->value.choice.CUtoDURRCInformation.uE_CapabilityRAT_ContainerList->size;
+    cu_to_du_rrc_information_t *cu2du = f1ap_ue_context_setup_req->cu_to_du_rrc_information;
+    const F1AP_CUtoDURRCInformation_t *cu2duie = &ieCuRrcInfo->value.choice.CUtoDURRCInformation;
+    if(cu2duie->uE_CapabilityRAT_ContainerList!=NULL){
+      cu2du->uE_CapabilityRAT_ContainerList = calloc(1, cu2duie->uE_CapabilityRAT_ContainerList->size);
+      memcpy(cu2du->uE_CapabilityRAT_ContainerList,
+             cu2duie->uE_CapabilityRAT_ContainerList->buf,
+             cu2duie->uE_CapabilityRAT_ContainerList->size);
+      cu2du->uE_CapabilityRAT_ContainerList_length = cu2duie->uE_CapabilityRAT_ContainerList->size;
       LOG_D(F1AP, "Size f1ap_ue_context_setup_req->cu_to_du_rrc_information->uE_CapabilityRAT_ContainerList_length: %d \n", f1ap_ue_context_setup_req->cu_to_du_rrc_information->uE_CapabilityRAT_ContainerList_length);
+    }
+    if (cu2duie->iE_Extensions != NULL) {
+      const F1AP_ProtocolExtensionContainer_10696P60_t *ext = (const F1AP_ProtocolExtensionContainer_10696P60_t *)cu2duie->iE_Extensions;
+      for (int i = 0; i < ext->list.count; ++i) {
+        const F1AP_CUtoDURRCInformation_ExtIEs_t *cu2du_info = ext->list.array[i];
+        switch (cu2du_info->id) {
+          case F1AP_ProtocolIE_ID_id_HandoverPreparationInformation:
+            DevAssert(cu2du_info->extensionValue.present == F1AP_CUtoDURRCInformation_ExtIEs__extensionValue_PR_HandoverPreparationInformation);
+            const F1AP_HandoverPreparationInformation_t *hopi = &cu2du_info->extensionValue.choice.MeasurementTimingConfiguration;
+            cu2du->handoverPreparationInfo = calloc_or_fail(1, hopi->size);
+            memcpy(cu2du->handoverPreparationInfo, hopi->buf, hopi->size);
+            cu2du->handoverPreparationInfo_length = hopi->size;
+            break;
+          default:
+            LOG_W(F1AP, "unsupported CUtoDURRCInformation_ExtIE %ld encountered, ignoring\n", cu2du_info->id);
+            break;
+        }
+      }
     }
   }
 
@@ -209,11 +237,14 @@ int DU_handle_UE_CONTEXT_SETUP_REQUEST(instance_t instance, sctp_assoc_t assoc_i
 
       switch (drbs_tobesetup_item_p->rLCMode) {
         case F1AP_RLCMode_rlc_am:
-          drb_p->rlc_mode = RLC_MODE_AM;
+          drb_p->rlc_mode = F1AP_RLC_MODE_AM;
           break;
-
+        case F1AP_RLCMode_rlc_um_bidirectional:
+          drb_p->rlc_mode = F1AP_RLC_MODE_UM_BIDIR;
+          break;
         default:
-          drb_p->rlc_mode = RLC_MODE_TM;
+          LOG_W(F1AP, "unsupported RLC Mode %ld received: setting UM bidir\n", drbs_tobesetup_item_p->rLCMode);
+          drb_p->rlc_mode = F1AP_RLC_MODE_UM_BIDIR;
           break;
       }
 
@@ -281,12 +312,9 @@ int DU_handle_UE_CONTEXT_SETUP_REQUEST(instance_t instance, sctp_assoc_t assoc_i
       memcpy(f1ap_ue_context_setup_req->rrc_container,
              ieRRC->value.choice.RRCContainer.buf, ieRRC->value.choice.RRCContainer.size);
       f1ap_ue_context_setup_req->rrc_container_length = ieRRC->value.choice.RRCContainer.size;
-      // AssertFatal(0, "check configuration, send to appropriate handler\n");
     } else {
       LOG_E(F1AP, " RRCContainer in UEContextSetupRequestIEs size id 0\n");
     }
-  } else {
-    LOG_W(F1AP, "can't find RRCContainer in UEContextSetupRequestIEs by id %ld \n", F1AP_ProtocolIE_ID_id_RRCContainer);
   }
 
   ue_context_setup_request(f1ap_ue_context_setup_req);
@@ -352,15 +380,12 @@ int DU_send_UE_CONTEXT_SETUP_RESPONSE(sctp_assoc_t assoc_id, f1ap_ue_context_set
 
   /* optional */
   /* c4. C_RNTI */
-  if (0) {
+  if (resp->crnti!=NULL) {
     asn1cSequenceAdd(out->protocolIEs.list, F1AP_UEContextSetupResponseIEs_t, ie4);
     ie4->id                             = F1AP_ProtocolIE_ID_id_C_RNTI;
     ie4->criticality                    = F1AP_Criticality_ignore;
     ie4->value.present                  = F1AP_UEContextSetupResponseIEs__value_PR_C_RNTI;
-    //C_RNTI_TO_BIT_STRING(rntiP, &ie->value.choice.C_RNTI);
-    ie4->value.choice.C_RNTI=0;
-    AssertFatal(false, "not implemented\n");
-    LOG_E(F1AP,"RNTI to code!\n");
+    ie4->value.choice.C_RNTI            = *resp->crnti;
   }
 
   /* optional */
@@ -596,6 +621,7 @@ int DU_send_UE_CONTEXT_SETUP_RESPONSE(sctp_assoc_t assoc_id, f1ap_ue_context_set
     F1AP_SRBs_Setup_Item_t *srbs_setup_item=&srbs_setup_item_ies->value.choice.SRBs_Setup_Item;
     /* sRBID */
     srbs_setup_item->sRBID = resp->srbs_to_be_setup[i].srb_id;
+    srbs_setup_item->lCID = resp->srbs_to_be_setup[i].lcid;
   }
   }
 
@@ -887,6 +913,21 @@ int DU_handle_UE_CONTEXT_MODIFICATION_REQUEST(instance_t instance, sctp_assoc_t 
   F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_UEContextModificationRequestIEs_t, ieSrb, container,
       F1AP_ProtocolIE_ID_id_SRBs_ToBeSetupMod_List, false);
 
+  F1AP_UEContextModificationRequestIEs_t *ieTxInd;
+  F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_UEContextModificationRequestIEs_t,
+                             ieTxInd,
+                             container,
+                             F1AP_ProtocolIE_ID_id_TransmissionActionIndicator,
+                             false);
+
+  if (ieTxInd != NULL) {
+    f1ap_ue_context_modification_req->transm_action_ind = calloc_or_fail(1, sizeof(*f1ap_ue_context_modification_req->transm_action_ind));
+    *f1ap_ue_context_modification_req->transm_action_ind = ieTxInd->value.choice.TransmissionActionIndicator;
+    // Stop is guaranteed to be 0, by restart might be different from 1
+    static_assert((int)F1AP_TransmissionActionIndicator_restart == (int)TransmActionInd_RESTART,
+                  "mismatch of ASN.1 and internal representation\n");
+  }
+
   if(ieSrb != NULL) {
     f1ap_ue_context_modification_req->srbs_to_be_setup_length = ieSrb->value.choice.SRBs_ToBeSetupMod_List.list.count;
     f1ap_ue_context_modification_req->srbs_to_be_setup = calloc(f1ap_ue_context_modification_req->srbs_to_be_setup_length,
@@ -932,13 +973,16 @@ int DU_handle_UE_CONTEXT_MODIFICATION_REQUEST(instance_t instance, sctp_assoc_t 
       drb_p->up_ul_tnl[0].port = getCxt(instance)->net_config.CUport;
 
       switch (drbs_tobesetupmod_item_p->rLCMode) {
-      case F1AP_RLCMode_rlc_am:
-        drb_p->rlc_mode = RLC_MODE_AM;
-        break;
-
-      default:
-        drb_p->rlc_mode = RLC_MODE_TM;
-        break;
+        case F1AP_RLCMode_rlc_am:
+          drb_p->rlc_mode = F1AP_RLC_MODE_AM;
+          break;
+        case F1AP_RLCMode_rlc_um_bidirectional:
+          drb_p->rlc_mode = F1AP_RLC_MODE_UM_BIDIR;
+          break;
+        default:
+          LOG_W(F1AP, "unsupported RLC Mode %ld received: setting UM bidir\n", drbs_tobesetupmod_item_p->rLCMode);
+          drb_p->rlc_mode = F1AP_RLC_MODE_UM_BIDIR;
+          break;
       }
 
       if (drbs_tobesetupmod_item_p->qoSInformation.present == F1AP_QoSInformation_PR_eUTRANQoS) {

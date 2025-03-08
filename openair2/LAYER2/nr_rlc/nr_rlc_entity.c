@@ -30,6 +30,7 @@
 #include "LOG/log.h"
 
 #include "common/utils/time_stat.h"
+#include "common/utils/assertions.h"
 
 static void nr_rlc_entity_get_stats(
     nr_rlc_entity_t *entity,

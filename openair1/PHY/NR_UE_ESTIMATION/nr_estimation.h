@@ -24,13 +24,10 @@
 
 
 #include "PHY/defs_nr_UE.h"
-//#include "PHY/defs_gNB.h"
+
 /** @addtogroup _PHY_PARAMETER_ESTIMATION_BLOCKS_
  * @{
  */
-
-/*!\brief Timing drift hysterisis in samples*/
-#define NR_SYNCH_HYST 1
 
 /* A function to perform the channel estimation of DL PRS signal */
 int nr_prs_channel_estimation(uint8_t gNB_id,
@@ -68,7 +65,6 @@ c32_t nr_pbch_dmrs_correlation(const NR_DL_FRAME_PARMS *fp,
 
 int nr_pbch_channel_estimation(const NR_DL_FRAME_PARMS *fp,
                                const sl_nr_ue_phy_params_t *sl_phy_params,
-                               const uint32_t nr_gold_pbch[2][64][NR_PBCH_DMRS_LENGTH_DWORD],
                                int estimateSz,
                                struct complex16 dl_ch_estimates[][estimateSz],
                                struct complex16 dl_ch_estimates_time[][fp->ofdm_symbol_size],
@@ -115,6 +111,12 @@ void nr_ue_measurements(PHY_VARS_NR_UE *ue,
                         uint32_t pdsch_est_size,
                         int32_t dl_ch_estimates[][pdsch_est_size]);
 
+int nr_ue_calculate_ssb_rsrp(const NR_DL_FRAME_PARMS *fp,
+                             const UE_nr_rxtx_proc_t *proc,
+                             const c16_t rxdataF[][fp->samples_per_slot_wCP],
+                             int symbol_offset,
+                             int ssb_start_subcarrier);
+
 void nr_ue_ssb_rsrp_measurements(PHY_VARS_NR_UE *ue,
                                  uint8_t gNB_index,
                                  const UE_nr_rxtx_proc_t *proc,
@@ -146,9 +148,9 @@ void nr_pdsch_ptrs_processing(PHY_VARS_NR_UE *ue,
 
 float_t get_nr_RSRP(module_id_t Mod_id,uint8_t CC_id,uint8_t gNB_index);
 
-void nr_sl_psbch_rsrp_measurements(sl_nr_ue_phy_params_t *sl_phy_params,
-                                   NR_DL_FRAME_PARMS *fp,
-                                   c16_t rxdataF[][fp->samples_per_slot_wCP],
-                                   bool use_SSS);
+int nr_sl_psbch_rsrp_measurements(sl_nr_ue_phy_params_t *sl_phy_params,
+                                  NR_DL_FRAME_PARMS *fp,
+                                  c16_t rxdataF[][fp->samples_per_slot_wCP],
+                                  bool use_SSS);
 /** @}*/
 #endif

@@ -25,12 +25,12 @@
 #
 #---------------------------------------------------------------------
 
-FROM ran-base:latest as gnb-base
+FROM ran-base:latest AS gnb-base
 
 FROM ran-build:latest AS gnb-build
 
 
-FROM ubuntu:jammy as oai-nr-cuup
+FROM ubuntu:jammy AS oai-nr-cuup
 ARG BUILD_OPTION
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Europe
@@ -55,6 +55,8 @@ RUN apt-get update && \
 # copy the right version from ran-build. When upgrading to Ubuntu24, install
 # the correct one above!
 COPY --from=gnb-build /usr/lib/x86_64-linux-gnu/libasan.so.8.0.0 /usr/lib/x86_64-linux-gnu/
+## Copy E2 SM models
+COPY --from=gnb-build /usr/local/lib/flexric /usr/local/lib/flexric
 
 WORKDIR /opt/oai-gnb/bin
 COPY --from=gnb-build \

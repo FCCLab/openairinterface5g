@@ -1082,16 +1082,6 @@ int pss_sss_extract(PHY_VARS_UE *phy_vars_ue,
                     int32_t sss_ext[4][72],
                     uint8_t subframe);
 
-/*! \brief Extract only PSS resource elements
-  @param phy_vars_ue Pointer to UE variables
-  @param[out] pss_ext contain the PSS signals after the extraction
-@param subframe
-  @returns 0 on success
-*/
-int pss_only_extract(PHY_VARS_UE *phy_vars_ue,
-                     int32_t pss_ext[4][72],
-                     uint8_t subframe);
-
 /*! \brief Extract only SSS resource elements
   @param phy_vars_ue Pointer to UE variables
   @param[out] sss_ext contain the SSS signals after the extraction

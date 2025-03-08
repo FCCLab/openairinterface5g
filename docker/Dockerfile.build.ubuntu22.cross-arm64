@@ -25,7 +25,7 @@
 #
 #---------------------------------------------------------------------
 
-FROM ran-base:latest as ran-build
+FROM ran-base:latest AS ran-build
 
 RUN rm -Rf /oai-ran
 WORKDIR /oai-ran
@@ -41,12 +41,16 @@ RUN /bin/sh oaienv && \
     ninja ldpc_generators generate_T > ../../log/host-tools.txt 2>&1 && \
     echo "====== End of log for host-tools ======" && \
     cd ../build-cross/ && \
-    cmake ../../.. -GNinja -DCMAKE_TOOLCHAIN_FILE=../../../cmake_targets/cross-arm.cmake -DNATIVE_DIR=../build && \
+    # install missing libyaml-cpp-dev for arm64
+    apt install -y libyaml-cpp-dev:arm64 && \
+    cmake ../../.. -GNinja -DENABLE_TELNETSRV=ON \
+      -DCMAKE_TOOLCHAIN_FILE=../../../cmake_targets/cross-arm.cmake -DNATIVE_DIR=../build \
+      -DCMAKE_C_FLAGS="-Werror" -DCMAKE_CXX_FLAGS="-Werror" && \
     echo "====== Start of log for cross-build executables ======" && \
     # making always passing so we can analyze the all.txt file
-    ninja dlsim ulsim ldpctest polartest smallblocktest nr_pbchsim nr_dlschsim nr_ulschsim nr_dlsim nr_ulsim nr_pucchsim nr_prachsim lte-softmodem nr-softmodem nr-cuup oairu lte-uesoftmodem nr-uesoftmodem params_libconfig coding rfsimulator > ../../log/all.txt 2>&1; \
+    ninja -k10 dlsim ulsim ldpctest polartest smallblocktest nr_pbchsim nr_dlschsim nr_ulschsim nr_dlsim nr_ulsim nr_pucchsim nr_prachsim lte-softmodem nr-softmodem nr-cuup oairu lte-uesoftmodem nr-uesoftmodem params_libconfig coding rfsimulator telnetsrv > ../../log/all.txt 2>&1; \
     # displaying errors and warnings
-    egrep -A3 "warning:|error:" ../../log/all.txt || true && \
+    grep -E -A3 "warning:|error:" ../../log/all.txt || true && \
     # will fail only if string "errors:" is found
-    egrep "error:" -vqz ../../log/all.txt && \
+    grep -E "error:" -vqz ../../log/all.txt && \
     echo "====== End of log for cross-build executables ======"
