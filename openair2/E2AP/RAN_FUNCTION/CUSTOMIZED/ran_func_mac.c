@@ -107,6 +107,8 @@ bool read_mac_sm(void* data)
     for (uint8_t j = 0; j < numUlHarq; ++j)
       rd->ul_harq[j] = UE->mac_stats.ul.rounds[j];
     rd->ul_harq[numUlHarq] = UE->mac_stats.ul.errors;
+    
+    rd->rsrp = UE->mac_stats.avg_rsrp;
 
     ++i;
   }

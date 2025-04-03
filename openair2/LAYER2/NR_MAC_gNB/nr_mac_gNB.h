@@ -726,6 +726,7 @@ typedef struct NR_mac_stats {
   int pusch_snrx10;
   int deltaMCS;
   int NPRB;
+  int avg_rsrp;
 } NR_mac_stats_t;
 
 typedef struct NR_bler_options {
