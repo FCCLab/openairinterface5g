@@ -2171,8 +2171,11 @@ static void pf_ul(module_id_t module_id,
     sched_pusch->tb_size = TBS;
     sched_pusch->frame = sched_frame;
     sched_pusch->slot = sched_slot;
-    LOG_D(NR_MAC,
-          "rbSize %d (max_rbSize %d), TBS %d, est buf %d, sched_ul %d, B %d, CCE %d, num_dmrs_symb %d, N_PRB_DMRS %d\n",
+    LOG_D(NR_MAC, 
+          " -- [UE %04x][%4d.%2d] rbSize %d (max_rbSize %d), TBS %d, est buf %d, sched_ul %d, B %d, CCE %d, num_dmrs_symb %d, N_PRB_DMRS %d, phr_txpower_calc %d\n",
+          iterator->UE->rnti,
+          sched_frame,
+          sched_slot,
           rbSize,
           max_rbSize,
           sched_pusch->tb_size,
@@ -2181,7 +2184,9 @@ static void pf_ul(module_id_t module_id,
           B,
           sched_ctrl->cce_index,
           sched_pusch->dmrs_info.num_dmrs_symb,
-          sched_pusch->dmrs_info.N_PRB_DMRS);
+          sched_pusch->dmrs_info.N_PRB_DMRS,
+          sched_pusch->phr_txpower_calc
+        );
 
     /* Mark the corresponding RBs as used */
 

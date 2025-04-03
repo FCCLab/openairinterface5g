@@ -1005,8 +1005,9 @@ uint8_t pack_nr_config_request(void *msg, uint8_t **ppWritePackedMsg, uint8_t *e
                           &pack_uint8_tlv_value);
     numTLVs++;
   }
-
   // END SSB Table
+#endif
+
   // START TDD Table
   if (pNfapiMsg->cell_config.frame_duplex_type.value == 1 /* TDD */) {
     retval &=
@@ -1017,8 +1018,8 @@ uint8_t pack_nr_config_request(void *msg, uint8_t **ppWritePackedMsg, uint8_t *e
     uint8_t cyclicprefix = 1;
     // 3GPP 38.211 Table 4.3.2.1 & Table 4.3.2.2
     uint8_t number_of_symbols_per_slot = cyclicprefix ? 14 : 12;
-    for (int i = 0; i < slotsperframe[pNfapiMsg->ssb_config.scs_common.value]; i++) { // TODO check right number of slots
-      for (int k = 0; k < number_of_symbols_per_slot; k++) { // TODO can change?
+    for (int i = 0; i < 1; i++) { // TODO check right number of slots
+      for (int k = 0; k < 1; k++) { // TODO can change?
         retval &= pack_nr_tlv(NFAPI_NR_CONFIG_SLOT_CONFIG_TAG,
                               &pNfapiMsg->tdd_table.max_tdd_periodicity_list[i].max_num_of_symbol_per_slot_list[k].slot_config,
                               ppWritePackedMsg,
@@ -1030,7 +1031,7 @@ uint8_t pack_nr_config_request(void *msg, uint8_t **ppWritePackedMsg, uint8_t *e
   }
 
   // END TDD Table
-#endif
+
   // START Measurement Config
   // SCF222.10.02 Table 3-27 : Contains only one TLV and is currently unused
   pNfapiMsg->measurement_config.rssi_measurement.tl.tag = NFAPI_NR_CONFIG_RSSI_MEASUREMENT_TAG;
