@@ -759,8 +759,8 @@ static void _nr_rx_sdu(const module_id_t gnb_mod_idP,
       UE_scheduling_control->raw_rssi = rssi;
       UE_scheduling_control->pusch_snrx10 = ul_cqi * 5 - 640 - (txpower_calc * 10);
 
-      if (UE_scheduling_control->tpc0 > 1)
-        LOG_D(NR_MAC,
+      if (UE_scheduling_control->tpc0 != 1)
+        LOG_W(NR_MAC,
               "[UE %04x] %d.%d. PUSCH TPC %d and TA %d pusch_snrx10 %d rssi %d phrx_tx_power %d PHR (1PRB) %d mcs %d, nb_rb %d\n",
               UE->rnti,
               frameP,
