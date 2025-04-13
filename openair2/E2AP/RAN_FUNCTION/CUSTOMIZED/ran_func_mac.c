@@ -22,6 +22,8 @@
 #include "ran_func_mac.h"
 #include <assert.h>
 
+#include "openair2/RRC/NR/nr_rrc_defs.h"
+
 static
 const int mod_id = 0;
 
@@ -36,8 +38,14 @@ bool read_mac_sm(void* data)
   mac->msg.tstamp = time_now_us();
 
   NR_UEs_t *UE_info = &RC.nrmac[mod_id]->UE_info;
+
+  gNB_RRC_INST *rrc_instance = RC.nrrrc[mod_id];
+
   size_t num_ues = 0;
   UE_iterator(UE_info->list, ue) {
+    const NR_UE_sched_ctrl_t* sched_ctrl = &ue->UE_sched_ctrl;
+    if (sched_ctrl->ul_failure)
+      continue;
     if (ue)
       num_ues += 1;
   }
@@ -52,6 +60,44 @@ bool read_mac_sm(void* data)
   UE_iterator(UE_info->list, UE) {
     const NR_UE_sched_ctrl_t* sched_ctrl = &UE->UE_sched_ctrl;
     mac_ue_stats_impl_t* rd = &mac->msg.ue_stats[i];
+
+    if (sched_ctrl->ul_failure)
+      continue;
+
+    struct rrc_gNB_ue_context_s *ue_context = rrc_gNB_get_ue_context_by_rnti_any_du(rrc_instance, UE->rnti);
+    if (ue_context) {
+        gNB_RRC_UE_t *ue_ctxt = &ue_context->ue_context;
+        if (ue_ctxt)
+        {
+          if (ue_ctxt->measResults)
+          {
+            NR_MeasResultServMO_t *measresultservmo = ue_ctxt->measResults->measResultServingMOList.list.array[0];
+            NR_MeasResultNR_t *measresultnr = &measresultservmo->measResultServingCell;
+            NR_MeasQuantityResults_t *mqr = measresultnr->measResult.cellResults.resultsSSB_Cell;
+            if (mqr != NULL) {
+              const long rrsrp = *mqr->rsrp - 156;
+              const float rrsrq = (float) (*mqr->rsrq - 87) / 2.0f;
+              const float rsinr = (float) (*mqr->sinr - 46) / 2.0f;
+              rd->ss_rsrp = rrsrp;
+              rd->ss_rsrq = rrsrq;
+              rd->ss_sinr = rsinr;
+              // printf("RSRP %d dBm RSRQ %.1f dB SINR %.1f dB\n", rd->ss_rsrp, rd->ss_rsrq, rd->ss_sinr);
+            }
+            else {
+              printf("UE measResultNR not found with rnti %d\n", UE->rnti);
+            }
+          }
+          else {
+            printf("UE measResults not found with rnti %d\n", UE->rnti);
+          }
+        }
+        else {
+          printf("UE gNB_RRC_UE_t not found with rnti %d\n", UE->rnti);
+        }
+    }
+    else {
+      printf("UE rrc_gNB_ue_context_t not found with rnti %d\n", UE->rnti);
+    }
 
     rd->frame = RC.nrmac[mod_id]->frame;
     rd->slot = 0; // previously had slot info, but the gNB runs multiple slots
@@ -84,7 +130,16 @@ bool read_mac_sm(void* data)
     rd->pusch_snr = (float) sched_ctrl->pusch_snrx10 / 10; //: float = -64;
     rd->pucch_snr = (float) sched_ctrl->pucch_snrx10 / 10; //: float = -64;
 
-    rd->wb_cqi = sched_ctrl->CSI_report.cri_ri_li_pmi_cqi_report.wb_cqi_1tb;
+    rd->cri = sched_ctrl->CSI_report.cri_ri_li_pmi_cqi_report.cri;
+    rd->ri = sched_ctrl->CSI_report.cri_ri_li_pmi_cqi_report.ri + 1;
+    rd->li = sched_ctrl->CSI_report.cri_ri_li_pmi_cqi_report.li;
+    rd->pmi_x1 = sched_ctrl->CSI_report.cri_ri_li_pmi_cqi_report.pmi_x1;
+    rd->pmi_x2 = sched_ctrl->CSI_report.cri_ri_li_pmi_cqi_report.pmi_x2;
+    rd->wb_cqi_1tb = sched_ctrl->CSI_report.cri_ri_li_pmi_cqi_report.wb_cqi_1tb;
+    rd->wb_cqi_2tb = sched_ctrl->CSI_report.cri_ri_li_pmi_cqi_report.wb_cqi_2tb;
+    rd->cqi_table = sched_ctrl->CSI_report.cri_ri_li_pmi_cqi_report.cqi_table;
+    rd->csi_report_id = sched_ctrl->CSI_report.cri_ri_li_pmi_cqi_report.csi_report_id;
+
     rd->dl_mcs1 = sched_ctrl->dl_bler_stats.mcs;
     rd->dl_bler = sched_ctrl->dl_bler_stats.bler;
     rd->ul_mcs1 = sched_ctrl->ul_bler_stats.mcs;
