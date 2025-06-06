@@ -122,6 +122,8 @@ size_t dump_mac_stats(gNB_MAC_INST *gNB, char *output, size_t strlen, bool reset
     NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
     NR_mac_stats_t *stats = &UE->mac_stats;
     const int avg_rsrp = stats->num_rsrp_meas > 0 ? stats->cumul_rsrp / stats->num_rsrp_meas : 0;
+    if (avg_rsrp)
+      stats->avg_rsrp = avg_rsrp;
 
     output += snprintf(output, end - output, "UE RNTI %04x CU-UE-ID ", UE->rnti);
     if (du_exists_f1_ue_data(UE->rnti)) {
@@ -138,7 +140,7 @@ size_t dump_mac_stats(gNB_MAC_INST *gNB, char *output, size_t strlen, bool reset
                        in_sync ? "in-sync" : "out-of-sync",
                        sched_ctrl->ph,
                        sched_ctrl->pcmax,
-                       avg_rsrp,
+                       stats->avg_rsrp,
                        stats->num_rsrp_meas);
 
     if(sched_ctrl->CSI_report.cri_ri_li_pmi_cqi_report.print_report)

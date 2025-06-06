@@ -730,8 +730,8 @@ static void _nr_rx_sdu(const module_id_t gnb_mod_idP,
       UE_scheduling_control->raw_rssi = rssi;
       UE_scheduling_control->pusch_snrx10 = ul_cqi * 5 - 640 - (txpower_calc * 10);
 
-      if (UE_scheduling_control->tpc0 > 1)
-        LOG_D(NR_MAC,
+      if (UE_scheduling_control->tpc0 != 1)
+        LOG_W(NR_MAC,
               "[UE %04x] %d.%d. PUSCH TPC %d and TA %d pusch_snrx10 %d rssi %d phrx_tx_power %d PHR (1PRB) %d mcs %d, nb_rb %d\n",
               UE->rnti,
               frameP,
@@ -2248,8 +2248,11 @@ static void pf_ul(module_id_t module_id,
     sched_pusch->tb_size = TBS;
     sched_pusch->frame = sched_frame;
     sched_pusch->slot = sched_slot;
-    LOG_D(NR_MAC,
-          "rbSize %d (max_rbSize %d), TBS %d, est buf %d, sched_ul %d, B %d, CCE %d, num_dmrs_symb %d, N_PRB_DMRS %d\n",
+    LOG_D(NR_MAC, 
+          " -- [UE %04x][%4d.%2d] rbSize %d (max_rbSize %d), TBS %d, est buf %d, sched_ul %d, B %d, CCE %d, num_dmrs_symb %d, N_PRB_DMRS %d, phr_txpower_calc %d\n",
+          iterator->UE->rnti,
+          sched_frame,
+          sched_slot,
           rbSize,
           max_rbSize,
           sched_pusch->tb_size,
@@ -2258,7 +2261,9 @@ static void pf_ul(module_id_t module_id,
           B,
           sched_ctrl->cce_index,
           sched_pusch->dmrs_info.num_dmrs_symb,
-          sched_pusch->dmrs_info.N_PRB_DMRS);
+          sched_pusch->dmrs_info.N_PRB_DMRS,
+          sched_pusch->phr_txpower_calc
+        );
 
     /* Mark the corresponding RBs as used */
 
