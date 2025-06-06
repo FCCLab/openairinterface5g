@@ -736,8 +736,8 @@ int get_mcs_from_bler(const NR_bler_options_t *bler_options,
   if (diff < 0) // wrap around
     diff += 1024;
 
-  max_mcs = min(max_mcs, bler_options->max_mcs);
-  const uint8_t old_mcs = min(bler_stats->mcs, max_mcs);
+  max_mcs = 28;
+  const uint8_t old_mcs = bler_stats->mcs;
   if (diff < BLER_UPDATE_FRAME)
     return old_mcs; // no update
 
@@ -758,8 +758,45 @@ int get_mcs_from_bler(const NR_bler_options_t *bler_options,
   bler_stats->last_frame = frame;
   bler_stats->mcs = new_mcs;
   memcpy(bler_stats->rounds, stats->rounds, sizeof(stats->rounds));
-  LOG_D(MAC, "frame %4d MCS %d -> %d (num_dl_sched %d, num_dl_retx %d, BLER wnd %.3f avg %.6f)\n",
-        frame, old_mcs, new_mcs, num_dl_sched, num_dl_retx, bler_window, bler_stats->bler);
+  LOG_W(MAC, "frame %4d MCS %d -> %d (max_mcs %d, num_dl_sched %d, num_dl_retx %d, BLER wnd %.3f avg %.6f)\n",
+        frame, old_mcs, new_mcs, max_mcs, num_dl_sched, num_dl_retx, bler_window, bler_stats->bler);
+  return new_mcs;
+}
+
+int get_mcs_from_bler_ul(const NR_bler_options_t *bler_options,
+                      const NR_mac_dir_stats_t *stats,
+                      NR_bler_stats_t *bler_stats,
+                      int max_mcs,
+                      frame_t frame)
+{
+  int diff = frame - bler_stats->last_frame;
+  if (diff < 0) // wrap around
+    diff += 1024;
+
+  max_mcs = min(max_mcs, bler_options->max_mcs);
+  const uint8_t old_mcs = bler_stats->mcs;
+  if (diff < BLER_UPDATE_FRAME)
+    return old_mcs; // no update
+
+  // last update is longer than x frames ago
+  const int num_dl_sched = (int)(stats->rounds[0] - bler_stats->rounds[0]);
+  const int num_dl_retx = (int)(stats->rounds[1] - bler_stats->rounds[1]);
+  const float bler_window = num_dl_sched > 0 ? (float) num_dl_retx / num_dl_sched : bler_stats->bler;
+  bler_stats->bler = BLER_FILTER * bler_stats->bler + (1 - BLER_FILTER) * bler_window;
+
+  int new_mcs = old_mcs;
+  if (bler_stats->bler < bler_options->lower && old_mcs < max_mcs && num_dl_sched > 3)
+    new_mcs += 1;
+  else if (bler_stats->bler > bler_options->upper || num_dl_sched <= 3) // above threshold or no activity
+    new_mcs -= 1;
+  // else we are within threshold boundaries
+
+  new_mcs = max(new_mcs, bler_options->min_mcs);
+  bler_stats->last_frame = frame;
+  bler_stats->mcs = new_mcs;
+  memcpy(bler_stats->rounds, stats->rounds, sizeof(stats->rounds));
+  LOG_D(MAC, "frame %4d MCS %d -> %d (max_mcs %d, num_dl_sched %d, num_dl_retx %d, BLER wnd %.3f avg %.6f)\n",
+        frame, old_mcs, new_mcs, max_mcs, num_dl_sched, num_dl_retx, bler_window, bler_stats->bler);
   return new_mcs;
 }
 

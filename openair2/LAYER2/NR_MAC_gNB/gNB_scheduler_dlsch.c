@@ -672,7 +672,9 @@ static void pf_dl(module_id_t module_id,
         sched_pdsch->mcs = min(bo->max_mcs, max_mcs);
         sched_ctrl->dl_bler_stats.mcs = sched_pdsch->mcs;
       } else
+      {
         sched_pdsch->mcs = get_mcs_from_bler(bo, stats, &sched_ctrl->dl_bler_stats, max_mcs, frame);
+      }
       sched_pdsch->nrOfLayers = get_dl_nrOfLayers(sched_ctrl, current_BWP->dci_format);
       sched_pdsch->pm_index =
           get_pm_index(mac, UE, current_BWP->dci_format, sched_pdsch->nrOfLayers, mac->radio_config.pdsch_AntennaPorts.XP);

@@ -1988,7 +1988,7 @@ static void pf_ul(module_id_t module_id,
       sched_pusch->mcs = max_mcs;
       sched_ctrl->ul_bler_stats.mcs = sched_pusch->mcs;
     } else {
-      sched_pusch->mcs = get_mcs_from_bler(bo, stats, &sched_ctrl->ul_bler_stats, max_mcs, frame);
+      sched_pusch->mcs = get_mcs_from_bler_ul(bo, stats, &sched_ctrl->ul_bler_stats, max_mcs, frame);
       LOG_D(NR_MAC, "%d.%d starting mcs %d bler %f\n", frame, slot, sched_pusch->mcs, sched_ctrl->ul_bler_stats.bler);
     }
     /* Schedule UE on SR or UL inactivity and no data (otherwise, will be scheduled

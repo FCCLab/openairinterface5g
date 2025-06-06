@@ -561,6 +561,7 @@ static void evaluate_cqi_report(uint8_t *payload,
   const int cqi_idx = sched_ctrl->CSI_report.cri_ri_li_pmi_cqi_report.wb_cqi_1tb;
   const int mcs_table = UE->current_DL_BWP.mcsTableIdx;
   sched_ctrl->dl_max_mcs = get_mcs_from_cqi(mcs_table, cqi_Table, cqi_idx);
+  LOG_W(MAC, "UE %04x: CQI %d -> MCS %d\n", UE->rnti, cqi_idx, sched_ctrl->dl_max_mcs);
 }
 
 static uint8_t evaluate_pmi_report(uint8_t *payload,
