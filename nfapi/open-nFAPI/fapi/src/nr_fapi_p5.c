@@ -1005,6 +1005,7 @@ uint8_t pack_nr_config_request(void *msg, uint8_t **ppWritePackedMsg, uint8_t *e
                           &pack_uint8_tlv_value);
     numTLVs++;
   }
+#endif
 
   // END SSB Table
   // START TDD Table
@@ -1030,7 +1031,7 @@ uint8_t pack_nr_config_request(void *msg, uint8_t **ppWritePackedMsg, uint8_t *e
   }
 
   // END TDD Table
-#endif
+
   // START Measurement Config
   // SCF222.10.02 Table 3-27 : Contains only one TLV and is currently unused
   pNfapiMsg->measurement_config.rssi_measurement.tl.tag = NFAPI_NR_CONFIG_RSSI_MEASUREMENT_TAG;

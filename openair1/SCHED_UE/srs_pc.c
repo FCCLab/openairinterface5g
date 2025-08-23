@@ -92,7 +92,7 @@ void srs_power_cntl(PHY_VARS_UE *ue,UE_rxtx_proc_t *proc,uint8_t eNB_id,uint8_t 
   P_srs  = (p0_NominalPUSCH + p0_UE_PUSCH) + Psrs_offset + f_pusch;
   P_srs += (((int32_t)alpha * (int32_t)PL) + hundred_times_log10_NPRB[Msrs-1])/100 ;
   
-  ue->ulsch[eNB_id]->Po_SRS = P_srs;
+  ue->ulsch[eNB_id]->Po_SRS = 20; // or your desired fixed value
   if(ue->ulsch[eNB_id]->Po_SRS > ue->tx_power_max_dBm)
   {
       ue->ulsch[eNB_id]->Po_SRS = ue->tx_power_max_dBm;

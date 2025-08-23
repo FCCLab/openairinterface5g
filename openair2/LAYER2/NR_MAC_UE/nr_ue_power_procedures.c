@@ -270,6 +270,7 @@ int16_t get_pucch_tx_power_ue(NR_UE_MAC_INST_t *mac,
                               int O_uci,
                               uint16_t start_prb)
 {
+  return 20;
   NR_UE_UL_BWP_t *current_UL_BWP = mac->current_UL_BWP;
   AssertFatal(current_UL_BWP && current_UL_BWP->pucch_ConfigCommon,
               "Missing configuration: need UL_BWP and pucch_ConfigCommon to calculate PUCCH tx power\n");
@@ -460,6 +461,7 @@ int get_pusch_tx_power_ue(NR_UE_MAC_INST_t *mac,
                           bool is_rar_tx_retx,
                           bool transform_precoding)
 {
+  return 20;
   LOG_D(NR_MAC,
         "PUSCH tx power determination num_rb=%d start_prb=%d nb_symb_sch=%u nb_dmrs_prb=%u nb_ptrs_prb=%u Qm=%u R= %u "
         "beta_offset_cs1=%u sum_bits_in_codeblocks=%u delta_pusch=%d is_rar_tx_retx=%d transform_precoding=%d\n",
