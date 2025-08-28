@@ -23,6 +23,14 @@ function HomePage() {
     hostname: 'Unknown',
     platform: 'Unknown'
   });
+  const [usrpInfo, setUsrpInfo] = useState({
+    detected: false,
+    count: 0,
+    devices: []
+  });
+  const [expandedDevices, setExpandedDevices] = useState(new Set());
+  const [deviceDetails, setDeviceDetails] = useState({});
+  const [loadingDetails, setLoadingDetails] = useState(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -64,6 +72,19 @@ function HomePage() {
         uptime: system?.uptime?.formattedUptime || '0d 0h 0m',
         hostname: system?.hostname || 'Unknown',
         platform: system?.platform || 'Unknown'
+      });
+      
+      // Debug USRP data
+      console.log('USRP Info received:', response.data.usrp);
+      if (response.data.usrp && response.data.usrp.devices) {
+        console.log('USRP Devices:', response.data.usrp.devices);
+        console.log('USRP Device count:', response.data.usrp.devices.length);
+      }
+      
+      setUsrpInfo({
+        detected: response.data.usrp?.detected || false,
+        count: response.data.usrp?.count || 0,
+        devices: response.data.usrp?.devices || []
       });
       
       setLoading(false);
@@ -133,6 +154,57 @@ function HomePage() {
       case 'Virtual': return '#ec4899';
       case 'Tunnel': return '#84cc16';
       default: return '#6b7280';
+    }
+  };
+
+  const toggleDeviceDetails = async (deviceIndex, device) => {
+    const deviceKey = `${deviceIndex}-${device.name}`;
+    
+    if (expandedDevices.has(deviceKey)) {
+      // Collapse
+      setExpandedDevices(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(deviceKey);
+        return newSet;
+      });
+    } else {
+      // Expand and load details
+      setExpandedDevices(prev => new Set(prev).add(deviceKey));
+      
+      if (!deviceDetails[deviceKey]) {
+        setLoadingDetails(prev => new Set(prev).add(deviceKey));
+        
+        try {
+          // Construct device args for uhd_usrp_probe
+          let deviceArgs = '';
+          if (device.details['IP Address']) {
+            deviceArgs = `addr=${device.details['IP Address']}`;
+          } else if (device.details['Serial Number']) {
+            deviceArgs = `serial=${device.details['Serial Number']}`;
+          } else {
+            deviceArgs = `type=${device.details['Type'] || 'x300'}`;
+          }
+          
+          const response = await fetch(`/api/usrp/device/details?deviceArgs=${encodeURIComponent(deviceArgs)}`);
+          if (response.ok) {
+            const details = await response.json();
+            setDeviceDetails(prev => ({
+              ...prev,
+              [deviceKey]: details
+            }));
+          } else {
+            console.error('Failed to fetch device details');
+          }
+        } catch (error) {
+          console.error('Error fetching device details:', error);
+        } finally {
+          setLoadingDetails(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(deviceKey);
+            return newSet;
+          });
+        }
+      }
     }
   };
 
@@ -267,6 +339,185 @@ function HomePage() {
               </span>
             </div>
           </div>
+        </div>
+      </div>
+
+      <div className="status-grid">
+        <div className="status-section">
+          <div className="section-header">
+            <h3>USRP Devices</h3>
+            <button 
+              className="refresh-btn" 
+              onClick={async () => {
+                console.log('Manual USRP refresh triggered');
+                try {
+                  const response = await fetch('/api/usrp/refresh', { method: 'POST' });
+                  if (response.ok) {
+                    const usrpData = await response.json();
+                    setUsrpInfo(usrpData);
+                    console.log('USRP cache refreshed:', usrpData);
+                  }
+                } catch (error) {
+                  console.error('Error refreshing USRP cache:', error);
+                }
+              }}
+              disabled={loading}
+              title="Refresh USRP devices cache"
+            >
+              {loading ? '⏳' : '🔄'} Refresh USRP Devices
+            </button>
+          </div>
+          {loading ? (
+            <div className="status-item">
+              <span className="label">Status:</span>
+              <span className="value">Loading...</span>
+            </div>
+          ) : (
+            <>
+              <div className="status-item">
+                <span className="label">Status:</span>
+                <span className={`value ${usrpInfo.detected ? 'success' : 'error'}`}>
+                  {usrpInfo.detected ? 'Detected' : 'Not Detected'}
+                </span>
+              </div>
+            </>
+          )}
+          <div className="status-item">
+            <span className="label">Count:</span>
+            <span className="value">{usrpInfo.count}</span>
+          </div>
+          {usrpInfo.detectionMethods && (
+            <div className="status-item">
+              <span className="label">Detection Methods:</span>
+              <span className="value">
+                {Object.entries(usrpInfo.detectionMethods)
+                  .filter(([method, available]) => available)
+                  .map(([method]) => method)
+                  .join(', ') || 'None'}
+              </span>
+            </div>
+          )}
+          {usrpInfo.cache && (
+            <div className="status-item">
+              <span className="label">Cache Age:</span>
+              <span className="value">
+                {usrpInfo.cache.cacheAge ? `${Math.round(usrpInfo.cache.cacheAge / 1000)}s` : 'N/A'}
+              </span>
+            </div>
+          )}
+          {usrpInfo.devices && usrpInfo.devices.length > 0 ? (
+            <div className="usrp-devices">
+              <div className="usrp-devices-header">
+                <h4>Detected Devices ({usrpInfo.devices.length})</h4>
+              </div>
+              {usrpInfo.devices.map((device, index) => {
+                const deviceKey = `${index}-${device.name}`;
+                const isExpanded = expandedDevices.has(deviceKey);
+                const isLoading = loadingDetails.has(deviceKey);
+                const details = deviceDetails[deviceKey];
+                
+                return (
+                  <div key={index} className="usrp-device">
+                    <div className="device-header">
+                      <span className="device-name">{device.name}</span>
+                      <div className="device-controls">
+                        <span className={`device-method ${device.method.replace(/[^a-zA-Z0-9]/g, '')}`}>{device.method}</span>
+                      </div>
+                    </div>
+                    {device.details && Object.keys(device.details).length > 0 && (
+                      <div className="device-details">
+                        {Object.entries(device.details).map(([key, value]) => (
+                          <div key={key} className="detail-row">
+                            <span className="label">{key}:</span>
+                            <span className="value">{value}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    
+                    {/* Details button under the device details */}
+                    <div className="details-button-container">
+                      <button 
+                        className={`details-btn ${isExpanded ? 'expanded' : ''}`}
+                        onClick={() => toggleDeviceDetails(index, device)}
+                        disabled={isLoading}
+                      >
+                        {isLoading ? '⏳ Loading...' : isExpanded ? '▼ Hide Details' : '▶ Show Details'}
+                      </button>
+                    </div>
+                    
+                    {isExpanded && (
+                      <div className="device-expanded-details">
+                        {isLoading ? (
+                          <div className="loading-details">
+                            <span>Loading detailed device information...</span>
+                          </div>
+                        ) : details && details.success ? (
+                          <div className="probe-details">
+                            {details.details.mboard && Object.keys(details.details.mboard).length > 0 && (
+                              <div className="detail-section">
+                                <h4>Mainboard</h4>
+                                <div className="detail-grid">
+                                  {Object.entries(details.details.mboard).map(([key, value]) => (
+                                    <div key={key} className="detail-item">
+                                      <span className="detail-label">{key}:</span>
+                                      <span className="detail-value">{value}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            
+                            {details.details.rfBlocks && details.details.rfBlocks.length > 0 && (
+                              <div className="detail-section">
+                                <h4>RFNoC Blocks</h4>
+                                <div className="rf-blocks">
+                                  {details.details.rfBlocks.map((block, idx) => (
+                                    <span key={idx} className="rf-block">{block}</span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            
+                            {details.details.dboards && details.details.dboards.length > 0 && (
+                              <div className="detail-section">
+                                <h4>Daughterboards</h4>
+                                <div className="dboards-grid">
+                                  {details.details.dboards.map((dboard, idx) => (
+                                    <div key={idx} className="dboard-item">
+                                      <h5>{dboard.type} Dboard</h5>
+                                      <div className="dboard-details">
+                                        {dboard.id && <div><span>ID:</span> {dboard.id}</div>}
+                                        {dboard.serial && <div><span>Serial:</span> {dboard.serial}</div>}
+                                        {dboard.frontend.name && <div><span>Frontend:</span> {dboard.frontend.name}</div>}
+                                        {dboard.frontend.freqRange && <div><span>Freq Range:</span> {dboard.frontend.freqRange}</div>}
+                                        {dboard.frontend.gainRange && <div><span>Gain Range:</span> {dboard.frontend.gainRange}</div>}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        ) : details && !details.success ? (
+                          <div className="error-details">
+                            <span>Failed to load device details: {details.error}</span>
+                          </div>
+                        ) : null}
+                      </div>
+                    )}
+                    
+
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="usrp-no-devices">
+              <p>No USRP devices detected</p>
+              <p className="usrp-help-text">Make sure your USRP device is connected and UHD drivers are installed</p>
+            </div>
+          )}
         </div>
       </div>
 

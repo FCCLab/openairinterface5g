@@ -11,9 +11,13 @@ const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 const WebSocket = require('ws');
 const logger = require('./logger');
+const UsrpDeviceManager = require('./UsrpDeviceManager');
 
 const app = express();
 const port = process.env.PORT || 40000;
+
+// Initialize USRP Device Manager
+const usrpDeviceManager = new UsrpDeviceManager();
 
 // Create HTTP server for WebSocket
 const server = require('http').createServer(app);
@@ -500,8 +504,8 @@ const getNetworkInterfaces = async () => {
         logger.debug('Interface detailed info', { interface: name, info: interfaceInfo });
         
         // Get interface status (up/down)
-        let status = 'unknown';
-        try {
+          let status = 'unknown';
+          try {
           const operstate = await execCommand(`cat /sys/class/net/${name}/operstate 2>/dev/null || echo "unknown"`);
           if (operstate === 'up') {
             status = 'up';
@@ -553,40 +557,40 @@ const getNetworkInterfaces = async () => {
         }
         
         logger.debug('Interface IP addresses', { interface: name, ipCount: ipAddresses.length, ips: ipAddresses });
-        
-        // Get interface speed if possible
-        let speed = 'N/A';
-        try {
-          const speedOutput = await execCommand(`cat /sys/class/net/${name}/speed 2>/dev/null || echo "N/A"`);
-          if (speedOutput !== 'N/A') {
-            speed = `${speedOutput} Mbps`;
+          
+          // Get interface speed if possible
+          let speed = 'N/A';
+          try {
+            const speedOutput = await execCommand(`cat /sys/class/net/${name}/speed 2>/dev/null || echo "N/A"`);
+            if (speedOutput !== 'N/A') {
+              speed = `${speedOutput} Mbps`;
+            }
+          } catch (err) {
+            // Ignore speed reading errors
           }
-        } catch (err) {
-          // Ignore speed reading errors
-        }
-        
-        // Determine interface type
-        let type = 'Unknown';
-        if (name.startsWith('eth') || name.startsWith('en')) {
-          type = 'Ethernet';
-        } else if (name.startsWith('wlan') || name.startsWith('wl')) {
-          type = 'WiFi';
-        } else if (name === 'lo') {
-          type = 'Loopback';
-        } else if (name.startsWith('docker')) {
-          type = 'Bridge';
-        } else if (name.startsWith('veth')) {
-          type = 'Virtual';
-        } else if (name.startsWith('tun') || name.startsWith('tap')) {
-          type = 'Tunnel';
-        }
-        
+          
+          // Determine interface type
+          let type = 'Unknown';
+          if (name.startsWith('eth') || name.startsWith('en')) {
+            type = 'Ethernet';
+          } else if (name.startsWith('wlan') || name.startsWith('wl')) {
+            type = 'WiFi';
+          } else if (name === 'lo') {
+            type = 'Loopback';
+          } else if (name.startsWith('docker')) {
+            type = 'Bridge';
+          } else if (name.startsWith('veth')) {
+            type = 'Virtual';
+          } else if (name.startsWith('tun') || name.startsWith('tap')) {
+            type = 'Tunnel';
+          }
+          
         // Create interface object with all IP addresses
         const interfaceObj = {
-          name,
+            name,
           status: status,
           mac,
-          type,
+            type,
           speed,
           ipAddresses: ipAddresses,
           primaryIp: ipAddresses.find(ip => ip.family === 'IPv4')?.address || ipAddresses[0]?.address || 'N/A'
@@ -639,6 +643,21 @@ const formatUptime = (seconds) => {
     return `${hours}h ${minutes}m`;
   } else {
     return `${minutes}m`;
+  }
+};
+
+// Get USRP device information using the dedicated manager
+const getUsrpDevices = async () => {
+  try {
+    return await usrpDeviceManager.getUsrpDevices();
+  } catch (error) {
+    logger.error('Error getting USRP devices', { error: error.message, stack: error.stack });
+    return {
+      detected: false,
+      count: 0,
+      devices: [],
+      error: error.message
+    };
   }
 };
 
@@ -702,6 +721,56 @@ app.get('/api/system/uptime', (req, res) => {
   }
 });
 
+// USRP Device Management APIs
+app.get('/api/usrp/devices', async (req, res) => {
+  try {
+    logger.api('USRP devices requested', { ip: req.ip });
+    const usrpInfo = await usrpDeviceManager.getUsrpDevices();
+    res.json(usrpInfo);
+  } catch (error) {
+    logger.error('Error in USRP devices API', { error: error.message, stack: error.stack, ip: req.ip });
+    res.status(500).json({ error: 'Failed to get USRP devices' });
+  }
+});
+
+app.post('/api/usrp/refresh', async (req, res) => {
+  try {
+    logger.api('USRP cache refresh requested', { ip: req.ip });
+    const usrpInfo = await usrpDeviceManager.forceUpdate();
+    res.json(usrpInfo);
+  } catch (error) {
+    logger.error('Error in USRP refresh API', { error: error.message, stack: error.stack, ip: req.ip });
+    res.status(500).json({ error: 'Failed to refresh USRP devices' });
+  }
+});
+
+app.get('/api/usrp/cache/stats', (req, res) => {
+  try {
+    logger.api('USRP cache stats requested', { ip: req.ip });
+    const stats = usrpDeviceManager.getCacheStats();
+    res.json(stats);
+  } catch (error) {
+    logger.error('Error in USRP cache stats API', { error: error.message, stack: error.stack, ip: req.ip });
+    res.status(500).json({ error: 'Failed to get USRP cache stats' });
+  }
+});
+
+app.get('/api/usrp/device/details', async (req, res) => {
+  try {
+    const { deviceArgs } = req.query;
+    if (!deviceArgs) {
+      return res.status(400).json({ error: 'deviceArgs parameter is required' });
+    }
+
+    logger.api('USRP device details requested', { ip: req.ip, deviceArgs });
+    const details = await usrpDeviceManager.getDeviceDetails(deviceArgs);
+    res.json(details);
+  } catch (error) {
+    logger.error('Error in USRP device details API', { error: error.message, stack: error.stack, ip: req.ip });
+    res.status(500).json({ error: 'Failed to get USRP device details' });
+  }
+});
+
 app.get('/api/system/info', async (req, res) => {
   try {
     logger.api('System information requested', { ip: req.ip });
@@ -712,11 +781,12 @@ app.get('/api/system/info', async (req, res) => {
     });
     const startTime = Date.now();
     
-    const [cpuInfo, interfaces, memoryInfo, diskInfo] = await Promise.all([
+    const [cpuInfo, interfaces, memoryInfo, diskInfo, usrpInfo] = await Promise.all([
       getCpuInfo(),
       getNetworkInterfaces(),
       getMemoryInfo(),
-      getDiskInfo()
+      getDiskInfo(),
+      getUsrpDevices()
     ]);
     
     const temperature = await getCpuTemperature();
@@ -730,6 +800,7 @@ app.get('/api/system/info', async (req, res) => {
       memory: memoryInfo,
       disk: diskInfo,
       network: interfaces,
+      usrp: usrpInfo,
       system: {
         hostname: os.hostname(),
         platform: os.platform(),
@@ -752,6 +823,7 @@ app.get('/api/system/info', async (req, res) => {
       memoryInfo: !!memoryInfo,
       diskInfo: !!diskInfo,
       networkInterfaces: interfaces.length,
+      usrpDevices: usrpInfo.count,
       temperature: temperature,
       uptimeInfo: !!uptimeInfo
     });
