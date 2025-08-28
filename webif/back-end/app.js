@@ -9,10 +9,59 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const compression = require('compression');
 const rateLimit = require('express-rate-limit');
+const WebSocket = require('ws');
 const logger = require('./logger');
 
 const app = express();
 const port = process.env.PORT || 40000;
+
+// Create HTTP server for WebSocket
+const server = require('http').createServer(app);
+
+// Create WebSocket server
+const wss = new WebSocket.Server({ server });
+
+// Store WebSocket connections
+let wsConnections = new Set();
+
+// WebSocket connection handling
+wss.on('connection', (ws, req) => {
+  const clientId = `${req.socket.remoteAddress}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  
+  logger.info('WebSocket client connected', { 
+    clientId, 
+    ip: req.socket.remoteAddress,
+    totalConnections: wsConnections.size + 1
+  });
+  
+  // Add to connections set
+  wsConnections.add(ws);
+  
+  // Send welcome message
+  ws.send(JSON.stringify({
+    type: 'connected',
+    clientId,
+    message: 'WebSocket connected for spectrogram data'
+  }));
+  
+  // Handle client disconnect
+  ws.on('close', () => {
+    wsConnections.delete(ws);
+    logger.info('WebSocket client disconnected', { 
+      clientId, 
+      totalConnections: wsConnections.size 
+    });
+  });
+  
+  // Handle client errors
+  ws.on('error', (error) => {
+    logger.warn('WebSocket client error', { 
+      clientId, 
+      error: error.message 
+    });
+    wsConnections.delete(ws);
+  });
+});
 
 // Security middleware
 app.use(helmet({
@@ -33,6 +82,27 @@ const limiter = rateLimit({
   message: 'Too many requests from this IP, please try again later.'
 });
 app.use('/api/', limiter);
+
+// Stricter rate limiting for spectrogram APIs
+const spectrogramLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 60, // limit each IP to 60 requests per minute (1 per second)
+  message: 'Spectrogram API rate limit exceeded. Please reduce request frequency.',
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => {
+    logger.warn('Spectrogram rate limit exceeded', {
+      ip: req.ip,
+      userAgent: req.get('User-Agent'),
+      path: req.path
+    });
+    res.status(429).json({
+      error: 'Spectrogram API rate limit exceeded',
+      message: 'Too many spectrogram requests. Please wait before trying again.',
+      retryAfter: Math.ceil(req.rateLimit.resetTime / 1000)
+    });
+  }
+});
 
 // Compression middleware
 app.use(compression());
@@ -79,6 +149,173 @@ app.use((req, res, next) => {
   
   next();
 });
+
+// Security middleware for spectrogram endpoints
+const validateSpectrogramRequest = (req, res, next) => {
+  // For SSE connections, be more lenient with origin checking
+  const isSSE = req.path.includes('/stream');
+  
+  if (!isSSE) {
+    // Check if request is from allowed origins (only for non-SSE requests)
+    const origin = req.get('Origin');
+    const referer = req.get('Referer');
+    const allowedOrigins = ['http://localhost:41000', 'http://localhost:40000'];
+    
+    if (!allowedOrigins.includes(origin) && (!referer || !allowedOrigins.some(allowed => referer.includes(allowed)))) {
+      logger.warn('Unauthorized spectrogram request', {
+        ip: req.ip,
+        origin,
+        referer,
+        userAgent: req.get('User-Agent'),
+        path: req.path
+      });
+      return res.status(403).json({ error: 'Unauthorized access to spectrogram API' });
+    }
+  } else {
+    // For SSE connections, be more permissive - allow any origin
+    logger.debug('SSE connection request', {
+      ip: req.ip,
+      origin: req.get('Origin'),
+      userAgent: req.get('User-Agent'),
+      path: req.path
+    });
+  }
+  
+  // Check for suspicious patterns
+  const userAgent = req.get('User-Agent') || '';
+  if (userAgent.includes('bot') || userAgent.includes('crawler') || userAgent.includes('scraper')) {
+    logger.warn('Bot detected accessing spectrogram API', {
+      ip: req.ip,
+      userAgent,
+      path: req.path
+    });
+    return res.status(403).json({ error: 'Bot access not allowed' });
+  }
+  
+  next();
+};
+
+// Store connected clients for server-push
+let connectedClients = new Map();
+
+// Generate spectrogram data and push to all connected clients
+const generateSpectrogramData = () => {
+  try {
+    logger.info('Generating spectrogram data', { 
+      activeStreams: spectrogramStreams.size,
+      connectedClients: connectedClients.size,
+      hasInterval: !!spectrogramInterval 
+    });
+    
+    // Generate realistic spectrogram data
+    const fftSize = 1024;
+    const data = new Array(fftSize / 2);
+    
+    // Base noise floor
+    for (let i = 0; i < data.length; i++) {
+      data[i] = Math.random() * 10 + 5; // 5-15 dB noise floor
+    }
+    
+    // Add some frequency peaks to simulate signals
+    const time = Date.now() / 1000;
+    
+    // Peak 1: Moving frequency
+    const peak1Freq = Math.floor(50 + 30 * Math.sin(time * 0.5));
+    const peak1Amp = 60 + 20 * Math.sin(time * 2);
+    if (peak1Freq >= 0 && peak1Freq < data.length) {
+      data[peak1Freq] = peak1Amp;
+      // Add some spread around the peak
+      for (let i = Math.max(0, peak1Freq - 2); i <= Math.min(data.length - 1, peak1Freq + 2); i++) {
+        const distance = Math.abs(i - peak1Freq);
+        data[i] = Math.max(data[i], peak1Amp * Math.exp(-distance * 0.5));
+      }
+    }
+    
+    // Peak 2: Fixed frequency with varying amplitude
+    const peak2Freq = 150;
+    const peak2Amp = 40 + 30 * Math.sin(time * 1.5);
+    if (peak2Freq < data.length) {
+      data[peak2Freq] = peak2Amp;
+      for (let i = Math.max(0, peak2Freq - 1); i <= Math.min(data.length - 1, peak2Freq + 1); i++) {
+        const distance = Math.abs(i - peak2Freq);
+        data[i] = Math.max(data[i], peak2Amp * Math.exp(-distance * 1.0));
+      }
+    }
+    
+    // Peak 3: High frequency burst
+    if (Math.sin(time * 3) > 0.8) {
+      const peak3Freq = 300 + Math.floor(Math.random() * 50);
+      const peak3Amp = 70 + Math.random() * 20;
+      if (peak3Freq < data.length) {
+        data[peak3Freq] = peak3Amp;
+        for (let i = Math.max(0, peak3Freq - 1); i <= Math.min(data.length - 1, peak3Freq + 1); i++) {
+          const distance = Math.abs(i - peak3Freq);
+          data[i] = Math.max(data[i], peak3Amp * Math.exp(-distance * 1.0));
+        }
+      }
+    }
+    
+    const spectrogramData = {
+      timestamp: Date.now(),
+      frequency: 2400,
+      sampleRate: 44100,
+      fftSize: fftSize,
+      data: data
+    };
+    
+    // Send data to all active SSE streams
+    let sentCount = 0;
+    spectrogramStreams.forEach((res, clientId) => {
+      try {
+        res.write(`data: ${JSON.stringify(spectrogramData)}\n\n`);
+        sentCount++;
+      } catch (error) {
+        logger.warn('Failed to send data to SSE client', { clientId, error: error.message });
+        spectrogramStreams.delete(clientId);
+      }
+    });
+    
+    // Send data to all WebSocket clients (true server-push)
+    let wsSentCount = 0;
+    wsConnections.forEach((ws) => {
+      try {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'spectrogram_data',
+            data: spectrogramData
+          }));
+          wsSentCount++;
+        }
+      } catch (error) {
+        logger.warn('Failed to send data to WebSocket client', { error: error.message });
+        wsConnections.delete(ws);
+      }
+    });
+    
+    // Send data to all connected HTTP clients (server-push)
+    connectedClients.forEach((clientInfo, clientId) => {
+      try {
+        // Store the latest data for this client
+        clientInfo.latestData = spectrogramData;
+        sentCount++;
+      } catch (error) {
+        logger.warn('Failed to store data for HTTP client', { clientId, error: error.message });
+        connectedClients.delete(clientId);
+      }
+    });
+    
+    logger.info('Spectrogram data generated and sent', { 
+      activeStreams: spectrogramStreams.size,
+      connectedClients: connectedClients.size,
+      wsConnections: wsConnections.size,
+      sentToClients: sentCount,
+      wsSentCount,
+      dataPoints: data.length 
+    });
+  } catch (error) {
+    logger.error('Error generating spectrogram data', { error: error.message });
+  }
+};
 
 // Helper function to execute shell commands
 const execCommand = (command) => {
@@ -536,6 +773,246 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Spectrogram streaming state
+let spectrogramStreams = new Map(); // Map to track active streams
+let spectrogramInterval = null; // Interval for generating data
+
+// Spectrogram API endpoints with strict rate limiting and security
+app.post('/api/spectrogram/start', validateSpectrogramRequest, spectrogramLimiter, async (req, res) => {
+  try {
+    logger.api('Spectrogram start requested', { ip: req.ip, settings: req.body });
+    
+    // Start spectrogram data generation if not already running
+    if (!spectrogramInterval) {
+      spectrogramInterval = setInterval(() => {
+        generateSpectrogramData();
+      }, 100); // Generate data every second
+      logger.debug('Spectrogram data generation started');
+    }
+    
+    const response = {
+      success: true,
+      message: 'Spectrogram capture started',
+      settings: req.body
+    };
+    
+    logger.api('Spectrogram start successful', { ip: req.ip });
+    res.json(response);
+  } catch (error) {
+    logger.error('Error starting spectrogram', { error: error.message, stack: error.stack, ip: req.ip });
+    res.status(500).json({ success: false, error: 'Failed to start spectrogram capture' });
+  }
+});
+
+app.post('/api/spectrogram/stop', validateSpectrogramRequest, spectrogramLimiter, async (req, res) => {
+  try {
+    logger.api('Spectrogram stop requested', { ip: req.ip });
+    
+    // TODO: Implement actual spectrogram stop logic
+    // For now, return success response
+    const response = {
+      success: true,
+      message: 'Spectrogram capture stopped'
+    };
+    
+    logger.api('Spectrogram stop successful', { ip: req.ip });
+    res.json(response);
+  } catch (error) {
+    logger.error('Error stopping spectrogram', { error: error.message, stack: error.stack, ip: req.ip });
+    res.status(500).json({ success: false, error: 'Failed to stop spectrogram capture' });
+  }
+});
+
+// Handle preflight OPTIONS request for SSE
+app.options('/api/spectrogram/stream', (req, res) => {
+  res.writeHead(200, {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Credentials': 'false',
+    'Access-Control-Allow-Headers': 'Cache-Control, Content-Type',
+    'Access-Control-Allow-Methods': 'GET, OPTIONS',
+    'Access-Control-Max-Age': '86400'
+  });
+  res.end();
+});
+
+// Server-Sent Events endpoint for real-time spectrogram data
+app.get('/api/spectrogram/stream', async (req, res) => {
+  try {
+    logger.api('Spectrogram stream requested', { ip: req.ip });
+    
+    // Set SSE headers with proper CORS for Chrome
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Connection': 'keep-alive',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Credentials': 'false',
+      'Access-Control-Allow-Headers': 'Cache-Control, Content-Type',
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'X-Accel-Buffering': 'no' // Disable nginx buffering if present
+    });
+    
+    // Send initial connection message
+    res.write('data: {"type": "connected", "message": "Spectrogram stream connected"}\n\n');
+    
+    // Generate unique client ID
+    const clientId = `${req.ip}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    // Add client to active streams
+    spectrogramStreams.set(clientId, res);
+    
+    logger.debug('Spectrogram stream connected', { clientId, ip: req.ip, activeStreams: spectrogramStreams.size });
+    
+    // Log the current state
+    logger.info('SSE Connection established', { 
+      clientId, 
+      ip: req.ip, 
+      activeStreams: spectrogramStreams.size,
+      hasInterval: !!spectrogramInterval,
+      userAgent: req.get('User-Agent')
+    });
+    
+    // Handle client disconnect
+    req.on('close', () => {
+      spectrogramStreams.delete(clientId);
+      logger.info('SSE Connection closed', { clientId, ip: req.ip, activeStreams: spectrogramStreams.size });
+      
+      // Stop data generation if no active streams
+      if (spectrogramStreams.size === 0 && spectrogramInterval) {
+        clearInterval(spectrogramInterval);
+        spectrogramInterval = null;
+        logger.info('Spectrogram data generation stopped - no active streams');
+      }
+    });
+    
+    // Handle client error
+    req.on('error', (error) => {
+      logger.warn('SSE Connection error', { clientId, ip: req.ip, error: error.message });
+      spectrogramStreams.delete(clientId);
+    });
+    
+  } catch (error) {
+    logger.error('Error setting up spectrogram stream', { error: error.message, stack: error.stack, ip: req.ip });
+    res.status(500).json({ error: 'Failed to setup spectrogram stream' });
+  }
+});
+
+// Register client for server-push data
+app.post('/api/spectrogram/register', async (req, res) => {
+  try {
+    const clientId = `${req.ip}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    connectedClients.set(clientId, {
+      ip: req.ip,
+      registeredAt: Date.now(),
+      latestData: null
+    });
+    
+    logger.info('Client registered for server-push', { clientId, ip: req.ip });
+    
+    res.json({ 
+      success: true, 
+      clientId,
+      message: 'Registered for server-push data' 
+    });
+  } catch (error) {
+    logger.error('Error registering client', { error: error.message, ip: req.ip });
+    res.status(500).json({ error: 'Failed to register client' });
+  }
+});
+
+// Get latest data for registered client (server-push)
+app.get('/api/spectrogram/data/:clientId', async (req, res) => {
+  try {
+    const { clientId } = req.params;
+    const clientInfo = connectedClients.get(clientId);
+    
+    if (!clientInfo) {
+      return res.status(404).json({ error: 'Client not found' });
+    }
+    
+    if (clientInfo.latestData) {
+      // Return the data and clear it (one-time delivery)
+      const data = clientInfo.latestData;
+      clientInfo.latestData = null;
+      res.json(data);
+    } else {
+      // No new data available
+      res.status(204).json({ message: 'No new data available' });
+    }
+  } catch (error) {
+    logger.error('Error getting client data', { error: error.message, clientId: req.params.clientId });
+    res.status(500).json({ error: 'Failed to get data' });
+  }
+});
+
+// Legacy endpoint for backward compatibility (single request)
+app.get('/api/spectrogram/data', spectrogramLimiter, async (req, res) => {
+  try {
+    logger.debug('Spectrogram data requested', { ip: req.ip });
+    
+    // Generate more realistic spectrogram data with some frequency peaks
+    const fftSize = 1024;
+    const data = new Array(fftSize / 2);
+    
+    // Base noise floor
+    for (let i = 0; i < data.length; i++) {
+      data[i] = Math.random() * 10 + 5; // 5-15 dB noise floor
+    }
+    
+    // Add some frequency peaks to simulate signals
+    const time = Date.now() / 1000;
+    
+    // Peak 1: Moving frequency
+    const peak1Freq = Math.floor(50 + 30 * Math.sin(time * 0.5));
+    const peak1Amp = 60 + 20 * Math.sin(time * 2);
+    if (peak1Freq >= 0 && peak1Freq < data.length) {
+      data[peak1Freq] = peak1Amp;
+      // Add some spread around the peak
+      for (let i = Math.max(0, peak1Freq - 2); i <= Math.min(data.length - 1, peak1Freq + 2); i++) {
+        const distance = Math.abs(i - peak1Freq);
+        data[i] = Math.max(data[i], peak1Amp * Math.exp(-distance * 0.5));
+      }
+    }
+    
+    // Peak 2: Fixed frequency with varying amplitude
+    const peak2Freq = 150;
+    const peak2Amp = 40 + 30 * Math.sin(time * 1.5);
+    if (peak2Freq < data.length) {
+      data[peak2Freq] = peak2Amp;
+      for (let i = Math.max(0, peak2Freq - 1); i <= Math.min(data.length - 1, peak2Freq + 1); i++) {
+        const distance = Math.abs(i - peak2Freq);
+        data[i] = Math.max(data[i], peak2Amp * Math.exp(-distance * 0.8));
+      }
+    }
+    
+    // Peak 3: High frequency burst
+    if (Math.sin(time * 3) > 0.8) {
+      const peak3Freq = 300 + Math.floor(Math.random() * 50);
+      const peak3Amp = 70 + Math.random() * 20;
+      if (peak3Freq < data.length) {
+        data[peak3Freq] = peak3Amp;
+        for (let i = Math.max(0, peak3Freq - 1); i <= Math.min(data.length - 1, peak3Freq + 1); i++) {
+          const distance = Math.abs(i - peak3Freq);
+          data[i] = Math.max(data[i], peak3Amp * Math.exp(-distance * 1.0));
+        }
+      }
+    }
+    
+    const mockData = {
+      timestamp: Date.now(),
+      frequency: 2400,
+      sampleRate: 44100,
+      fftSize: fftSize,
+      data: data
+    };
+    
+    res.json(mockData);
+  } catch (error) {
+    logger.error('Error getting spectrogram data', { error: error.message, stack: error.stack, ip: req.ip });
+    res.status(500).json({ error: 'Failed to get spectrogram data' });
+  }
+});
+
 // Logs API endpoints
 app.get('/api/logs/files', async (req, res) => {
   try {
@@ -704,15 +1181,17 @@ process.on('SIGINT', () => {
   process.exit(0);
 });
 
-app.listen(port, () => {
+server.listen(port, () => {
   logger.system(`🚀 OpenAirInterface5G Backend Server started`, {
     port,
     environment: process.env.NODE_ENV || 'development',
     nodeVersion: process.version,
-    pid: process.pid
+    pid: process.pid,
+    websocket: 'enabled'
   });
   
   console.log(`🚀 OpenAirInterface5G Backend Server listening on port ${port}`);
+  console.log(`🔌 WebSocket server enabled on port ${port}`);
   console.log(`📊 Health check: http://localhost:${port}/health`);
   console.log(`📚 API docs: http://localhost:${port}/api`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
