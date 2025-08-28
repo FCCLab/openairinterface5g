@@ -1,0 +1,38 @@
+{
+  "name": "openairinterface5g-server",
+  "version": "1.0.0",
+  "description": "Express.js backend server for OpenAirInterface5G web interface",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "dev": "nodemon app.js",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "logs": "node view-logs.js",
+    "logs:list": "node view-logs.js list",
+    "logs:view": "node view-logs.js view",
+    "logs:tail": "node view-logs.js tail"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "helmet": "^7.0.0",
+    "morgan": "^1.10.0",
+    "compression": "^1.7.4",
+    "express-rate-limit": "^6.7.0",
+    "winston": "^3.11.0",
+    "winston-daily-rotate-file": "^4.7.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  },
+  "keywords": [
+    "express",
+    "openairinterface5g",
+    "5g",
+    "network",
+    "monitoring",
+    "api"
+  ],
+  "author": "",
+  "license": "ISC"
+}
