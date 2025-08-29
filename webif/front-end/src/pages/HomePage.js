@@ -177,10 +177,10 @@ function HomePage() {
         try {
           // Construct device args for uhd_usrp_probe
           let deviceArgs = '';
-          if (device.details['IP Address']) {
-            deviceArgs = `addr=${device.details['IP Address']}`;
-          } else if (device.details['Serial Number']) {
+          if (device.details['Serial Number']) {
             deviceArgs = `serial=${device.details['Serial Number']}`;
+          } else if (device.details['IP Address']) {
+            deviceArgs = `addr=${device.details['IP Address']}`;
           } else {
             deviceArgs = `type=${device.details['Type'] || 'x300'}`;
           }

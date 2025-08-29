@@ -1,8 +1,18 @@
 const { exec } = require('child_process');
 const logger = require('./logger');
 
+/**
+ * Singleton USRP Device Manager
+ * Manages USRP device detection, caching, and detailed probing
+ * Ensures only one instance exists across the entire application
+ */
 class UsrpDeviceManager {
   constructor() {
+    if (UsrpDeviceManager.instance) {
+      return UsrpDeviceManager.instance;
+    }
+    
+    // Initialize the singleton instance
     this.cache = {
       devices: [],
       lastUpdate: null,
@@ -14,6 +24,9 @@ class UsrpDeviceManager {
       lsusb: true,
       dev: true
     };
+    
+    UsrpDeviceManager.instance = this;
+    return this;
   }
 
   /**
@@ -306,14 +319,55 @@ class UsrpDeviceManager {
   }
 
   /**
+   * Translate serial number to IP address if needed
+   */
+  translateSerialToIP(deviceArgs) {
+    // Check if deviceArgs contains a serial number
+    const serialMatch = deviceArgs.match(/serial=([^,\s]+)/);
+    if (serialMatch) {
+      const serialNumber = serialMatch[1];
+      logger.debug('Translating serial number to IP address', { serialNumber });
+      
+      // Find the device in our cache by serial number
+      if (this.cache.devices && this.cache.devices.length > 0) {
+        for (const device of this.cache.devices) {
+          if (device.details && device.details['Serial Number'] === serialNumber) {
+            if (device.details['IP Address']) {
+              const translatedArgs = deviceArgs.replace(/serial=[^,\s]+/, `addr=${device.details['IP Address']}`);
+              logger.debug('Serial number translated to IP address', { 
+                serialNumber, 
+                ipAddress: device.details['IP Address'],
+                originalArgs: deviceArgs,
+                translatedArgs 
+              });
+              return translatedArgs;
+            }
+          }
+        }
+      }
+      
+      logger.warn('Could not translate serial number to IP address', { serialNumber });
+    }
+    
+    // Return original args if no translation needed or possible
+    return deviceArgs;
+  }
+
+  /**
    * Get detailed device information using uhd_usrp_probe
    */
-  async getDeviceDetails(deviceArgs) {
+    async getDeviceDetails(deviceArgs) {
+    // Translate serial number to IP address if needed
+    const translatedArgs = this.translateSerialToIP(deviceArgs);
+    
     try {
-      logger.debug('Getting detailed device information', { deviceArgs });
+      logger.debug('Getting detailed device information', { 
+        originalArgs: deviceArgs,
+        translatedArgs 
+      });
       
-      return new Promise((resolve, reject) => {
-        const command = `uhd_usrp_probe --args "${deviceArgs}"`;
+              return new Promise((resolve, reject) => {
+          const command = `uhd_usrp_probe --args "${translatedArgs}"`;
         
         exec(command, { timeout: 30000 }, (error, stdout, stderr) => {
           if (error) {
@@ -554,4 +608,13 @@ class UsrpDeviceManager {
   }
 }
 
-module.exports = UsrpDeviceManager;
+// Static method to get the singleton instance
+UsrpDeviceManager.getInstance = function() {
+  if (!UsrpDeviceManager.instance) {
+    UsrpDeviceManager.instance = new UsrpDeviceManager();
+  }
+  return UsrpDeviceManager.instance;
+};
+
+// Export the singleton instance
+module.exports = UsrpDeviceManager.getInstance();

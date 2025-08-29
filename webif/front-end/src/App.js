@@ -21,18 +21,18 @@ function Navigation() {
           <Link to="/" className={`nav-link ${location.pathname === '/' ? 'active' : ''}`}>
             Home
           </Link>
+          <Link to="/spectrogram" className={`nav-link ${location.pathname === '/spectrogram' ? 'active' : ''}`}>
+            Spectrogram
+          </Link>
           <Link to="/cell-scan" className={`nav-link ${location.pathname === '/cell-scan' ? 'active' : ''}`}>
             Cell Scan
           </Link>
           <Link to="/cell-attached" className={`nav-link ${location.pathname === '/cell-attached' ? 'active' : ''}`}>
             Cell Attached
           </Link>
-                        <Link to="/logs" className={`nav-link ${location.pathname === '/logs' ? 'active' : ''}`}>
-                Logs
-              </Link>
-              <Link to="/spectrogram" className={`nav-link ${location.pathname === '/spectrogram' ? 'active' : ''}`}>
-                Spectrogram
-              </Link>
+          <Link to="/logs" className={`nav-link ${location.pathname === '/logs' ? 'active' : ''}`}>
+            Logs
+          </Link>
         </div>
       </div>
     </nav>

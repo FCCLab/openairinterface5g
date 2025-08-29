@@ -11,13 +11,10 @@ const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 const WebSocket = require('ws');
 const logger = require('./logger');
-const UsrpDeviceManager = require('./UsrpDeviceManager');
+const usrpDeviceManager = require('./UsrpDeviceManager');
 
 const app = express();
 const port = process.env.PORT || 40000;
-
-// Initialize USRP Device Manager
-const usrpDeviceManager = new UsrpDeviceManager();
 
 // Create HTTP server for WebSocket
 const server = require('http').createServer(app);
@@ -205,10 +202,14 @@ let connectedClients = new Map();
 // Generate spectrogram data and push to all connected clients
 const generateSpectrogramData = () => {
   try {
+    // Get the current device serial number if available
+    const currentDeviceSerial = spectrogramStreams.get('currentDeviceSerial');
+    
     logger.info('Generating spectrogram data', { 
       activeStreams: spectrogramStreams.size,
       connectedClients: connectedClients.size,
-      hasInterval: !!spectrogramInterval 
+      hasInterval: !!spectrogramInterval,
+      deviceSerialNumber: currentDeviceSerial || 'none'
     });
     
     // Generate realistic spectrogram data
@@ -264,7 +265,8 @@ const generateSpectrogramData = () => {
       frequency: 2400,
       sampleRate: 44100,
       fftSize: fftSize,
-      data: data
+      data: data,
+      deviceSerialNumber: currentDeviceSerial || null
     };
     
     // Send data to all active SSE streams
@@ -854,6 +856,18 @@ app.post('/api/spectrogram/start', validateSpectrogramRequest, spectrogramLimite
   try {
     logger.api('Spectrogram start requested', { ip: req.ip, settings: req.body });
     
+    // Extract device serial number from request
+    const { deviceSerialNumber, ...spectrogramSettings } = req.body;
+    
+    if (deviceSerialNumber) {
+      logger.debug('USRP device serial number provided for spectrogram', { deviceSerialNumber });
+      // Store the device serial number for use in data generation
+      spectrogramStreams.set('currentDeviceSerial', deviceSerialNumber);
+    } else {
+      logger.debug('No USRP device serial number provided for spectrogram');
+      spectrogramStreams.delete('currentDeviceSerial');
+    }
+    
     // Start spectrogram data generation if not already running
     if (!spectrogramInterval) {
       spectrogramInterval = setInterval(() => {
@@ -865,7 +879,8 @@ app.post('/api/spectrogram/start', validateSpectrogramRequest, spectrogramLimite
     const response = {
       success: true,
       message: 'Spectrogram capture started',
-      settings: req.body
+      settings: spectrogramSettings,
+      deviceSerialNumber: deviceSerialNumber || null
     };
     
     logger.api('Spectrogram start successful', { ip: req.ip });
