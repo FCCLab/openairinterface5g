@@ -18,8 +18,10 @@ const SpectrogramContainerTemplate = () => {
     gain: 20,
     
     // Display Settings
-    colormap: 'viridis',
-    scrollDirection: 'up',
+          colormap: 'viridis',
+      scrollDirection: 'up',
+      colorRangeMin: 0,   // dB minimum - adjusted for positive values
+      colorRangeMax: 20,  // dB maximum - adjusted for positive values
 
     pauseScrolling: false,
     displayMode: 'linear', // 'linear' or 'mel'
@@ -49,7 +51,7 @@ const SpectrogramContainerTemplate = () => {
   const canvasRef = useRef(null);
   const animationRef = useRef(null);
   const spectrogramHistory = useRef([]);
-  const maxHistoryLength = 100; // Reduced from 200 to make it lighter
+  const maxHistoryLengthRef = useRef(1000); // Will be updated to canvas height when canvas is available
   const startTimeRef = useRef(null);
   const eventSourceRef = useRef(null); // SSE connection reference
   
@@ -69,6 +71,8 @@ const SpectrogramContainerTemplate = () => {
   const windowSizeConversionRef = useRef(null);
   const hopSizeConversionRef = useRef(null);
   const colormapConversionRef = useRef(null);
+  const colorRangeMinConversionRef = useRef(null);
+  const colorRangeMaxConversionRef = useRef(null);
   const displayModeConversionRef = useRef(null);
   const scrollDirectionConversionRef = useRef(null);
   const usrpDeviceConversionRef = useRef(null);
@@ -88,9 +92,11 @@ const SpectrogramContainerTemplate = () => {
     resolution: { isTransitioning: false, oldValue: null, newValue: null, transitionText: '', phase: 'normal' },
     fftSize: { isTransitioning: false, oldValue: null, newValue: null, transitionText: '', phase: 'normal' },
     windowSize: { isTransitioning: false, oldValue: null, newValue: null, transitionText: '', phase: 'normal' },
-    hopSize: { isTransitioning: false, oldValue: null, newValue: null, transitionText: '', phase: 'normal' },
-    colormap: { isTransitioning: false, oldValue: null, newValue: null, transitionText: '', phase: 'normal' },
-    displayMode: { isTransitioning: false, oldValue: null, newValue: null, transitionText: '', phase: 'normal' },
+          hopSize: { isTransitioning: false, oldValue: null, newValue: null, transitionText: '', phase: 'normal' },
+      colormap: { isTransitioning: false, oldValue: null, newValue: null, transitionText: '', phase: 'normal' },
+      colorRangeMin: { isTransitioning: false, oldValue: null, newValue: null, transitionText: '', phase: 'normal' },
+      colorRangeMax: { isTransitioning: false, oldValue: null, newValue: null, transitionText: '', phase: 'normal' },
+      displayMode: { isTransitioning: false, oldValue: null, newValue: null, transitionText: '', phase: 'normal' },
     scrollDirection: { isTransitioning: false, oldValue: null, newValue: null, transitionText: '', phase: 'normal' },
     usrpDevice: { isTransitioning: false, oldValue: null, newValue: null, transitionText: '', phase: 'normal' },
     windowType: { isTransitioning: false, oldValue: null, newValue: null, transitionText: '', phase: 'normal' },
@@ -126,21 +132,51 @@ const SpectrogramContainerTemplate = () => {
     ]
   };
 
-  // Convert frequency to color using colormap - optimized
-  const frequencyToColor = (freq, amplitude) => {
+  // Convert amplitude to color using colormap - optimized
+  const amplitudeToColor = (amplitude) => {
     const colormap = colormaps[settings.colormap] || colormaps.viridis;
-    const maxFreq = settings.sampleRate / 2; // Nyquist frequency
-    const normalizedFreq = Math.min(Math.max(freq / maxFreq, 0), 1);
-    const normalizedAmp = Math.min(Math.max(amplitude / 100, 0), 1);
+
+    // Use color range to distribute colors across the colormap
+    const rangeMin = settings.colorRangeMin;
+    const rangeMax = settings.colorRangeMax;
     
-    const colorIndex = Math.floor(normalizedFreq * (colormap.length - 1));
+
+    const clampedAmp = Math.min(Math.max(amplitude, rangeMin), rangeMax);
+    
+    // Use amplitude only for color mapping
+    const colorIndex = Math.floor((clampedAmp - rangeMin) / (rangeMax - rangeMin) * (colormap.length - 1));
     const color = colormap[colorIndex];
-    
-    // Apply amplitude scaling with better contrast
-    const alpha = Math.max(0.1, normalizedAmp);
-    
+
     // Use template literal for better performance
-    return `rgba(${color[0]},${color[1]},${color[2]},${alpha})`;
+    return `rgba(${color[0]},${color[1]},${color[2]},1)`;
+  };
+
+  // Auto-adjust color range based on current data
+  const autoAdjustColorRange = () => {
+    if (spectrogramHistory.current.length === 0) {
+      console.log('❌ No data available for auto-adjustment');
+      return;
+    }
+
+    const latestData = spectrogramHistory.current[spectrogramHistory.current.length - 1];
+    if (!latestData || !latestData.data || latestData.data.length === 0) {
+      console.log('❌ No valid data for auto-adjustment');
+      return;
+    }
+
+    const amplitudes = latestData.data;
+    const minAmp = Math.min(...amplitudes);
+    const maxAmp = Math.max(...amplitudes);
+    
+    // Add some padding to the range
+    const newMin = Math.floor(minAmp - 2);
+    const newMax = Math.ceil(maxAmp + 2);
+    
+    console.log(`🎨 Auto-adjusting color range: ${newMin} to ${newMax} dB`);
+    
+    // Update settings
+    updateSettings('colorRangeMin', newMin);
+    updateSettings('colorRangeMax', newMax);
   };
 
   // Get colormap gradient for CSS
@@ -646,10 +682,10 @@ const SpectrogramContainerTemplate = () => {
           // Add to history
           spectrogramHistory.current.push(data);
           
-          // Keep only recent data
-          if (spectrogramHistory.current.length > maxHistoryLength) {
-            spectrogramHistory.current.shift();
-          }
+                      // Keep only recent data
+            if (spectrogramHistory.current.length > maxHistoryLengthRef.current) {
+              spectrogramHistory.current.shift();
+            }
           
           // Update current time (throttled)
           if (elapsed - currentTime > 0.1) { // Update every 100ms
@@ -705,7 +741,7 @@ const SpectrogramContainerTemplate = () => {
   };
 
   // Canvas drawing functions
-  // Draw spectrogram on canvas - optimized for performance
+  // Draw waterfall spectrogram on canvas - fixed pixel height
   const drawSpectrogram = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -717,45 +753,41 @@ const SpectrogramContainerTemplate = () => {
     // Check if canvas has proper dimensions
     if (width <= 0 || height <= 0) return;
     
-    // Clear canvas with lighter operation
-    ctx.clearRect(0, 0, width, height);
-    
     if (spectrogramHistory.current.length === 0) return;
     
-    // Calculate spectrogram dimensions - use full canvas
-    const spectrogramWidth = width;
-    const spectrogramHeight = height;
-    const startX = 0;
-    const startY = 0;
+    // Waterfall parameters - fill entire canvas
+    const pixelHeight = 2; // Fixed height for each pixel
     
-    // Calculate frequency width per bin
-    const freqWidth = spectrogramWidth / (settings.fftSize / 2);
-    const timeHeight = spectrogramHeight / spectrogramHistory.current.length;
+    // Calculate frequency width per bin - use actual data length
+    const actualDataLength = spectrogramHistory.current[0]?.data?.length || settings.fftSize / 2;
+    const freqWidth = width / actualDataLength;
     
-    // Optimize: Only draw every other frequency bin for better performance
-    const freqStep = Math.max(1, Math.floor((settings.fftSize / 2) / 200));
+    // Clear canvas
+    ctx.clearRect(0, 0, width, height);
     
-    // Draw each time slice with reduced frequency resolution
-    spectrogramHistory.current.forEach((data, timeIndex) => {
+    // Draw waterfall based on scroll direction - fill entire canvas
+    const dataToDraw = spectrogramHistory.current.slice(-maxHistoryLengthRef.current); // Use history length to fill canvas
+    
+    dataToDraw.forEach((data, timeIndex) => {
       if (!data.data || data.data.length === 0) return;
       
-      // Calculate time position (scrolling effect)
+      // Calculate Y position based on scroll direction
       const timeY = settings.scrollDirection === 'up' 
-        ? startY + (spectrogramHistory.current.length - 1 - timeIndex) * timeHeight
-        : startY + timeIndex * timeHeight;
+        ? height - (dataToDraw.length - timeIndex) * pixelHeight  // Newest at bottom
+        : (dataToDraw.length - 1 - timeIndex) * pixelHeight; // Newest at top
       
-      // Draw frequency bins with reduced resolution
-      for (let freqIndex = 0; freqIndex < data.data.length; freqIndex += freqStep) {
+      // Draw each frequency bin as a single pixel line
+      for (let freqIndex = 0; freqIndex < data.data.length; freqIndex++) {
         const amplitude = data.data[freqIndex];
-        const freqX = startX + freqIndex * freqWidth;
-        const color = frequencyToColor(freqIndex * (settings.sampleRate / 2) / (settings.fftSize / 2), amplitude);
+        const freqX = freqIndex * freqWidth;
+        const color = amplitudeToColor(amplitude);
         
         ctx.fillStyle = color;
         ctx.fillRect(
           freqX, 
           timeY, 
-          freqWidth * freqStep, 
-          timeHeight
+          freqWidth, 
+          pixelHeight
         );
       }
     });
@@ -771,6 +803,11 @@ const SpectrogramContainerTemplate = () => {
     
     const ctx = canvas.getContext('2d');
     ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+    
+    // Update maxHistoryLength to match canvas height
+    const canvasHeight = rect.height;
+    maxHistoryLengthRef.current = canvasHeight;
+    console.log('📏 Updated maxHistoryLength to canvas height:', canvasHeight);
     
     // Clear the canvas after resize
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -973,23 +1010,7 @@ const SpectrogramContainerTemplate = () => {
 
 
 
-  // Template for frequency labels
-  const frequencyLabelsTemplate = Array.from({length: 9}, (_, i) => {
-    const freq = (settings.sampleRate * i) / 16;
-    return {
-      key: i,
-      label: freq >= 1000 ? `${(freq / 1000).toFixed(1)}k` : freq.toFixed(0)
-    };
-  });
 
-  // Template for time labels
-  const timeLabelsTemplate = Array.from({length: 6}, (_, i) => {
-    const time = (200 * 0.05 * (5 - i)) / 5;
-    return {
-      key: i,
-      label: `${time.toFixed(1)}s`
-    };
-  });
 
   // Template for USRP device options
   const usrpDeviceOptionsTemplate = usrpDevices.map((device, index) => {
@@ -1007,9 +1028,10 @@ const SpectrogramContainerTemplate = () => {
   // Template for status items (optimized for performance)
   const statusItemsTemplate = [
     { label: 'Capture:', value: isCapturing ? 'Running' : 'Stopped', active: isCapturing },
-    { label: 'Connection:', value: streamConnected ? 'Connected' : 'Disconnected', active: streamConnected },
-    { label: 'Data Points:', value: spectrogramHistory.current.length, active: null },
-    { label: 'Max Frequency:', value: maxFrequency.freq > 0 ? `${Math.round(maxFrequency.freq)} Hz` : 'N/A', active: null },
+          { label: 'Connection:', value: streamConnected ? 'Connected' : 'Disconnected', active: streamConnected },
+      { label: 'Data Points:', value: spectrogramHistory.current.length, active: null },
+      { label: 'Max History:', value: Math.round(maxHistoryLengthRef.current), active: null },
+      { label: 'Max Frequency:', value: maxFrequency.freq > 0 ? `${Math.round(maxFrequency.freq)} Hz` : 'N/A', active: null },
     { label: 'Last Saved:', value: lastSavedTime ? new Date(lastSavedTime).toLocaleTimeString() : 'Never', active: null }
   ];
 
@@ -1133,12 +1155,74 @@ const SpectrogramContainerTemplate = () => {
                   </option>
                 ))}
               </select>
-              <div className="setting-status" ref={colormapConversionRef}>
-                <span className={`status-transition ${statusBoxStates.colormap.isTransitioning ? 'transitioning' : 'normal'}`}>
-                  {statusBoxStates.colormap.isTransitioning ? statusBoxStates.colormap.transitionText : settings.colormap}
-                </span>
-              </div>
-            </div>
+                             <div className="setting-status" ref={colormapConversionRef}>
+                 <span className={`status-transition ${statusBoxStates.colormap.isTransitioning ? 'transitioning' : 'normal'}`}>
+                   {statusBoxStates.colormap.isTransitioning ? statusBoxStates.colormap.transitionText : settings.colormap}
+                 </span>
+               </div>
+             </div>
+             
+             <div className="setting-item">
+               <label>
+                 Color Range Min (dB)
+                 {renderHelpIcon("Minimum value for the color scale in decibels. Lower values show more detail in weak signals, higher values focus on stronger signals.")}
+               </label>
+               <input
+                 type="number"
+                 value={settings.colorRangeMin}
+                 onChange={(e) => {
+                   const value = parseFloat(e.target.value);
+                   if (!isNaN(value)) {
+                     updateSettings('colorRangeMin', value);
+                   }
+                 }}
+                 step="0.1"
+                 placeholder="-50"
+               />
+               <div className="setting-status" ref={colorRangeMinConversionRef}>
+                 <span className={`status-transition ${statusBoxStates.colorRangeMin.isTransitioning ? 'transitioning' : 'normal'}`}>
+                   {statusBoxStates.colorRangeMin.isTransitioning ? statusBoxStates.colorRangeMin.transitionText : `${settings.colorRangeMin} dB`}
+                 </span>
+               </div>
+             </div>
+             
+             <div className="setting-item">
+               <label>
+                 Color Range Max (dB)
+                 {renderHelpIcon("Maximum value for the color scale in decibels. Higher values show more detail in strong signals, lower values focus on weaker signals.")}
+               </label>
+               <input
+                 type="number"
+                 value={settings.colorRangeMax}
+                 onChange={(e) => {
+                   const value = parseFloat(e.target.value);
+                   if (!isNaN(value)) {
+                     updateSettings('colorRangeMax', value);
+                   }
+                 }}
+                 step="0.1"
+                 placeholder="0"
+               />
+               <div className="setting-status" ref={colorRangeMaxConversionRef}>
+                 <span className={`status-transition ${statusBoxStates.colorRangeMax.isTransitioning ? 'transitioning' : 'normal'}`}>
+                   {statusBoxStates.colorRangeMax.isTransitioning ? statusBoxStates.colorRangeMax.transitionText : `${settings.colorRangeMax} dB`}
+                 </span>
+               </div>
+             </div>
+             
+             <div className="setting-item">
+               <label>
+                 Auto-Adjust Color Range
+                 {renderHelpIcon("Automatically adjust color range based on current signal amplitudes for optimal visualization.")}
+               </label>
+               <button
+                 className="control-btn config"
+                 onClick={autoAdjustColorRange}
+                 style={{ width: '100%', marginTop: '0.5rem' }}
+               >
+                 Auto-Adjust Range
+               </button>
+             </div>
             
             <div className="setting-item">
               <label>
@@ -1768,66 +1852,75 @@ const SpectrogramContainerTemplate = () => {
         </div>
         
         <div className="spectrogram-visualization">
-          {/* Frequency labels (top) */}
-          <div className="frequency-labels-top">
-            {frequencyLabelsTemplate.map(label => (
-              <span key={label.key} className="freq-label">
-                {label.label}
-              </span>
-            ))}
-          </div>
-          
           <div className="spectrogram-main">
-            {/* Time labels (left) */}
-            <div className="time-labels-left">
-              {timeLabelsTemplate.map(label => (
-                <span key={label.key} className="time-label">
-                  {label.label}
-                </span>
-              ))}
-            </div>
-            
-            {/* Spectrogram canvas */}
-            <div className="spectrogram-canvas">
+            {/* Spectrogram canvas with frequency axis */}
+            <div className="spectrogram-canvas" style={{ position: 'relative' }}>
               <canvas
                 ref={canvasRef}
-                className="spectrogram-canvas-element"
+                width={800}
+                height={600}
                 style={{
                   width: '100%',
                   height: '100%',
-                  borderRadius: '8px',
-                  background: '#000000',
                   display: 'block'
                 }}
               />
+              {/* Frequency axis overlay */}
+              <div className="frequency-axis-overlay">
+                {Array.from({length: 9}, (_, i) => {
+                  // Calculate frequency based on FFT size and sample rate
+                  const freqBinIndex = Math.floor((i * settings.fftSize / 2) / 8);
+                  const freq = (freqBinIndex * settings.sampleRate) / settings.fftSize;
+                  const xPosition = (i / 8) * 100; // Percentage position
+                  
+                  return (
+                    <div 
+                      key={i} 
+                      className="frequency-tick"
+                      style={{ 
+                        position: 'absolute',
+                        left: `${xPosition}%`,
+                        bottom: '0',
+                        transform: 'translateX(-50%)'
+                      }}
+                    >
+                      <div className="tick-line" style={{
+                        width: '1px',
+                        height: '10px',
+                        background: '#666',
+                        margin: '0 auto'
+                      }}></div>
+                      <div className="tick-label" style={{
+                        fontSize: '10px',
+                        color: '#666',
+                        textAlign: 'center',
+                        marginTop: '2px'
+                      }}>
+                        {freq >= 1000 ? `${(freq / 1000).toFixed(1)}k` : freq.toFixed(0)}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
             
             {/* Color bar (right) */}
             <div className="color-bar-container">
-              <div className="color-bar-title">Amplitude</div>
+              <div className="color-bar-title">Amplitude (dB)</div>
               <div className="color-bar">
                 <div 
                   className="color-bar-gradient"
                   style={{
-                    background: `linear-gradient(to bottom, ${getColormapGradient(settings.colormap)})`
+                    background: `linear-gradient(to top, ${getColormapGradient(settings.colormap)})`
                   }}
                 ></div>
                 <div className="color-bar-labels">
-                  <span className="color-label max">100 dB</span>
-                  <span className="color-label mid">50 dB</span>
-                  <span className="color-label min">0 dB</span>
+                  <span className="color-label max">{settings.colorRangeMax} dB</span>
+                  <span className="color-label mid">{Math.round((settings.colorRangeMax + settings.colorRangeMin) / 2)} dB</span>
+                  <span className="color-label min">{settings.colorRangeMin} dB</span>
                 </div>
               </div>
             </div>
-          </div>
-
-          {/* Frequency labels (bottom) */}
-          <div className="frequency-labels-bottom">
-            {frequencyLabelsTemplate.map(label => (
-              <span key={label.key} className="freq-label">
-                {label.label}
-              </span>
-            ))}
           </div>
         </div>
       </div>
