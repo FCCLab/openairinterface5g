@@ -38,6 +38,10 @@ const SpectrogramContainerTemplate = () => {
   const [hopSizeInput, setHopSizeInput] = useState('');
 
   const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [hasLoadedSettings, setHasLoadedSettings] = useState(false);
+  const [isLoadingFromStorage, setIsLoadingFromStorage] = useState(false);
+  const [autoUpdatesEnabled, setAutoUpdatesEnabled] = useState(false);
+  const [loadedSettings, setLoadedSettings] = useState(null);
   const [usrpDevices, setUsrpDevices] = useState([]);
   const [selectedUsrpDevice, setSelectedUsrpDevice] = useState('');
   const [lastSavedTime, setLastSavedTime] = useState(null);
@@ -48,12 +52,50 @@ const SpectrogramContainerTemplate = () => {
   const maxHistoryLength = 100; // Reduced from 200 to make it lighter
   const startTimeRef = useRef(null);
   const eventSourceRef = useRef(null); // SSE connection reference
+  
+  // Refs for input boxes
+  const windowSizeInputRef = useRef(null);
+  const hopSizeInputRef = useRef(null);
+  const frequencyInputRef = useRef(null);
+  const sampleRateInputRef = useRef(null);
+  const resolutionInputRef = useRef(null);
+  const fftSizeInputRef = useRef(null);
+  
+  // Refs for conversion display boxes (for status transitions)
+  const frequencyConversionRef = useRef(null);
+  const sampleRateConversionRef = useRef(null);
+  const resolutionConversionRef = useRef(null);
+  const fftSizeConversionRef = useRef(null);
+  const windowSizeConversionRef = useRef(null);
+  const hopSizeConversionRef = useRef(null);
+  const colormapConversionRef = useRef(null);
+  const displayModeConversionRef = useRef(null);
+  const scrollDirectionConversionRef = useRef(null);
+  const usrpDeviceConversionRef = useRef(null);
+  const windowTypeConversionRef = useRef(null);
+  const gainConversionRef = useRef(null);
 
   // State for custom tooltip
   const [tooltipContent, setTooltipContent] = useState('');
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
   const [showTooltip, setShowTooltip] = useState(false);
   const tooltipRef = useRef(null);
+  
+  // State for status box transitions
+  const [statusBoxStates, setStatusBoxStates] = useState({
+    frequency: { isTransitioning: false, oldValue: null, newValue: null, transitionText: '', phase: 'normal' },
+    sampleRate: { isTransitioning: false, oldValue: null, newValue: null, transitionText: '', phase: 'normal' },
+    resolution: { isTransitioning: false, oldValue: null, newValue: null, transitionText: '', phase: 'normal' },
+    fftSize: { isTransitioning: false, oldValue: null, newValue: null, transitionText: '', phase: 'normal' },
+    windowSize: { isTransitioning: false, oldValue: null, newValue: null, transitionText: '', phase: 'normal' },
+    hopSize: { isTransitioning: false, oldValue: null, newValue: null, transitionText: '', phase: 'normal' },
+    colormap: { isTransitioning: false, oldValue: null, newValue: null, transitionText: '', phase: 'normal' },
+    displayMode: { isTransitioning: false, oldValue: null, newValue: null, transitionText: '', phase: 'normal' },
+    scrollDirection: { isTransitioning: false, oldValue: null, newValue: null, transitionText: '', phase: 'normal' },
+    usrpDevice: { isTransitioning: false, oldValue: null, newValue: null, transitionText: '', phase: 'normal' },
+    windowType: { isTransitioning: false, oldValue: null, newValue: null, transitionText: '', phase: 'normal' },
+    gain: { isTransitioning: false, oldValue: null, newValue: null, transitionText: '', phase: 'normal' }
+  });
 
   // Colormap definitions (inspired by js-colormaps)
   const colormaps = {
@@ -151,17 +193,117 @@ const SpectrogramContainerTemplate = () => {
 
   // Update settings
   const updateSettings = (key, value) => {
+    console.log(`🔧 updateSettings called: ${key} = ${value}, isInitialLoad: ${isInitialLoad}`);
+    
+    // Get the old value before updating
+    const oldValue = settings[key];
+    
     setSettings(prev => ({
       ...prev,
       [key]: value
     }));
+    
+    // Show notification for any setting change (not just auto-updates)
+    if (!isInitialLoad && oldValue !== value) {
+      // Show status box transition for any setting change
+      if (!isInitialLoad) {
+        showStatusBoxTransition(key, oldValue, value);
+      }
+    }
+  };
+
+
+  
+  // Show status box transition
+  const showStatusBoxTransition = (settingKey, oldValue, newValue) => {
+    const oldFormatted = oldValue?.toLocaleString() || 'N/A';
+    const newFormatted = newValue?.toLocaleString() || 'N/A';
+    const transitionText = `${oldFormatted} → ${newFormatted}`;
+    
+    // Start transition
+    setStatusBoxStates(prev => ({
+      ...prev,
+      [settingKey]: {
+        isTransitioning: true,
+        oldValue,
+        newValue,
+        transitionText,
+        phase: 'transition'
+      }
+    }));
+    
+    // After 2 seconds, return to normal
+    setTimeout(() => {
+      setStatusBoxStates(prev => ({
+        ...prev,
+        [settingKey]: {
+          isTransitioning: false,
+          oldValue: null,
+          newValue: null,
+          transitionText: '',
+          phase: 'normal'
+        }
+      }));
+    }, 2000);
   };
 
   // Convert and update frequency settings
   const convertAndUpdateFrequency = (key, value) => {
+    console.log(`🔍 convertAndUpdateFrequency called with key: ${key}, value: ${value}, isInitialLoad: ${isInitialLoad}`);
     const frequencyHz = convertFrequencyToHz(value);
     if (frequencyHz > 0) {
       updateSettings(key, frequencyHz);
+      
+      // Only auto-update FFT size if not during initial load
+      if (!isInitialLoad) {
+        // If resolution is being updated, automatically update FFT size
+        if (key === 'resolution' && frequencyHz > 0) {
+          updateFFTSizeFromResolution(frequencyHz);
+        }
+        
+        // If sample rate is being updated and resolution exists, update FFT size
+        if (key === 'sampleRate' && settings.resolution > 0) {
+          updateFFTSizeFromResolution(settings.resolution);
+        }
+      }
+    }
+  };
+
+  // Update FFT size automatically based on resolution
+  const updateFFTSizeFromResolution = (resolutionHz) => {
+    console.log(`🔍 updateFFTSizeFromResolution called with resolutionHz: ${resolutionHz}, isInitialLoad: ${isInitialLoad}`);
+    
+    // Calculate FFT size based on resolution and current sample rate
+    // Formula: FFT Size = Sample Rate / Resolution
+    if (settings.sampleRate > 0) {
+      const calculatedFFTSize = Math.pow(2, Math.ceil(Math.log2(settings.sampleRate / resolutionHz)));
+      
+      // Check if calculated FFT size is out of range
+      const isOutOfRange = calculatedFFTSize < 16 || calculatedFFTSize > 65536;
+      
+      // Limit FFT size to reasonable range (16 to 65536)
+      const limitedFFTSize = Math.max(16, Math.min(65536, calculatedFFTSize));
+      
+      // Update FFT size setting
+      updateSettings('fftSize', limitedFFTSize);
+      
+      // Auto-update Window Size to match FFT size
+      updateSettings('windowSize', limitedFFTSize);
+      setWindowSizeInput(''); // Clear the input to show the auto-updated value
+      
+      // Auto-update Hop Size to half of Window Size
+      const newHopSize = Math.floor(limitedFFTSize / 2);
+      updateSettings('hopSize', newHopSize);
+      setHopSizeInput(''); // Clear the input to show the auto-updated value
+      
+      // Store out-of-range status for display
+      setSettings(prev => ({
+        ...prev,
+        fftSizeOutOfRange: isOutOfRange,
+        originalCalculatedFFTSize: calculatedFFTSize
+      }));
+      
+      console.log(`📊 Auto-updated FFT size to ${limitedFFTSize}, Window Size to ${limitedFFTSize}, and Hop Size to ${newHopSize} based on resolution ${resolutionHz.toLocaleString()} Hz and sample rate ${settings.sampleRate.toLocaleString()} Hz${isOutOfRange ? ' (OUT OF RANGE - original: ' + calculatedFFTSize + ')' : ''}`);
     }
   };
 
@@ -312,6 +454,16 @@ const SpectrogramContainerTemplate = () => {
   };
 
   const autoSaveConfig = () => {
+    console.log('💾 Auto-save triggered');
+    console.log('💾 Current settings:', settings);
+    console.log('💾 Current inputs:', {
+      frequencyInput,
+      sampleRateInput,
+      resolutionInput,
+      windowSizeInput,
+      hopSizeInput
+    });
+    
     const configs = JSON.parse(localStorage.getItem('spectrogramConfigs') || '{}');
     const currentTime = new Date().toISOString();
     configs['latest'] = {
@@ -326,6 +478,7 @@ const SpectrogramContainerTemplate = () => {
     
     localStorage.setItem('spectrogramConfigs', JSON.stringify(configs));
     setLastSavedTime(currentTime);
+    console.log('💾 Auto-save completed at:', currentTime);
   };
 
   const loadLatestConfig = () => {
@@ -625,21 +778,53 @@ const SpectrogramContainerTemplate = () => {
 
   // useEffect hooks
   useEffect(() => {
+    console.log('🔍 Initial load useEffect triggered');
     // Load latest configuration on mount
     const configs = JSON.parse(localStorage.getItem('spectrogramConfigs') || '{}');
     const latestConfig = configs['latest'];
     
     if (latestConfig) {
+      console.log('🔍 Loading saved config:', latestConfig.settings);
+      setIsLoadingFromStorage(true); // Mark that we're loading from storage
+      
+      // Store the loaded settings for comparison
+      setLoadedSettings(latestConfig.settings);
+      
+      // Load all settings exactly as saved, without triggering auto-updates
       setSettings(latestConfig.settings);
       setFrequencyInput(latestConfig.frequencyInput || '');
       setSampleRateInput(latestConfig.sampleRateInput || '');
       setResolutionInput(latestConfig.resolutionInput || '');
       setWindowSizeInput(latestConfig.windowSizeInput || '');
       setHopSizeInput(latestConfig.hopSizeInput || '');
+      setHasLoadedSettings(true); // Mark that we've loaded settings
       
       // Set the last saved time from the loaded configuration
       if (latestConfig.savedAt) {
         setLastSavedTime(latestConfig.savedAt);
+      }
+      
+      // Only fill in completely missing values, don't override existing ones
+      if (latestConfig.settings) {
+        const updatedSettings = { ...latestConfig.settings };
+        let hasChanges = false;
+        
+        // Only set window size if it's completely missing
+        if (latestConfig.settings.fftSize && !latestConfig.settings.windowSize) {
+          updatedSettings.windowSize = latestConfig.settings.fftSize;
+          hasChanges = true;
+        }
+        
+        // Only set hop size if it's completely missing
+        if (updatedSettings.windowSize && !latestConfig.settings.hopSize) {
+          updatedSettings.hopSize = Math.floor(updatedSettings.windowSize / 2);
+          hasChanges = true;
+        }
+        
+        // Update settings only if we made changes
+        if (hasChanges) {
+          setSettings(updatedSettings);
+        }
       }
     }
     
@@ -693,7 +878,22 @@ const SpectrogramContainerTemplate = () => {
       
       return () => clearTimeout(timeoutId);
     } else {
-      setIsInitialLoad(false);
+      // Delay setting isInitialLoad to false to prevent auto-updates during initial load
+      const timeoutId = setTimeout(() => {
+        console.log('🔍 Setting isInitialLoad to false (delayed)');
+        setIsInitialLoad(false);
+        setIsLoadingFromStorage(false); // Also mark that we're no longer loading from storage
+        
+        // Enable auto-updates after a longer delay to ensure all initial effects have completed
+        const autoUpdateTimeoutId = setTimeout(() => {
+          console.log('🔍 Enabling auto-updates');
+          setAutoUpdatesEnabled(true);
+        }, 500); // Longer delay to ensure all initial effects have run
+        
+        return () => clearTimeout(autoUpdateTimeoutId);
+      }, 100); // Small delay to ensure all initial effects have run
+      
+      return () => clearTimeout(timeoutId);
     }
   }, [settings, frequencyInput, sampleRateInput, resolutionInput, windowSizeInput, hopSizeInput]);
 
@@ -704,7 +904,49 @@ const SpectrogramContainerTemplate = () => {
       setSelectedUsrpDevice(firstDevice.name);
       console.log('📡 Auto-selected first USRP device:', firstDevice.name);
     }
-  }, [usrpDevices, selectedUsrpDevice]);
+    }, [usrpDevices, selectedUsrpDevice]);
+
+  // Ensure window size matches FFT size whenever FFT size changes (but not on initial load)
+  useEffect(() => {
+    // Only run if auto-updates are enabled and we have a valid FFT size, window size is different
+    if (autoUpdatesEnabled && settings.fftSize && settings.windowSize !== settings.fftSize) {
+      // Check if this is a user-initiated change (not from loading from storage)
+      const isUserChange = !loadedSettings || settings.fftSize !== loadedSettings.fftSize;
+      
+              if (isUserChange) {
+          updateSettings('windowSize', settings.fftSize);
+          setWindowSizeInput(''); // Clear the input to show the auto-updated value
+          
+          // Auto-update Hop Size to half of Window Size
+          const newHopSize = Math.floor(settings.fftSize / 2);
+          updateSettings('hopSize', newHopSize);
+          setHopSizeInput(''); // Clear the input to show the auto-updated value
+          
+          console.log(`🔄 Auto-updated Window Size to ${settings.fftSize} and Hop Size to ${newHopSize} to match FFT Size (user change)`);
+        } else {
+          console.log(`🔍 Skipping auto-update - FFT size matches loaded settings (${settings.fftSize})`);
+        }
+    }
+  }, [settings.fftSize, autoUpdatesEnabled, loadedSettings]);
+
+  // Ensure hop size is half of window size whenever window size changes (but not on initial load)
+  useEffect(() => {
+    if (autoUpdatesEnabled && settings.windowSize && settings.hopSize !== Math.floor(settings.windowSize / 2)) {
+      // Check if this is a user-initiated change (not from loading from storage)
+      const isUserChange = !loadedSettings || settings.windowSize !== loadedSettings.windowSize;
+      
+      if (isUserChange) {
+        const newHopSize = Math.floor(settings.windowSize / 2);
+        
+        updateSettings('hopSize', newHopSize);
+        setHopSizeInput(''); // Clear the input to show the auto-updated value
+        
+        console.log(`🔄 Auto-updated Hop Size to ${newHopSize} (half of Window Size ${settings.windowSize}) (user change)`);
+      } else {
+        console.log(`🔍 Skipping auto-update - Window size matches loaded settings (${settings.windowSize})`);
+      }
+    }
+  }, [settings.windowSize, autoUpdatesEnabled, loadedSettings]);
 
   // Template for control buttons (not used - buttons are rendered directly in JSX)
 
@@ -891,6 +1133,11 @@ const SpectrogramContainerTemplate = () => {
                   </option>
                 ))}
               </select>
+              <div className="setting-status" ref={colormapConversionRef}>
+                <span className={`status-transition ${statusBoxStates.colormap.isTransitioning ? 'transitioning' : 'normal'}`}>
+                  {statusBoxStates.colormap.isTransitioning ? statusBoxStates.colormap.transitionText : settings.colormap}
+                </span>
+              </div>
             </div>
             
             <div className="setting-item">
@@ -905,6 +1152,11 @@ const SpectrogramContainerTemplate = () => {
                 <option value="linear">Linear</option>
                 <option value="mel">Mel Scale</option>
               </select>
+              <div className="setting-status" ref={displayModeConversionRef}>
+                <span className={`status-transition ${statusBoxStates.displayMode.isTransitioning ? 'transitioning' : 'normal'}`}>
+                  {statusBoxStates.displayMode.isTransitioning ? statusBoxStates.displayMode.transitionText : settings.displayMode}
+                </span>
+              </div>
             </div>
             
             <div className="setting-item">
@@ -919,11 +1171,13 @@ const SpectrogramContainerTemplate = () => {
                 <option value="up">Up</option>
                 <option value="down">Down</option>
               </select>
+              <div className="setting-status" ref={scrollDirectionConversionRef}>
+                <span className={`status-transition ${statusBoxStates.scrollDirection.isTransitioning ? 'transitioning' : 'normal'}`}>
+                  {statusBoxStates.scrollDirection.isTransitioning ? statusBoxStates.scrollDirection.transitionText : settings.scrollDirection}
+                </span>
+              </div>
             </div>
             
-
-            
-
           </div>
         </div>
 
@@ -957,6 +1211,11 @@ const SpectrogramContainerTemplate = () => {
                   🔄
                 </button>
               </div>
+              <div className="setting-status" ref={usrpDeviceConversionRef}>
+                <span className={`status-transition ${statusBoxStates.usrpDevice.isTransitioning ? 'transitioning' : 'normal'}`}>
+                  {statusBoxStates.usrpDevice.isTransitioning ? statusBoxStates.usrpDevice.transitionText : (selectedUsrpDevice || 'No device selected')}
+                </span>
+              </div>
             </div>
             
             <div className="setting-item">
@@ -966,6 +1225,7 @@ const SpectrogramContainerTemplate = () => {
               </label>
               <div className="frequency-input-container">
                 <input
+                  ref={frequencyInputRef}
                   type="text"
                   placeholder="e.g., 10G, 100M, 20K"
                   value={frequencyInput}
@@ -980,8 +1240,10 @@ const SpectrogramContainerTemplate = () => {
                   className="frequency-input"
                 />
               </div>
-              <div className="frequency-conversion">
-                {settings.frequency.toLocaleString()} Hz
+              <div className="setting-status" ref={frequencyConversionRef}>
+                <span className={`status-transition ${statusBoxStates.frequency.isTransitioning ? 'transitioning' : 'normal'}`}>
+                  {statusBoxStates.frequency.isTransitioning ? statusBoxStates.frequency.transitionText : `${settings.frequency.toLocaleString()} Hz`}
+                </span>
               </div>
             </div>
             
@@ -992,6 +1254,7 @@ const SpectrogramContainerTemplate = () => {
               </label>
               <div className="frequency-input-container">
                 <input
+                  ref={sampleRateInputRef}
                   type="text"
                   placeholder="e.g., 1M, 10M, 30.72M"
                   value={sampleRateInput}
@@ -1006,18 +1269,21 @@ const SpectrogramContainerTemplate = () => {
                   className="frequency-input"
                 />
               </div>
-              <div className="frequency-conversion">
-                {settings.sampleRate.toLocaleString()} Hz
+              <div className="setting-status" ref={sampleRateConversionRef}>
+                <span className={`status-transition ${statusBoxStates.sampleRate.isTransitioning ? 'transitioning' : 'normal'}`}>
+                  {statusBoxStates.sampleRate.isTransitioning ? statusBoxStates.sampleRate.transitionText : `${settings.sampleRate.toLocaleString()} Hz`}
+                </span>
               </div>
             </div>
             
             <div className="setting-item">
               <label>
-                Resolution (Optional)
-                {renderHelpIcon("Desired frequency resolution. This determines the frequency precision of the analysis.\n\nHigher resolution provides:\n• Better frequency precision\n• Ability to distinguish close frequencies\n• Slower update rates\n• Larger FFT size required\n\nLower resolution provides:\n• Faster updates\n• Less computational load\n• Coarser frequency detail\n• Smaller FFT size\n\nSupports units:\n• G (GHz) - e.g., 1G = 1 GHz\n• M (MHz) - e.g., 1M = 1 MHz\n• K (kHz) - e.g., 1K = 1 kHz\n\nFormula: FFT Size = Sample Rate / Resolution\n\nTypical values:\n• High precision: 1K, 10K\n• Medium precision: 100K, 1M\n• Low precision: 10M, 100M")}
+                Resolution
+                {renderHelpIcon("Desired frequency resolution. This determines the frequency precision of the analysis.\n\nHigher resolution provides:\n• Better frequency precision\n• Ability to distinguish close frequencies\n• Slower update rates\n• Larger FFT size required\n\nLower resolution provides:\n• Faster updates\n• Less computational load\n• Coarser frequency detail\n• Smaller FFT size\n\nSupports units:\n• G (GHz) - e.g., 1G = 1 GHz\n• M (MHz) - e.g., 1M = 1 MHz\n• K (kHz) - e.g., 1K = 1 kHz\n\nFormula: FFT Size = Sample Rate / Resolution\n\nTypical values:\n• High precision: 1K, 10K\n• Medium precision: 100K, 1M\n• Low precision: 10M, 100M\n\n🔄 Auto-Update: When you set resolution, the FFT size is automatically calculated for optimal performance.")}
               </label>
               <div className="frequency-input-container">
                 <input
+                  ref={resolutionInputRef}
                   type="text"
                   placeholder="e.g., 1K, 10K, 100K"
                   value={resolutionInput}
@@ -1032,66 +1298,404 @@ const SpectrogramContainerTemplate = () => {
                   className="frequency-input"
                 />
               </div>
-              <div className="frequency-conversion">
-                {settings.resolution ? `${settings.resolution.toLocaleString()} Hz` : 'Auto (calculated from FFT size)'}
+              <div className="setting-status" ref={resolutionConversionRef}>
+                <span className={`status-transition ${statusBoxStates.resolution.isTransitioning ? 'transitioning' : 'normal'}`}>
+                  {statusBoxStates.resolution.isTransitioning ? statusBoxStates.resolution.transitionText : (settings.resolution ? `${settings.resolution.toLocaleString()} Hz` : 'Auto (calculated from FFT size)')}
+                </span>
               </div>
             </div>
             
             <div className="setting-item">
               <label>
                 FFT Size
-                {renderHelpIcon("Number of frequency bins in the FFT (Fast Fourier Transform).\n\nLarger FFT sizes provide:\n• Better frequency resolution\n• More precise frequency measurements\n• More computational time required\n\nSmaller FFT sizes provide:\n• Faster processing\n• Less memory usage\n• Coarser frequency resolution\n\nMust be a power of 2:\n• 512, 1024, 2048, 4096, 8192\n\nRelationship:\n• Frequency Resolution = Sample Rate / FFT Size\n• Time Resolution = FFT Size / Sample Rate")}
+                {renderHelpIcon("Number of frequency bins in the FFT (Fast Fourier Transform).\n\nLarger FFT sizes provide:\n• Better frequency resolution\n• More precise frequency measurements\n• More computational time required\n\nSmaller FFT sizes provide:\n• Faster processing\n• Less memory usage\n• Coarser frequency resolution\n\nMust be a power of 2:\n• 256, 512, 1024, 2048, 4096, 8192\n\nRelationship:\n• Frequency Resolution = Sample Rate / FFT Size\n• Time Resolution = FFT Size / Sample Rate\n\n🔄 Auto-Calculated: Automatically calculated from resolution setting for optimal performance.")}
+                {settings.fftSizeOutOfRange ? (
+                  <span 
+                    className="warning-icon" 
+                    onMouseEnter={(e) => {
+                      const rect = e.target.getBoundingClientRect();
+                      const containerRect = e.target.closest('.spectrogram-container').getBoundingClientRect();
+                      
+                      const resolutionHz = settings.sampleRate / settings.originalCalculatedFFTSize;
+                      const content = `FFT size limited to ${settings.fftSize.toLocaleString()} (calculated: ${settings.originalCalculatedFFTSize?.toLocaleString()})\n\nCalculation:\n• Formula: FFT Size = Sample Rate ÷ Resolution\n• ${settings.sampleRate.toLocaleString()} Hz ÷ ${resolutionHz.toLocaleString()} Hz = ${settings.originalCalculatedFFTSize?.toLocaleString()}\n• Rounded up to power of 2: ${settings.originalCalculatedFFTSize?.toLocaleString()}\n• Limited to range: 16 - 65,536`;
+                      const estimatedWidth = Math.min(500, Math.max(300, content.length * 7));
+                      const estimatedHeight = 120;
+                      
+                      let x = rect.left + rect.width / 2;
+                      let y = rect.bottom + 10;
+                      
+                      if (x + estimatedWidth / 2 > containerRect.right - 20) {
+                        x = containerRect.right - estimatedWidth / 2 - 20;
+                      } else if (x - estimatedWidth / 2 < containerRect.left + 20) {
+                        x = containerRect.left + estimatedWidth / 2 + 20;
+                      }
+                      
+                      if (y + estimatedHeight > containerRect.bottom - 20) {
+                        y = rect.top - estimatedHeight - 10;
+                      }
+                      
+                      x = x - containerRect.left;
+                      y = y - containerRect.top;
+                      
+                      const questionMarkCenter = rect.left + rect.width / 2 - containerRect.left;
+                      const arrowOffset = questionMarkCenter - x;
+                      
+                      x = Math.max(0, x);
+                      y = Math.max(0, y);
+                      
+                      setTooltipContent(content);
+                      setTooltipPosition({ 
+                        x, 
+                        y, 
+                        showAbove: y < (rect.top - containerRect.top),
+                        arrowOffset: arrowOffset
+                      });
+                      setShowTooltip(true);
+                    }}
+                    onMouseLeave={() => setShowTooltip(false)}
+                  >
+                    ⚠️
+                  </span>
+                ) : settings.resolution > 0 && (
+                  <span 
+                    className="success-icon" 
+                    onMouseEnter={(e) => {
+                      const rect = e.target.getBoundingClientRect();
+                      const containerRect = e.target.closest('.spectrogram-container').getBoundingClientRect();
+                      
+                      const exactDivision = settings.sampleRate / settings.resolution;
+                      const log2Exact = Math.log2(exactDivision);
+                      const roundedLog2 = Math.ceil(log2Exact);
+                      const content = `FFT size calculated: ${settings.fftSize.toLocaleString()}\n\nCalculation:\n• Formula: FFT Size = Sample Rate ÷ Resolution\n• ${settings.sampleRate.toLocaleString()} Hz ÷ ${settings.resolution.toLocaleString()} Hz = ${exactDivision.toFixed(2)}\n• log₂(${exactDivision.toFixed(2)}) = ${log2Exact.toFixed(2)}\n• Rounded up: ${log2Exact.toFixed(2)} → ${roundedLog2}\n• FFT Size: 2^${roundedLog2} = ${settings.fftSize.toLocaleString()}\n• Status: Within valid range (16 - 65,536)`;
+                      const estimatedWidth = Math.min(500, Math.max(300, content.length * 7));
+                      const estimatedHeight = 120;
+                      
+                      let x = rect.left + rect.width / 2;
+                      let y = rect.bottom + 10;
+                      
+                      if (x + estimatedWidth / 2 > containerRect.right - 20) {
+                        x = containerRect.right - estimatedWidth / 2 - 20;
+                      } else if (x - estimatedWidth / 2 < containerRect.left + 20) {
+                        x = containerRect.left + estimatedWidth / 2 + 20;
+                      }
+                      
+                      if (y + estimatedHeight > containerRect.bottom - 20) {
+                        y = rect.top - estimatedHeight - 10;
+                      }
+                      
+                      x = x - containerRect.left;
+                      y = y - containerRect.top;
+                      
+                      const questionMarkCenter = rect.left + rect.width / 2 - containerRect.left;
+                      const arrowOffset = questionMarkCenter - x;
+                      
+                      x = Math.max(0, x);
+                      y = Math.max(0, y);
+                      
+                      setTooltipContent(content);
+                      setTooltipPosition({ 
+                        x, 
+                        y, 
+                        showAbove: y < (rect.top - containerRect.top),
+                        arrowOffset: arrowOffset
+                      });
+                      setShowTooltip(true);
+                    }}
+                    onMouseLeave={() => setShowTooltip(false)}
+                  >
+                    ✅
+                  </span>
+                )}
               </label>
-              <select
+              <input
+                ref={fftSizeInputRef}
+                type="number"
                 value={settings.fftSize}
-                onChange={(e) => updateSettings('fftSize', parseInt(e.target.value))}
-              >
-                {fftSizeOptionsTemplate.map(size => (
-                  <option key={size} value={size}>{size}</option>
-                ))}
-              </select>
+                readOnly
+                min="16"
+                max="65536"
+                step="16"
+                placeholder="Auto-calculated"
+                style={{
+                  border: settings.fftSizeOutOfRange ? '2px solid #ef4444' : '1px solid #d1d5db',
+                  backgroundColor: settings.fftSizeOutOfRange ? '#fef2f2' : '#f9fafb',
+                  color: '#6b7280',
+                  cursor: 'not-allowed'
+                }}
+              />
+              <div className="setting-status" ref={fftSizeConversionRef}>
+                <span className={`status-transition ${statusBoxStates.fftSize.isTransitioning ? 'transitioning' : 'normal'}`}>
+                  {statusBoxStates.fftSize.isTransitioning ? statusBoxStates.fftSize.transitionText : `log₂(${settings.fftSize}) = ${Math.log2(settings.fftSize).toFixed(1)}`}
+                </span>
+              </div>
             </div>
             
             <div className="setting-item">
               <label>
-                Window Size (Optional)
-                {renderHelpIcon("Number of samples per STFT (Short-Time Fourier Transform) frame.\n\nIf not specified, uses the FFT size.\n\nSmaller windows provide:\n• Better time resolution\n• Faster response to signal changes\n• Less frequency resolution\n\nLarger windows provide:\n• Better frequency resolution\n• Slower response to changes\n• More stable frequency measurements\n\nTypical values:\n• 64 to 8192 samples\n• Must be ≤ FFT Size\n• Usually power of 2 for efficiency")}
+                Window Size
+                {renderHelpIcon("Number of samples per STFT (Short-Time Fourier Transform) frame.\n\nShould be ≤ FFT Size for optimal performance.\n\nSmaller windows provide:\n• Better time resolution\n• Faster response to signal changes\n• Less frequency resolution\n\nLarger windows provide:\n• Better frequency resolution\n• Slower response to changes\n• More stable frequency measurements\n\nWarning: Values > FFT Size may cause issues")}
+                {settings.windowSize > settings.fftSize && (
+                  <span
+                    className="warning-icon"
+                    onMouseEnter={(e) => {
+                      const rect = e.target.getBoundingClientRect();
+                      const containerRect = e.target.closest('.spectrogram-container').getBoundingClientRect();
+                      
+                      const content = `Window Size (${settings.windowSize.toLocaleString()}) is larger than FFT Size (${settings.fftSize.toLocaleString()})\n\nThis may cause:\n• Performance issues\n• Incorrect frequency analysis\n• Memory problems\n• Unexpected behavior\n\nRecommendation: Use Window Size ≤ FFT Size`;
+                      const estimatedWidth = Math.min(500, Math.max(300, content.length * 7));
+                      const estimatedHeight = 120;
+                      
+                      let x = rect.left + rect.width / 2;
+                      let y = rect.bottom + 10;
+                      
+                      if (x + estimatedWidth / 2 > containerRect.right - 20) {
+                        x = containerRect.right - estimatedWidth / 2 - 20;
+                      } else if (x - estimatedWidth / 2 < containerRect.left + 20) {
+                        x = containerRect.left + estimatedWidth / 2 + 20;
+                      }
+                      
+                      if (y + estimatedHeight > containerRect.bottom - 20) {
+                        y = rect.top - estimatedHeight - 10;
+                      }
+                      
+                      x = x - containerRect.left;
+                      y = y - containerRect.top;
+                      
+                      const questionMarkCenter = rect.left + rect.width / 2 - containerRect.left;
+                      const arrowOffset = questionMarkCenter - x;
+                      
+                      x = Math.max(0, x);
+                      y = Math.max(0, y);
+                      
+                      setTooltipContent(content);
+                      setTooltipPosition({ 
+                        x, 
+                        y, 
+                        showAbove: y < (rect.top - containerRect.top),
+                        arrowOffset: arrowOffset
+                      });
+                      setShowTooltip(true);
+                    }}
+                    onMouseLeave={() => setShowTooltip(false)}
+                  >
+                    ⚠️
+                  </span>
+                )}
+                {settings.windowSize <= settings.fftSize && settings.windowSize > 0 && (
+                  <span 
+                    className="success-icon" 
+                    onMouseEnter={(e) => {
+                      const rect = e.target.getBoundingClientRect();
+                      const containerRect = e.target.closest('.spectrogram-container').getBoundingClientRect();
+                      
+                      const content = `Window Size (${settings.windowSize.toLocaleString()}) is properly configured\n\n✅ Valid range: ≤ FFT Size (${settings.fftSize.toLocaleString()})\n✅ Optimal performance\n✅ Correct STFT analysis\n\nWindow Size: ${settings.windowSize.toLocaleString()} samples\nFFT Size: ${settings.fftSize.toLocaleString()} samples\nStatus: Valid configuration`;
+                      const estimatedWidth = Math.min(500, Math.max(300, content.length * 7));
+                      const estimatedHeight = 120;
+                      
+                      let x = rect.left + rect.width / 2;
+                      let y = rect.bottom + 10;
+                      
+                      if (x + estimatedWidth / 2 > containerRect.right - 20) {
+                        x = containerRect.right - estimatedWidth / 2 - 20;
+                      } else if (x - estimatedWidth / 2 < containerRect.left + 20) {
+                        x = containerRect.left + estimatedWidth / 2 + 20;
+                      }
+                      
+                      if (y + estimatedHeight > containerRect.bottom - 20) {
+                        y = rect.top - estimatedHeight - 10;
+                      }
+                      
+                      x = x - containerRect.left;
+                      y = y - containerRect.top;
+                      
+                      const questionMarkCenter = rect.left + rect.width / 2 - containerRect.left;
+                      const arrowOffset = questionMarkCenter - x;
+                      
+                      x = Math.max(0, x);
+                      y = Math.max(0, y);
+                      
+                      setTooltipContent(content);
+                      setTooltipPosition({ 
+                        x, 
+                        y, 
+                        showAbove: y < (rect.top - containerRect.top),
+                        arrowOffset: arrowOffset
+                      });
+                      setShowTooltip(true);
+                    }}
+                    onMouseLeave={() => setShowTooltip(false)}
+                  >
+                    ✅
+                  </span>
+                )}
               </label>
               <input
+                ref={windowSizeInputRef}
                 type="number"
-                placeholder="Auto (uses FFT size)"
-                value={windowSizeInput}
+                placeholder="Auto (matches FFT size)"
+                value={windowSizeInput || settings.windowSize || settings.fftSize}
                 onChange={(e) => setWindowSizeInput(e.target.value)}
                 onBlur={() => {
                   const value = parseInt(windowSizeInput);
-                  updateSettings('windowSize', value || null);
+                  updateSettings('windowSize', value || settings.fftSize);
                   setWindowSizeInput(value || '');
                 }}
-                min="64"
-                max="8192"
-                step="64"
+                onKeyPress={(e) => {
+                  if (e.key === 'Enter') {
+                    const value = parseInt(windowSizeInput);
+                    updateSettings('windowSize', value || settings.fftSize);
+                    setWindowSizeInput(value || '');
+                    e.target.blur();
+                  }
+                }}
+                min="16"
+                max="65536"
+                step="16"
+                style={{
+                  border: settings.windowSize > settings.fftSize ? '2px solid #ef4444' : '1px solid #d1d5db',
+                  backgroundColor: settings.windowSize > settings.fftSize ? '#fef2f2' : '#ffffff',
+                  color: settings.windowSize > settings.fftSize ? '#dc2626' : '#1f2937'
+                }}
               />
+              <div className="setting-status" ref={windowSizeConversionRef}>
+                <span className={`status-transition ${statusBoxStates.windowSize.isTransitioning ? 'transitioning' : 'normal'}`}>
+                  {statusBoxStates.windowSize.isTransitioning ? statusBoxStates.windowSize.transitionText : `${settings.windowSize?.toLocaleString() || settings.fftSize?.toLocaleString() || 'Auto'}`}
+                </span>
+              </div>
             </div>
             
             <div className="setting-item">
               <label>
-                Hop Size (Optional)
+                Hop Size
                 {renderHelpIcon("Number of samples to advance between consecutive STFT frames.\n\nIf not specified, defaults to window_size/2.\n\nSmaller hop sizes provide:\n• Smoother time resolution\n• More overlapping frames\n• Higher computational overhead\n• Better time-domain detail\n\nLarger hop sizes provide:\n• Faster processing\n• Less overlap between frames\n• Lower computational cost\n• Coarser time resolution\n\nOverlap = Window Size - Hop Size\nTypical overlap: 50% (hop = window/2)")}
+                {settings.hopSize > settings.windowSize && (
+                  <span
+                    className="warning-icon"
+                    onMouseEnter={(e) => {
+                      const rect = e.target.getBoundingClientRect();
+                      const containerRect = e.target.closest('.spectrogram-container').getBoundingClientRect();
+                      
+                      const content = `Hop Size (${settings.hopSize.toLocaleString()}) is larger than Window Size (${settings.windowSize.toLocaleString()})\n\nThis may cause:\n• Incorrect STFT analysis\n• Missing data points\n• Performance issues\n• Unexpected behavior\n\nRecommendation: Use Hop Size ≤ Window Size`;
+                      const estimatedWidth = Math.min(500, Math.max(300, content.length * 7));
+                      const estimatedHeight = 120;
+                      
+                      let x = rect.left + rect.width / 2;
+                      let y = rect.bottom + 10;
+                      
+                      if (x + estimatedWidth / 2 > containerRect.right - 20) {
+                        x = containerRect.right - estimatedWidth / 2 - 20;
+                      } else if (x - estimatedWidth / 2 < containerRect.left + 20) {
+                        x = containerRect.left + estimatedWidth / 2 + 20;
+                      }
+                      
+                      if (y + estimatedHeight > containerRect.bottom - 20) {
+                        y = rect.top - estimatedHeight - 10;
+                      }
+                      
+                      x = x - containerRect.left;
+                      y = y - containerRect.top;
+                      
+                      const questionMarkCenter = rect.left + rect.width / 2 - containerRect.left;
+                      const arrowOffset = questionMarkCenter - x;
+                      
+                      x = Math.max(0, x);
+                      y = Math.max(0, y);
+                      
+                      setTooltipContent(content);
+                      setTooltipPosition({ 
+                        x, 
+                        y, 
+                        showAbove: y < (rect.top - containerRect.top),
+                        arrowOffset: arrowOffset
+                      });
+                      setShowTooltip(true);
+                    }}
+                    onMouseLeave={() => setShowTooltip(false)}
+                  >
+                    ⚠️
+                  </span>
+                )}
+                {settings.hopSize <= settings.windowSize && settings.hopSize > 0 && (
+                  <span 
+                    className="success-icon" 
+                    onMouseEnter={(e) => {
+                      const rect = e.target.getBoundingClientRect();
+                      const containerRect = e.target.closest('.spectrogram-container').getBoundingClientRect();
+                      
+                      const content = `Hop Size (${settings.hopSize.toLocaleString()}) is properly configured\n\n✅ Valid range: ≤ Window Size (${settings.windowSize.toLocaleString()})\n✅ Optimal STFT analysis\n✅ Correct frame overlap\n\nHop Size: ${settings.hopSize.toLocaleString()} samples\nWindow Size: ${settings.windowSize.toLocaleString()} samples\nOverlap: ${(settings.windowSize - settings.hopSize).toLocaleString()} samples\nStatus: Valid configuration`;
+                      const estimatedWidth = Math.min(500, Math.max(300, content.length * 7));
+                      const estimatedHeight = 120;
+                      
+                      let x = rect.left + rect.width / 2;
+                      let y = rect.bottom + 10;
+                      
+                      if (x + estimatedWidth / 2 > containerRect.right - 20) {
+                        x = containerRect.right - estimatedWidth / 2 - 20;
+                      } else if (x - estimatedWidth / 2 < containerRect.left + 20) {
+                        x = containerRect.left + estimatedWidth / 2 + 20;
+                      }
+                      
+                      if (y + estimatedHeight > containerRect.bottom - 20) {
+                        y = rect.top - estimatedHeight - 10;
+                      }
+                      
+                      x = x - containerRect.left;
+                      y = y - containerRect.top;
+                      
+                      const questionMarkCenter = rect.left + rect.width / 2 - containerRect.left;
+                      const arrowOffset = questionMarkCenter - x;
+                      
+                      x = Math.max(0, x);
+                      y = Math.max(0, y);
+                      
+                      setTooltipContent(content);
+                      setTooltipPosition({ 
+                        x, 
+                        y, 
+                        showAbove: y < (rect.top - containerRect.top),
+                        arrowOffset: arrowOffset
+                      });
+                      setShowTooltip(true);
+                    }}
+                    onMouseLeave={() => setShowTooltip(false)}
+                  >
+                    ✅
+                  </span>
+                )}
               </label>
               <input
+                ref={hopSizeInputRef}
                 type="number"
                 placeholder="Auto (window_size/2)"
-                value={hopSizeInput}
+                value={hopSizeInput || settings.hopSize || Math.floor((settings.windowSize || settings.fftSize) / 2)}
                 onChange={(e) => setHopSizeInput(e.target.value)}
                 onBlur={() => {
                   const value = parseInt(hopSizeInput);
-                  updateSettings('hopSize', value || null);
+                  updateSettings('hopSize', value || Math.floor((settings.windowSize || settings.fftSize) / 2));
                   setHopSizeInput(value || '');
                 }}
+                onKeyPress={(e) => {
+                  if (e.key === 'Enter') {
+                    const value = parseInt(hopSizeInput);
+                    updateSettings('hopSize', value || Math.floor((settings.windowSize || settings.fftSize) / 2));
+                    setHopSizeInput(value || '');
+                    e.target.blur();
+                  }
+                }}
                 min="1"
-                max="4096"
+                max="65536"
                 step="1"
+                style={{
+                  border: settings.hopSize > settings.windowSize ? '2px solid #ef4444' : '1px solid #d1d5db',
+                  backgroundColor: settings.hopSize > settings.windowSize ? '#fef2f2' : '#ffffff',
+                  color: settings.hopSize > settings.windowSize ? '#dc2626' : '#1f2937'
+                }}
               />
+              <div className="setting-status" ref={hopSizeConversionRef}>
+                <span className={`status-transition ${statusBoxStates.hopSize.isTransitioning ? 'transitioning' : 'normal'}`}>
+                  {statusBoxStates.hopSize.isTransitioning ? statusBoxStates.hopSize.transitionText : `${settings.hopSize?.toLocaleString() || Math.floor((settings.windowSize || settings.fftSize) / 2)?.toLocaleString() || 'Auto'}`}
+                </span>
+              </div>
             </div>
             
             <div className="setting-item">
@@ -1109,6 +1713,11 @@ const SpectrogramContainerTemplate = () => {
                   </option>
                 ))}
               </select>
+              <div className="setting-status" ref={windowTypeConversionRef}>
+                <span className={`status-transition ${statusBoxStates.windowType.isTransitioning ? 'transitioning' : 'normal'}`}>
+                  {statusBoxStates.windowType.isTransitioning ? statusBoxStates.windowType.transitionText : settings.windowType}
+                </span>
+              </div>
             </div>
             
             <div className="setting-item">
@@ -1124,6 +1733,11 @@ const SpectrogramContainerTemplate = () => {
                 max="60"
                 step="1"
               />
+              <div className="setting-status" ref={gainConversionRef}>
+                <span className={`status-transition ${statusBoxStates.gain.isTransitioning ? 'transitioning' : 'normal'}`}>
+                  {statusBoxStates.gain.isTransitioning ? statusBoxStates.gain.transitionText : `${settings.gain} dB`}
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -1251,6 +1865,8 @@ const SpectrogramContainerTemplate = () => {
           {tooltipContent}
         </div>
       )}
+
+
     </div>
   );
 };
