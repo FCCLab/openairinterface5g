@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNotification } from '../context/NotificationContext';
-import NotificationDemo from '../components/NotificationDemo';
 
 function HomePage() {
   const { showError, showSuccess } = useNotification();
@@ -584,10 +583,7 @@ function HomePage() {
         </div>
       )}
 
-      {/* Notification Demo - Remove this section after testing */}
-      <div style={{ marginTop: '2rem', padding: '2rem', border: '1px solid rgba(255, 255, 255, 0.2)', borderRadius: '8px' }}>
-        <NotificationDemo />
-      </div>
+
     </div>
   );
 }
