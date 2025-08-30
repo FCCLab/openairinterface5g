@@ -20,8 +20,8 @@ const SpectrogramContainerTemplate = () => {
     // Display Settings
           colormap: 'viridis',
       scrollDirection: 'up',
-      colorRangeMin: 0,   // dB minimum - adjusted for positive values
-      colorRangeMax: 20,  // dB maximum - adjusted for positive values
+          colorRangeMin: -80,   // dB minimum - typical RF range
+    colorRangeMax: -20,   // dB maximum - typical RF range
 
     pauseScrolling: false,
     displayMode: 'linear', // 'linear' or 'mel'
@@ -38,6 +38,8 @@ const SpectrogramContainerTemplate = () => {
   const [resolutionInput, setResolutionInput] = useState('');
   const [windowSizeInput, setWindowSizeInput] = useState('');
   const [hopSizeInput, setHopSizeInput] = useState('');
+  const [colorRangeMinInput, setColorRangeMinInput] = useState('');
+  const [colorRangeMaxInput, setColorRangeMaxInput] = useState('');
 
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [hasLoadedSettings, setHasLoadedSettings] = useState(false);
@@ -343,56 +345,157 @@ const SpectrogramContainerTemplate = () => {
     }
   };
 
+  // Optimized tooltip positioning helper
+  const calculateTooltipPosition = (event, content) => {
+    const rect = event.target.getBoundingClientRect();
+    const containerRect = event.target.closest('.spectrogram-container').getBoundingClientRect();
+    
+    // Estimate tooltip dimensions
+    const estimatedWidth = Math.min(500, Math.max(200, content.length * 7));
+    const estimatedHeight = Math.max(80, (content.split('\n').length + 1) * 20);
+    
+    // Calculate initial position (centered on element, below it)
+    let x = rect.left + rect.width / 2;
+    let y = rect.bottom + 10;
+    
+    // Adjust horizontal position to keep tooltip within container
+    if (x + estimatedWidth / 2 > containerRect.right - 20) {
+      x = containerRect.right - estimatedWidth / 2 - 20;
+    } else if (x - estimatedWidth / 2 < containerRect.left + 20) {
+      x = containerRect.left + estimatedWidth / 2 + 20;
+    }
+    
+    // Adjust vertical position if tooltip would go below container
+    const showAbove = y + estimatedHeight > containerRect.bottom - 20;
+    if (showAbove) {
+      y = rect.top - estimatedHeight - 10;
+    }
+    
+    // Convert to container-relative coordinates
+    x = x - containerRect.left;
+    y = y - containerRect.top;
+    
+    // Calculate arrow offset (where arrow should point relative to tooltip)
+    const elementCenter = rect.left + rect.width / 2 - containerRect.left;
+    const arrowOffset = elementCenter - x;
+    
+    // Ensure minimum values
+    x = Math.max(0, x);
+    y = Math.max(0, y);
+    
+    return {
+      x,
+      y,
+      showAbove,
+      arrowOffset
+    };
+  };
+
+  // Optimized tooltip handler
+  const handleTooltipShow = (event, content) => {
+    const position = calculateTooltipPosition(event, content);
+    setTooltipContent(content);
+    setTooltipPosition(position);
+    setShowTooltip(true);
+  };
+
+  const handleTooltipHide = () => {
+    setShowTooltip(false);
+  };
+
+  // Helper functions for validation tooltips
+  const getColorRangeValidationContent = (isValid) => {
+    if (isValid) {
+      return `Color range validation passed!\n\nCurrent values:\n• Min: ${settings.colorRangeMin} dB\n• Max: ${settings.colorRangeMax} dB\n\n✅ Valid configuration:\n• Min (${settings.colorRangeMin}) < Max (${settings.colorRangeMax})\n• Range: ${settings.colorRangeMax - settings.colorRangeMin} dB\n\nTypical ranges:\n• Weak signals: -80 dB to -60 dB\n• Medium signals: -60 dB to -40 dB\n• Strong signals: -40 dB to -20 dB\n\nOptimal for spectrogram visualization!`;
+    } else {
+      return `Color range validation failed!\n\nCurrent values:\n• Min: ${settings.colorRangeMin} dB\n• Max: ${settings.colorRangeMax} dB\n\nIssue: Minimum value (${settings.colorRangeMin}) is greater than or equal to maximum value (${settings.colorRangeMax})\n\nFor proper spectrogram visualization:\n• Min should be less than Max\n• Typical range: -80 dB to -20 dB\n• Min: -80 dB (weak signals)\n• Max: -20 dB (strong signals)`;
+    }
+  };
+
+  // Optimized validation icon renderer
+  const renderValidationIcon = (isValid) => {
+    const content = getColorRangeValidationContent(isValid);
+    const iconClass = isValid ? 'success-icon' : 'warning-icon';
+    const iconSymbol = isValid ? '✅' : '⚠️';
+    
+    return (
+      <span 
+        className={iconClass} 
+        onMouseEnter={(e) => handleTooltipShow(e, content)}
+        onMouseLeave={handleTooltipHide}
+      >
+        {iconSymbol}
+      </span>
+    );
+  };
+
+  // Helper functions for FFT Size tooltips
+  const getFFTSizeWarningContent = () => {
+    const resolutionHz = settings.sampleRate / settings.originalCalculatedFFTSize;
+    return `FFT size limited to ${settings.fftSize.toLocaleString()} (calculated: ${settings.originalCalculatedFFTSize?.toLocaleString()})\n\nCalculation:\n• Formula: FFT Size = Sample Rate ÷ Resolution\n• ${settings.sampleRate.toLocaleString()} Hz ÷ ${resolutionHz.toLocaleString()} Hz = ${settings.originalCalculatedFFTSize?.toLocaleString()}\n• Rounded up to power of 2: ${settings.originalCalculatedFFTSize?.toLocaleString()}\n• Limited to range: 16 - 65,536`;
+  };
+
+  const getFFTSizeSuccessContent = () => {
+    const exactDivision = settings.sampleRate / settings.resolution;
+    const log2Exact = Math.log2(exactDivision);
+    const roundedLog2 = Math.ceil(log2Exact);
+    return `FFT size calculated: ${settings.fftSize.toLocaleString()}\n\nCalculation:\n• Formula: FFT Size = Sample Rate ÷ Resolution\n• ${settings.sampleRate.toLocaleString()} Hz ÷ ${settings.resolution.toLocaleString()} Hz = ${exactDivision.toFixed(2)}\n• log₂(${exactDivision.toFixed(2)}) = ${log2Exact.toFixed(2)}\n• Rounded up: ${log2Exact.toFixed(2)} → ${roundedLog2}\n• FFT Size: 2^${roundedLog2} = ${settings.fftSize.toLocaleString()}\n• Status: Within valid range (16 - 65,536)`;
+  };
+
+  // Optimized FFT Size icon renderer
+  const renderFFTSizeIcon = () => {
+    if (settings.fftSizeOutOfRange) {
+      return (
+        <span 
+          className="warning-icon" 
+          onMouseEnter={(e) => handleTooltipShow(e, getFFTSizeWarningContent())}
+          onMouseLeave={handleTooltipHide}
+        >
+          ⚠️
+        </span>
+      );
+    } else if (settings.resolution > 0) {
+      return (
+        <span 
+          className="success-icon" 
+          onMouseEnter={(e) => handleTooltipShow(e, getFFTSizeSuccessContent())}
+          onMouseLeave={handleTooltipHide}
+        >
+          ✅
+        </span>
+      );
+    }
+    return null;
+  };
+
+  // Helper functions for input validation
+  const validateAndUpdateSetting = (value, settingKey, min = -200, max = 200) => {
+    const parsedValue = parseFloat(value);
+    if (!isNaN(parsedValue) && parsedValue >= min && parsedValue <= max) {
+      updateSettings(settingKey, parsedValue);
+      return true;
+    }
+    return false;
+  };
+
+  const handleInputKeyDown = (e, settingKey, inputSetter, min = -200, max = 200) => {
+    if (e.key === 'Enter') {
+      const isValid = validateAndUpdateSetting(e.target.value, settingKey, min, max);
+      inputSetter('');
+    }
+  };
+
+  const handleInputBlur = (e, settingKey, inputSetter, min = -200, max = 200) => {
+    validateAndUpdateSetting(e.target.value, settingKey, min, max);
+    inputSetter('');
+  };
+
   // Render help icon with tooltip
   const renderHelpIcon = (content) => (
     <span
       className="help-icon"
-      onMouseEnter={(e) => {
-        const rect = e.target.getBoundingClientRect();
-        const containerRect = e.target.closest('.spectrogram-container').getBoundingClientRect();
-        
-        // Estimate tooltip dimensions
-        const estimatedWidth = Math.min(500, Math.max(200, content.length * 7));
-        const estimatedHeight = Math.max(80, (content.split('\n').length + 1) * 20);
-        
-        // Calculate initial position (centered on help icon, below it)
-        let x = rect.left + rect.width / 2;
-        let y = rect.bottom + 10;
-        
-        // Adjust horizontal position to keep tooltip within spectrogram container
-        if (x + estimatedWidth / 2 > containerRect.right - 20) {
-          x = containerRect.right - estimatedWidth / 2 - 20;
-        } else if (x - estimatedWidth / 2 < containerRect.left + 20) {
-          x = containerRect.left + estimatedWidth / 2 + 20;
-        }
-        
-        // Adjust vertical position if tooltip would go below container
-        if (y + estimatedHeight > containerRect.bottom - 20) {
-          y = rect.top - estimatedHeight - 10; // Show above the icon
-        }
-        
-        // Convert to container-relative coordinates
-        x = x - containerRect.left;
-        y = y - containerRect.top;
-        
-        // Calculate arrow offset (where arrow should point relative to tooltip)
-        const questionMarkCenter = rect.left + rect.width / 2 - containerRect.left;
-        const arrowOffset = questionMarkCenter - x;
-        
-        // Ensure minimum values
-        x = Math.max(0, x);
-        y = Math.max(0, y);
-        
-        setTooltipContent(content);
-        setTooltipPosition({ 
-          x, 
-          y, 
-          showAbove: y < (rect.top - containerRect.top),
-          arrowOffset: arrowOffset
-        });
-        setShowTooltip(true);
-      }}
-      onMouseLeave={() => setShowTooltip(false)}
+      onMouseEnter={(e) => handleTooltipShow(e, content)}
+      onMouseLeave={handleTooltipHide}
       style={{
         cursor: 'help',
         marginLeft: '0.5rem'
@@ -1166,18 +1269,19 @@ const SpectrogramContainerTemplate = () => {
                <label>
                  Color Range Min (dB)
                  {renderHelpIcon("Minimum value for the color scale in decibels. Lower values show more detail in weak signals, higher values focus on stronger signals.")}
+                 {renderValidationIcon(settings.colorRangeMin < settings.colorRangeMax)}
                </label>
                <input
-                 type="number"
-                 value={settings.colorRangeMin}
-                 onChange={(e) => {
-                   const value = parseFloat(e.target.value);
-                   if (!isNaN(value)) {
-                     updateSettings('colorRangeMin', value);
-                   }
+                 type="text"
+                 value={colorRangeMinInput !== '' ? colorRangeMinInput : settings.colorRangeMin}
+                 onInput={(e) => {
+                   console.log('Color Range Min input:', e.target.value);
+                   setColorRangeMinInput(e.target.value);
                  }}
-                 step="0.1"
+                 onKeyDown={(e) => handleInputKeyDown(e, 'colorRangeMin', setColorRangeMinInput)}
+                 onBlur={(e) => handleInputBlur(e, 'colorRangeMin', setColorRangeMinInput)}
                  placeholder="-50"
+                 className={settings.colorRangeMin >= settings.colorRangeMax ? 'input-error' : 'input-valid'}
                />
                <div className="setting-status" ref={colorRangeMinConversionRef}>
                  <span className={`status-transition ${statusBoxStates.colorRangeMin.isTransitioning ? 'transitioning' : 'normal'}`}>
@@ -1190,18 +1294,19 @@ const SpectrogramContainerTemplate = () => {
                <label>
                  Color Range Max (dB)
                  {renderHelpIcon("Maximum value for the color scale in decibels. Higher values show more detail in strong signals, lower values focus on weaker signals.")}
+                 {renderValidationIcon(settings.colorRangeMin < settings.colorRangeMax)}
                </label>
                <input
-                 type="number"
-                 value={settings.colorRangeMax}
-                 onChange={(e) => {
-                   const value = parseFloat(e.target.value);
-                   if (!isNaN(value)) {
-                     updateSettings('colorRangeMax', value);
-                   }
+                 type="text"
+                 value={colorRangeMaxInput !== '' ? colorRangeMaxInput : settings.colorRangeMax}
+                 onInput={(e) => {
+                   console.log('Color Range Max input:', e.target.value);
+                   setColorRangeMaxInput(e.target.value);
                  }}
-                 step="0.1"
+                 onKeyDown={(e) => handleInputKeyDown(e, 'colorRangeMax', setColorRangeMaxInput)}
+                 onBlur={(e) => handleInputBlur(e, 'colorRangeMax', setColorRangeMaxInput)}
                  placeholder="0"
+                 className={settings.colorRangeMin >= settings.colorRangeMax ? 'input-error' : 'input-valid'}
                />
                <div className="setting-status" ref={colorRangeMaxConversionRef}>
                  <span className={`status-transition ${statusBoxStates.colorRangeMax.isTransitioning ? 'transitioning' : 'normal'}`}>
@@ -1393,103 +1498,7 @@ const SpectrogramContainerTemplate = () => {
               <label>
                 FFT Size
                 {renderHelpIcon("Number of frequency bins in the FFT (Fast Fourier Transform).\n\nLarger FFT sizes provide:\n• Better frequency resolution\n• More precise frequency measurements\n• More computational time required\n\nSmaller FFT sizes provide:\n• Faster processing\n• Less memory usage\n• Coarser frequency resolution\n\nMust be a power of 2:\n• 256, 512, 1024, 2048, 4096, 8192\n\nRelationship:\n• Frequency Resolution = Sample Rate / FFT Size\n• Time Resolution = FFT Size / Sample Rate\n\n🔄 Auto-Calculated: Automatically calculated from resolution setting for optimal performance.")}
-                {settings.fftSizeOutOfRange ? (
-                  <span 
-                    className="warning-icon" 
-                    onMouseEnter={(e) => {
-                      const rect = e.target.getBoundingClientRect();
-                      const containerRect = e.target.closest('.spectrogram-container').getBoundingClientRect();
-                      
-                      const resolutionHz = settings.sampleRate / settings.originalCalculatedFFTSize;
-                      const content = `FFT size limited to ${settings.fftSize.toLocaleString()} (calculated: ${settings.originalCalculatedFFTSize?.toLocaleString()})\n\nCalculation:\n• Formula: FFT Size = Sample Rate ÷ Resolution\n• ${settings.sampleRate.toLocaleString()} Hz ÷ ${resolutionHz.toLocaleString()} Hz = ${settings.originalCalculatedFFTSize?.toLocaleString()}\n• Rounded up to power of 2: ${settings.originalCalculatedFFTSize?.toLocaleString()}\n• Limited to range: 16 - 65,536`;
-                      const estimatedWidth = Math.min(500, Math.max(300, content.length * 7));
-                      const estimatedHeight = 120;
-                      
-                      let x = rect.left + rect.width / 2;
-                      let y = rect.bottom + 10;
-                      
-                      if (x + estimatedWidth / 2 > containerRect.right - 20) {
-                        x = containerRect.right - estimatedWidth / 2 - 20;
-                      } else if (x - estimatedWidth / 2 < containerRect.left + 20) {
-                        x = containerRect.left + estimatedWidth / 2 + 20;
-                      }
-                      
-                      if (y + estimatedHeight > containerRect.bottom - 20) {
-                        y = rect.top - estimatedHeight - 10;
-                      }
-                      
-                      x = x - containerRect.left;
-                      y = y - containerRect.top;
-                      
-                      const questionMarkCenter = rect.left + rect.width / 2 - containerRect.left;
-                      const arrowOffset = questionMarkCenter - x;
-                      
-                      x = Math.max(0, x);
-                      y = Math.max(0, y);
-                      
-                      setTooltipContent(content);
-                      setTooltipPosition({ 
-                        x, 
-                        y, 
-                        showAbove: y < (rect.top - containerRect.top),
-                        arrowOffset: arrowOffset
-                      });
-                      setShowTooltip(true);
-                    }}
-                    onMouseLeave={() => setShowTooltip(false)}
-                  >
-                    ⚠️
-                  </span>
-                ) : settings.resolution > 0 && (
-                  <span 
-                    className="success-icon" 
-                    onMouseEnter={(e) => {
-                      const rect = e.target.getBoundingClientRect();
-                      const containerRect = e.target.closest('.spectrogram-container').getBoundingClientRect();
-                      
-                      const exactDivision = settings.sampleRate / settings.resolution;
-                      const log2Exact = Math.log2(exactDivision);
-                      const roundedLog2 = Math.ceil(log2Exact);
-                      const content = `FFT size calculated: ${settings.fftSize.toLocaleString()}\n\nCalculation:\n• Formula: FFT Size = Sample Rate ÷ Resolution\n• ${settings.sampleRate.toLocaleString()} Hz ÷ ${settings.resolution.toLocaleString()} Hz = ${exactDivision.toFixed(2)}\n• log₂(${exactDivision.toFixed(2)}) = ${log2Exact.toFixed(2)}\n• Rounded up: ${log2Exact.toFixed(2)} → ${roundedLog2}\n• FFT Size: 2^${roundedLog2} = ${settings.fftSize.toLocaleString()}\n• Status: Within valid range (16 - 65,536)`;
-                      const estimatedWidth = Math.min(500, Math.max(300, content.length * 7));
-                      const estimatedHeight = 120;
-                      
-                      let x = rect.left + rect.width / 2;
-                      let y = rect.bottom + 10;
-                      
-                      if (x + estimatedWidth / 2 > containerRect.right - 20) {
-                        x = containerRect.right - estimatedWidth / 2 - 20;
-                      } else if (x - estimatedWidth / 2 < containerRect.left + 20) {
-                        x = containerRect.left + estimatedWidth / 2 + 20;
-                      }
-                      
-                      if (y + estimatedHeight > containerRect.bottom - 20) {
-                        y = rect.top - estimatedHeight - 10;
-                      }
-                      
-                      x = x - containerRect.left;
-                      y = y - containerRect.top;
-                      
-                      const questionMarkCenter = rect.left + rect.width / 2 - containerRect.left;
-                      const arrowOffset = questionMarkCenter - x;
-                      
-                      x = Math.max(0, x);
-                      y = Math.max(0, y);
-                      
-                      setTooltipContent(content);
-                      setTooltipPosition({ 
-                        x, 
-                        y, 
-                        showAbove: y < (rect.top - containerRect.top),
-                        arrowOffset: arrowOffset
-                      });
-                      setShowTooltip(true);
-                    }}
-                    onMouseLeave={() => setShowTooltip(false)}
-                  >
-                    ✅
-                  </span>
-                )}
+                {renderFFTSizeIcon()}
               </label>
               <input
                 ref={fftSizeInputRef}

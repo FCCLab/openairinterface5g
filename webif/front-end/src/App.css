@@ -1902,6 +1902,18 @@
   color: rgba(255, 255, 255, 0.5);
 }
 
+
+
+.input-valid {
+  border-color: #10b981 !important;
+  box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.2) !important;
+}
+
+.input-error {
+  border-color: #ef4444 !important;
+  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.2) !important;
+}
+
 .spectrogram-display {
   background: #ffffff;
   border-radius: 8px;
