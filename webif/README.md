@@ -83,17 +83,43 @@ webif/
 
 ## 🛠️ Development
 
-### Backend Development
+### Auto-Reload Development Mode (Recommended)
+
+For development with automatic backend restart on code changes:
+
 ```bash
-cd webif/back-end
-npm run dev  # Uses nodemon for auto-restart
+cd webif
+./start-dev.sh
 ```
 
-### Frontend Development
+This starts both servers with:
+- **Backend**: Nodemon auto-restart on file changes
+- **Frontend**: React hot reload
+- **Tmux session**: Easy management of both servers
+
+### Manual Development Setup
+
+#### Backend Development with Auto-Reload
+```bash
+cd webif/back-end
+npm run dev          # Standard auto-reload
+npm run dev:verbose  # Verbose logging
+npm run dev:debug    # With Node.js debugger
+```
+
+#### Frontend Development
 ```bash
 cd webif/front-end
 npm start    # React development server with hot reload
 ```
+
+### Development Features
+
+- **Backend Auto-Restart**: Nodemon watches `.js` and `.json` files
+- **File Watching**: Automatically restarts when you save changes
+- **Manual Restart**: Type `rs` in the backend tmux pane to restart manually
+- **Verbose Logging**: Use `npm run dev:verbose` for detailed restart logs
+- **Debug Mode**: Use `npm run dev:debug` for Node.js debugging
 
 ## 🔍 Troubleshooting
 

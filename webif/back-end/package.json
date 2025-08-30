@@ -6,6 +6,8 @@
   "scripts": {
     "start": "node app.js",
     "dev": "nodemon app.js",
+    "dev:verbose": "nodemon --verbose app.js",
+    "dev:debug": "NODE_ENV=development nodemon --inspect app.js",
     "test": "echo \"Error: no test specified\" && exit 1",
     "logs": "node view-logs.js",
     "logs:list": "node view-logs.js list",

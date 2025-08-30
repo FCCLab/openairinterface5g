@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
+import { useNotification } from '../context/NotificationContext';
 
 // Template for the spectrogram container
 const SpectrogramContainerTemplate = () => {
+  const { showError, showSuccess, showInfo } = useNotification();
   // State management
   const [isCapturing, setIsCapturing] = useState(false);
   const [spectrogramData, setSpectrogramData] = useState(null);
@@ -28,10 +30,11 @@ const SpectrogramContainerTemplate = () => {
 
   });
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
   const [maxFrequency, setMaxFrequency] = useState({ freq: 0, amplitude: 0 });
   const [currentTime, setCurrentTime] = useState(0);
   const [streamConnected, setStreamConnected] = useState(false); // SSE connection status
+  const [serviceStatus, setServiceStatus] = useState('stopped');
+  const [serviceLoading, setServiceLoading] = useState(false);
   
   const [frequencyInput, setFrequencyInput] = useState('2.4G');
   const [sampleRateInput, setSampleRateInput] = useState('1M');
@@ -490,6 +493,82 @@ const SpectrogramContainerTemplate = () => {
     inputSetter('');
   };
 
+  // Spectrogram Service Control Functions
+  const startSpectrogramService = async () => {
+    try {
+      setServiceLoading(true);
+      
+      // Send current analysis settings to the backend
+      const analysisSettings = {
+        frequency: settings.frequency, // Already in Hz
+        sampleRate: settings.sampleRate,
+        fftSize: settings.fftSize,
+        resolution: settings.resolution,
+        windowSize: settings.windowSize,
+        hopSize: settings.hopSize,
+        windowType: settings.windowType,
+        gain: settings.gain,
+        device: selectedUsrpDevice
+      };
+      
+      console.log('🚀 Starting spectrogram service with analysis settings:', analysisSettings);
+      
+      const response = await axios.post('/api/spectrogram/service/start', analysisSettings);
+      
+      if (response.data.success) {
+        setServiceStatus('running');
+        console.log('✅ Spectrogram service started successfully with analysis settings');
+        showSuccess('Spectrogram service started successfully with analysis settings');
+      } else {
+        showError({ message: response.data.error || 'Failed to start spectrogram service' });
+      }
+    } catch (error) {
+      console.error('❌ Error starting spectrogram service:', error);
+      showError({ message: error.response?.data?.error || 'Failed to start spectrogram service' });
+    } finally {
+      setServiceLoading(false);
+    }
+  };
+
+  const stopSpectrogramService = async () => {
+    try {
+      setServiceLoading(true);
+      
+      const response = await axios.post('/api/spectrogram/service/stop');
+      
+      if (response.data.success) {
+        setServiceStatus('stopped');
+        console.log('✅ Spectrogram service stopped successfully');
+        showSuccess('Spectrogram service stopped successfully');
+      } else {
+        showError({ message: response.data.error || 'Failed to stop spectrogram service' });
+      }
+    } catch (error) {
+      console.error('❌ Error stopping spectrogram service:', error);
+      showError({ message: error.response?.data?.error || 'Failed to stop spectrogram service' });
+    } finally {
+      setServiceLoading(false);
+    }
+  };
+
+  const checkServiceStatus = async () => {
+    try {
+      const response = await axios.get('/api/spectrogram/service/status');
+      
+      if (response.data.success) {
+        setServiceStatus(response.data.status);
+      }
+    } catch (error) {
+      console.error('❌ Error checking service status:', error);
+      setServiceStatus('error');
+    }
+  };
+
+  // Check service status on component mount
+  useEffect(() => {
+    checkServiceStatus();
+  }, []);
+
   // Render help icon with tooltip
   const renderHelpIcon = (content) => (
     <span
@@ -522,7 +601,7 @@ const SpectrogramContainerTemplate = () => {
     };
     
     localStorage.setItem('spectrogramConfigs', JSON.stringify(configs));
-    alert(`Configuration "${configName}" saved successfully!`);
+    showSuccess(`Configuration "${configName}" saved successfully!`);
   };
 
   const loadConfig = () => {
@@ -530,13 +609,13 @@ const SpectrogramContainerTemplate = () => {
     const configNames = Object.keys(configs);
     
     if (configNames.length === 0) {
-      alert('No saved configurations found.');
+      showInfo('No saved configurations found.');
       return;
     }
     
     const configName = prompt(`Enter configuration name to load:\n\nAvailable: ${configNames.join(', ')}`);
     if (!configName || !configs[configName]) {
-      alert('Configuration not found.');
+      showError({ message: 'Configuration not found.' });
       return;
     }
     
@@ -548,7 +627,7 @@ const SpectrogramContainerTemplate = () => {
     setWindowSizeInput(config.windowSizeInput || '');
     setHopSizeInput(config.hopSizeInput || '');
     
-    alert(`Configuration "${configName}" loaded successfully!`);
+    showSuccess(`Configuration "${configName}" loaded successfully!`);
   };
 
   const listConfigs = () => {
@@ -556,7 +635,7 @@ const SpectrogramContainerTemplate = () => {
     const configNames = Object.keys(configs);
     
     if (configNames.length === 0) {
-      alert('No saved configurations found.');
+      showInfo('No saved configurations found.');
       return;
     }
     
@@ -566,7 +645,7 @@ const SpectrogramContainerTemplate = () => {
       return `${name} (saved: ${savedAt})`;
     }).join('\n');
     
-    alert(`Saved configurations:\n\n${configList}`);
+    showInfo(`Saved configurations:\n\n${configList}`);
   };
 
   const deleteConfig = () => {
@@ -574,13 +653,13 @@ const SpectrogramContainerTemplate = () => {
     const configNames = Object.keys(configs);
     
     if (configNames.length === 0) {
-      alert('No saved configurations found.');
+      showInfo('No saved configurations found.');
       return;
     }
     
     const configName = prompt(`Enter configuration name to delete:\n\nAvailable: ${configNames.join(', ')}`);
     if (!configName || !configs[configName]) {
-      alert('Configuration not found.');
+      showError({ message: 'Configuration not found.' });
       return;
     }
     
@@ -589,7 +668,7 @@ const SpectrogramContainerTemplate = () => {
     
     delete configs[configName];
     localStorage.setItem('spectrogramConfigs', JSON.stringify(configs));
-    alert(`Configuration "${configName}" deleted successfully!`);
+    showSuccess(`Configuration "${configName}" deleted successfully!`);
   };
 
   const autoSaveConfig = () => {
@@ -625,7 +704,7 @@ const SpectrogramContainerTemplate = () => {
     const latestConfig = configs['latest'];
     
     if (!latestConfig) {
-      alert('No latest configuration found.');
+      showInfo('No latest configuration found.');
       return;
     }
     
@@ -636,7 +715,7 @@ const SpectrogramContainerTemplate = () => {
     setWindowSizeInput(latestConfig.windowSizeInput || '');
     setHopSizeInput(latestConfig.hopSizeInput || '');
     
-    alert('Latest configuration loaded successfully!');
+    showSuccess('Latest configuration loaded successfully!');
   };
 
   // USRP device management
@@ -657,7 +736,7 @@ const SpectrogramContainerTemplate = () => {
       }
     } catch (error) {
       console.error('❌ Error fetching USRP devices:', error);
-      setError('Failed to fetch USRP devices');
+      showError({ message: 'Failed to fetch USRP devices' });
     }
   };
 
@@ -669,12 +748,11 @@ const SpectrogramContainerTemplate = () => {
     
     if (!selectedUsrpDevice) {
       console.log('❌ No USRP device selected');
-      setError('Please select a USRP device first');
+      showError({ message: 'Please select a USRP device first' });
       return;
     }
 
     setLoading(true);
-    setError(null);
 
     try {
       const selectedDevice = usrpDevices.find(device => device.name === selectedUsrpDevice);
@@ -731,7 +809,7 @@ const SpectrogramContainerTemplate = () => {
       }
     } catch (error) {
       console.error('Error starting capture:', error);
-      setError(error.message || 'Failed to start capture');
+      showError({ message: error.message || 'Failed to start capture' });
     } finally {
       setLoading(false);
     }
@@ -753,7 +831,7 @@ const SpectrogramContainerTemplate = () => {
       }
     } catch (error) {
       console.error('Error stopping capture:', error);
-      setError(error.message || 'Failed to stop capture');
+      showError({ message: error.message || 'Failed to stop capture' });
     }
   };
 
@@ -1208,6 +1286,19 @@ const SpectrogramContainerTemplate = () => {
               {loading ? 'Processing...' : (isCapturing ? 'Stop Capture' : 'Start Capture')}
             </button>
             <button 
+              className={`control-btn ${serviceStatus === 'running' ? 'stop' : 'start'}`}
+              onClick={() => {
+                if (serviceStatus === 'running') {
+                  stopSpectrogramService();
+                } else {
+                  startSpectrogramService();
+                }
+              }}
+              disabled={serviceLoading}
+            >
+              {serviceLoading ? 'Processing...' : (serviceStatus === 'running' ? 'Stop Service' : 'Start Service')}
+            </button>
+            <button 
               className="control-btn config"
               onClick={saveConfig}
             >
@@ -1237,6 +1328,19 @@ const SpectrogramContainerTemplate = () => {
             >
               Load Latest
             </button>
+          </div>
+          
+          {/* Service Status Indicator */}
+          <div className="service-status">
+            <div className="status-indicator">
+              <span className={`status-dot ${serviceStatus}`}></span>
+              <span className="status-text">
+                Service: {serviceStatus === 'running' ? 'Running' : 
+                         serviceStatus === 'starting' ? 'Starting...' : 
+                         serviceStatus === 'stopping' ? 'Stopping...' : 
+                         serviceStatus === 'error' ? 'Error' : 'Stopped'}
+              </span>
+            </div>
           </div>
         </div>
 
@@ -1934,13 +2038,7 @@ const SpectrogramContainerTemplate = () => {
         </div>
       </div>
 
-      {/* Error Display */}
-      {error && (
-        <div className="error-message">
-          <p>{error}</p>
-          <button onClick={() => setError(null)}>Dismiss</button>
-        </div>
-      )}
+
 
       {/* Status Bar */}
       <div className="status-bar">

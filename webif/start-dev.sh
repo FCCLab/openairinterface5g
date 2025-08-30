@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Development startup script with auto-reload for OpenAirInterface5G Web Interface
+# This script starts both backend and frontend with development features enabled
+
 # Kill any existing tmux session named 'webif' before starting
 tmux has-session -t webif 2>/dev/null
 if [ $? -eq 0 ]; then
@@ -16,7 +19,7 @@ pkill -f "node app.js" 2>/dev/null
 pkill -f "nodemon" 2>/dev/null
 
 # strongSwan style debug print
-echo "[webif] Starting OpenAirInterface5G Web Interface backend and frontend in tmux (vertical split)..."
+echo "[webif] Starting OpenAirInterface5G Web Interface in DEVELOPMENT mode with auto-reload..."
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
@@ -47,10 +50,10 @@ tmux new-session -d -s $SESSION -c "$BACKEND_DIR"
 # Enable mouse support in tmux session
 tmux set-option -t $SESSION mouse on
 
-# Backend pane
+# Backend pane with nodemon for auto-reload
 echo "[webif] Installing backend dependencies (if needed)..."
 tmux send-keys -t $SESSION "npm install" C-m
-echo "[webif] Launching backend server with auto-reload..."
+echo "[webif] Launching backend server with nodemon auto-reload..."
 tmux send-keys -t $SESSION "npm run dev" C-m
 
 # Split window horizontally for frontend
@@ -62,5 +65,8 @@ tmux send-keys -t $SESSION:0.1 "npm install" C-m
 echo "[webif] Launching frontend server..."
 tmux send-keys -t $SESSION:0.1 "npm start" C-m
 
-echo "[webif] Attach to the tmux session with: tmux attach-session -t $SESSION"
+echo "[webif] 🚀 Development servers started with auto-reload!"
+echo "[webif] 📝 Backend will auto-restart when you modify .js files"
+echo "[webif] 🔗 Attach to the tmux session with: tmux attach-session -t $SESSION"
+echo "[webif] 💡 Use 'rs' in the backend pane to manually restart if needed"
 tmux attach-session -t $SESSION

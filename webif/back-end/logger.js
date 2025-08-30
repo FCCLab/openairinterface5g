@@ -27,7 +27,7 @@ const fileFormat = winston.format.combine(
   winston.format.json()
 );
 
-// Create the logger
+// Create the main logger
 const logger = winston.createLogger({
   level: process.env.LOG_LEVEL || 'debug',
   format: fileFormat,
@@ -70,6 +70,28 @@ const logger = winston.createLogger({
   ]
 });
 
+// Create a separate spectrogram logger
+const spectrogramLogger = winston.createLogger({
+  level: process.env.LOG_LEVEL || 'debug',
+  format: fileFormat,
+  defaultMeta: { 
+    service: 'openairinterface5g-backend',
+    version: '1.0.0'
+  },
+  transports: [
+    // Spectrogram log file (daily rotation) - only spectrogram functionality
+    new DailyRotateFile({
+      filename: path.join(logsDir, 'spectrogram-%DATE%.log'),
+      datePattern: 'YYYY-MM-DD',
+      maxSize: '20m',
+      maxFiles: '30d',
+      zippedArchive: true,
+      format: fileFormat,
+      level: 'debug'
+    })
+  ]
+});
+
 // Add console transport in development
 if (process.env.NODE_ENV !== 'production') {
   logger.add(new winston.transports.Console({
@@ -104,6 +126,15 @@ logger.performance = (message, meta = {}) => {
 
 logger.debug = (message, meta = {}) => {
   logger.log('debug', message, { ...meta, type: 'debug' });
+};
+
+logger.spectrogram = (message, meta = {}) => {
+  spectrogramLogger.info(message, { ...meta, type: 'spectrogram' });
+};
+
+// Helper function for spectrogram logs with custom level
+logger.spectrogramLevel = (level, message, meta = {}) => {
+  spectrogramLogger.log(level, message, { ...meta, type: 'spectrogram' });
 };
 
 // Log uncaught exceptions and unhandled rejections

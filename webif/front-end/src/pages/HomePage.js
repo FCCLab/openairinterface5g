@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { useNotification } from '../context/NotificationContext';
+import NotificationDemo from '../components/NotificationDemo';
 
 function HomePage() {
+  const { showError, showSuccess } = useNotification();
   const [currentTime, setCurrentTime] = useState(new Date());
   const [cpuInfo, setCpuInfo] = useState({
     usage: 0,
@@ -32,7 +35,6 @@ function HomePage() {
   const [deviceDetails, setDeviceDetails] = useState({});
   const [loadingDetails, setLoadingDetails] = useState(new Set());
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
 
   // Update time every second
   useEffect(() => {
@@ -46,7 +48,6 @@ function HomePage() {
   // Fetch system information
   const fetchSystemInfo = async () => {
     try {
-      setError(null);
       const response = await axios.get('/api/system/info');
       const { cpu, network, memory, system } = response.data;
       
@@ -90,7 +91,10 @@ function HomePage() {
       setLoading(false);
     } catch (err) {
       console.error('Error fetching system info:', err);
-      setError('Failed to fetch system information');
+      showError({
+        message: 'Failed to fetch system information. Please check your connection and try again.',
+        onRetry: fetchSystemInfo
+      });
       setLoading(false);
     }
   };
@@ -194,9 +198,17 @@ function HomePage() {
             }));
           } else {
             console.error('Failed to fetch device details');
+            showError({
+              message: 'Failed to fetch device details. Please try again.',
+              onRetry: () => toggleDeviceDetails(deviceIndex, device)
+            });
           }
         } catch (error) {
           console.error('Error fetching device details:', error);
+          showError({
+            message: 'Error fetching device details. Please check your connection and try again.',
+            onRetry: () => toggleDeviceDetails(deviceIndex, device)
+          });
         } finally {
           setLoadingDetails(prev => {
             const newSet = new Set(prev);
@@ -219,18 +231,7 @@ function HomePage() {
     );
   }
 
-  if (error) {
-    return (
-      <div className="home-container">
-        <div className="error-container">
-          <p className="error-message">{error}</p>
-          <button onClick={fetchSystemInfo} className="retry-btn">
-            Retry
-          </button>
-        </div>
-      </div>
-    );
-  }
+
 
   return (
     <div className="home-container">
@@ -582,6 +583,11 @@ function HomePage() {
           </div>
         </div>
       )}
+
+      {/* Notification Demo - Remove this section after testing */}
+      <div style={{ marginTop: '2rem', padding: '2rem', border: '1px solid rgba(255, 255, 255, 0.2)', borderRadius: '8px' }}>
+        <NotificationDemo />
+      </div>
     </div>
   );
 }

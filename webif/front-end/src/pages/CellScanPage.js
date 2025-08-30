@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { useNotification } from '../context/NotificationContext';
 
 function CellScanPage() {
+  const { showError, showSuccess } = useNotification();
   const [isScanning, setIsScanning] = useState(false);
   const [scanResults, setScanResults] = useState([]);
   const [scanProgress, setScanProgress] = useState(0);
@@ -25,6 +27,7 @@ function CellScanPage() {
           clearInterval(interval);
           setIsScanning(false);
           setScanResults(mockCells);
+          showSuccess(`Scan completed! Found ${mockCells.length} cells.`);
           return 100;
         }
         return prev + 10;

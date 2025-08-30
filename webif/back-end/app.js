@@ -1114,7 +1114,8 @@ app.get('/api/logs/files', async (req, res) => {
     const logFiles = [];
     
     for (const file of files) {
-      if (file.endsWith('.log')) {
+      // Include both .log files and rotated .log.* files
+      if (file.endsWith('.log') || file.match(/\.log\.\d+$/)) {
         const filePath = path.join(logsDir, file);
         const stats = await fsPromises.stat(filePath);
         const size = (stats.size / 1024).toFixed(2);
@@ -1145,7 +1146,7 @@ app.get('/api/logs/view/:filename', async (req, res) => {
     logger.api('Log file content requested', { filename, lines, ip: req.ip });
     
     // Security: prevent directory traversal
-    if (filename.includes('..') || !filename.endsWith('.log')) {
+    if (filename.includes('..') || (!filename.endsWith('.log') && !filename.match(/\.log\.\d+$/))) {
       return res.status(400).json({ error: 'Invalid filename' });
     }
     
@@ -1182,7 +1183,7 @@ app.get('/api/logs/download/:filename', async (req, res) => {
     logger.api('Log file download requested', { filename, ip: req.ip });
     
     // Security: prevent directory traversal
-    if (filename.includes('..') || !filename.endsWith('.log')) {
+    if (filename.includes('..') || (!filename.endsWith('.log') && !filename.match(/\.log\.\d+$/))) {
       return res.status(400).json({ error: 'Invalid filename' });
     }
     
@@ -1200,6 +1201,164 @@ app.get('/api/logs/download/:filename', async (req, res) => {
   }
 });
 
+// Spectrogram Service Management
+let spectrogramServiceProcess = null;
+let spectrogramServiceStatus = 'stopped';
+
+app.post('/api/spectrogram/service/start', async (req, res) => {
+  try {
+    logger.spectrogram('Spectrogram service start requested', { ip: req.ip, body: req.body });
+    
+    if (spectrogramServiceProcess) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Spectrogram service is already running' 
+      });
+    }
+
+    const { spawn } = require('child_process');
+    const path = require('path');
+    
+    // Path to the spectrogram shell script
+    const scriptPath = path.join(__dirname, '../spectogram/spectrogram.sh');
+    
+    // Get analysis settings from request body or use defaults
+    const {
+      frequency = 2.4e9,
+      sampleRate = 1e6,
+      fftSize = 1024,
+      resolution = null,
+      windowSize = null,
+      hopSize = null,
+      windowType = 'hann',
+      gain = 20,
+      device = ''
+    } = req.body || {};
+    
+    // Build command line arguments
+    const args = [scriptPath];
+    
+    if (frequency) args.push('--freq', frequency.toString());
+    if (sampleRate) args.push('--sample_rate', sampleRate.toString());
+    if (fftSize) args.push('--fft_size', fftSize.toString());
+    if (resolution) args.push('--resolution', resolution.toString());
+    if (windowSize) args.push('--window_size', windowSize.toString());
+    if (hopSize) args.push('--hop_size', hopSize.toString());
+    if (windowType) args.push('--window_type', windowType);
+    if (gain) args.push('--gain', gain.toString());
+    if (device) args.push('--device', device);
+    
+    logger.spectrogram('Starting spectrogram service with shell script and arguments', { args });
+    
+    // Start the spectrogram service using the shell script with analysis settings
+    spectrogramServiceProcess = spawn('bash', args, {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      detached: false
+    });
+
+    spectrogramServiceStatus = 'starting';
+
+    // Handle process events
+    spectrogramServiceProcess.on('spawn', () => {
+      logger.spectrogram('Spectrogram service process spawned', { pid: spectrogramServiceProcess.pid });
+      spectrogramServiceStatus = 'running';
+    });
+
+    spectrogramServiceProcess.on('error', (error) => {
+      logger.spectrogram('Spectrogram service process error', { error: error.message });
+      spectrogramServiceStatus = 'error';
+      spectrogramServiceProcess = null;
+    });
+
+    spectrogramServiceProcess.on('exit', (code, signal) => {
+      logger.spectrogram('Spectrogram service process exited', { code, signal });
+      spectrogramServiceStatus = 'stopped';
+      spectrogramServiceProcess = null;
+    });
+
+    // Handle stdout and stderr
+    spectrogramServiceProcess.stdout.on('data', (data) => {
+      logger.spectrogram('Spectrogram service stdout', { data: data.toString().trim() });
+    });
+
+    spectrogramServiceProcess.stderr.on('data', (data) => {
+      logger.spectrogram('Spectrogram service stderr', { data: data.toString().trim() });
+    });
+
+    const response = {
+      success: true,
+      message: 'Spectrogram service started successfully',
+      pid: spectrogramServiceProcess.pid,
+      status: spectrogramServiceStatus
+    };
+    
+    logger.spectrogram('Spectrogram service start successful', { ip: req.ip, pid: spectrogramServiceProcess.pid });
+    res.json(response);
+  } catch (error) {
+    logger.spectrogram('Error starting spectrogram service', { error: error.message, stack: error.stack, ip: req.ip });
+    res.status(500).json({ success: false, error: 'Failed to start spectrogram service' });
+  }
+});
+
+app.post('/api/spectrogram/service/stop', async (req, res) => {
+  try {
+    logger.spectrogram('Spectrogram service stop requested', { ip: req.ip });
+    
+    if (!spectrogramServiceProcess) {
+      // Service is not running, return success
+      const response = {
+        success: true,
+        message: 'Spectrogram service is not running',
+        status: 'stopped'
+      };
+      
+      logger.spectrogram('Spectrogram service stop - service not running', { ip: req.ip });
+      return res.json(response);
+    }
+
+    // Kill the process
+    spectrogramServiceProcess.kill('SIGTERM');
+    
+    // Wait a bit for graceful shutdown
+    setTimeout(() => {
+      if (spectrogramServiceProcess) {
+        spectrogramServiceProcess.kill('SIGKILL');
+      }
+    }, 5000);
+
+    const response = {
+      success: true,
+      message: 'Spectrogram service stop requested',
+      status: 'stopping'
+    };
+    
+    logger.spectrogram('Spectrogram service stop successful', { ip: req.ip });
+    res.json(response);
+  } catch (error) {
+    logger.spectrogram('Error stopping spectrogram service', { error: error.message, stack: error.stack, ip: req.ip });
+    res.status(500).json({ success: false, error: 'Failed to stop spectrogram service' });
+  }
+});
+
+app.get('/api/spectrogram/service/status', async (req, res) => {
+  try {
+    logger.spectrogram('Spectrogram service status requested', { ip: req.ip });
+    
+    const response = {
+      success: true,
+      status: spectrogramServiceStatus,
+      pid: spectrogramServiceProcess ? spectrogramServiceProcess.pid : null,
+      running: !!spectrogramServiceProcess
+    };
+    
+    logger.spectrogram('Spectrogram service status retrieved', { ip: req.ip, status: spectrogramServiceStatus });
+    res.json(response);
+  } catch (error) {
+    logger.spectrogram('Error getting spectrogram service status', { error: error.message, stack: error.stack, ip: req.ip });
+    res.status(500).json({ success: false, error: 'Failed to get spectrogram service status' });
+  }
+});
+
 // API documentation endpoint
 app.get('/api', (req, res) => {
   res.json({
@@ -1213,6 +1372,9 @@ app.get('/api', (req, res) => {
       '/api/system/network': 'Get network interfaces information',
       '/api/system/uptime': 'Get system uptime information',
       '/api/system/info': 'Get comprehensive system information',
+      '/api/spectrogram/service/start': 'Start the spectrogram Python service',
+      '/api/spectrogram/service/stop': 'Stop the spectrogram Python service',
+      '/api/spectrogram/service/status': 'Get spectrogram service status',
       '/api/logs/files': 'Get list of available log files',
       '/api/logs/view/:filename': 'Get log file content',
       '/api/logs/download/:filename': 'Download log file',

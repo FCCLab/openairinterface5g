@@ -1,0 +1,22 @@
+{
+  "watch": [
+    "app.js",
+    "UsrpDeviceManager.js",
+    "logger.js",
+    "view-logs.js"
+  ],
+  "ext": "js,json",
+  "ignore": [
+    "node_modules/",
+    "logs/",
+    "*.log"
+  ],
+  "env": {
+    "NODE_ENV": "development"
+  },
+  "delay": "1000",
+  "verbose": true,
+  "restartable": "rs",
+  "colours": true,
+  "exec": "node app.js"
+}

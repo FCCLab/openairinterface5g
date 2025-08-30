@@ -7,10 +7,10 @@ function LogsPage() {
   const [logContent, setLogContent] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useState(true);
   const [logLevel, setLogLevel] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
-  const [lines, setLines] = useState(100);
+  const [lines, setLines] = useState(20);
 
   // Fetch available log files
   const fetchLogFiles = async () => {
@@ -25,7 +25,7 @@ function LogsPage() {
   };
 
   // Fetch log content
-  const fetchLogContent = async (filename, lineCount = 100) => {
+  const fetchLogContent = async (filename, lineCount = 20) => {
     if (!filename) return;
     
     try {
@@ -201,6 +201,8 @@ function LogsPage() {
                     onChange={(e) => setLines(parseInt(e.target.value))}
                     className="control-select"
                   >
+                    <option value={10}>10</option>
+                    <option value={20}>20</option>
                     <option value={50}>50</option>
                     <option value={100}>100</option>
                     <option value={200}>200</option>

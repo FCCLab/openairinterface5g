@@ -1,0 +1,311 @@
+/* Notification Popup Styles */
+.notification-popup-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  z-index: 9999;
+  animation: fadeIn 0.3s ease-out;
+  pointer-events: none;
+}
+
+/* Position variants */
+.notification-popup-overlay.notification-popup-top-right {
+  align-items: flex-start;
+  justify-content: flex-end;
+}
+
+.notification-popup-overlay.notification-popup-top-left {
+  align-items: flex-start;
+  justify-content: flex-start;
+}
+
+.notification-popup-overlay.notification-popup-bottom-right {
+  align-items: flex-end;
+  justify-content: flex-end;
+}
+
+.notification-popup-overlay.notification-popup-bottom-left {
+  align-items: flex-end;
+  justify-content: flex-start;
+}
+
+/* Notifications container for stacking */
+.notifications-container {
+  position: fixed;
+  bottom: 0;
+  right: 0;
+  z-index: 9999;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  padding: 16px;
+  gap: 8px;
+}
+
+.notification-popup {
+  background: rgba(30, 41, 59, 0.95);
+  backdrop-filter: blur(10px);
+  border-radius: 12px 0 0 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  max-width: 350px;
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid rgba(51, 65, 85, 0.8);
+  margin: 0;
+  pointer-events: auto;
+  transition: all 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  animation: slideInFromRight 0.3s ease-out;
+}
+
+.notification-popup.notification-removing {
+  opacity: 0;
+  transform: translateX(100%);
+  transition: all 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+/* Position-specific styling */
+.notification-popup-overlay.notification-popup-top-right .notification-popup {
+  border-radius: 12px 0 0 12px;
+  animation: slideInFromRight 0.3s ease-out;
+  margin: 8px 0 8px 8px;
+}
+
+.notification-popup-overlay.notification-popup-top-left .notification-popup {
+  border-radius: 0 12px 12px 0;
+  animation: slideInFromLeft 0.3s ease-out;
+  margin: 8px 8px 8px 0;
+}
+
+.notification-popup-overlay.notification-popup-bottom-right .notification-popup {
+  border-radius: 12px 0 0 12px;
+  animation: slideInFromRight 0.3s ease-out;
+  margin: 0;
+  pointer-events: auto;
+}
+
+.notification-popup-overlay.notification-popup-bottom-left .notification-popup {
+  border-radius: 0 12px 12px 0;
+  animation: slideInFromLeft 0.3s ease-out;
+  margin: 0 8px 8px 0;
+}
+
+.notification-popup-header {
+  display: flex;
+  align-items: center;
+  padding: 1rem 1rem 0.75rem 1rem;
+  border-bottom: 1px solid rgba(71, 85, 105, 0.8);
+  position: relative;
+}
+
+.notification-popup-header.error {
+  background: rgba(220, 38, 38, 0.9);
+}
+
+.notification-popup-header.warning {
+  background: rgba(217, 119, 6, 0.9);
+}
+
+.notification-popup-header.info {
+  background: rgba(37, 99, 235, 0.9);
+}
+
+.notification-popup-header.success {
+  background: rgba(5, 150, 105, 0.9);
+}
+
+.notification-popup-icon {
+  font-size: 1.2rem;
+  margin-right: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.notification-popup-title {
+  margin: 0;
+  color: white;
+  font-size: 1rem;
+  font-weight: 600;
+  flex: 1;
+}
+
+.notification-popup-close {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 0.25rem;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.notification-popup-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+}
+
+.notification-popup-content {
+  padding: 1rem;
+}
+
+.notification-popup-message {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.9rem;
+  line-height: 1.5;
+  word-wrap: break-word;
+}
+
+.notification-popup-actions {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0 1rem 1rem 1rem;
+  justify-content: flex-end;
+}
+
+.notification-popup-btn {
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0.8rem;
+  min-width: 60px;
+}
+
+.notification-popup-close-btn {
+  background: rgba(71, 85, 105, 0.8);
+  color: white;
+  border: 1px solid rgba(100, 116, 139, 0.8);
+}
+
+.notification-popup-close-btn:hover {
+  background: rgba(100, 116, 139, 0.9);
+  color: white;
+  transform: translateY(-1px);
+}
+
+.notification-popup-retry {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.notification-popup-retry:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideInFromRight {
+  from {
+    opacity: 0;
+    transform: translateX(100%) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes slideInFromLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-100%) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes slideInFromBottom {
+  from {
+    opacity: 0;
+    transform: translateY(100%) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes dropDown {
+  0% {
+    transform: translateY(-100%);
+  }
+  50% {
+    transform: translateY(-50%);
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
+
+/* Smooth drop-down animation for notifications */
+.notifications-container {
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .notification-popup {
+    width: 95%;
+    margin: 6px 0 6px 6px;
+  }
+  
+  .notification-popup-header {
+    padding: 0.75rem 0.75rem 0.5rem 0.75rem;
+  }
+  
+  .notification-popup-content {
+    padding: 0.75rem;
+  }
+  
+  .notification-popup-actions {
+    padding: 0 0.75rem 0.75rem 0.75rem;
+    flex-direction: column;
+  }
+  
+  .notification-popup-btn {
+    width: 100%;
+  }
+  
+  .notification-popup-title {
+    font-size: 0.9rem;
+  }
+  
+  .notification-popup-message {
+    font-size: 0.85rem;
+  }
+}
+
+/* Dark theme adjustments */
+@media (prefers-color-scheme: dark) {
+  .notification-popup {
+    background: rgba(255, 255, 255, 0.25);
+  }
+}

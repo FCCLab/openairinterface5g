@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
 import './App.css';
+import { NotificationProvider } from './context/NotificationContext';
 import HomePage from './pages/HomePage';
 import CellScanPage from './pages/CellScanPage';
 import CellAttachedPage from './pages/CellAttachedPage';
@@ -41,18 +42,20 @@ function Navigation() {
 
 function App() {
   return (
-    <Router>
-      <div className="App">
-        <Navigation />
-        <Routes>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/cell-scan" element={<CellScanPage />} />
-          <Route path="/cell-attached" element={<CellAttachedPage />} />
-                         <Route path="/logs" element={<LogsPage />} />
-               <Route path="/spectrogram" element={<SpectrogramPage />} />
-        </Routes>
-      </div>
-    </Router>
+    <NotificationProvider>
+      <Router>
+        <div className="App">
+          <Navigation />
+          <Routes>
+            <Route path="/" element={<HomePage />} />
+            <Route path="/cell-scan" element={<CellScanPage />} />
+            <Route path="/cell-attached" element={<CellAttachedPage />} />
+            <Route path="/logs" element={<LogsPage />} />
+            <Route path="/spectrogram" element={<SpectrogramPage />} />
+          </Routes>
+        </div>
+      </Router>
+    </NotificationProvider>
   );
 }
 
