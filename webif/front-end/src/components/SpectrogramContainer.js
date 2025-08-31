@@ -59,6 +59,9 @@ const SpectrogramContainerTemplate = () => {
   const maxHistoryLengthRef = useRef(1000); // Will be updated to canvas height when canvas is available
   const startTimeRef = useRef(null);
   const eventSourceRef = useRef(null); // SSE connection reference
+  const previousServiceStatusRef = useRef('stopped'); // Track previous service status
+  const lastNotificationTimeRef = useRef(0); // Track last notification time to prevent spam
+  const intentionalStopRef = useRef(false); // Track if stop was intentional
   
   // Refs for input boxes
   const windowSizeInputRef = useRef(null);
@@ -159,13 +162,13 @@ const SpectrogramContainerTemplate = () => {
   // Auto-adjust color range based on current data
   const autoAdjustColorRange = () => {
     if (spectrogramHistory.current.length === 0) {
-      console.log('❌ No data available for auto-adjustment');
+  
       return;
     }
 
     const latestData = spectrogramHistory.current[spectrogramHistory.current.length - 1];
     if (!latestData || !latestData.data || latestData.data.length === 0) {
-      console.log('❌ No valid data for auto-adjustment');
+  
       return;
     }
 
@@ -177,7 +180,7 @@ const SpectrogramContainerTemplate = () => {
     const newMin = Math.floor(minAmp - 2);
     const newMax = Math.ceil(maxAmp + 2);
     
-    console.log(`🎨 Auto-adjusting color range: ${newMin} to ${newMax} dB`);
+
     
     // Update settings
     updateSettings('colorRangeMin', newMin);
@@ -234,7 +237,7 @@ const SpectrogramContainerTemplate = () => {
 
   // Update settings
   const updateSettings = (key, value) => {
-    console.log(`🔧 updateSettings called: ${key} = ${value}, isInitialLoad: ${isInitialLoad}`);
+
     
     // Get the old value before updating
     const oldValue = settings[key];
@@ -290,7 +293,7 @@ const SpectrogramContainerTemplate = () => {
 
   // Convert and update frequency settings
   const convertAndUpdateFrequency = (key, value) => {
-    console.log(`🔍 convertAndUpdateFrequency called with key: ${key}, value: ${value}, isInitialLoad: ${isInitialLoad}`);
+
     const frequencyHz = convertFrequencyToHz(value);
     if (frequencyHz > 0) {
       updateSettings(key, frequencyHz);
@@ -312,7 +315,7 @@ const SpectrogramContainerTemplate = () => {
 
   // Update FFT size automatically based on resolution
   const updateFFTSizeFromResolution = (resolutionHz) => {
-    console.log(`🔍 updateFFTSizeFromResolution called with resolutionHz: ${resolutionHz}, isInitialLoad: ${isInitialLoad}`);
+
     
     // Calculate FFT size based on resolution and current sample rate
     // Formula: FFT Size = Sample Rate / Resolution
@@ -344,7 +347,7 @@ const SpectrogramContainerTemplate = () => {
         originalCalculatedFFTSize: calculatedFFTSize
       }));
       
-      console.log(`📊 Auto-updated FFT size to ${limitedFFTSize}, Window Size to ${limitedFFTSize}, and Hop Size to ${newHopSize} based on resolution ${resolutionHz.toLocaleString()} Hz and sample rate ${settings.sampleRate.toLocaleString()} Hz${isOutOfRange ? ' (OUT OF RANGE - original: ' + calculatedFFTSize + ')' : ''}`);
+
     }
   };
 
@@ -498,6 +501,10 @@ const SpectrogramContainerTemplate = () => {
     try {
       setServiceLoading(true);
       
+      // Get the selected device's serial number
+      const selectedDevice = usrpDevices.find(device => device.name === selectedUsrpDevice);
+      const deviceSerial = selectedDevice?.details?.['Serial Number'] || selectedUsrpDevice;
+      
       // Send current analysis settings to the backend
       const analysisSettings = {
         frequency: settings.frequency, // Already in Hz
@@ -508,16 +515,16 @@ const SpectrogramContainerTemplate = () => {
         hopSize: settings.hopSize,
         windowType: settings.windowType,
         gain: settings.gain,
-        device: selectedUsrpDevice
+        device: deviceSerial // Send serial number instead of device name
       };
       
-      console.log('🚀 Starting spectrogram service with analysis settings:', analysisSettings);
+  
       
       const response = await axios.post('/api/spectrogram/service/start', analysisSettings);
       
       if (response.data.success) {
         setServiceStatus('running');
-        console.log('✅ Spectrogram service started successfully with analysis settings');
+    
         showSuccess('Spectrogram service started successfully with analysis settings');
       } else {
         showError({ message: response.data.error || 'Failed to start spectrogram service' });
@@ -533,12 +540,13 @@ const SpectrogramContainerTemplate = () => {
   const stopSpectrogramService = async () => {
     try {
       setServiceLoading(true);
+      intentionalStopRef.current = true; // Mark this as an intentional stop
       
       const response = await axios.post('/api/spectrogram/service/stop');
       
       if (response.data.success) {
         setServiceStatus('stopped');
-        console.log('✅ Spectrogram service stopped successfully');
+    
         showSuccess('Spectrogram service stopped successfully');
       } else {
         showError({ message: response.data.error || 'Failed to stop spectrogram service' });
@@ -556,7 +564,39 @@ const SpectrogramContainerTemplate = () => {
       const response = await axios.get('/api/spectrogram/service/status');
       
       if (response.data.success) {
-        setServiceStatus(response.data.status);
+        const newStatus = response.data.status;
+        const previousStatus = previousServiceStatusRef.current;
+        
+        // Check for unexpected stop (was running/starting but now stopped)
+        // Only notify if it was running for more than 2 seconds to avoid false notifications
+        const now = Date.now();
+        const timeSinceLastNotification = now - lastNotificationTimeRef.current;
+        
+        if ((previousStatus === 'running' || previousStatus === 'starting') && newStatus === 'stopped') {
+          // Check if this was an intentional stop
+          if (!intentionalStopRef.current) {
+            // Only show notification if it's been at least 3 seconds since last notification
+            if (timeSinceLastNotification > 3000) {
+              showError({ message: '⚠️ Spectrogram service stopped unexpectedly!' });
+              lastNotificationTimeRef.current = now;
+            }
+          } else {
+            // Reset the intentional stop flag
+            intentionalStopRef.current = false;
+          }
+        }
+        
+        // Check for unexpected error
+        if (previousStatus !== 'error' && newStatus === 'error') {
+          // Only show notification if it's been at least 3 seconds since last notification
+          if (timeSinceLastNotification > 3000) {
+            showError({ message: '❌ Spectrogram service encountered an error!' });
+            lastNotificationTimeRef.current = now;
+          }
+        }
+        
+        setServiceStatus(newStatus);
+        previousServiceStatusRef.current = newStatus;
       }
     } catch (error) {
       console.error('❌ Error checking service status:', error);
@@ -564,10 +604,23 @@ const SpectrogramContainerTemplate = () => {
     }
   };
 
-  // Check service status on component mount
+  // Check service status on component mount and every 2 seconds (only when not stopped)
   useEffect(() => {
     checkServiceStatus();
-  }, []);
+    
+    // Set up periodic status check every 2 seconds
+    const statusInterval = setInterval(() => {
+      // Only check status if service is not stopped
+      if (serviceStatus !== 'stopped') {
+        checkServiceStatus();
+      }
+    }, 2000);
+    
+    // Cleanup interval on component unmount
+    return () => {
+      clearInterval(statusInterval);
+    };
+  }, [serviceStatus]); // Add serviceStatus as dependency
 
   // Render help icon with tooltip
   const renderHelpIcon = (content) => (
@@ -672,16 +725,6 @@ const SpectrogramContainerTemplate = () => {
   };
 
   const autoSaveConfig = () => {
-    console.log('💾 Auto-save triggered');
-    console.log('💾 Current settings:', settings);
-    console.log('💾 Current inputs:', {
-      frequencyInput,
-      sampleRateInput,
-      resolutionInput,
-      windowSizeInput,
-      hopSizeInput
-    });
-    
     const configs = JSON.parse(localStorage.getItem('spectrogramConfigs') || '{}');
     const currentTime = new Date().toISOString();
     configs['latest'] = {
@@ -696,7 +739,6 @@ const SpectrogramContainerTemplate = () => {
     
     localStorage.setItem('spectrogramConfigs', JSON.stringify(configs));
     setLastSavedTime(currentTime);
-    console.log('💾 Auto-save completed at:', currentTime);
   };
 
   const loadLatestConfig = () => {
@@ -720,19 +762,19 @@ const SpectrogramContainerTemplate = () => {
 
   // USRP device management
   const fetchUsrpDevices = async () => {
-    console.log('📡 Fetching USRP devices...');
+
     try {
       const response = await axios.get('/api/usrp/devices');
-      console.log('📡 USRP devices response:', response.data);
+
       const devices = response.data.devices || [];
       setUsrpDevices(devices);
-      console.log('📡 Set USRP devices:', devices);
+
       
       // Auto-select first device if no device is currently selected
       if (devices.length > 0 && !selectedUsrpDevice) {
         const firstDevice = devices[0];
         setSelectedUsrpDevice(firstDevice.name);
-        console.log('📡 Auto-selected first USRP device:', firstDevice.name);
+
       }
     } catch (error) {
       console.error('❌ Error fetching USRP devices:', error);
@@ -742,24 +784,10 @@ const SpectrogramContainerTemplate = () => {
 
   // Spectrogram capture functions
   const startCapture = async () => {
-    console.log('🚀 Start Capture button clicked');
-    console.log('Selected USRP device:', selectedUsrpDevice);
-    console.log('Available USRP devices:', usrpDevices);
-    
-    if (!selectedUsrpDevice) {
-      console.log('❌ No USRP device selected');
-      showError({ message: 'Please select a USRP device first' });
-      return;
-    }
 
     setLoading(true);
 
     try {
-      const selectedDevice = usrpDevices.find(device => device.name === selectedUsrpDevice);
-      if (!selectedDevice) {
-        throw new Error('Selected device not found');
-      }
-
       // Convert frequency inputs
       const convertedFreq = convertFrequencyToHz(frequencyInput);
       const convertedSampleRate = convertFrequencyToHz(sampleRateInput);
@@ -771,8 +799,11 @@ const SpectrogramContainerTemplate = () => {
         fftSize = Math.pow(2, Math.ceil(Math.log2(convertedSampleRate / convertedResolution)));
       }
 
+      // Get the selected device's serial number
+      const selectedDevice = usrpDevices.find(device => device.details && device.details['Serial Number']);
+      const deviceSerial = selectedDevice?.details?.['Serial Number'] || 'X310'; // Default fallback
+      
       const requestPayload = {
-        deviceSerialNumber: selectedDevice.details['Serial Number'],
         centerFreq: convertedFreq,
         bandwidth: convertedSampleRate,
         resolution: convertedResolution,
@@ -780,7 +811,8 @@ const SpectrogramContainerTemplate = () => {
         overlap: hopSizeInput ? parseInt(hopSizeInput) : null,
         fftSize: fftSize,
         windowType: settings.windowType,
-        gain: settings.gain
+        gain: settings.gain,
+        device: deviceSerial // Send serial number instead of device name
       };
 
       const response = await axios.post('/api/spectrogram/start', requestPayload);
@@ -837,36 +869,75 @@ const SpectrogramContainerTemplate = () => {
 
   // WebSocket connection for real-time data
   const connectToWebSocket = () => {
-    const protocol = 'http:';
-    const wsUrl = `${protocol}//${window.location.hostname}:40000/api/spectrogram/stream`;
+    // Connect directly to the spectrogram Python server
+    const wsUrl = `ws://${window.location.hostname}:40001`;
     
     console.log('🔌 Connecting to WebSocket:', wsUrl);
     
     const ws = new WebSocket(wsUrl);
     
-    ws.onopen = () => {
-      console.log('✅ WebSocket connected');
-      setStreamConnected(true);
-    };
-    
     ws.onmessage = (event) => {
       try {
         const message = JSON.parse(event.data);
         
-        if (message.type === 'spectrogram_data') {
-          const data = message.data;
+        console.log('📡 WebSocket message received:', message.type, 'frame:', message.frame);
+        
+        if (message.type === 'spectrogram') {
+          // Convert Python server data format to frontend format
+          const data = {
+            frequencies: message.frequencies,
+            times: message.times,
+            magnitude: message.magnitude, // Keep full 2D array for spectrogram
+            data: message.magnitude[0] || message.magnitude, // For backward compatibility
+            frame: message.frame,
+            timestamp: message.timestamp
+          };
           
-          // Add timestamp
+          // Handle two-sided frequency data - show full range from -sample_rate/2 to +sample_rate/2
+          if (data.frequencies && data.frequencies.length > 0) {
+            const minFreq = data.frequencies[0];
+            const maxFreq = data.frequencies[data.frequencies.length - 1];
+            
+            // Log frequency range for debugging
+            if (data.frame % 1000 === 0) {
+              const expectedRange = settings.sampleRate / 2;
+              console.log(`Spectrogram frequencies: ${minFreq?.toFixed(1)} to ${maxFreq?.toFixed(1)} kHz (expected: ±${expectedRange/1e3} kHz)`);
+              console.log(`First 5 frequencies: ${data.frequencies.slice(0, 5).map(f => f.toFixed(1)).join(', ')}`);
+              console.log(`Last 5 frequencies: ${data.frequencies.slice(-5).map(f => f.toFixed(1)).join(', ')}`);
+            }
+            
+            // Always ensure we have the full two-sided frequency range
+            const expectedMinFreq = -settings.sampleRate / 2;
+            const expectedMaxFreq = settings.sampleRate / 2;
+            
+            if (minFreq !== expectedMinFreq || maxFreq !== expectedMaxFreq) {
+              console.log('🔄 Adjusting frequency range to full two-sided spectrum');
+              // Create proper two-sided frequency array
+              const numBins = data.frequencies.length;
+              const freqStep = settings.sampleRate / numBins;
+              const twoSidedFrequencies = [];
+              
+              for (let i = 0; i < numBins; i++) {
+                const freq = (i - numBins / 2) * freqStep;
+                twoSidedFrequencies.push(freq);
+              }
+              
+              data.frequencies = twoSidedFrequencies;
+              console.log(`✅ Full frequency range: ${twoSidedFrequencies[0]?.toFixed(1)} to ${twoSidedFrequencies[twoSidedFrequencies.length-1]?.toFixed(1)} kHz`);
+            }
+          }
+          
+          // Add elapsed time
           const elapsed = (Date.now() - startTimeRef.current) / 1000;
-          data.timestamp = elapsed;
+          data.elapsed = elapsed;
           
           // Add to history
           spectrogramHistory.current.push(data);
           
-                      // Keep only recent data
-            if (spectrogramHistory.current.length > maxHistoryLengthRef.current) {
-              spectrogramHistory.current.shift();
-            }
+          // Keep only recent data
+          if (spectrogramHistory.current.length > maxHistoryLengthRef.current) {
+            spectrogramHistory.current.shift();
+          }
           
           // Update current time (throttled)
           if (elapsed - currentTime > 0.1) { // Update every 100ms
@@ -876,10 +947,15 @@ const SpectrogramContainerTemplate = () => {
           // Find maximum frequency (throttled)
           if (data.data && data.data.length > 0 && elapsed % 0.5 < 0.1) { // Update every 500ms
             const maxIndex = data.data.indexOf(Math.max(...data.data));
-            const maxFreq = maxIndex * (settings.sampleRate / 2) / (settings.fftSize / 2);
+            const maxFreq = data.frequencies ? data.frequencies[maxIndex] : maxIndex * (settings.sampleRate / 2) / (settings.fftSize / 2);
             const maxAmplitude = Math.max(...data.data);
             
             setMaxFrequency({ freq: maxFreq, amplitude: maxAmplitude });
+            
+            // Log the detected peak for debugging
+            if (data.frame % 1000 === 0) {
+              console.log(`Peak detected at bin ${maxIndex}, frequency ${maxFreq?.toFixed(1)} kHz, amplitude ${maxAmplitude?.toFixed(1)} dB`);
+            }
           }
           
           // Trigger canvas redraw (throttled)
@@ -896,18 +972,38 @@ const SpectrogramContainerTemplate = () => {
     };
     
     ws.onerror = (error) => {
-      console.error('❌ WebSocket error:', error);
       setStreamConnected(false);
+      setIsCapturing(false);
+      setLoading(false);
     };
     
-    ws.onclose = () => {
-      console.log('🔌 WebSocket disconnected');
+    ws.onclose = (event) => {
       setStreamConnected(false);
+      setIsCapturing(false);
+      setLoading(false);
     };
-    
-    // Store WebSocket reference
-    eventSourceRef.current = ws;
-  };
+     
+     // Store WebSocket reference
+     eventSourceRef.current = ws;
+     
+     // Add connection timeout
+     const connectionTimeout = setTimeout(() => {
+       if (ws.readyState === WebSocket.CONNECTING) {
+         console.error('❌ WebSocket connection timeout');
+         ws.close();
+         setStreamConnected(false);
+         setIsCapturing(false);
+         setLoading(false);
+         showError({ message: 'Connection timeout. Make sure the spectrogram service is running on port 40001.' });
+       }
+     }, 5000); // 5 second timeout
+     
+     // Clear timeout when connection is established
+     ws.onopen = () => {
+       clearTimeout(connectionTimeout);
+       setStreamConnected(true);
+     };
+   };
 
   const disconnectFromStream = () => {
     if (eventSourceRef.current) {
@@ -934,7 +1030,12 @@ const SpectrogramContainerTemplate = () => {
     // Check if canvas has proper dimensions
     if (width <= 0 || height <= 0) return;
     
-    if (spectrogramHistory.current.length === 0) return;
+    if (spectrogramHistory.current.length === 0) {
+      console.log('🎨 No spectrogram data to draw');
+      return;
+    }
+    
+    console.log('🎨 Drawing spectrogram with', spectrogramHistory.current.length, 'frames');
     
     // Waterfall parameters - fill entire canvas
     const pixelHeight = 2; // Fixed height for each pixel
@@ -972,6 +1073,69 @@ const SpectrogramContainerTemplate = () => {
         );
       }
     });
+    
+    // Draw frequency axis labels if we have frequency data
+    if (dataToDraw.length > 0 && dataToDraw[0].frequencies) {
+      drawFrequencyLabels(ctx, width, height, dataToDraw[0].frequencies);
+    }
+  };
+  
+  // Draw frequency axis labels
+  const drawFrequencyLabels = (ctx, width, height, frequencies) => {
+    if (!frequencies || frequencies.length === 0) return;
+    
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+    ctx.font = '12px monospace';
+    ctx.textAlign = 'center';
+    
+    // Draw frequency labels at the bottom
+    const labelY = height - 5;
+    const numLabels = 11; // Show 11 frequency labels (including 0 Hz)
+    
+    for (let i = 0; i < numLabels; i++) {
+      const freqIndex = Math.floor((i / (numLabels - 1)) * (frequencies.length - 1));
+      const freq = frequencies[freqIndex];
+      const x = (freqIndex / (frequencies.length - 1)) * width;
+      
+      // Format frequency label
+      let label;
+      if (Math.abs(freq) >= 1e6) {
+        label = `${(freq / 1e6).toFixed(1)}M`;
+      } else if (Math.abs(freq) >= 1e3) {
+        label = `${(freq / 1e3).toFixed(1)}k`;
+      } else {
+        label = `${freq.toFixed(0)}`;
+      }
+      
+      ctx.fillText(label, x, labelY);
+    }
+    
+    // Draw center line at 0 Hz with enhanced visibility
+    const centerIndex = Math.floor(frequencies.length / 2);
+    const centerX = (centerIndex / (frequencies.length - 1)) * width;
+    
+    // Draw center line
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(centerX, 0);
+    ctx.lineTo(centerX, height);
+    ctx.stroke();
+    
+    // Draw center label
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.font = 'bold 12px monospace';
+    ctx.fillText('0 Hz', centerX, height - 20);
+    
+    // Draw range labels
+    const minFreq = frequencies[0];
+    const maxFreq = frequencies[frequencies.length - 1];
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+    ctx.font = '10px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(`${minFreq >= 1e3 ? (minFreq/1e3).toFixed(1) + 'k' : minFreq.toFixed(0)}`, 5, height - 5);
+    ctx.textAlign = 'right';
+    ctx.fillText(`${maxFreq >= 1e3 ? (maxFreq/1e3).toFixed(1) + 'k' : maxFreq.toFixed(0)}`, width - 5, height - 5);
   };
 
   const updateCanvasSize = () => {
@@ -1271,6 +1435,30 @@ const SpectrogramContainerTemplate = () => {
           <h3>Controls and Configuration</h3>
           
           <div className="control-buttons">
+            <div className="service-button-container">
+              <button 
+                className={`control-btn ${serviceStatus === 'running' ? 'stop' : 'start'}`}
+                onClick={() => {
+                  if (serviceStatus === 'running') {
+                    stopSpectrogramService();
+                  } else {
+                    startSpectrogramService();
+                  }
+                }}
+                disabled={serviceLoading}
+              >
+                {serviceLoading ? 'Processing...' : (serviceStatus === 'running' ? 'Stop Service' : 'Start Service')}
+              </button>
+              <div className="service-status-inline">
+                <span className={`status-dot ${serviceStatus}`}></span>
+                <span className="status-text">
+                  {serviceStatus === 'running' ? 'Running' : 
+                   serviceStatus === 'starting' ? 'Starting...' : 
+                   serviceStatus === 'stopping' ? 'Stopping...' : 
+                   serviceStatus === 'error' ? 'Error' : 'Stopped'}
+                </span>
+              </div>
+            </div>
             <button 
               className={`control-btn ${isCapturing ? 'stop' : 'start'}`}
               onClick={() => {
@@ -1284,19 +1472,6 @@ const SpectrogramContainerTemplate = () => {
               disabled={loading}
             >
               {loading ? 'Processing...' : (isCapturing ? 'Stop Capture' : 'Start Capture')}
-            </button>
-            <button 
-              className={`control-btn ${serviceStatus === 'running' ? 'stop' : 'start'}`}
-              onClick={() => {
-                if (serviceStatus === 'running') {
-                  stopSpectrogramService();
-                } else {
-                  startSpectrogramService();
-                }
-              }}
-              disabled={serviceLoading}
-            >
-              {serviceLoading ? 'Processing...' : (serviceStatus === 'running' ? 'Stop Service' : 'Start Service')}
             </button>
             <button 
               className="control-btn config"
@@ -1330,18 +1505,7 @@ const SpectrogramContainerTemplate = () => {
             </button>
           </div>
           
-          {/* Service Status Indicator */}
-          <div className="service-status">
-            <div className="status-indicator">
-              <span className={`status-dot ${serviceStatus}`}></span>
-              <span className="status-text">
-                Service: {serviceStatus === 'running' ? 'Running' : 
-                         serviceStatus === 'starting' ? 'Starting...' : 
-                         serviceStatus === 'stopping' ? 'Stopping...' : 
-                         serviceStatus === 'error' ? 'Error' : 'Stopped'}
-              </span>
-            </div>
-          </div>
+
         </div>
 
         <div className="control-section">
@@ -1501,7 +1665,7 @@ const SpectrogramContainerTemplate = () => {
                   onClick={fetchUsrpDevices}
                   title="Refresh USRP devices"
                 >
-                  🔄
+                  ��
                 </button>
               </div>
               <div className="setting-status" ref={usrpDeviceConversionRef}>
@@ -1978,13 +2142,24 @@ const SpectrogramContainerTemplate = () => {
                   display: 'block'
                 }}
               />
-              {/* Frequency axis overlay */}
-              <div className="frequency-axis-overlay">
-                {Array.from({length: 9}, (_, i) => {
-                  // Calculate frequency based on FFT size and sample rate
-                  const freqBinIndex = Math.floor((i * settings.fftSize / 2) / 8);
-                  const freq = (freqBinIndex * settings.sampleRate) / settings.fftSize;
-                  const xPosition = (i / 8) * 100; // Percentage position
+              {/* Frequency axis overlay - TOP */}
+              <div className="frequency-axis-overlay" style={{
+                position: 'absolute',
+                top: '0',
+                left: '0',
+                right: '0',
+                height: '20px',
+                background: 'rgba(0, 0, 0, 0.9)',
+                borderBottom: '1px solid rgba(255, 255, 255, 0.3)',
+                zIndex: 1000,
+                paddingTop: '2px',
+                paddingBottom: '2px'
+              }}>
+                {Array.from({length: 11}, (_, i) => {
+                  // Calculate frequency for full range from -sample_rate/2 to +sample_rate/2
+                  const freqStep = settings.sampleRate / 10; // 11 ticks, 10 steps
+                  const freq = (i - 5) * freqStep; // Center at 0, range from -5*step to +5*step
+                  const xPosition = (i / 10) * 100; // Percentage position
                   
                   return (
                     <div 
@@ -1993,23 +2168,38 @@ const SpectrogramContainerTemplate = () => {
                       style={{ 
                         position: 'absolute',
                         left: `${xPosition}%`,
-                        bottom: '0',
-                        transform: 'translateX(-50%)'
+                        top: '0',
+                        transform: 'translateX(-50%)',
+                        height: '100%',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        paddingTop: '2px',
+                        paddingBottom: '2px'
                       }}
                     >
                       <div className="tick-line" style={{
-                        width: '1px',
-                        height: '10px',
-                        background: '#666',
-                        margin: '0 auto'
+                        width: '2px',
+                        height: '6px',
+                        background: freq === 0 ? '#00ff00' : '#ffffff',
+                        marginTop: '0',
+                        borderRadius: '1px'
                       }}></div>
                       <div className="tick-label" style={{
                         fontSize: '10px',
-                        color: '#666',
+                        color: freq === 0 ? '#00ff00' : '#ffffff',
                         textAlign: 'center',
-                        marginTop: '2px'
+                        fontWeight: freq === 0 ? 'bold' : 'normal',
+                        textShadow: '1px 1px 2px rgba(0,0,0,0.8)',
+                        marginBottom: '0',
+                        lineHeight: '1.2',
+                        whiteSpace: 'nowrap'
                       }}>
-                        {freq >= 1000 ? `${(freq / 1000).toFixed(1)}k` : freq.toFixed(0)}
+                        {freq === 0 ? '0 Hz' : 
+                         freq >= 1000 ? `${(freq / 1000).toFixed(1)}k` : 
+                         freq <= -1000 ? `${(freq / 1000).toFixed(1)}k` : 
+                         freq.toFixed(0)}
                       </div>
                     </div>
                   );

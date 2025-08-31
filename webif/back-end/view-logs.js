@@ -12,7 +12,7 @@ function listLogFiles() {
   }
 
   const files = fs.readdirSync(logsDir);
-  const logFiles = files.filter(file => file.endsWith('.log'));
+  const logFiles = files.filter(file => file.endsWith('.log') || file.match(/\.log\.\d+$/));
 
   if (logFiles.length === 0) {
     console.log('📁 No log files found in logs directory.');

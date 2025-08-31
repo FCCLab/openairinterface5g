@@ -146,7 +146,8 @@ router.post('/service/start', async (req, res) => {
       hopSize = null,
       windowType = 'hann',
       gain = 20,
-      device = ''
+      device = '', // Device serial number
+      e = ''
     } = req.body || {};
     
     // Build command line arguments
@@ -160,15 +161,73 @@ router.post('/service/start', async (req, res) => {
     if (hopSize) args.push('--hop_size', hopSize.toString());
     if (windowType) args.push('--window_type', windowType);
     if (gain) args.push('--gain', gain.toString());
-    if (device) args.push('--device', device);
+    // Handle device serial number lookup and conversion
+    if (!device) {
+      return res.json({ success: false, error: 'Device serial number is required' });
+    }
+
+    try {
+      logger.spectrogram('Processing device parameter', { device: device });
+
+      // Import USRP device manager
+      const usrpDeviceManager = require('../UsrpDeviceManager');
+      const deviceInfo = await usrpDeviceManager.lookupDeviceBySerial(device);
+      
+      if (deviceInfo.found && deviceInfo.ipAddress) {
+        const deviceArgs = `addr=${deviceInfo.ipAddress}`;
+        logger.spectrogram('Serial number lookup successful', { 
+          serial: device, 
+          ipAddress: deviceInfo.ipAddress,
+          deviceArgs: deviceArgs,
+          deviceName: deviceInfo.deviceName,
+          deviceType: deviceInfo.deviceType
+        });
+        args.push('--device', deviceArgs);
+      } else {
+        logger.spectrogram('Serial number not found', { deviceSerial: device });
+        return res.json({ 
+          success: false, 
+          error: `Serial number '${device}' not found. Please check the device serial number or ensure the device is connected.`,
+          serialNumber: device
+        });
+      }
+    } catch (error) {
+      logger.spectrogram('Error processing device parameter', { 
+        device: device, 
+        error: error.message,
+        stack: error.stack
+      });
+      return res.json({ 
+        success: false, 
+        error: `Error processing device parameter for serial '${device}': ${error.message}`,
+        serialNumber: device
+      });
+    }
     
-    logger.spectrogram('Starting spectrogram service with shell script and arguments', { args });
+    // Log the complete command that will be executed
+    const fullCommand = `bash ${args.join(' ')}`;
+    logger.spectrogram('Starting spectrogram service - full command', { 
+      command: fullCommand,
+      args: args,
+      workingDirectory: process.cwd()
+    });
     
     // Start the spectrogram service using the shell script with analysis settings
-    spectrogramServiceProcess = spawn('bash', args, {
+    const spawnOptions = {
       stdio: ['pipe', 'pipe', 'pipe'],
-      detached: false
+      detached: false,
+      cwd: process.cwd(),
+      env: { ...process.env }
+    };
+    
+    logger.spectrogram('Spawning spectrogram service process', { 
+      command: 'bash',
+      args: args,
+      options: spawnOptions,
+      scriptPath: scriptPath
     });
+    
+    spectrogramServiceProcess = spawn('bash', args, spawnOptions);
 
     spectrogramServiceStatus = 'starting';
 

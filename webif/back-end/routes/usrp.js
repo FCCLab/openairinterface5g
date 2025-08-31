@@ -57,4 +57,21 @@ router.get('/device/details', async (req, res) => {
   }
 });
 
+// Look up USRP device by serial number
+router.get('/device/lookup/:serialNumber', async (req, res) => {
+  try {
+    const { serialNumber } = req.params;
+    if (!serialNumber) {
+      return res.status(400).json({ error: 'serialNumber parameter is required' });
+    }
+
+    logger.api('USRP device lookup by serial requested', { ip: req.ip, serialNumber });
+    const deviceInfo = await usrpDeviceManager.lookupDeviceBySerial(serialNumber);
+    res.json(deviceInfo);
+  } catch (error) {
+    logger.error('Error in USRP device lookup API', { error: error.message, stack: error.stack, ip: req.ip });
+    res.status(500).json({ error: 'Failed to lookup USRP device' });
+  }
+});
+
 module.exports = router;

@@ -651,6 +651,17 @@
 }
 
 .refresh-btn:disabled {
+  /* Remove the animation from the button itself */
+}
+
+/* Refresh icon rotation animation */
+.refresh-icon {
+  display: inline-block;
+  transition: transform 0.3s ease;
+  margin-right: 0.5rem;
+}
+
+.refresh-icon.rotating {
   animation: spin 1s linear infinite;
 }
 
@@ -1302,6 +1313,7 @@
   flex-shrink: 0;
   width: 100%;
   min-width: 0;
+  position: relative;
 }
 
 .control-group {
@@ -1377,6 +1389,52 @@
 
 .action-btn:hover {
   background: rgba(74, 222, 128, 0.3);
+}
+
+.action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+
+
+/* Search History Dropdown Styles */
+.input-container {
+  position: relative;
+  width: 100%;
+}
+
+.search-history-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: rgba(0, 0, 0, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  padding: 0.5rem;
+  z-index: 1000;
+  max-height: 200px;
+  overflow-y: auto;
+  backdrop-filter: blur(10px);
+  margin-top: 0.25rem;
+}
+
+.history-item {
+  padding: 0.5rem 0.75rem;
+  color: white;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.3s ease;
+  font-size: 0.9rem;
+}
+
+.history-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.history-item:not(:last-child) {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .logs-viewer {
@@ -1549,6 +1607,116 @@
   background: rgba(248, 113, 113, 0.1);
   border-radius: 4px;
   border-left: 3px solid #f87171;
+}
+
+.log-data {
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  background: rgba(59, 130, 246, 0.1);
+  border-radius: 4px;
+  border-left: 3px solid #3b82f6;
+  font-size: 0.85rem;
+}
+
+.log-data-label {
+  color: #3b82f6;
+  font-weight: 600;
+  margin-right: 0.5rem;
+}
+
+.log-data-content {
+  color: #e5e7eb;
+  font-family: 'Courier New', monospace;
+  word-break: break-word;
+  text-align: left;
+  display: block;
+}
+
+/* Additional log metadata fields */
+.log-metadata {
+  margin-top: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  background: rgba(107, 114, 128, 0.1);
+  border-radius: 4px;
+  font-size: 0.8rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.log-additional-meta {
+  margin-top: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  background: rgba(59, 130, 246, 0.1);
+  border-radius: 4px;
+  font-size: 0.8rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.log-field {
+  color: #9ca3af;
+  font-family: 'Courier New', monospace;
+  padding: 0.125rem 0.25rem;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 2px;
+  white-space: nowrap;
+}
+
+.log-stack {
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  background: rgba(239, 68, 68, 0.1);
+  border-radius: 4px;
+  border-left: 3px solid #ef4444;
+  font-size: 0.8rem;
+}
+
+.log-stack-content {
+  color: #fca5a5;
+  font-family: 'Courier New', monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+  display: block;
+}
+
+/* Auto-detected field styling */
+.log-field-item {
+  margin-bottom: 0.5rem;
+  padding: 0.5rem;
+  background: rgba(59, 130, 246, 0.1);
+  border-radius: 4px;
+  border-left: 3px solid #3b82f6;
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.log-field-item:last-child {
+  margin-bottom: 0;
+}
+
+.log-field-label {
+  color: #fbbf24;
+  font-weight: 700;
+  font-family: 'Courier New', monospace;
+  white-space: nowrap;
+  flex-shrink: 0;
+  text-transform: uppercase;
+  font-size: 0.85rem;
+  letter-spacing: 0.5px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.log-field-content {
+  color: #e5e7eb;
+  font-family: 'Courier New', monospace;
+  word-break: break-word;
+  text-align: left;
+  flex: 1;
+  font-size: 0.9rem;
 }
 
 /* Spectrogram Page Styles */
@@ -2037,6 +2205,38 @@
 .status-text {
   color: rgba(255, 255, 255, 0.9);
   font-family: 'Courier New', monospace;
+}
+
+/* Inline Service Status Styles */
+.service-button-container {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.service-button-container .control-btn {
+  flex: 1;
+}
+
+.service-status-inline {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(0, 0, 0, 0.3);
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.service-status-inline .status-text {
+  color: #ffffff;
+  font-family: 'Courier New', monospace;
+  font-weight: 600;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 }
 
 .spectrogram-display {

@@ -3,7 +3,8 @@
     "app.js",
     "UsrpDeviceManager.js",
     "logger.js",
-    "view-logs.js"
+    "view-logs.js",
+    "routes/"
   ],
   "ext": "js,json",
   "ignore": [

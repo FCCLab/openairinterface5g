@@ -550,6 +550,61 @@ class UsrpDeviceManager {
   }
 
   /**
+   * Look up device by serial number and return both serial and IP address
+   */
+  async lookupDeviceBySerial(serialNumber) {
+    try {
+      logger.debug('Looking up USRP device by serial number', { serialNumber });
+      
+      // First, ensure we have fresh device data
+      await this.updateCache();
+      
+      // Find device with matching serial number
+      const device = this.cache.devices.find(d => 
+        d.details && d.details['Serial Number'] === serialNumber
+      );
+      
+      if (!device) {
+        logger.warn('USRP device not found by serial number', { serialNumber });
+        return {
+          found: false,
+          serialNumber: serialNumber,
+          error: 'Device not found'
+        };
+      }
+      
+      // Extract IP address if available
+      const ipAddress = device.details['IP Address'] || null;
+      
+      logger.debug('USRP device found by serial number', { 
+        serialNumber, 
+        ipAddress, 
+        deviceName: device.name 
+      });
+      
+      return {
+        found: true,
+        serialNumber: serialNumber,
+        ipAddress: ipAddress,
+        deviceName: device.name,
+        deviceType: device.details['Type'] || 'Unknown',
+        allDetails: device.details
+      };
+      
+    } catch (error) {
+      logger.error('Error looking up USRP device by serial number', { 
+        serialNumber, 
+        error: error.message 
+      });
+      return {
+        found: false,
+        serialNumber: serialNumber,
+        error: error.message
+      };
+    }
+  }
+
+  /**
    * Get formatted response for API
    */
   getFormattedResponse(hasError = false, errorMessage = null) {

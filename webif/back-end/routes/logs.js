@@ -12,15 +12,20 @@ router.get('/files', async (req, res) => {
     logger.api('Log files list requested', { ip: req.ip });
     const logsDir = path.join(__dirname, '../logs');
     
+    logger.info('Debug: Checking logs directory', { logsDir, exists: fs.existsSync(logsDir) });
+    
     if (!fs.existsSync(logsDir)) {
+      logger.warn('Debug: Logs directory does not exist', { logsDir });
       return res.json({ files: [] });
     }
     
     const files = await fsPromises.readdir(logsDir);
+    logger.info('Debug: Found files in logs directory', { files });
     const logFiles = [];
     
     for (const file of files) {
-      // Include both .log files and rotated .log.* files
+      // Include all .log files and rotated log files
+      // Handle both regular .log files and rotated files (e.g., combined-2024-12-01.log, combined-2024-12-01.log.1, etc.)
       if (file.endsWith('.log') || file.match(/\.log\.\d+$/)) {
         const filePath = path.join(logsDir, file);
         const stats = await fsPromises.stat(filePath);
@@ -30,6 +35,7 @@ router.get('/files', async (req, res) => {
           size: `${size} KB`,
           modified: stats.mtime.toISOString()
         });
+        logger.info('Debug: Added log file', { file, size: `${size} KB` });
       }
     }
     

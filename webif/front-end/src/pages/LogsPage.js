@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 
 function LogsPage() {
@@ -8,19 +8,51 @@ function LogsPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [refreshInterval, setRefreshInterval] = useState(5000); // Default 5 seconds
   const [logLevel, setLogLevel] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [excludeTerm, setExcludeTerm] = useState('');
+  const [useRegex, setUseRegex] = useState(false);
   const [lines, setLines] = useState(20);
+  const [refreshing, setRefreshing] = useState(false);
+  const [searchHistory, setSearchHistory] = useState([]);
+  const [excludeHistory, setExcludeHistory] = useState([]);
+  const [showSearchHistory, setShowSearchHistory] = useState(false);
+  const [showExcludeHistory, setShowExcludeHistory] = useState(false);
+  
+  // Ref to track the current interval
+  const intervalRef = useRef(null);
+
+  // Helper function to safely test regex patterns
+  const testRegex = (pattern, text) => {
+    if (!pattern) return true;
+    
+    try {
+      if (useRegex) {
+        const regex = new RegExp(pattern, 'i'); // Case-insensitive
+        return regex.test(text);
+      } else {
+        return text.toLowerCase().includes(pattern.toLowerCase());
+      }
+    } catch (error) {
+      // If regex is invalid, fall back to string search
+      console.warn('Invalid regex pattern:', pattern, error);
+      return text.toLowerCase().includes(pattern.toLowerCase());
+    }
+  };
 
   // Fetch available log files
   const fetchLogFiles = async () => {
     try {
+      setRefreshing(true);
       setError(null);
       const response = await axios.get('/api/logs/files');
       setLogFiles(response.data.files || []);
     } catch (err) {
       console.error('Error fetching log files:', err);
       setError('Failed to fetch log files');
+    } finally {
+      setRefreshing(false);
     }
   };
 
@@ -30,6 +62,7 @@ function LogsPage() {
     
     try {
       setLoading(true);
+      setRefreshing(true);
       setError(null);
       const response = await axios.get(`/api/logs/view/${filename}`, {
         params: { lines: lineCount }
@@ -40,23 +73,92 @@ function LogsPage() {
       setError('Failed to fetch log content');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
-  // Auto-refresh log content
-  useEffect(() => {
-    if (autoRefresh && selectedFile) {
-      const interval = setInterval(() => {
-        fetchLogContent(selectedFile, lines);
-      }, 5000); // Refresh every 5 seconds
-      
-      return () => clearInterval(interval);
+  // Handle scroll to top refresh and auto-refresh management
+  const handleScroll = (e) => {
+    const scrollTop = e.target.scrollTop;
+    const scrollHeight = e.target.scrollHeight;
+    const clientHeight = e.target.clientHeight;
+    const isAtTop = scrollTop === 0;
+    const isAtBottom = scrollTop + clientHeight >= scrollHeight - 10; // 10px tolerance
+    
+    // Auto-enable refresh when at top
+    if (isAtTop && !autoRefresh) {
+      setAutoRefresh(true);
+      fetchLogContent(selectedFile, lines);
     }
-  }, [autoRefresh, selectedFile, lines]);
+    
+    // Auto-disable refresh when scrolling down (not at top)
+    if (!isAtTop && autoRefresh) {
+      setAutoRefresh(false);
+    }
+    
+    // Refresh when at top and auto-refresh is enabled
+    if (isAtTop && autoRefresh && selectedFile) {
+      fetchLogContent(selectedFile, lines);
+      // Reset the timer when scrolling to top
+      resetAutoRefreshTimer();
+    }
+  };
+  
+  // Function to reset the auto-refresh timer
+  const resetAutoRefreshTimer = () => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+    
+    if (autoRefresh && selectedFile) {
+      intervalRef.current = setInterval(() => {
+        fetchLogContent(selectedFile, lines);
+      }, refreshInterval);
+    }
+  };
+
+  // Auto-refresh log content with interval
+  useEffect(() => {
+    // Clear existing interval
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+    
+    if (autoRefresh && selectedFile) {
+      intervalRef.current = setInterval(() => {
+        fetchLogContent(selectedFile, lines);
+      }, refreshInterval);
+    }
+    
+    // Cleanup on unmount or dependency change
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, [autoRefresh, selectedFile, lines, refreshInterval]);
 
   // Initial load
   useEffect(() => {
     fetchLogFiles();
+  }, []);
+
+  // Close dropdowns when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (!event.target.closest('.input-container')) {
+        setShowSearchHistory(false);
+        setShowExcludeHistory(false);
+      }
+    };
+
+    document.addEventListener('click', handleClickOutside);
+    return () => {
+      document.removeEventListener('click', handleClickOutside);
+    };
   }, []);
 
   // Load log content when file is selected
@@ -72,6 +174,17 @@ function LogsPage() {
     const message = logEntry.message;
     const type = logEntry.type || '';
     const meta = logEntry.ip ? `[${logEntry.ip}]` : '';
+    const data = logEntry.data || '';
+    
+    // Auto-detect all fields except the main ones
+    const mainFields = ['timestamp', 'level', 'message', 'type', 'ip', 'data'];
+    const allFields = {};
+    
+    Object.keys(logEntry).forEach(key => {
+      if (!mainFields.includes(key)) {
+        allFields[key] = logEntry[key];
+      }
+    });
     
     return {
       timestamp,
@@ -79,6 +192,8 @@ function LogsPage() {
       message,
       type,
       meta,
+      data,
+      allFields,
       raw: logEntry
     };
   };
@@ -112,23 +227,105 @@ function LogsPage() {
         return false;
       }
       
-      // Filter by search term
-      if (searchTerm && !log.message.toLowerCase().includes(searchTerm.toLowerCase())) {
+      // Filter by search term (include)
+      if (searchTerm && !testRegex(searchTerm, log.message)) {
+        return false;
+      }
+      
+      // Filter by exclude term (exclude)
+      if (excludeTerm && testRegex(excludeTerm, log.message)) {
         return false;
       }
       
       return true;
-    });
+    })
+    .reverse(); // Show newest logs first
 
   const handleFileSelect = (filename) => {
     setSelectedFile(filename);
     setLogContent([]);
   };
 
+  const saveSearchToHistory = (term) => {
+    if (!term.trim()) return;
+    
+    setSearchHistory(prev => {
+      const updated = [term.trim(), ...prev.filter(t => t !== term.trim())];
+      return updated.slice(0, 10); // Keep only the last 10 searches
+    });
+  };
+
+  const saveExcludeToHistory = (term) => {
+    if (!term.trim()) return;
+    
+    setExcludeHistory(prev => {
+      const updated = [term.trim(), ...prev.filter(t => t !== term.trim())];
+      return updated.slice(0, 10); // Keep only the last 10 excludes
+    });
+  };
+
   const handleRefresh = () => {
     if (selectedFile) {
       fetchLogContent(selectedFile, lines);
     }
+  };
+
+  const handleSearchChange = (e) => {
+    const value = e.target.value;
+    setSearchTerm(value);
+  };
+
+  const handleExcludeChange = (e) => {
+    const value = e.target.value;
+    setExcludeTerm(value);
+  };
+
+  const handleSearchKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      if (e.target.value.trim()) {
+        saveSearchToHistory(e.target.value);
+      }
+    }
+  };
+
+  const handleExcludeKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      if (e.target.value.trim()) {
+        saveExcludeToHistory(e.target.value);
+      }
+    }
+  };
+
+  const handleSearchBlur = (e) => {
+    if (e.target.value.trim()) {
+      saveSearchToHistory(e.target.value);
+    }
+  };
+
+  const handleExcludeBlur = (e) => {
+    if (e.target.value.trim()) {
+      saveExcludeToHistory(e.target.value);
+    }
+  };
+
+  const handleSearchClick = () => {
+    setShowSearchHistory(true);
+    setShowExcludeHistory(false);
+  };
+
+  const handleExcludeClick = () => {
+    setShowExcludeHistory(true);
+    setShowSearchHistory(false);
+  };
+
+  const handleSearchSelect = (term) => {
+    setSearchTerm(term);
+    setShowSearchHistory(false);
+  };
+
+  const handleExcludeSelect = (term) => {
+    setExcludeTerm(term);
+    setShowExcludeHistory(false);
   };
 
   const handleDownload = async () => {
@@ -168,9 +365,10 @@ function LogsPage() {
             <button 
               onClick={fetchLogFiles} 
               className="refresh-btn"
-              disabled={loading}
+              disabled={refreshing}
             >
-              {loading ? 'Refreshing...' : '🔄 Refresh'}
+              <span className={`refresh-icon ${refreshing ? 'rotating' : ''}`}>🔄</span>
+              Refresh
             </button>
           </div>
           
@@ -227,14 +425,73 @@ function LogsPage() {
                 </div>
 
                 <div className="control-group">
-                  <input
-                    type="text"
-                    placeholder="Search logs..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="search-input"
-                  />
+                  <div className="input-container">
+                    <input
+                      type="text"
+                      placeholder="Search logs..."
+                      value={searchTerm}
+                      onChange={handleSearchChange}
+                      onKeyDown={handleSearchKeyDown}
+                      onBlur={handleSearchBlur}
+                      onClick={handleSearchClick}
+                      className="search-input"
+                    />
+                    {showSearchHistory && searchHistory.length > 0 && (
+                      <div className="search-history-dropdown">
+                        {searchHistory.map((term, index) => (
+                          <div 
+                            key={index} 
+                            className="history-item"
+                            onClick={() => handleSearchSelect(term)}
+                          >
+                            🔍 {term}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
+
+                <div className="control-group">
+                  <div className="input-container">
+                    <input
+                      type="text"
+                      placeholder="Exclude logs containing..."
+                      value={excludeTerm}
+                      onChange={handleExcludeChange}
+                      onKeyDown={handleExcludeKeyDown}
+                      onBlur={handleExcludeBlur}
+                      onClick={handleExcludeClick}
+                      className="search-input"
+                    />
+                    {showExcludeHistory && excludeHistory.length > 0 && (
+                      <div className="search-history-dropdown">
+                        {excludeHistory.map((term, index) => (
+                          <div 
+                            key={index} 
+                            className="history-item"
+                            onClick={() => handleExcludeSelect(term)}
+                          >
+                            ❌ {term}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="control-group">
+                  <label className="checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={useRegex}
+                      onChange={(e) => setUseRegex(e.target.checked)}
+                    />
+                    Use Regular Expressions
+                  </label>
+                </div>
+
+
 
                 <div className="control-group">
                   <label className="checkbox-label">
@@ -247,9 +504,27 @@ function LogsPage() {
                   </label>
                 </div>
 
+                <div className="control-group">
+                  <label>Refresh Interval:</label>
+                  <select 
+                    value={refreshInterval} 
+                    onChange={(e) => setRefreshInterval(Number(e.target.value))}
+                    className="control-select"
+                    disabled={!autoRefresh}
+                  >
+                    <option value={1000}>1 second</option>
+                    <option value={2000}>2 seconds</option>
+                    <option value={5000}>5 seconds</option>
+                    <option value={10000}>10 seconds</option>
+                    <option value={30000}>30 seconds</option>
+                    <option value={60000}>1 minute</option>
+                  </select>
+                </div>
+
                 <div className="control-actions">
-                  <button onClick={handleRefresh} className="action-btn">
-                    🔄 Refresh
+                  <button onClick={handleRefresh} className="action-btn" disabled={refreshing}>
+                    <span className={`refresh-icon ${refreshing ? 'rotating' : ''}`}>🔄</span>
+                    Refresh
                   </button>
                   <button onClick={handleDownload} className="action-btn">
                     📥 Download
@@ -258,7 +533,7 @@ function LogsPage() {
               </div>
 
               {/* Log Content */}
-              <div className="logs-viewer">
+              <div className="logs-viewer" onScroll={handleScroll}>
                 {loading ? (
                   <div className="loading-container">
                     <div className="loading-spinner"></div>
@@ -294,10 +569,37 @@ function LogsPage() {
                               </span>
                             )}
                             {log.meta && <span className="log-meta">{log.meta}</span>}
+                            <span className="log-message">{log.message}</span>
                           </div>
-                          <div className="log-message">{log.message}</div>
-                          {log.raw.error && (
-                            <div className="log-error">{log.raw.error}</div>
+                          
+                          {/* Auto-detected fields */}
+                          {Object.keys(log.allFields).length > 0 && (
+                            <>
+                              {Object.entries(log.allFields).map(([key, value]) => (
+                                <div key={key} className="log-field-item">
+                                  <span className="log-field-label">{key}:</span>
+                                  <span className="log-field-content">
+                                    {typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value)}
+                                  </span>
+                                </div>
+                              ))}
+                            </>
+                          )}
+                          
+                          {log.data && (
+                            <div className="log-data">
+                              <span className="log-data-content">{log.data}</span>
+                            </div>
+                          )}
+                          
+                          {log.stack && (
+                            <div className="log-stack">
+                              <span className="log-stack-content">{log.stack}</span>
+                            </div>
+                          )}
+                          
+                          {log.error && (
+                            <div className="log-error">{log.error}</div>
                           )}
                         </div>
                       ))
