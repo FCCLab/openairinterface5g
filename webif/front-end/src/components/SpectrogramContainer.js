@@ -55,7 +55,6 @@ const SpectrogramContainerTemplate = () => {
   
   const canvasRef = useRef(null);
   const animationRef = useRef(null);
-  const spectrogramHistory = useRef([]);
   const maxHistoryLengthRef = useRef(1000); // Will be updated to canvas height when canvas is available
   const startTimeRef = useRef(null);
   const eventSourceRef = useRef(null); // SSE connection reference
@@ -111,6 +110,173 @@ const SpectrogramContainerTemplate = () => {
     gain: { isTransitioning: false, oldValue: null, newValue: null, transitionText: '', phase: 'normal' }
   });
 
+  // Frequency-magnitude mapping (similar to spectrogram_client.py)
+  const freqMagMapRef = useRef({
+    freqBins: [],
+    magnitudeMapArray: [], // Array of magnitude maps for waterfall visualization
+    freqMin: -5000000, // -5 MHz default
+    freqMax: 5000000,  // +5 MHz default
+    freqStep: 10000,   // 10 kHz steps
+    mapSize: 1000,     // 1000 frequency bins
+    maxHistoryLength: 100 // Maximum number of time slices to keep
+  });
+
+  // Frequency-magnitude mapping functions (similar to spectrogram_client.py)
+  const initializeFreqMagMap = () => {
+    const map = freqMagMapRef.current;
+    map.freqBins = [];
+    map.magnitudeMapArray = []; // Array of magnitude maps for waterfall
+    
+    // Create frequency bins
+    for (let i = 0; i < map.mapSize; i++) {
+      map.freqBins.push(map.freqMin + i * map.freqStep);
+    }
+    
+    console.log(`SpectrogramContainer: Initialized frequency map with ${map.mapSize} bins`);
+    console.log(`SpectrogramContainer: Frequency range: ${map.freqMin/1e6} to ${map.freqMax/1e6} MHz`);
+  };
+
+  // Test function to populate frequency map with random values
+  const populateWithRandomData = () => {
+    const map = freqMagMapRef.current;
+    
+    // Clear existing data
+    map.magnitudeMapArray = [];
+    
+    // Create 50 time slices with random data
+    for (let timeSlice = 0; timeSlice < 50; timeSlice++) {
+      const randomMagnitudeMap = new Array(map.mapSize).fill(-120.0);
+      
+      // Add some random peaks at different frequencies
+      for (let i = 0; i < map.mapSize; i++) {
+        // Base noise level
+        let magnitude = -120 + Math.random() * 20; // -120 to -100 dB noise
+        
+        // Add some peaks at random frequencies
+        if (Math.random() < 0.1) { // 10% chance of a peak
+          magnitude = -60 + Math.random() * 40; // -60 to -20 dB peak
+        }
+        
+        // Add a moving peak that changes with time
+        const movingPeakFreq = Math.floor(map.mapSize * 0.3 + timeSlice * 2) % map.mapSize;
+        if (i === movingPeakFreq) {
+          magnitude = -40 + Math.random() * 20; // -40 to -20 dB moving peak
+        }
+        
+        // Add a stationary peak at center frequency
+        const centerFreq = Math.floor(map.mapSize * 0.5);
+        if (i === centerFreq) {
+          magnitude = -50 + Math.random() * 30; // -50 to -20 dB center peak
+        }
+        
+        randomMagnitudeMap[i] = magnitude;
+      }
+      
+      map.magnitudeMapArray.push(randomMagnitudeMap);
+    }
+    
+    console.log(`SpectrogramContainer: Populated with ${map.magnitudeMapArray.length} random time slices`);
+    
+    // Trigger a redraw to show the test data
+    if (!animationRef.current) {
+      animationRef.current = requestAnimationFrame(() => {
+        drawSpectrogram();
+        animationRef.current = null;
+      });
+    }
+  };
+
+  const updateFreqMagMap = (frequencies, magnitude) => {
+    const map = freqMagMapRef.current;
+    
+    if (!frequencies || frequencies.length === 0 || !magnitude || magnitude.length === 0) {
+      return;
+    }
+    
+    // Convert magnitude to 1D if 2D
+    let mag1d;
+    if (Array.isArray(magnitude[0])) {
+      mag1d = magnitude[0]; // Take first time slice
+    } else {
+      mag1d = magnitude;
+    }
+    
+    console.log(`SpectrogramContainer: Updating map with ${frequencies.length} frequency points`);
+    console.log(`SpectrogramContainer: Frequency range: ${frequencies[0]/1e6} to ${frequencies[frequencies.length-1]/1e6} MHz`);
+    console.log(`SpectrogramContainer: Magnitude range: ${Math.min(...mag1d)} to ${Math.max(...mag1d)} dB`);
+    
+    // Check if we need to adjust the frequency map range based on received data
+    const minReceivedFreq = Math.min(...frequencies);
+    const maxReceivedFreq = Math.max(...frequencies);
+    console.log(`SpectrogramContainer: Received frequency range: ${minReceivedFreq} to ${maxReceivedFreq} Hz`);
+    console.log(`SpectrogramContainer: Map frequency range: ${map.freqMin} to ${map.freqMax} Hz`);
+    
+    // Check if we need to adjust the frequency map range based on received data
+    if (minReceivedFreq < map.freqMin || maxReceivedFreq > map.freqMax) {
+      console.log(`SpectrogramContainer: Adjusting frequency map range to match received data`);
+      // Expand the map range to include all received frequencies
+      const newFreqMin = Math.min(map.freqMin, minReceivedFreq);
+      const newFreqMax = Math.max(map.freqMax, maxReceivedFreq);
+      
+      // Recalculate frequency bins
+      map.freqMin = newFreqMin;
+      map.freqMax = newFreqMax;
+      map.freqStep = (map.freqMax - map.freqMin) / map.mapSize;
+      
+      // Recreate frequency bins
+      map.freqBins = [];
+      for (let i = 0; i < map.mapSize; i++) {
+        map.freqBins.push(map.freqMin + i * map.freqStep);
+      }
+      
+      console.log(`SpectrogramContainer: New map frequency range: ${map.freqMin/1e6} to ${map.freqMax/1e6} MHz`);
+    }
+    
+    // Create a new magnitude map for this time slice
+    const newMagnitudeMap = new Array(map.mapSize).fill(-120.0); // Initialize with -120 dB
+    
+    // Map received frequencies to our frequency map
+    let updatedCount = 0;
+    let outOfRangeCount = 0;
+    
+    for (let i = 0; i < frequencies.length; i++) {
+      const freq = frequencies[i];
+      const mag = mag1d[i];
+      
+      // Find the closest bin in our frequency map
+      const binIdx = Math.floor((freq - map.freqMin) / map.freqStep);
+      
+      // Ensure bin index is within bounds
+      if (binIdx >= 0 && binIdx < map.mapSize) {
+        // Update the magnitude at this frequency bin
+        newMagnitudeMap[binIdx] = mag;
+        updatedCount++;
+      } else {
+        outOfRangeCount++;
+        if (outOfRangeCount <= 5) { // Show first few out-of-range frequencies
+          console.log(`SpectrogramContainer: Frequency ${freq/1e6} MHz out of range (bin ${binIdx})`);
+        }
+      }
+    }
+    
+    // Add the new magnitude map to the array
+    map.magnitudeMapArray.push(newMagnitudeMap);
+    
+    // Keep only the most recent maps (waterfall effect)
+    if (map.magnitudeMapArray.length > map.maxHistoryLength) {
+      map.magnitudeMapArray.shift(); // Remove oldest map
+    }
+    
+    // Calculate statistics for the latest map
+    const validMagnitudes = newMagnitudeMap.filter(mag => typeof mag === 'number' && !isNaN(mag));
+    const minMag = validMagnitudes.length > 0 ? Math.min(...validMagnitudes) : -120;
+    const maxMag = validMagnitudes.length > 0 ? Math.max(...validMagnitudes) : -120;
+    
+    console.log(`SpectrogramContainer: Updated ${updatedCount} bins, ${outOfRangeCount} out of range`);
+    console.log(`SpectrogramContainer: Map magnitude range: ${minMag.toFixed(1)} to ${maxMag.toFixed(1)} dB`);
+    console.log(`SpectrogramContainer: Total time slices: ${map.magnitudeMapArray.length}`);
+  };
+
   // Colormap definitions (inspired by js-colormaps)
   const colormaps = {
     viridis: [
@@ -148,12 +314,24 @@ const SpectrogramContainerTemplate = () => {
     const rangeMin = settings.colorRangeMin;
     const rangeMax = settings.colorRangeMax;
     
+    // Handle edge cases
+    if (typeof amplitude !== 'number' || isNaN(amplitude)) {
+      return 'rgba(0,0,0,1)'; // Return black for invalid values
+    }
 
     const clampedAmp = Math.min(Math.max(amplitude, rangeMin), rangeMax);
     
     // Use amplitude only for color mapping
     const colorIndex = Math.floor((clampedAmp - rangeMin) / (rangeMax - rangeMin) * (colormap.length - 1));
-    const color = colormap[colorIndex];
+    
+    // Ensure colorIndex is within bounds
+    const safeIndex = Math.max(0, Math.min(colorIndex, colormap.length - 1));
+    const color = colormap[safeIndex];
+    
+    // Ensure color exists
+    if (!color || !Array.isArray(color) || color.length < 3) {
+      return 'rgba(0,0,0,1)'; // Return black for invalid colors
+    }
 
     // Use template literal for better performance
     return `rgba(${color[0]},${color[1]},${color[2]},1)`;
@@ -161,26 +339,29 @@ const SpectrogramContainerTemplate = () => {
 
   // Auto-adjust color range based on current data
   const autoAdjustColorRange = () => {
-    if (spectrogramHistory.current.length === 0) {
-  
+    const map = freqMagMapRef.current;
+    if (!map.magnitudeMapArray || map.magnitudeMapArray.length === 0) {
       return;
     }
 
-    const latestData = spectrogramHistory.current[spectrogramHistory.current.length - 1];
-    if (!latestData || !latestData.data || latestData.data.length === 0) {
-  
+    // Get the latest magnitude map
+    const latestMap = map.magnitudeMapArray[map.magnitudeMapArray.length - 1];
+    if (!latestMap || latestMap.length === 0) {
       return;
     }
 
-    const amplitudes = latestData.data;
-    const minAmp = Math.min(...amplitudes);
-    const maxAmp = Math.max(...amplitudes);
+    // Filter out invalid values
+    const validMagnitudes = latestMap.filter(mag => typeof mag === 'number' && !isNaN(mag));
+    if (validMagnitudes.length === 0) {
+      return;
+    }
+
+    const minAmp = Math.min(...validMagnitudes);
+    const maxAmp = Math.max(...validMagnitudes);
     
     // Add some padding to the range
     const newMin = Math.floor(minAmp - 2);
     const newMax = Math.ceil(maxAmp + 2);
-    
-
     
     // Update settings
     updateSettings('colorRangeMin', newMin);
@@ -822,7 +1003,10 @@ const SpectrogramContainerTemplate = () => {
         setStreamConnected(true);
         startTimeRef.current = Date.now();
         setCurrentTime(0);
-        spectrogramHistory.current = [];
+        // Clear frequency map array
+        if (freqMagMapRef.current) {
+          freqMagMapRef.current.magnitudeMapArray = [];
+        }
         setMaxFrequency({ freq: 0, amplitude: 0 });
         
         // Start WebSocket connection
@@ -880,92 +1064,82 @@ const SpectrogramContainerTemplate = () => {
       try {
         const message = JSON.parse(event.data);
         
-        console.log('📡 WebSocket message received:', message.type, 'frame:', message.frame);
+        console.log('📡 WebSocket message received:', message.frame_num, 'frame:', message.frame_num);
         
-        if (message.type === 'spectrogram') {
-          // Convert Python server data format to frontend format
-          const data = {
-            frequencies: message.frequencies,
-            times: message.times,
-            magnitude: message.magnitude, // Keep full 2D array for spectrogram
-            data: message.magnitude[0] || message.magnitude, // For backward compatibility
-            frame: message.frame,
-            timestamp: message.timestamp
-          };
+        // Handle two-sided frequency data - show full range from -sample_rate/2 to +sample_rate/2
+        if (message.frequencies && message.frequencies.length > 0) {
+          const minFreq = message.frequencies[0];
+          const maxFreq = message.frequencies[message.frequencies.length - 1];
           
-          // Handle two-sided frequency data - show full range from -sample_rate/2 to +sample_rate/2
-          if (data.frequencies && data.frequencies.length > 0) {
-            const minFreq = data.frequencies[0];
-            const maxFreq = data.frequencies[data.frequencies.length - 1];
-            
-            // Log frequency range for debugging
-            if (data.frame % 1000 === 0) {
-              const expectedRange = settings.sampleRate / 2;
-              console.log(`Spectrogram frequencies: ${minFreq?.toFixed(1)} to ${maxFreq?.toFixed(1)} kHz (expected: ±${expectedRange/1e3} kHz)`);
-              console.log(`First 5 frequencies: ${data.frequencies.slice(0, 5).map(f => f.toFixed(1)).join(', ')}`);
-              console.log(`Last 5 frequencies: ${data.frequencies.slice(-5).map(f => f.toFixed(1)).join(', ')}`);
-            }
-            
-            // Always ensure we have the full two-sided frequency range
-            const expectedMinFreq = -settings.sampleRate / 2;
-            const expectedMaxFreq = settings.sampleRate / 2;
-            
-            if (minFreq !== expectedMinFreq || maxFreq !== expectedMaxFreq) {
-              console.log('🔄 Adjusting frequency range to full two-sided spectrum');
-              // Create proper two-sided frequency array
-              const numBins = data.frequencies.length;
-              const freqStep = settings.sampleRate / numBins;
-              const twoSidedFrequencies = [];
-              
-              for (let i = 0; i < numBins; i++) {
-                const freq = (i - numBins / 2) * freqStep;
-                twoSidedFrequencies.push(freq);
-              }
-              
-              data.frequencies = twoSidedFrequencies;
-              console.log(`✅ Full frequency range: ${twoSidedFrequencies[0]?.toFixed(1)} to ${twoSidedFrequencies[twoSidedFrequencies.length-1]?.toFixed(1)} kHz`);
-            }
+          // Log frequency range for debugging
+          if (message.frame_num % 1000 === 0) {
+            const expectedRange = settings.sampleRate / 2;
+            console.log(`Spectrogram frequencies: ${minFreq?.toFixed(1)} to ${maxFreq?.toFixed(1)} kHz (expected: ±${expectedRange/1e3} kHz)`);
+            console.log(`First 5 frequencies: ${message.frequencies.slice(0, 5).map(f => f.toFixed(1)).join(', ')}`);
+            console.log(`Last 5 frequencies: ${message.frequencies.slice(-5).map(f => f.toFixed(1)).join(', ')}`);
           }
           
-          // Add elapsed time
-          const elapsed = (Date.now() - startTimeRef.current) / 1000;
-          data.elapsed = elapsed;
+          // Always ensure we have the full two-sided frequency range
+          const expectedMinFreq = -settings.sampleRate / 2;
+          const expectedMaxFreq = settings.sampleRate / 2;
           
-          // Add to history
-          spectrogramHistory.current.push(data);
-          
-          // Keep only recent data
-          if (spectrogramHistory.current.length > maxHistoryLengthRef.current) {
-            spectrogramHistory.current.shift();
+          if (minFreq !== expectedMinFreq || maxFreq !== expectedMaxFreq) {
+            console.log('🔄 Adjusting frequency range to full two-sided spectrum');
+            // Create proper two-sided frequency array
+            const numBins = message.frequencies.length;
+            const freqStep = settings.sampleRate / numBins;
+            const twoSidedFrequencies = [];
+            
+            for (let i = 0; i < numBins; i++) {
+              const freq = (i - numBins / 2) * freqStep;
+              twoSidedFrequencies.push(freq);
+            }
+            
+            message.frequencies = twoSidedFrequencies;
+            console.log(`✅ Full frequency range: ${twoSidedFrequencies[0]?.toFixed(1)} to ${twoSidedFrequencies[twoSidedFrequencies.length-1]?.toFixed(1)} kHz`);
           }
+        }
+        
+        // Update frequency-magnitude map with received data
+        updateFreqMagMap(message.frequencies, message.magnitude_db);
+        
+        // Trigger canvas redraw to show updated frequency map
+        if (!animationRef.current) {
+          animationRef.current = requestAnimationFrame(() => {
+            drawSpectrogram();
+            animationRef.current = null;
+          });
+        }
+        
+        // Add elapsed time
+        const elapsed = (Date.now() - startTimeRef.current) / 1000;
           
           // Update current time (throttled)
           if (elapsed - currentTime > 0.1) { // Update every 100ms
             setCurrentTime(elapsed);
           }
           
-          // Find maximum frequency (throttled)
-          if (data.data && data.data.length > 0 && elapsed % 0.5 < 0.1) { // Update every 500ms
-            const maxIndex = data.data.indexOf(Math.max(...data.data));
-            const maxFreq = data.frequencies ? data.frequencies[maxIndex] : maxIndex * (settings.sampleRate / 2) / (settings.fftSize / 2);
-            const maxAmplitude = Math.max(...data.data);
-            
-            setMaxFrequency({ freq: maxFreq, amplitude: maxAmplitude });
-            
-            // Log the detected peak for debugging
-            if (data.frame % 1000 === 0) {
-              console.log(`Peak detected at bin ${maxIndex}, frequency ${maxFreq?.toFixed(1)} kHz, amplitude ${maxAmplitude?.toFixed(1)} dB`);
+          // Find maximum frequency from frequency map (throttled)
+          if (elapsed % 0.5 < 0.1) { // Update every 500ms
+            const map = freqMagMapRef.current;
+            if (map.magnitudeMapArray && map.magnitudeMapArray.length > 0) {
+              const latestMap = map.magnitudeMapArray[map.magnitudeMapArray.length - 1];
+              const validMagnitudes = latestMap.filter(mag => typeof mag === 'number' && !isNaN(mag));
+              
+              if (validMagnitudes.length > 0) {
+                const maxIndex = latestMap.indexOf(Math.max(...validMagnitudes));
+                const maxFreq = map.freqBins[maxIndex];
+                const maxAmplitude = Math.max(...validMagnitudes);
+                
+                setMaxFrequency({ freq: maxFreq, amplitude: maxAmplitude });
+                
+                // Log the detected peak for debugging
+                if (message.frame_num % 1000 === 0) {
+                  console.log(`Peak detected at bin ${maxIndex}, frequency ${maxFreq?.toFixed(1)} kHz, amplitude ${maxAmplitude?.toFixed(1)} dB`);
+                }
+              }
             }
           }
-          
-          // Trigger canvas redraw (throttled)
-          if (!animationRef.current) {
-            animationRef.current = requestAnimationFrame(() => {
-              drawSpectrogram();
-              animationRef.current = null;
-            });
-          }
-        }
       } catch (error) {
         console.error('Error parsing WebSocket message:', error);
       }
@@ -1020,6 +1194,12 @@ const SpectrogramContainerTemplate = () => {
   // Canvas drawing functions
   // Draw waterfall spectrogram on canvas - fixed pixel height
   const drawSpectrogram = () => {
+    // Use frequency map drawing instead of waterfall
+    drawFrequencyMap();
+  };
+  
+  // Draw frequency map as a real-time spectrum display
+  const drawFrequencyMap = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     
@@ -1030,37 +1210,36 @@ const SpectrogramContainerTemplate = () => {
     // Check if canvas has proper dimensions
     if (width <= 0 || height <= 0) return;
     
-    if (spectrogramHistory.current.length === 0) {
-      console.log('🎨 No spectrogram data to draw');
+    // Use frequency-magnitude map data
+    const map = freqMagMapRef.current;
+    if (!map.magnitudeMapArray || map.magnitudeMapArray.length === 0) {
+      console.log('🎨 No frequency map data to draw');
       return;
     }
     
-    console.log('🎨 Drawing spectrogram with', spectrogramHistory.current.length, 'frames');
+    console.log('🎨 Drawing frequency map with', map.magnitudeMapArray.length, 'time slices');
     
-    // Waterfall parameters - fill entire canvas
-    const pixelHeight = 2; // Fixed height for each pixel
-    
-    // Calculate frequency width per bin - use actual data length
-    const actualDataLength = spectrogramHistory.current[0]?.data?.length || settings.fftSize / 2;
-    const freqWidth = width / actualDataLength;
+    // Calculate frequency width per bin - use map size
+    const freqWidth = width / map.mapSize;
     
     // Clear canvas
     ctx.clearRect(0, 0, width, height);
     
-    // Draw waterfall based on scroll direction - fill entire canvas
-    const dataToDraw = spectrogramHistory.current.slice(-maxHistoryLengthRef.current); // Use history length to fill canvas
+    // Draw waterfall visualization - each time slice as a horizontal line
+    const timeSliceHeight = height / map.magnitudeMapArray.length;
     
-    dataToDraw.forEach((data, timeIndex) => {
-      if (!data.data || data.data.length === 0) return;
+    for (let timeSlice = 0; timeSlice < map.magnitudeMapArray.length; timeSlice++) {
+      const magnitudeMap = map.magnitudeMapArray[timeSlice];
+      const timeY = timeSlice * timeSliceHeight;
       
-      // Calculate Y position based on scroll direction
-      const timeY = settings.scrollDirection === 'up' 
-        ? height - (dataToDraw.length - timeIndex) * pixelHeight  // Newest at bottom
-        : (dataToDraw.length - 1 - timeIndex) * pixelHeight; // Newest at top
-      
-      // Draw each frequency bin as a single pixel line
-      for (let freqIndex = 0; freqIndex < data.data.length; freqIndex++) {
-        const amplitude = data.data[freqIndex];
+      for (let freqIndex = 0; freqIndex < magnitudeMap.length; freqIndex++) {
+        const amplitude = magnitudeMap[freqIndex];
+        
+        // Skip undefined or invalid values
+        if (typeof amplitude !== 'number' || isNaN(amplitude)) {
+          continue;
+        }
+        
         const freqX = freqIndex * freqWidth;
         const color = amplitudeToColor(amplitude);
         
@@ -1069,15 +1248,56 @@ const SpectrogramContainerTemplate = () => {
           freqX, 
           timeY, 
           freqWidth, 
-          pixelHeight
+          timeSliceHeight
         );
       }
-    });
-    
-    // Draw frequency axis labels if we have frequency data
-    if (dataToDraw.length > 0 && dataToDraw[0].frequencies) {
-      drawFrequencyLabels(ctx, width, height, dataToDraw[0].frequencies);
     }
+    
+    // Draw frequency axis labels using the map's frequency bins
+    if (map.freqBins && map.freqBins.length > 0) {
+      drawFrequencyLabels(ctx, width, height, map.freqBins);
+    }
+    
+    // Draw map statistics at the top
+    drawMapStatistics(ctx, width, map);
+  };
+  
+  // Draw frequency map statistics
+  const drawMapStatistics = (ctx, width, map) => {
+    if (!map.magnitudeMapArray || map.magnitudeMapArray.length === 0) return;
+    
+    // Get the latest magnitude map for statistics
+    const latestMap = map.magnitudeMapArray[map.magnitudeMapArray.length - 1];
+    
+    // Filter out undefined and NaN values
+    const validMagnitudes = latestMap.filter(mag => typeof mag === 'number' && !isNaN(mag));
+    
+    if (validMagnitudes.length === 0) {
+      // No valid data yet
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+      ctx.font = 'bold 12px monospace';
+      ctx.textAlign = 'left';
+      ctx.fillText('Waiting for data...', 10, 20);
+      return;
+    }
+    
+    const minMag = Math.min(...validMagnitudes);
+    const maxMag = Math.max(...validMagnitudes);
+    const avgMag = validMagnitudes.reduce((sum, mag) => sum + mag, 0) / validMagnitudes.length;
+    
+    // Find peak frequency
+    const peakIndex = latestMap.indexOf(maxMag);
+    const peakFreq = map.freqBins[peakIndex];
+    
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.font = 'bold 12px monospace';
+    ctx.textAlign = 'left';
+    
+    const statsY = 20;
+    ctx.fillText(`Map: ${map.mapSize} bins, ${map.freqMin/1e6} to ${map.freqMax/1e6} MHz`, 10, statsY);
+    ctx.fillText(`Magnitude: ${minMag.toFixed(1)} to ${maxMag.toFixed(1)} dB (avg: ${avgMag.toFixed(1)} dB)`, 10, statsY + 15);
+    ctx.fillText(`Peak: ${peakFreq/1e6} MHz at ${maxMag.toFixed(1)} dB`, 10, statsY + 30);
+    ctx.fillText(`Time slices: ${map.magnitudeMapArray.length}/${map.maxHistoryLength}`, 10, statsY + 45);
   };
   
   // Draw frequency axis labels
@@ -1229,6 +1449,14 @@ const SpectrogramContainerTemplate = () => {
     
     // Set up canvas
     updateCanvasSize();
+    
+    // Initialize frequency map
+    initializeFreqMagMap();
+    
+    // Auto-populate with test data after a short delay
+    setTimeout(() => {
+      populateWithRandomData();
+    }, 1000);
   }, []);
 
   useEffect(() => {
@@ -1238,7 +1466,9 @@ const SpectrogramContainerTemplate = () => {
       clearTimeout(resizeTimeout);
       resizeTimeout = setTimeout(() => {
         updateCanvasSize();
-        if (spectrogramHistory.current.length > 0) {
+        // Redraw if we have frequency map data
+        const map = freqMagMapRef.current;
+        if (map && map.magnitudeMapArray && map.magnitudeMapArray.length > 0) {
           drawSpectrogram();
         }
       }, 250); // Throttle to 250ms
@@ -1374,7 +1604,7 @@ const SpectrogramContainerTemplate = () => {
   const statusItemsTemplate = [
     { label: 'Capture:', value: isCapturing ? 'Running' : 'Stopped', active: isCapturing },
           { label: 'Connection:', value: streamConnected ? 'Connected' : 'Disconnected', active: streamConnected },
-      { label: 'Data Points:', value: spectrogramHistory.current.length, active: null },
+      { label: 'Time Slices:', value: freqMagMapRef.current?.magnitudeMapArray?.length || 0, active: null },
       { label: 'Max History:', value: Math.round(maxHistoryLengthRef.current), active: null },
       { label: 'Max Frequency:', value: maxFrequency.freq > 0 ? `${Math.round(maxFrequency.freq)} Hz` : 'N/A', active: null },
     { label: 'Last Saved:', value: lastSavedTime ? new Date(lastSavedTime).toLocaleTimeString() : 'Never', active: null }
@@ -2256,7 +2486,28 @@ const SpectrogramContainerTemplate = () => {
         </div>
       )}
 
+      {/* Test Controls */}
+      <div className="test-controls" style={{ marginBottom: '10px' }}>
+        <button 
+          onClick={populateWithRandomData}
+          style={{
+            padding: '8px 16px',
+            backgroundColor: '#4CAF50',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            marginRight: '10px'
+          }}
+        >
+          Generate Test Data
+        </button>
+        <span style={{ fontSize: '12px', color: '#666' }}>
+          Click to populate with random waterfall data for testing
+        </span>
+      </div>
 
+      {/* Spectrogram Canvas */}
     </div>
   );
 };

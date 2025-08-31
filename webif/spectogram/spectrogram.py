@@ -504,9 +504,15 @@ async def start_websocket_server(port=40001):
         port: WebSocket server port
     """
     global websocket_server
+    
+    # Reduce WebSocket library logging to prevent spam
+    import logging as ws_logging
+    ws_logging.getLogger('websockets.server').setLevel(ws_logging.WARNING)
+    ws_logging.getLogger('websockets.protocol').setLevel(ws_logging.WARNING)
+    
     logging.info(f"Starting WebSocket server on port {port}")
-    websocket_server = await websockets.serve(websocket_handler, "localhost", port)
-    logging.info(f"WebSocket server started on ws://localhost:{port}")
+    websocket_server = await websockets.serve(websocket_handler, "0.0.0.0", port)
+    logging.info(f"WebSocket server started on ws://0.0.0.0:{port}")
     await websocket_server.wait_closed()
 
 def start_websocket_server_direct(port=40001):
@@ -517,6 +523,11 @@ def start_websocket_server_direct(port=40001):
         port: WebSocket server port
     """
     try:
+        # Reduce WebSocket library logging to prevent spam
+        import logging as ws_logging
+        ws_logging.getLogger('websockets.server').setLevel(ws_logging.WARNING)
+        ws_logging.getLogger('websockets.protocol').setLevel(ws_logging.WARNING)
+        
         asyncio.run(start_websocket_server(port))
     except Exception as e:
         logging.error(f"WebSocket server error: {e}")
@@ -582,7 +593,12 @@ def tx_rx_process_function(tx_wave, hop_size, stop_event, rx_queue, timestamp, d
         # Setup RX streamer
         usrp.set_rx_rate(sample_rate, 0)
         usrp.set_rx_freq(center_freq, 0)
-        usrp.set_rx_gain(gain, 0)
+        
+        # Get and set maximum RX gain (like loopback_test.py)
+        rx_gain_range = usrp.get_rx_gain_range(0)
+        max_rx_gain = rx_gain_range.stop()
+        usrp.set_rx_gain(max_rx_gain, 0)
+        logging.info(f"RX gain set to maximum: {max_rx_gain} dB (range: {rx_gain_range.start():.1f} to {rx_gain_range.stop():.1f} dB)")
         
         rx_st_args = uhd.usrp.StreamArgs("fc32", "sc16")
         rx_st_args.channels = [0]
