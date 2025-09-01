@@ -108,6 +108,8 @@ class WebSocketProcess:
         
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
+        # Add SIGHUP for backend control
+        signal.signal(signal.SIGHUP, signal_handler)
         self.logger.info("WebSocket Process: Signal handlers set up successfully")
     
     def _setup_cpu_affinity(self):
@@ -205,8 +207,55 @@ class WebSocketProcess:
         except Exception as e:
             self.logger.error(f"Error broadcasting spectrogram data: {e}")
     
+    def _check_parent_alive(self):
+        """Check if parent process (spectrogram_main) is still alive"""
+        try:
+            # Get parent PID (spectrogram_main)
+            parent_pid = os.getppid()
+            
+            # Check if parent is still running
+            if parent_pid == 1:  # Adopted by init - parent died or is orphaned
+                self.logger.warning("Parent process died or is orphaned, initiating self-cleanup...")
+                return False
+            
+            # Check if parent process exists
+            try:
+                os.kill(parent_pid, 0)  # Signal 0 just checks if process exists
+                return True
+            except OSError:
+                self.logger.warning("Parent process no longer exists, initiating self-cleanup...")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"Error checking parent process: {e}")
+            return False
+    
+    def _cleanup_websocket(self):
+        """Clean up WebSocket resources"""
+        try:
+            if hasattr(self, 'websocket_server') and self.websocket_server:
+                self.logger.info("Cleaning up WebSocket server...")
+                self.websocket_server.close()
+                self.websocket_server = None
+            
+            # Close all client connections
+            if hasattr(self, 'websocket_clients') and self.websocket_clients:
+                self.logger.info(f"Closing {len(self.websocket_clients)} WebSocket client connections...")
+                for client in self.websocket_clients.copy():
+                    try:
+                        # Note: We can't await in this context, but the client will be closed when the process exits
+                        pass
+                    except Exception as e:
+                        self.logger.error(f"Error closing client connection: {e}")
+                self.websocket_clients.clear()
+                
+            self.logger.info("WebSocket cleanup completed")
+            
+        except Exception as e:
+            self.logger.error(f"Error during WebSocket cleanup: {e}")
+    
     def run(self):
-        """Main processing loop - EXACT same method as old working code"""
+        """Main processing loop with parent monitoring"""
         self.logger.info(f"Starting WebSocket process on CPU core {self.cpu_core}...")
         
         try:
@@ -230,6 +279,12 @@ class WebSocketProcess:
             
             while not self.stop_event.is_set():
                 try:
+                    # Check if parent process is still alive
+                    if not self._check_parent_alive():
+                        self.logger.warning("Parent process died or is orphaned, sending SIGKILL to self...")
+                        os.kill(os.getpid(), signal.SIGKILL)  # Force kill self
+                        break
+                    
                     # Get processed data from stft queue
                     frame_data = self.stft_queue.get(timeout=1.0)  # 1 second timeout
                     frame_num, f, t, magnitude_db, timestamp = frame_data
@@ -256,12 +311,18 @@ class WebSocketProcess:
                     continue
                 except Exception as e:
                     self.logger.error(f"Error in WebSocket process: {e}")
+                    time.sleep(0.1)  # Brief pause before retrying
                     continue
                     
+            return True
+            
         except Exception as e:
             self.logger.error(f"Error in WebSocket process: {e}")
+            return False
         finally:
-            self.logger.info("Stopping WebSocket process...")
+            self.logger.info("WebSocket process cleanup initiated...")
+            self._cleanup_websocket()
+            self.logger.info("WebSocket process cleanup completed")
     
     def start(self):
         """Start the WebSocket process"""

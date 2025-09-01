@@ -112,12 +112,70 @@ class SpectrogramMain:
     def _setup_signal_handlers(self):
         """Setup signal handlers for graceful shutdown"""
         def signal_handler(signum, frame):
-            self.logger.info(f"Main process received signal {signum}, stopping...")
+            self.logger.info(f"Main process received signal {signum}, initiating graceful shutdown...")
+            # Set stop event and trigger cleanup
             self.stop_event.set()
+            # Force cleanup if signal is SIGTERM (backend termination)
+            if signum == signal.SIGTERM:
+                self.logger.info("SIGTERM received, forcing immediate cleanup...")
+                self._force_cleanup()
         
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
+        # Add SIGHUP for backend control
+        signal.signal(signal.SIGHUP, signal_handler)
         self.logger.info("Main process: Signal handlers set up successfully")
+    
+    def _force_cleanup(self):
+        """Force immediate cleanup for backend termination"""
+        try:
+            self.logger.info("Force cleanup initiated...")
+            
+            # Method 1: Try to terminate process group (most effective)
+            if hasattr(self, 'process_group_id'):
+                try:
+                    self.logger.info(f"Terminating entire process group {self.process_group_id}...")
+                    os.killpg(self.process_group_id, signal.SIGTERM)
+                    
+                    # Wait briefly for process group termination
+                    time.sleep(2)
+                    
+                    # Check if any processes are still alive
+                    if not self._all_processes_dead():
+                        self.logger.info("Process group termination incomplete, force killing...")
+                        os.killpg(self.process_group_id, signal.SIGKILL)
+                        time.sleep(1)
+                except Exception as e:
+                    self.logger.warning(f"Process group termination failed: {e}")
+            
+            # Method 2: Individual process termination (fallback)
+            if not self._all_processes_dead():
+                self.logger.info("Falling back to individual process termination...")
+                processes_to_cleanup = [
+                    ("TX/RX", self.tx_rx_process),
+                    ("STFT", self.stft_process),
+                    ("WebSocket", self.websocket_process)
+                ]
+                
+                for name, process in processes_to_cleanup:
+                    if process and process.is_alive():
+                        self.logger.info(f"Force terminating {name} process...")
+                        process.terminate()
+                        # Give a very short time for graceful exit
+                        process.join(timeout=1.0)
+                        if process.is_alive():
+                            self.logger.info(f"Force killing {name} process...")
+                            process.kill()
+            
+            self.logger.info("Force cleanup completed")
+            
+        except Exception as e:
+            self.logger.error(f"Error during force cleanup: {e}")
+    
+    def _all_processes_dead(self):
+        """Check if all child processes are dead"""
+        processes = [self.tx_rx_process, self.stft_process, self.websocket_process]
+        return all(not p or not p.is_alive() for p in processes)
     
     def _setup_cpu_cores(self):
         """Setup CPU core assignments using P-core/E-core detection"""
@@ -177,10 +235,15 @@ class SpectrogramMain:
             self.logger.error(f"Error setting main process CPU affinity: {e}")
     
     def start_processes(self):
-        """Start all child processes"""
+        """Start all child processes with process group management"""
         self.logger.info("Starting 3-process architecture...")
         
         try:
+            # Create a new process group for all child processes
+            # This allows us to terminate all children together if needed
+            os.setpgrp()
+            self.logger.info(f"Created process group: {os.getpgid(0)}")
+            
             # Create TX wave for transmission
             tx_wave = self._create_tx_tone()
             
@@ -194,7 +257,7 @@ class SpectrogramMain:
             )
             self.tx_rx_process.start()
             self.restart_attempts['TX/RX']['process'] = self.tx_rx_process
-            self.logger.info(f"Started TX/RX process on CPU core {self.cpu_cores['tx_rx']}")
+            self.logger.info(f"Started TX/RX process on CPU core {self.cpu_cores['tx_rx']} (PID: {self.tx_rx_process.pid})")
             
             # Process 2: STFT process
             self.stft_process = multiprocessing.Process(
@@ -205,7 +268,7 @@ class SpectrogramMain:
             )
             self.stft_process.start()
             self.restart_attempts['STFT']['process'] = self.stft_process
-            self.logger.info(f"Started STFT process on CPU core {self.cpu_cores['stft']}")
+            self.logger.info(f"Started STFT process on CPU core {self.cpu_cores['stft']} (PID: {self.stft_process.pid})")
             
             # Process 3: WebSocket process
             self.websocket_process = multiprocessing.Process(
@@ -215,7 +278,11 @@ class SpectrogramMain:
             )
             self.websocket_process.start()
             self.restart_attempts['WebSocket']['process'] = self.websocket_process
-            self.logger.info(f"Started WebSocket process on CPU core {self.cpu_cores['websocket']}")
+            self.logger.info(f"Started WebSocket process on CPU core {self.cpu_cores['websocket']} (PID: {self.websocket_process.pid})")
+            
+            # Store process group ID for cleanup
+            self.process_group_id = os.getpgid(0)
+            self.logger.info(f"All processes started successfully in process group {self.process_group_id}")
             
             # Validate that all processes started successfully
             if self._validate_process_startup():
@@ -296,10 +363,10 @@ class SpectrogramMain:
         return True
     
     def _cleanup_processes(self):
-        """Clean up all processes in stages"""
+        """Clean up all processes in stages with better backend responsiveness"""
         self.logger.info("Stopping 3-process architecture...")
         
-        # Stage 1: Attempt graceful termination
+        # Stage 1: Attempt graceful termination (shorter timeout for backend)
         self.logger.info("Stage 1: Attempting graceful termination...")
         self.stop_event.set()
         
@@ -309,22 +376,32 @@ class SpectrogramMain:
             ("WebSocket", self.websocket_process)
         ]
         
+        # Shorter timeout for backend responsiveness
+        graceful_timeout = 3.0  # Reduced from 5.0 seconds
+        
         for name, process in processes_to_cleanup:
             if process and process.is_alive():
                 self.logger.info(f"Stopping {name} process gracefully...")
-                process.join(timeout=5.0)
+                process.join(timeout=graceful_timeout)
+                if process.is_alive():
+                    self.logger.warning(f"{name} process did not exit gracefully within {graceful_timeout}s")
         
         # Stage 2: Force terminate remaining processes
         self.logger.info("Stage 2: Attempting terminate() for remaining processes...")
         for name, process in processes_to_cleanup:
             if process and process.is_alive():
+                self.logger.info(f"Terminating {name} process...")
                 process.terminate()
+                # Shorter timeout for terminate
+                process.join(timeout=2.0)
         
         # Stage 3: Force kill remaining processes
         self.logger.info("Stage 3: Force killing remaining processes...")
         for name, process in processes_to_cleanup:
             if process and process.is_alive():
+                self.logger.info(f"Force killing {name} process...")
                 process.kill()
+                process.join(timeout=1.0)  # Very short timeout for kill
         
         self.logger.info("All processes successfully terminated")
     
@@ -486,39 +563,75 @@ class SpectrogramMain:
             self.logger.error(f"Error logging statistics: {e}")
     
     def run(self):
-        """Main monitoring loop"""
+        """Main monitoring loop with improved status tracking"""
         try:
             # Set main process CPU affinity
             self._set_main_process_affinity()
             
+            # Record start time for status tracking
+            self._start_time = time.time()
+            self.logger.info(f"Service start time recorded: {self._start_time}")
+            
             # Start all processes
             if not self.start_processes():
+                self.logger.error("Failed to start processes, exiting")
                 return False
             
             # Main monitoring loop
             start_time = time.time()
+            last_health_check = time.time()
+            
+            self.logger.info("Main monitoring loop started")
             
             while not self.stop_event.is_set():
-                # Check process health
-                if not self._check_process_health():
-                    self.logger.error("Critical process failure, shutting down")
-                    break
-                
-                # Log statistics every 5 seconds
-                uptime = time.time() - start_time
-                if int(uptime) % 5 == 0:
-                    self._log_statistics(uptime)
-                
-                # Sleep for a short time
-                time.sleep(1)
+                try:
+                    # Check if launcher process is still alive
+                    if not self._check_launcher_alive():
+                        self.logger.warning("Launcher process died, stopping main process...")
+                        break
+                    
+                    # Check if this process itself is orphaned (more aggressive)
+                    if self._check_self_orphaned():
+                        self.logger.error("CRITICAL: Process is orphaned, forcing immediate exit...")
+                        break
+                    
+                    # Check process health
+                    if not self._check_process_health():
+                        self.logger.error("Critical process failure, shutting down")
+                        break
+                    
+                    # Log statistics every 5 seconds
+                    uptime = time.time() - start_time
+                    if int(uptime) % 5 == 0:
+                        self._log_statistics(uptime)
+                    
+                    # Health check for backend monitoring (every 10 seconds)
+                    current_time = time.time()
+                    if current_time - last_health_check >= 10.0:
+                        health_status = self.is_healthy()
+                        if not health_status:
+                            self.logger.warning("Service health check failed")
+                        last_health_check = current_time
+                    
+                    # Sleep for a short time
+                    time.sleep(1)
+                    
+                except Exception as e:
+                    self.logger.error(f"Error in main monitoring loop: {e}")
+                    # Continue monitoring instead of breaking
+                    time.sleep(1)
+                    continue
             
+            self.logger.info("Main monitoring loop ended")
             return True
             
         except Exception as e:
             self.logger.error(f"Critical error in main process: {e}")
             return False
         finally:
+            self.logger.info("Initiating cleanup procedures...")
             self._cleanup_processes()
+            self.logger.info("Cleanup procedures completed")
     
     def start(self):
         """Start the spectrogram service"""
@@ -532,7 +645,61 @@ class SpectrogramMain:
         """Stop the spectrogram service"""
         self.logger.info("Stopping spectrogram service...")
         self.stop_event.set()
-
+    
+    def get_service_status(self):
+        """Get current service status for backend monitoring"""
+        try:
+            status = {
+                'main_process_alive': not self.stop_event.is_set(),
+                'processes': {},
+                'queues': {},
+                'uptime': time.time() - getattr(self, '_start_time', time.time()),
+                'restart_attempts': self.restart_attempts.copy()
+            }
+            
+            # Process status
+            for name, process in [('TX/RX', self.tx_rx_process), ('STFT', self.stft_process), ('WebSocket', self.websocket_process)]:
+                if process:
+                    status['processes'][name] = {
+                        'alive': process.is_alive(),
+                        'pid': process.pid if process.is_alive() else None,
+                        'exitcode': process.exitcode if hasattr(process, 'exitcode') else None
+                    }
+                else:
+                    status['processes'][name] = {'alive': False, 'pid': None, 'exitcode': None}
+            
+            # Queue status
+            try:
+                status['queues'] = {
+                    'rx_size': self.rx_queue.qsize(),
+                    'stft_size': self.stft_queue.qsize()
+                }
+            except Exception as e:
+                status['queues'] = {'error': str(e)}
+            
+            return status
+            
+        except Exception as e:
+            return {'error': f'Failed to get status: {e}'}
+    
+    def is_healthy(self):
+        """Check if service is healthy for backend health checks"""
+        try:
+            # Check if main process is running
+            if self.stop_event.is_set():
+                return False
+            
+            # Check if all child processes are alive
+            processes = [self.tx_rx_process, self.stft_process, self.websocket_process]
+            alive_count = sum(1 for p in processes if p and p.is_alive())
+            
+            # Service is healthy if at least 2 out of 3 processes are alive
+            return alive_count >= 2
+            
+        except Exception as e:
+            self.logger.error(f"Health check failed: {e}")
+            return False
+    
     def _create_tx_tone(self):
         """Create TX waveform for loopback testing - EXACT same as old working code"""
         def make_tone(fs, f0, nsamps, amp=0.5):
@@ -558,6 +725,52 @@ class SpectrogramMain:
         self.logger.info(f"Created TX tone: {tone_freq/1e6:.1f} MHz, {len(tx_wave)} samples")
         
         return tx_wave
+    
+    def _check_launcher_alive(self):
+        """Check if the process that launched spectrogram_main is still alive"""
+        try:
+            # Get parent PID (launcher)
+            parent_pid = os.getppid()
+            
+            # Check if parent is still running
+            if parent_pid == 1:  # Adopted by init - launcher died
+                self.logger.warning("Launcher process died, spectrogram_main is orphaned, stopping...")
+                return False
+            
+            # Check if parent process exists
+            try:
+                os.kill(parent_pid, 0)  # Signal 0 just checks if process exists
+                return True
+            except OSError:
+                self.logger.warning("Launcher process no longer exists, stopping...")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"Error checking launcher process: {e}")
+            return False
+    
+    def _check_self_orphaned(self):
+        """Check if this process itself is orphaned (more aggressive check)"""
+        try:
+            # Get parent PID
+            parent_pid = os.getppid()
+            
+            # If PPID is 1, we're orphaned
+            if parent_pid == 1:
+                self.logger.error("CRITICAL: This process is orphaned (PPID=1), forcing immediate exit...")
+                return True
+            
+            # Check if parent process exists and is not init
+            try:
+                os.kill(parent_pid, 0)
+                return False  # Parent exists
+            except OSError:
+                self.logger.error("CRITICAL: Parent process no longer exists, forcing immediate exit...")
+                return True
+            
+        except Exception as e:
+            self.logger.error(f"Error in orphaned check: {e}")
+            return False
 
 def main():
     """Main entry point"""

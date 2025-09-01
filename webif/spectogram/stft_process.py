@@ -106,7 +106,32 @@ class STFTProcess:
         
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
+        # Add SIGHUP for backend control
+        signal.signal(signal.SIGHUP, signal_handler)
         self.logger.info("STFT Process: Signal handlers set up successfully")
+    
+    def _check_parent_alive(self):
+        """Check if parent process (spectrogram_main) is still alive"""
+        try:
+            # Get parent PID (spectrogram_main)
+            parent_pid = os.getppid()
+            
+            # Check if parent is still running
+            if parent_pid == 1:  # Adopted by init - parent died or is orphaned
+                self.logger.warning("Parent process died or is orphaned, initiating self-cleanup...")
+                return False
+            
+            # Check if parent process exists
+            try:
+                os.kill(parent_pid, 0)  # Signal 0 just checks if process exists
+                return True
+            except OSError:
+                self.logger.warning("Parent process no longer exists, initiating self-cleanup...")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"Error checking parent process: {e}")
+            return False
     
     def _setup_cpu_affinity(self):
         """Set CPU affinity for this process"""
@@ -160,14 +185,18 @@ class STFTProcess:
             return None
     
     def run(self):
-        """Main processing loop"""
+        """Main processing loop with parent monitoring"""
         self.logger.info(f"Starting STFT process on CPU core {self.cpu_core}...")
-        self.logger.info("STFT process: Starting main processing loop")
-        self.logger.info(f"STFT process: stop_event status: {self.stop_event.is_set()}")
         
         try:
             while not self.stop_event.is_set():
                 try:
+                    # Check if parent process is still alive
+                    if not self._check_parent_alive():
+                        self.logger.warning("Parent process died or is orphaned, sending SIGKILL to self...")
+                        os.kill(os.getpid(), signal.SIGKILL)  # Force kill self
+                        break
+                    
                     # Get IQ data from RX queue
                     frame_data = self.rx_queue.get(timeout=1.0)  # 1 second timeout
                     
@@ -188,14 +217,16 @@ class STFTProcess:
                     continue
                 except Exception as e:
                     self.logger.error(f"Error in STFT process main loop: {e}")
+                    time.sleep(0.1)  # Brief pause before retrying
                     continue
+            
+            return True
                     
         except Exception as e:
             self.logger.error(f"Critical error in STFT process: {e}")
-            self.logger.error(f"STFT process: Exception details: {type(e).__name__}: {e}")
+            return False
         finally:
-            self.logger.info("Stopping STFT process...")
-            self.logger.info(f"STFT process: Final stop_event status: {self.stop_event.is_set()}")
+            self.logger.info("STFT process cleanup completed")
     
     def start(self):
         """Start the STFT process"""

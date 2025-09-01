@@ -135,7 +135,56 @@ class TXRXProcess:
         
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
+        # Add SIGHUP for backend control
+        signal.signal(signal.SIGHUP, signal_handler)
         self.logger.info("TX/RX Process: Signal handlers set up successfully")
+    
+    def _check_parent_alive(self):
+        """Check if parent process is still alive"""
+        try:
+            # Get parent PID
+            parent_pid = os.getppid()
+            
+            # Check if parent is still running
+            if parent_pid == 1:  # Adopted by init - parent died
+                self.logger.warning("Parent process died, initiating self-cleanup...")
+                return False
+            
+            # Check if parent process exists
+            try:
+                os.kill(parent_pid, 0)  # Signal 0 just checks if process exists
+                return True
+            except OSError:
+                self.logger.warning("Parent process no longer exists, initiating self-cleanup...")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"Error checking parent process: {e}")
+            return False
+    
+    def _cleanup_usrp(self):
+        """Clean up USRP resources"""
+        try:
+            if hasattr(self, 'tx_streamer') and self.tx_streamer:
+                self.logger.info("Cleaning up TX streamer...")
+                del self.tx_streamer
+                self.tx_streamer = None
+            
+            if hasattr(self, 'rx_streamer') and self.rx_streamer:
+                self.logger.info("Cleaning up RX streamer...")
+                self.rx_streamer.issue_stream_cmd(uhd.types.StreamCMD(uhd.types.StreamMode.stop_cont))
+                del self.rx_streamer
+                self.rx_streamer = None
+            
+            if hasattr(self, 'usrp') and self.usrp:
+                self.logger.info("Cleaning up USRP device...")
+                del self.usrp
+                self.usrp = None
+                
+            self.logger.info("USRP cleanup completed")
+            
+        except Exception as e:
+            self.logger.error(f"Error during USRP cleanup: {e}")
     
     def _setup_cpu_affinity(self):
         """Set CPU affinity for this process"""
@@ -175,23 +224,20 @@ class TXRXProcess:
                 self.logger.info(f"Creating USRP with device string: '{device_addr}'")
                 # Try different USRP constructors to avoid the device string corruption issue
                 try:
-                    # First try the single USRP constructor
-                    self.logger.info("Trying uhd.usrp.USRP constructor...")
-                    self.usrp = uhd.usrp.USRP(device_addr)
-                    self.logger.info("Successfully created USRP using uhd.usrp.USRP")
+                    # First try the MultiUSRP constructor (this is the correct one)
+                    self.logger.info("Trying uhd.usrp.MultiUSRP constructor...")
+                    self.usrp = uhd.usrp.MultiUSRP(device_addr)
+                    self.logger.info("Successfully created USRP using uhd.usrp.MultiUSRP")
                 except Exception as e1:
-                    self.logger.warning(f"Single USRP constructor failed: {e1}")
+                    self.logger.warning(f"MultiUSRP constructor failed: {e1}")
                     try:
-                        # Fall back to MultiUSRP
-                        self.logger.info("Trying uhd.usrp.MultiUSRP constructor...")
-                        self.usrp = uhd.usrp.MultiUSRP(device_addr)
-                        self.logger.info("Successfully created USRP using uhd.usrp.MultiUSRP")
-                    except Exception as e2:
-                        self.logger.error(f"MultiUSRP constructor also failed: {e2}")
-                        # Try without device string (auto-detect)
+                        # Fall back to auto-detect
                         self.logger.info("Trying auto-detect...")
                         self.usrp = uhd.usrp.MultiUSRP()
                         self.logger.info("Successfully created USRP using auto-detect")
+                    except Exception as e2:
+                        self.logger.error(f"Auto-detect also failed: {e2}")
+                        return False
             else:
                 self.logger.info("Creating USRP with auto-detect")
                 self.usrp = uhd.usrp.MultiUSRP()
@@ -362,6 +408,12 @@ class TXRXProcess:
             # Keep the process alive
             self.logger.info("TX/RX process main thread entering wait loop...")
             while not self.stop_event.is_set():
+                # Check if parent process is still alive
+                if not self._check_parent_alive():
+                    self.logger.warning("Parent process died or is orphaned, sending SIGKILL to self...")
+                    os.kill(os.getpid(), signal.SIGKILL)  # Force kill self
+                    break
+                
                 time.sleep(1)
                 
                 # Check if threads are still alive
