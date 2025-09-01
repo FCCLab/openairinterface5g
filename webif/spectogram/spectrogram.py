@@ -1011,7 +1011,7 @@ def tx_rx_process_function(tx_wave, hop_size, stop_event, rx_queue, timestamp, d
     finally:
         logging.info("Stopping TX/RX process...")
 
-def iq_process_function(sample_rate, fft_size, stop_event, rx_queue, process_queue, timestamp):
+def iq_process_function(sample_rate, fft_size, stop_event, rx_queue, stft_queue, timestamp):
     """
     Process 2: IQ processing function that performs STFT on received IQ data.
     Dedicated to CPU core IQ_PROCESS_CPU_CORE.
@@ -1021,7 +1021,7 @@ def iq_process_function(sample_rate, fft_size, stop_event, rx_queue, process_que
         fft_size: FFT size
         stop_event: Multiprocessing event to signal stop
         rx_queue: Multiprocessing queue for RX data
-        process_queue: Multiprocessing queue for processed data
+        stft_queue: Multiprocessing queue for processed data
         timestamp: Main process timestamp for log filename
     """
     # Setup logging for this process
@@ -1029,17 +1029,29 @@ def iq_process_function(sample_rate, fft_size, stop_event, rx_queue, process_que
     setup_process_logging(f"logs/{log_filename}")
     
     # Setup signal handlers for this process
-    signal_module.signal(signal_module.SIGINT, lambda s, f: None)   # Ignore SIGINT in child
-    signal_module.signal(signal_module.SIGTERM, lambda s, f: stop_event.set())  # Forward SIGTERM
+    logging.info("IQ process: Setting up signal handlers...")
+    try:
+        signal_module.signal(signal_module.SIGINT, lambda s, f: None)   # Ignore SIGINT in child
+        signal_module.signal(signal_module.SIGTERM, lambda s, f: stop_event.set())  # Forward SIGTERM
+        logging.info("IQ process: Signal handlers set up successfully")
+    except Exception as e:
+        logging.error(f"IQ process: Error setting up signal handlers: {e}")
     
     # Set CPU affinity for this process
-    set_process_cpu_affinity("IQ_Process", IQ_PROCESS_CPU_CORE)
+    logging.info("IQ process: Setting CPU affinity...")
+    try:
+        set_process_cpu_affinity("IQ_Process", IQ_PROCESS_CPU_CORE)
+        logging.info("IQ process: CPU affinity set successfully")
+    except Exception as e:
+        logging.error(f"IQ process: Error setting CPU affinity: {e}")
     
     logging.info(f"Starting IQ process on CPU core {IQ_PROCESS_CPU_CORE}...")
+    logging.info(f"IQ process: About to enter main processing loop")
     
     try:
         frame_count = 0
         logging.info("IQ process: Starting main processing loop")
+        logging.info(f"IQ process: stop_event status: {stop_event.is_set()}")
         
         while not stop_event.is_set():
             try:
@@ -1078,8 +1090,8 @@ def iq_process_function(sample_rate, fft_size, stop_event, rx_queue, process_que
                 # Replace any remaining NaN/Inf values
                 magnitude_db = np.nan_to_num(magnitude_db, nan=-120.0, posinf=-120.0, neginf=-120.0)
                 
-                # Put processed data into process queue
-                process_queue.put((frame_num, f, t, magnitude_db, timestamp))
+                # Put processed data into stft queue
+                stft_queue.put((frame_num, f, t, magnitude_db, timestamp))
                 frame_count += 1
                 
                 # Log progress occasionally using global frequency control
@@ -1095,10 +1107,12 @@ def iq_process_function(sample_rate, fft_size, stop_event, rx_queue, process_que
                 
     except Exception as e:
         logging.error(f"Error in IQ process: {e}")
+        logging.error(f"IQ process: Exception details: {type(e).__name__}: {e}")
     finally:
         logging.info("Stopping IQ process...")
+        logging.info(f"IQ process: Final stop_event status: {stop_event.is_set()}")
 
-def websocket_process_function(websocket_port, stop_event, process_queue, timestamp):
+def websocket_process_function(websocket_port, stop_event, stft_queue, timestamp):
     """
     Process 3: WebSocket process function that broadcasts processed spectrogram data.
     Dedicated to CPU core WEBSOCKET_CPU_CORE.
@@ -1106,7 +1120,7 @@ def websocket_process_function(websocket_port, stop_event, process_queue, timest
     Args:
         websocket_port: WebSocket server port
         stop_event: Multiprocessing event to signal stop
-        process_queue: Multiprocessing queue for processed data
+        stft_queue: Multiprocessing queue for processed data
         timestamp: Main process timestamp for log filename
     """
     # Setup logging for this process
@@ -1145,8 +1159,8 @@ def websocket_process_function(websocket_port, stop_event, process_queue, timest
         
         while not stop_event.is_set():
             try:
-                # Get processed data from process queue
-                frame_data = process_queue.get(timeout=1.0)  # 1 second timeout
+                # Get processed data from stft queue
+                frame_data = stft_queue.get(timeout=1.0)  # 1 second timeout
                 frame_num, f, t, magnitude_db, timestamp = frame_data
                 
                 # Prepare data for WebSocket broadcast
@@ -1548,6 +1562,88 @@ if __name__ == "__main__":
         # Verify process affinity
         verify_process_affinity()
         
+        # Restart mechanism variables
+        restart_attempts = {
+            'TX/RX': {'count': 0, 'last_restart': 0, 'process': tx_rx_process, 'thread_restarts': 0},
+            'IQ_Process': {'count': 0, 'last_restart': 0, 'process': iq_process, 'thread_restarts': 0},
+            'WebSocket': {'count': 0, 'last_restart': 0, 'process': websocket_process, 'thread_restarts': 0}
+        }
+        max_restart_attempts = 10
+        max_thread_restart_attempts = 10
+        restart_time_window = 60000  # 1 minute in milliseconds
+        
+        # Define restart function
+        def restart_process(process_name):
+            """
+            Attempt to restart a failed process.
+            
+            Args:
+                process_name: Name of the process to restart
+                
+            Returns:
+                bool: True if restart successful, False otherwise
+            """
+            try:
+                logging.info(f"Attempting to restart {process_name} process...")
+                
+                # Create new process based on name
+                if process_name == "TX/RX":
+                    new_process = multiprocessing.Process(
+                        target=tx_rx_process_function,
+                        args=(tx_wave, hop_size, stop_event, rx_queue, main_timestamp, args.device, args.freq, args.sample_rate, args.gain)
+                    )
+                    new_process.start()
+                    # Update global reference
+                    globals()['tx_rx_process'] = new_process
+                    
+                elif process_name == "IQ_Process":
+                    new_process = multiprocessing.Process(
+                        target=iq_process_function,
+                        args=(args.sample_rate, args.fft_size, stop_event, rx_queue, stft_queue, main_timestamp)
+                    )
+                    new_process.start()
+                    # Update global reference
+                    globals()['iq_process'] = new_process
+                    
+                elif process_name == "WebSocket":
+                    new_process = multiprocessing.Process(
+                        target=websocket_process_function,
+                        args=(args.websocket_port, stop_event, stft_queue, main_timestamp)
+                    )
+                    new_process.start()
+                    # Update global reference
+                    globals()['websocket_process'] = new_process
+                
+                # Wait a moment for process to start
+                time.sleep(1)
+                
+                # Check if restart was successful
+                if new_process.is_alive():
+                    logging.info(f"Successfully restarted {process_name} process (PID: {new_process.pid})")
+                    return True
+                else:
+                    logging.error(f"Failed to restart {process_name} process - process died immediately")
+                    return False
+                    
+            except Exception as e:
+                logging.error(f"Error restarting {process_name} process: {e}")
+                return False
+        
+        # Function to check thread health in TX/RX process
+        def check_thread_health():
+            """
+            Check if threads in TX/RX process are healthy.
+            Returns True if healthy, False if threads need restart.
+            """
+            try:
+                # This is a simplified check - in a real implementation you might want to
+                # add more sophisticated thread health monitoring
+                # For now, we'll assume threads are healthy if the process is alive
+                return True
+            except Exception as e:
+                logging.error(f"Error checking thread health: {e}")
+                return False
+        
         # Initialize monitoring variables
         last_rx_count = 0
         last_stft_count = 0
@@ -1560,16 +1656,75 @@ if __name__ == "__main__":
                 
                 # Check if all processes are still alive
                 processes_alive = []
+                processes_to_restart = []
+                
                 if tx_rx_process and tx_rx_process.is_alive():
                     processes_alive.append("TX/RX")
+                    # Reset restart counter if process is healthy
+                    restart_attempts['TX/RX']['count'] = 0
+                else:
+                    processes_to_restart.append("TX/RX")
+                    
                 if iq_process and iq_process.is_alive():
                     processes_alive.append("IQ_Process")
+                    # Reset restart counter if process is healthy
+                    restart_attempts['IQ_Process']['count'] = 0
+                else:
+                    processes_to_restart.append("IQ_Process")
+                    
                 if websocket_process and websocket_process.is_alive():
                     processes_alive.append("WebSocket")
+                    # Reset restart counter if process is healthy
+                    restart_attempts['WebSocket']['count'] = 0
+                else:
+                    processes_to_restart.append("WebSocket")
+                
+                # Handle process restarts
+                if processes_to_restart:
+                    for process_name in processes_to_restart:
+                        current_time = time.time() * 1000  # Convert to milliseconds
+                        
+                        # Check if we're within the restart time window
+                        if current_time - restart_attempts[process_name]['last_restart'] > restart_time_window:
+                            # Reset counter if outside time window
+                            restart_attempts[process_name]['count'] = 0
+                        
+                        # Check if we can attempt restart
+                        if restart_attempts[process_name]['count'] < max_restart_attempts:
+                            logging.warning(f"Process {process_name} has died. Attempting restart {restart_attempts[process_name]['count'] + 1}/{max_restart_attempts}")
+                            
+                            # Attempt to restart the process
+                            if restart_process(process_name):
+                                restart_attempts[process_name]['count'] += 1
+                                restart_attempts[process_name]['last_restart'] = current_time
+                                processes_alive.append(process_name)
+                                logging.info(f"Successfully restarted {process_name} process")
+                            else:
+                                restart_attempts[process_name]['count'] += 1
+                                restart_attempts[process_name]['last_restart'] = current_time
+                                logging.error(f"Failed to restart {process_name} process")
+                        else:
+                            # Max restart attempts reached within time window
+                            logging.error(f"Process {process_name} failed {max_restart_attempts} restart attempts within 1 minute. Stopping service.")
+                            raise SystemExit(f"Critical: {process_name} process restart limit exceeded")
                 
                 if len(processes_alive) < 3:
-                    logging.error(f"Some processes have died! Alive: {processes_alive}")
-                    break
+                    logging.error(f"Critical: Only {len(processes_alive)} processes alive: {processes_alive}")
+                    raise SystemExit(f"Critical: Insufficient processes running ({len(processes_alive)}/3)")
+                
+                # Check thread health in TX/RX process
+                if "TX/RX" in processes_alive:
+                    if not check_thread_health():
+                        logging.warning("TX/RX process threads may be unhealthy")
+                        # Increment thread restart counter
+                        restart_attempts['TX/RX']['thread_restarts'] += 1
+                        
+                        if restart_attempts['TX/RX']['thread_restarts'] >= max_thread_restart_attempts:
+                            logging.error(f"TX/RX process thread restart limit exceeded ({max_thread_restart_attempts}). Stopping service.")
+                            raise SystemExit("Critical: TX/RX process thread restart limit exceeded")
+                    else:
+                        # Reset thread restart counter if healthy
+                        restart_attempts['TX/RX']['thread_restarts'] = 0
                 
                 # Log queue status and statistics every 5 seconds
                 current_rx_size = rx_queue.qsize()
@@ -1585,6 +1740,14 @@ if __name__ == "__main__":
                 logging.info(f"Queue Status - RX: {current_rx_size}, STFT: {current_stft_size}")
                 logging.info(f"Uptime: {uptime:.1f}s, Memory Usage: {memory_usage:.1f} MB")
                 logging.info(f"Processes Alive: {', '.join(processes_alive)}")
+                
+                # Log restart attempt information
+                for process_name, restart_info in restart_attempts.items():
+                    if restart_info['count'] > 0:
+                        logging.info(f"Restart Info - {process_name}: {restart_info['count']} attempts")
+                    if restart_info.get('thread_restarts', 0) > 0:
+                        logging.info(f"Thread Restart Info - {process_name}: {restart_info['thread_restarts']} thread restarts")
+                
                 logging.info("=" * 50)
                 
                 # Check for potential issues
