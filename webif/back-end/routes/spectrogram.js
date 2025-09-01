@@ -229,47 +229,194 @@ router.post('/service/start', async (req, res) => {
     
     spectrogramServiceProcess = spawn('bash', args, spawnOptions);
 
+    // Add startup time tracking
+    spectrogramServiceProcess.startTime = Date.now();
+
     spectrogramServiceStatus = 'starting';
+    let startupValidated = false;
+    let responseSent = false;
 
     // Handle process events
     spectrogramServiceProcess.on('spawn', () => {
       logger.spectrogram('Spectrogram service process spawned', { pid: spectrogramServiceProcess.pid });
-      spectrogramServiceStatus = 'running';
+      spectrogramServiceStatus = 'starting';
     });
 
     spectrogramServiceProcess.on('error', (error) => {
       logger.spectrogram('Spectrogram service process error', { error: error.message });
       spectrogramServiceStatus = 'error';
       spectrogramServiceProcess = null;
+      
+      // Send error response if startup validation failed
+      if (!responseSent) {
+        responseSent = true;
+        res.status(500).json({ 
+          success: false, 
+          error: 'Failed to start spectrogram service process',
+          status: 'error'
+        });
+      }
     });
 
     spectrogramServiceProcess.on('exit', (code, signal) => {
       logger.spectrogram('Spectrogram service process exited', { code, signal });
       spectrogramServiceStatus = 'stopped';
       spectrogramServiceProcess = null;
+      
+      // Send error response if startup validation failed
+      if (!responseSent) {
+        responseSent = true;
+        res.status(500).json({ 
+          success: false, 
+          error: `Spectrogram service process exited unexpectedly (code: ${code}, signal: ${signal})`,
+          status: 'stopped'
+        });
+      }
     });
 
     // Handle stdout and stderr
     spectrogramServiceProcess.stdout.on('data', (data) => {
-      logger.spectrogram('Spectrogram service stdout', { data: data.toString().trim() });
+      const output = data.toString().trim();
+      logger.spectrogram('Spectrogram service stdout', { data: output });
+      
+      // Check for startup success message
+      if (output.includes('3-process architecture started successfully') && !startupValidated) {
+        startupValidated = true;
+        spectrogramServiceStatus = 'running';
+        
+        logger.spectrogram('Spectrogram service startup validation successful', { 
+          pid: spectrogramServiceProcess.pid,
+          startupPhase: 'fully_operational'
+        });
+        
+        // ✅ RETURN "OK" HERE - All processes validated and running
+        if (!responseSent) {
+          responseSent = true;
+          const response = {
+            success: true,
+            message: 'Spectrogram service fully operational',
+            pid: spectrogramServiceProcess.pid,
+            status: 'running',
+            startupTime: Date.now(),
+            startupPhase: 'fully_operational'
+          };
+          
+          res.json(response);
+        }
+      }
     });
 
     spectrogramServiceProcess.stderr.on('data', (data) => {
-      logger.spectrogram('Spectrogram service stderr', { data: data.toString().trim() });
+      const errorOutput = data.toString().trim();
+      logger.spectrogram('Spectrogram service stderr', { data: errorOutput });
+      
+      // Check for critical startup errors
+      if (errorOutput.includes('Failed to start all processes') || 
+          errorOutput.includes('SystemExit') ||
+          errorOutput.includes('ImportError') ||
+          errorOutput.includes('ModuleNotFoundError')) {
+        
+        logger.spectrogram('Critical startup error detected', { 
+          pid: spectrogramServiceProcess.pid,
+          error: errorOutput
+        });
+        
+        // Send error response for critical startup failures
+        if (!responseSent) {
+          responseSent = true;
+          res.status(500).json({ 
+            success: false, 
+            error: 'Critical startup error detected',
+            details: errorOutput,
+            status: 'error'
+          });
+        }
+      }
     });
 
-    const response = {
-      success: true,
-      message: 'Spectrogram service started successfully',
-      pid: spectrogramServiceProcess.pid,
-      status: spectrogramServiceStatus
-    };
-    
-    logger.spectrogram('Spectrogram service start successful', { ip: req.ip, pid: spectrogramServiceProcess.pid });
-    res.json(response);
+    // Set timeout for startup validation
+    const startupTimeout = setTimeout(() => {
+      if (!startupValidated && !responseSent) {
+        logger.spectrogram('Startup validation timeout', { 
+          pid: spectrogramServiceProcess.pid,
+          timeout: '10000ms'
+        });
+        
+        responseSent = true;
+        res.status(500).json({ 
+          success: false, 
+          error: 'Startup validation timeout - service may not be fully operational',
+          status: 'timeout',
+          pid: spectrogramServiceProcess.pid
+        });
+      }
+    }, 10000); // 10 second timeout
+
+    // Clean up timeout if response is sent
+    spectrogramServiceProcess.on('spawn', () => {
+      if (responseSent) {
+        clearTimeout(startupTimeout);
+      }
+    });
   } catch (error) {
     logger.spectrogram('Error starting spectrogram service', { error: error.message, stack: error.stack, ip: req.ip });
     res.status(500).json({ success: false, error: 'Failed to start spectrogram service' });
+  }
+});
+
+// Get spectrogram service status
+router.get('/service/status', async (req, res) => {
+  try {
+    logger.spectrogram('Spectrogram service status requested', { ip: req.ip });
+    
+    let status = 'stopped';
+    let pid = null;
+    let uptime = null;
+    let startupPhase = null;
+    
+    if (spectrogramServiceProcess) {
+      status = spectrogramServiceStatus;
+      pid = spectrogramServiceProcess.pid;
+      
+      // Calculate uptime if service is running
+      if (status === 'running' && spectrogramServiceProcess.startTime) {
+        uptime = Date.now() - spectrogramServiceProcess.startTime;
+      }
+      
+      // Determine startup phase
+      if (status === 'starting') {
+        startupPhase = 'validating_startup';
+      } else if (status === 'running') {
+        startupPhase = 'fully_operational';
+      }
+    }
+    
+    const response = {
+      success: true,
+      status: status,
+      pid: pid,
+      uptime: uptime,
+      startupPhase: startupPhase,
+      timestamp: Date.now()
+    };
+    
+    logger.spectrogram('Spectrogram service status response', { 
+      ip: req.ip, 
+      status: status, 
+      pid: pid 
+    });
+    
+    res.json(response);
+  } catch (error) {
+    logger.spectrogram('Error getting spectrogram service status', { 
+      error: error.message, 
+      stack: error.stack, 
+      ip: req.ip 
+    });
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to get spectrogram service status' 
+    });
   }
 });
 
