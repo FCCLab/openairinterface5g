@@ -317,7 +317,7 @@ class SpectrogramMain:
                 args=(tx_wave, self.args.hop_size, self.stop_event, 
                       self.rx_queue, self.main_timestamp, self.args.device, 
                       self.args.freq, self.args.sample_rate, self.args.gain, 
-                      self.cpu_cores['tx_rx'], self.log_dir)
+                      self.args.window_size, self.cpu_cores['tx_rx'], self.log_dir)
             )
             self.tx_rx_process.start()
             self.restart_attempts['TX/RX']['process'] = self.tx_rx_process
@@ -363,7 +363,7 @@ class SpectrogramMain:
             return False
     
     def _run_tx_rx_process(self, tx_wave, hop_size, stop_event, rx_queue, timestamp, 
-                           device, freq, sample_rate, gain, cpu_core, log_dir):
+                           device, freq, sample_rate, gain, window_size, cpu_core, log_dir):
         """Run TX/RX process in separate process"""
         process = TXRXProcess(
             tx_wave=tx_wave,
@@ -375,6 +375,7 @@ class SpectrogramMain:
             freq=freq,
             sample_rate=sample_rate,
             gain=gain,
+            window_size=window_size,
             cpu_core=cpu_core,
             log_dir=log_dir
         )
@@ -540,7 +541,7 @@ class SpectrogramMain:
                     args=(tx_wave, self.args.hop_size, self.stop_event,
                           self.rx_queue, self.main_timestamp, self.args.device,
                           self.args.freq, self.args.sample_rate, self.args.gain,
-                          self.cpu_cores['tx_rx'], self.log_dir)
+                          self.args.window_size, self.cpu_cores['tx_rx'], self.log_dir)
                 )
                 new_process.start()
                 self.tx_rx_process = new_process

@@ -2374,14 +2374,12 @@
   flex: 1;
   background: rgba(0, 0, 0, 0.3);
   border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 2px dashed rgba(255, 255, 255, 0.2);
+  display: block;
   position: relative;
   overflow: hidden;
   padding: 0;
   margin: 0;
+  border: 2px dashed rgba(255, 255, 255, 0.2);
 }
 
 .color-bar-container {
@@ -2449,12 +2447,19 @@
 
 .spectrogram-canvas-element {
   display: block;
+  width: 100% !important;
+  height: 100% !important;
   image-rendering: pixelated;
   image-rendering: -moz-crisp-edges;
   image-rendering: crisp-edges;
   transition: background-color 0.3s ease;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  border: none;
+  box-shadow: none;
+  margin: 0;
+  padding: 0;
+  position: absolute;
+  top: 0;
+  left: 0;
 }
 
 /* Background-specific styles for spectrogram canvas */

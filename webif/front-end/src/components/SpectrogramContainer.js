@@ -12,7 +12,7 @@ const SpectrogramContainerTemplate = () => {
   const [settings, setSettings] = useState({
     // FFT Parameters
     frequency: 2400,
-    sampleRate: 1000000, // 1 MHz default
+    sampleRate: 100000000, // 100 MHz default (matches backend)
     fftSize: 512, // Reduced from 1024 to make it lighter
     resolution: null, // Optional, overrides fftSize if provided
     windowSize: null, // Optional, defaults to fftSize
@@ -37,8 +37,8 @@ const SpectrogramContainerTemplate = () => {
   const [serviceStatus, setServiceStatus] = useState('stopped');
   const [serviceLoading, setServiceLoading] = useState(false);
   
-  const [frequencyInput, setFrequencyInput] = useState('2.4G');
-  const [sampleRateInput, setSampleRateInput] = useState('1M');
+  const [frequencyInput, setFrequencyInput] = useState('1G');
+  const [sampleRateInput, setSampleRateInput] = useState('100M');
   const [resolutionInput, setResolutionInput] = useState('');
   const [windowSizeInput, setWindowSizeInput] = useState('');
   const [hopSizeInput, setHopSizeInput] = useState('');
@@ -182,31 +182,16 @@ const SpectrogramContainerTemplate = () => {
       }
     }
     
-    // Reorder frequencies to proper range: -sample_rate/2 to sample_rate/2
-    const numBins = frequencies.length;
-    const halfBins = Math.floor(numBins / 2);
-    
-    // Reorder: move second half (negative freqs) to front, first half (positive freqs) to back
-    const reorderedFrequencies = [
-      ...frequencies.slice(halfBins),  // Negative frequencies (-sample_rate/2 to 0)
-      ...frequencies.slice(0, halfBins)   // Positive frequencies (0 to sample_rate/2)
-    ];
-    
-    const reorderedMagnitudes = [
-      ...mag1d.slice(halfBins),  // Magnitudes for negative frequencies
-      ...mag1d.slice(0, halfBins)   // Magnitudes for positive frequencies
-    ];
-    
-    // Update current data with properly ordered frequencies
-    data.frequencies = reorderedFrequencies;
-    data.magnitudes = reorderedMagnitudes;
+    // Use frequencies and magnitudes as-is from the backend STFT (already shifted)
+    data.frequencies = frequencies;
+    data.magnitudes = mag1d;
     data.timestamp = timestamp || Date.now() / 1000;
     data.frameNum = frameNum || 0;
     
-    // Add to history with properly ordered data
+    // Add to history with backend-shifted data (no reordering needed)
     const historyEntry = {
-      frequencies: [...reorderedFrequencies],
-      magnitudes: [...reorderedMagnitudes],
+      frequencies: [...frequencies],
+      magnitudes: [...mag1d],
       timestamp: data.timestamp,
       frameNum: data.frameNum
     };
@@ -218,22 +203,25 @@ const SpectrogramContainerTemplate = () => {
       data.history.shift(); // Remove oldest entry
     }
     
-    // Calculate statistics with reordered data
-    const minFreq = Math.min(...reorderedFrequencies);
-    const maxFreq = Math.max(...reorderedFrequencies);
-    const minMag = Math.min(...reorderedMagnitudes);
-    const maxMag = Math.max(...reorderedMagnitudes);
+    // Calculate statistics with correct data
+    const minFreq = Math.min(...frequencies);
+    const maxFreq = Math.max(...frequencies);
+    const minMag = Math.min(...mag1d);
+    const maxMag = Math.max(...mag1d);
     
-    // Only log every 10000th frame to reduce spam
-    if (frameNum % 10000 === 0) {
+    // Log every 1000th frame for debugging
+    if (frameNum % 50000 === 0) {
       console.log(`[DATA] Updated with ${frequencies.length} frequency points`);
-      console.log(`[DATA] Original frequency range: ${(Math.min(...frequencies)/1e6).toFixed(3)} to ${(Math.max(...frequencies)/1e6).toFixed(3)} MHz`);
-      console.log(`[DATA] Reordered frequency range: ${(minFreq/1e6).toFixed(3)} to ${(maxFreq/1e6).toFixed(3)} MHz`);
+      console.log(`[DATA] Frequency range: ${(minFreq/1e6).toFixed(3)} to ${(maxFreq/1e6).toFixed(3)} MHz`);
       console.log(`[DATA] Magnitude range: ${minMag.toFixed(1)} to ${maxMag.toFixed(1)} dB`);
       console.log(`[DATA] Frame: ${data.frameNum}, Timestamp: ${data.timestamp.toFixed(3)}s`);
       console.log(`[DATA] History entries: ${data.history.length}`);
       
-      // Debug: Show first few magnitude values
+      // Debug: Show first few frequency and magnitude values
+      if (frequencies.length > 0) {
+        console.log(`[DATA] First 5 frequencies: ${frequencies.slice(0, 5).map(f => (f/1e6).toFixed(3)).join(', ')} MHz`);
+        console.log(`[DATA] Last 5 frequencies: ${frequencies.slice(-5).map(f => (f/1e6).toFixed(3)).join(', ')} MHz`);
+      }
       if (mag1d.length > 0) {
         console.log(`[DATA] First 5 magnitudes: ${mag1d.slice(0, 5).map(m => m.toFixed(1)).join(', ')} dB`);
         console.log(`[DATA] Last 5 magnitudes: ${mag1d.slice(-5).map(m => m.toFixed(1)).join(', ')} dB`);
@@ -1145,46 +1133,13 @@ const SpectrogramContainerTemplate = () => {
           console.log('[WS_MSG] 📡 WebSocket message received:', `frame:${message.f}`);
         }
         
-        // Handle two-sided frequency data - show full range from -sample_rate/2 to +sample_rate/2
-        if (message.freq && message.freq.length > 0) {
+        // Log frequency range for debugging (every 10000 frames)
+        if (message.freq && message.freq.length > 0 && message.f % 10000 === 0) {
           const minFreq = message.freq[0];
           const maxFreq = message.freq[message.freq.length - 1];
-          
-          // Log frequency range for debugging (every 10000 frames)
-          if (message.f % 10000 === 0) {
-            const expectedRange = settings.sampleRate / 2;
-            console.log(`[WS_FREQ] Spectrogram frequencies: ${minFreq?.toFixed(1)} to ${maxFreq?.toFixed(1)} kHz (expected: ±${expectedRange/1e3} kHz)`);
-            console.log(`[WS_FREQ] First 5 frequencies: ${message.freq.slice(0, 5).map(f => f.toFixed(1)).join(', ')}`);
-            console.log(`[WS_FREQ] Last 5 frequencies: ${message.freq.slice(-5).map(f => f.toFixed(1)).join(', ')}`);
-          }
-          
-          // Always ensure we have the full two-sided frequency range
-          const expectedMinFreq = -settings.sampleRate / 2;
-          const expectedMaxFreq = settings.sampleRate / 2;
-          
-          if (minFreq !== expectedMinFreq || maxFreq !== expectedMaxFreq) {
-            // Only log frequency range adjustments every 1000 frames to reduce spam
-            if (message.f % 1000 === 0) {
-              console.log('[WS_FREQ] 🔄 Adjusting frequency range to full two-sided spectrum');
-            }
-            
-            // Create proper two-sided frequency array
-            const numBins = message.freq.length;
-            const freqStep = settings.sampleRate / numBins;
-            const twoSidedFrequencies = [];
-            
-            for (let i = 0; i < numBins; i++) {
-              const freq = (i - numBins / 2) * freqStep;
-              twoSidedFrequencies.push(freq);
-            }
-            
-            message.freq = twoSidedFrequencies;
-            
-            // Only log success message every 1000 frames to reduce spam
-            if (message.f % 1000 === 0) {
-              console.log(`[WS_FREQ] ✅ Full frequency range: ${twoSidedFrequencies[0]?.toFixed(1)} to ${twoSidedFrequencies[twoSidedFrequencies.length-1]?.toFixed(1)} kHz`);
-            }
-          }
+          console.log(`[WS_FREQ] ✅ STFT frequencies: ${(minFreq/1e6).toFixed(3)} to ${(maxFreq/1e6).toFixed(3)} MHz`);
+          console.log(`[WS_FREQ] First 5 frequencies: ${message.freq.slice(0, 5).map(f => (f/1e6).toFixed(3)).join(', ')} MHz`);
+          console.log(`[WS_FREQ] Last 5 frequencies: ${message.freq.slice(-5).map(f => (f/1e6).toFixed(3)).join(', ')} MHz`);
         }
         
         // Update frequency-magnitude data with received data - using new key names
@@ -1278,7 +1233,14 @@ const SpectrogramContainerTemplate = () => {
   };
   
   // Draw spectrogram waterfall display
+  // NEW APPROACH: Simple left-to-right frequency mapping
+  // - No complex centering calculations
+  // - Each frequency bin gets equal width
+  // - Eliminates right-shifting issues after resize
+  // - Uses visual dimensions for consistent coordinate system
   const drawFrequencyMap = () => {
+    // console.log('[DRAW] 🎨 Starting to draw spectrogram...');
+    
     const canvas = canvasRef.current;
     if (!canvas) {
       console.warn('[CANVAS] ⚠️ Canvas reference not available');
@@ -1286,13 +1248,26 @@ const SpectrogramContainerTemplate = () => {
     }
     
     const ctx = canvas.getContext('2d');
+    
+    // Use canvas dimensions directly since they now match visual dimensions
     const width = canvas.width;
     const height = canvas.height;
     
     // Check if canvas has proper dimensions
     if (width <= 0 || height <= 0) {
-      console.warn('[CANVAS] ⚠️ Canvas dimensions invalid:', { width, height });
+      // console.warn('[CANVAS] ⚠️ Canvas dimensions invalid:', { width, height });
       return;
+    }
+    
+    // console.log(`[DRAW] 📐 Canvas dimensions: ${width}x${height}`);
+    
+    // Track canvas size changes for debugging
+    if (!window.lastCanvasSize) {
+      window.lastCanvasSize = { width, height };
+    } else if (window.lastCanvasSize.width !== width || window.lastCanvasSize.height !== height) {
+      console.log(`[DRAW] 🔄 Canvas size changed: ${window.lastCanvasSize.width}x${window.lastCanvasSize.height} → ${width}x${height}`);
+      console.log(`[DRAW] 🔄 Canvas dimensions: ${width}x${height}`);
+      window.lastCanvasSize = { width, height };
     }
     
     // Use frequency-magnitude data history
@@ -1303,27 +1278,52 @@ const SpectrogramContainerTemplate = () => {
     }
     
     // Only log every 100th draw to reduce spam
-    if (data.frameNum % 100 === 0) {
+    if (data.frameNum % 50000 === 0) {
       console.log(`[CANVAS] 🎨 Drawing spectrogram waterfall with ${data.history.length} time slices (frame: ${data.frameNum})`);
     }
     
-    // Clear canvas
+    // Clear canvas - use scaled dimensions since context is scaled
     ctx.clearRect(0, 0, width, height);
     
     // Calculate dimensions - use full canvas
+    // Note: width/height are from canvas dimensions, but context is scaled by devicePixelRatio
+    // So drawing coordinates are in visual space, not internal canvas space
     const plotWidth = width;
     const plotHeight = height;
     const plotX = 0;
     const plotY = 0;
     
+    // Account for frequency axis overlay at the top (20px height)
+    const frequencyAxisHeight = 20;
+    const availableHeight = plotHeight - frequencyAxisHeight;
+    const drawingY = plotY + frequencyAxisHeight;
+    
+    // Debug: Log canvas dimensions every 1000 frames
+    if (data.frameNum % 1000 === 0) {
+      console.log(`[CANVAS] 📐 Canvas dimensions: ${width}x${height}, Plot area: ${plotWidth}x${plotHeight} at (${plotX}, ${plotY})`);
+    }
+    
     // Get frequency range from first history entry
     const firstEntry = data.history[0];
     const frequencies = firstEntry.frequencies;
     
-    // Calculate time slice height - CONSTANT based on canvas height and max history
+    // Calculate time slice height - CONSTANT based on available height and max history
     // Each time slice maintains the same height regardless of actual data amount
+    // Account for frequency axis overlay height
     const maxHistoryLength = settings.maxHistoryLength || 100;
-    const timeSliceHeight = Math.max(1, Math.floor(plotHeight / maxHistoryLength));
+    const timeSliceHeight = Math.max(1, Math.ceil(availableHeight / maxHistoryLength));
+    
+    // Calculate actual total height used by all slices
+    const totalSliceHeight = timeSliceHeight * maxHistoryLength;
+    const heightUtilization = (totalSliceHeight / availableHeight * 100).toFixed(1);
+    
+    // Debug: Log height calculations
+    if (data.frameNum % 1000 === 0) {
+      console.log(`[HEIGHT] 📏 Height calculations: plotHeight=${plotHeight}, availableHeight=${availableHeight}, maxHistoryLength=${maxHistoryLength}, timeSliceHeight=${timeSliceHeight}`);
+      console.log(`[HEIGHT] 📏 Canvas: ${width}x${height}, Visual: ${canvas.getBoundingClientRect().width}x${canvas.getBoundingClientRect().height}`);
+      console.log(`[HEIGHT] 📏 Frequency axis height: ${frequencyAxisHeight}px, Drawing Y offset: ${drawingY}px`);
+      console.log(`[HEIGHT] 📏 Height utilization: ${totalSliceHeight}/${availableHeight}px (${heightUtilization}%)`);
+    }
     
     // Use limited history to maintain consistent slice heights
     const displayHistory = data.history.slice(-maxHistoryLength);
@@ -1339,20 +1339,22 @@ const SpectrogramContainerTemplate = () => {
       const magnitudes = entry.magnitudes;
       
       // Calculate Y position based on scroll direction setting
+      // Use drawingY offset to account for frequency axis overlay
       let adjustedTimeY;
       if (settings.scrollDirection === 'up') {
         // Up: Newest data at bottom, everything moves up
-        const baseTimeY = plotY + (displayHistory.length - 1 - timeIndex) * timeSliceHeight;
+        const baseTimeY = drawingY + (displayHistory.length - 1 - timeIndex) * timeSliceHeight;
         adjustedTimeY = baseTimeY - (scrollOffset * timeSliceHeight);
       } else {
         // Down: Newest data at top, everything moves down
-        const baseTimeY = plotY + timeIndex * timeSliceHeight;
+        const baseTimeY = drawingY + timeIndex * timeSliceHeight;
         adjustedTimeY = baseTimeY + (scrollOffset * timeSliceHeight);
       }
       
-      // Calculate frequency width per bin
+      // Calculate frequency width per bin - ensure consistency with frequency positioning
+      // Since we're using normalized frequency mapping, each bin should have equal width
       const freqWidth = plotWidth / frequencies.length;
-      
+
       for (let freqIndex = 0; freqIndex < frequencies.length; freqIndex++) {
         const magnitude = magnitudes[freqIndex];
         
@@ -1361,9 +1363,10 @@ const SpectrogramContainerTemplate = () => {
           continue;
         }
         
-        // Calculate frequency position using index (proper order)
+        // Simple left-to-right frequency mapping - no centering complexity
+        // Each frequency bin gets equal width, plotted sequentially
         const freqX = plotX + (freqIndex / frequencies.length) * plotWidth;
-        
+         
         // Get color based on magnitude
         const color = amplitudeToColor(magnitude);
         
@@ -1379,8 +1382,10 @@ const SpectrogramContainerTemplate = () => {
     }
     
     // Log drawing completion every 1000 frames
-    if (data.frameNum % 1000 === 0) {
+    if (data.frameNum % 50000 === 0) {
       console.log(`[CANVAS] ✅ Spectrogram drawn successfully - ${displayHistory.length} time slices, ${frequencies.length} frequency bins`);
+      console.log(`[CANVAS] 🎯 Drawing area: ${plotWidth}x${plotHeight} at (${plotX}, ${plotY})`);
+      console.log(`[CANVAS] 📊 Time slice height: ${timeSliceHeight}px, Total slices: ${displayHistory.length}`);
     }
   };
   
@@ -1526,16 +1531,20 @@ const SpectrogramContainerTemplate = () => {
     if (!canvas) return;
     
     const rect = canvas.getBoundingClientRect();
-    canvas.width = rect.width * window.devicePixelRatio;
-    canvas.height = rect.height * window.devicePixelRatio;
+    const visualWidth = rect.width;
+    const visualHeight = rect.height;
     
+    // Set canvas internal resolution to match visual size (CSS-based sizing)
+    canvas.width = visualWidth;
+    canvas.height = visualHeight;
+    
+    // No need to scale the context - use 1:1 mapping
     const ctx = canvas.getContext('2d');
-    ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
     
     // Update maxHistoryLength to match canvas height
-    const canvasHeight = rect.height;
-    maxHistoryLengthRef.current = canvasHeight;
-    console.log('📏 Updated maxHistoryLength to canvas height:', canvasHeight);
+    maxHistoryLengthRef.current = visualHeight;
+    console.log('📏 Updated maxHistoryLength to canvas height:', visualHeight);
+    console.log(`📏 Canvas dimensions: visual=${visualWidth}x${visualHeight}, internal=${canvas.width}x${canvas.height}`);
     
     // Clear the canvas after resize
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -1605,16 +1614,17 @@ const SpectrogramContainerTemplate = () => {
       }
     }, 1000);
     
-    return () => {
-      clearTimeout(autoSelectTimeout);
-      disconnectFromStream();
-    };
-    
+
     // Set up canvas
     updateCanvasSize();
     
     // Initialize frequency-magnitude data
     initializeFreqMagData();
+   
+    return () => {
+      clearTimeout(autoSelectTimeout);
+      disconnectFromStream();
+    };
     
 
   }, []);
@@ -1625,6 +1635,7 @@ const SpectrogramContainerTemplate = () => {
     const handleResize = () => {
       clearTimeout(resizeTimeout);
       resizeTimeout = setTimeout(() => {
+        console.log('🔄 Window resize detected, updating canvas...');
         updateCanvasSize();
         // Redraw if we have frequency-magnitude data
         const data = freqMagDataRef.current;
@@ -1639,7 +1650,7 @@ const SpectrogramContainerTemplate = () => {
       window.removeEventListener('resize', handleResize);
       clearTimeout(resizeTimeout);
     };
-  }, [settings]);
+  }, []); // Remove settings dependency to prevent recreating resize handler
 
   useEffect(() => {
     // Auto-save when settings change (debounced)
@@ -2555,8 +2566,7 @@ const SpectrogramContainerTemplate = () => {
             <div className="spectrogram-canvas" style={{ position: 'relative' }}>
               <canvas
                 ref={canvasRef}
-                width={800}
-                height={600}
+                className="spectrogram-canvas-element"
                 style={{
                   width: '100%',
                   height: '100%',

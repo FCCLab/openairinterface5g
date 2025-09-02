@@ -28,7 +28,7 @@ class TXRXProcess(ProcessBase):
     """Self-contained TX/RX process for USRP communication"""
     
     def __init__(self, tx_wave, hop_size, stop_event, rx_queue, timestamp, 
-                 device, freq, sample_rate, gain, cpu_core=1, log_dir=None):
+                 device, freq, sample_rate, gain, window_size=8192, cpu_core=1, log_dir=None):
         """
         Initialize TX/RX process
         
@@ -55,6 +55,7 @@ class TXRXProcess(ProcessBase):
         self.freq = freq
         self.sample_rate = sample_rate
         self.gain = gain
+        self.window_size = window_size
         
         # Process state
         self.usrp = None
@@ -245,8 +246,23 @@ class TXRXProcess(ProcessBase):
     def rx_thread_function(self):
         """Receive thread function"""
         thread_id = 1
-        frame_size = 5000
+        frame_size = self.window_size  # Read window_size samples per frame
         local_frame_count = 0
+        
+        # Calculate how many samples to advance between frames
+        # This ensures proper frame alignment with STFT hop_size
+        samples_per_frame = self.hop_size
+        
+        # Buffer to maintain sliding window of samples
+        sample_buffer = np.zeros(frame_size, dtype=np.complex64)
+        
+        # Simple accumulator for hop_size samples
+        hop_accumulator = np.zeros(samples_per_frame, dtype=np.complex64)
+        hop_accumulated = 0
+        
+        # Log frame timing configuration
+        self.logger.info(f"RX frame timing: window_size={frame_size}, hop_size={samples_per_frame}")
+        self.logger.info(f"RX will read until {samples_per_frame} samples, then shift buffer and send frame")
         
         # Performance monitoring
         last_gc_time = time.time()
@@ -274,39 +290,60 @@ class TXRXProcess(ProcessBase):
                     # Use base class memory monitoring
                     self._check_memory_periodic(current_time)
                     
-                    # Create buffer for samples
-                    samples = np.zeros(frame_size, dtype=np.complex64)
-                    
-                    # Receive samples with metadata
-                    num_samps = self.rx_streamer.recv(samples, rx_md)
-                    
-                    if num_samps > 0:
-                        # Create frame data
-                        frame_data = (local_frame_count, samples[:num_samps], time.time(), thread_id)
+                    # Read until we have enough samples for hop_size
+                    hop_accumulated = 0
+                    loop_count = 0
+                    while hop_accumulated < samples_per_frame and not self.stop_event.is_set():
+                        # self.logger.info(f"RX thread {thread_id}: hop_accumulated={hop_accumulated}, samples_per_frame={samples_per_frame}")
+                        loop_count += 1
+                        # Read samples into temporary buffer
+                        temp_samples = np.zeros(samples_per_frame - hop_accumulated, dtype=np.complex64)
+                        num_samps = self.rx_streamer.recv(temp_samples, rx_md)
                         
-                        # Put in RX queue
-                        try:
-                            self.rx_queue.put(frame_data, timeout=0.1)
-                            local_frame_count += 1
-                            self.frame_count += 1  # Update global frame count for FPS tracking
-                            
-                            # Log progress and FPS
-                            if local_frame_count % 5000 == 0:
-                                self.logger.info(f"RX thread {thread_id}: collected {local_frame_count} local frames")
-                            
-                            # Use base class FPS logging
-                            self._log_fps(current_time)
-                                
-                        except queue.Full:
-                            self.logger.warning("RX queue is full, dropping frame")
+                        if num_samps > 0:
+                            # Add samples to accumulator
+                            hop_accumulator[hop_accumulated:hop_accumulated + num_samps] = temp_samples[:num_samps]
+                            hop_accumulated += num_samps
+                        else:
+                            # self.logger.info(f"RX thread {thread_id}: no samples received")
+                            # No samples received, small delay and retry
+                            time.sleep(0.001)
                             continue
-                    else:
-                        # Log when no samples received
-                        if local_frame_count % 1000 == 0:
-                            self.logger.debug(f"RX thread {thread_id}: no samples received, num_samps={num_samps}")
+                        if loop_count > 1000:
+                            self.logger.error(f" Error in RX thread {thread_id}: RX loop completed: {loop_count} iterations, accumulated {hop_accumulated}/{samples_per_frame} samples")
+                            break
+
+                    # Log loop completion occasionally
+                    if local_frame_count % 1000 == 0:
+                        self.logger.debug(f"RX loop completed: {loop_count} iterations, accumulated {hop_accumulated}/{samples_per_frame} samples")
+                    
+                    # Always shift buffer by hop_size and add new samples
+                    sample_buffer[:-samples_per_frame] = sample_buffer[samples_per_frame:]
+                    sample_buffer[-samples_per_frame:] = hop_accumulator[:samples_per_frame]
+                    
+                    # Send frame (buffer is always full after shift)
+                    frame_data = (local_frame_count, sample_buffer.copy(), time.time(), thread_id)
+                    
+                    try:
+                        self.rx_queue.put(frame_data, timeout=0.1)
+                        local_frame_count += 1
+                        self.frame_count += 1
+                        
+                        if local_frame_count % 5000 == 0:
+                            self.logger.info(f"RX thread {thread_id}: collected {local_frame_count} frames")
+                        
+                        self._log_fps(current_time)
+                            
+                    except queue.Full:
+                        self.logger.warning("RX queue is full, dropping frame")
+                        continue
+                    
+                    if local_frame_count % 1000 == 0:
+                        self.logger.debug(f"RX frame sent: frame_size={frame_size}, hop_size={samples_per_frame}")
+
                     
                     # Clear variables to help garbage collection
-                    del samples
+                    del temp_samples
                     if 'frame_data' in locals():
                         del frame_data
                     

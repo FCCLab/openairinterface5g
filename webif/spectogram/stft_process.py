@@ -5,6 +5,7 @@ Handles Short-Time Fourier Transform on received IQ samples
 """
 
 import time
+import sys
 import gc
 import queue
 import os
@@ -127,6 +128,14 @@ class STFTProcess(ProcessBase):
                 window=self.window_cache,  # Use cached window instead of recreating
                 return_onesided=False
             )
+
+            # Center the spectrum so frequencies go from -Fs/2 to +Fs/2
+            # and align bins along the frequency axis before converting to dB.
+            try:
+                f = np.fft.fftshift(f)
+                Zxx = np.fft.fftshift(Zxx, axes=0)
+            except Exception as e:
+                self.logger.warning(f"Frame {frame_num}: fftshift failed on STFT output: {e}")
             
             # Force to use only 1 time point (first time slice)
             if Zxx.shape[1] > 1:
