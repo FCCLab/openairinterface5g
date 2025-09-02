@@ -51,6 +51,11 @@ class STFTProcess:
         # Process state
         self.frame_count = 0
         
+        # FPS tracking
+        self.start_time = time.time()
+        self.last_fps_log_time = time.time()
+        self.fps_log_interval = 5.0  # Log FPS every 5 seconds
+        
         # Setup logging
         self._setup_logging()
         
@@ -216,9 +221,18 @@ class STFTProcess:
                         self.stft_queue.put(result)
                         self.frame_count += 1
                         
-                        # Log progress occasionally
+                        # Log progress and FPS occasionally
                         if self.frame_count % 5000 == 0:
                             self.logger.info(f"STFT process: Processed {self.frame_count} frames, latest frame {result[0]}")
+                        
+                        # Log FPS periodically
+                        current_time = time.time()
+                        if current_time - self.last_fps_log_time >= self.fps_log_interval:
+                            elapsed_time = current_time - self.start_time
+                            if elapsed_time > 0:
+                                fps = self.frame_count / elapsed_time
+                                self.logger.info(f"STFT FPS: {fps:.2f} frames/sec (Total: {self.frame_count} frames in {elapsed_time:.1f}s)")
+                                self.last_fps_log_time = current_time
                     
                 except queue.Empty:
                     # No data available, continue

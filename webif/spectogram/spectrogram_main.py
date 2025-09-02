@@ -17,6 +17,63 @@ from pathlib import Path
 script_dir = Path(__file__).parent
 sys.path.insert(0, str(script_dir))
 
+class SmartQueue:
+    """Smart queue that drops oldest data when full to maintain real-time performance"""
+    
+    def __init__(self, maxsize=100):
+        self.queue = multiprocessing.Queue(maxsize=maxsize)
+        self.maxsize = maxsize
+        self.dropped_count = 0
+        self.total_put_count = 0
+    
+    def put(self, item, timeout=None, block=True):
+        """Put item in queue, drop oldest if full"""
+        try:
+            # Try to put item normally
+            self.queue.put(item, timeout=timeout, block=block)
+            self.total_put_count += 1
+            return True
+        except:
+            # Queue is full, drop oldest item and try again
+            try:
+                # Get and drop oldest item
+                _ = self.queue.get_nowait()
+                self.dropped_count += 1
+                # Now put the new item
+                self.queue.put(item, timeout=timeout, block=block)
+                self.total_put_count += 1
+                return True
+            except:
+                # Still failed, drop the new item
+                self.dropped_count += 1
+                return False
+    
+    def get(self, timeout=None, block=True):
+        """Get item from queue"""
+        return self.queue.get(timeout=timeout, block=block)
+    
+    def qsize(self):
+        """Get current queue size"""
+        return self.queue.qsize()
+    
+    def empty(self):
+        """Check if queue is empty"""
+        return self.queue.empty()
+    
+    def full(self):
+        """Check if queue is full"""
+        return self.queue.full()
+    
+    def get_stats(self):
+        """Get queue statistics"""
+        return {
+            'size': self.qsize(),
+            'maxsize': self.maxsize,
+            'dropped_count': self.dropped_count,
+            'total_put_count': self.total_put_count,
+            'drop_rate': (self.dropped_count / max(1, self.total_put_count)) * 100
+        }
+
 try:
     import numpy as np
     from cpu_pe import get_p_e_cores
@@ -50,8 +107,8 @@ class SpectrogramMain:
         self.stop_event = multiprocessing.Event()
         
         # Queues for inter-process communication
-        self.rx_queue = multiprocessing.Queue(maxsize=100)
-        self.stft_queue = multiprocessing.Queue(maxsize=100)
+        self.rx_queue = SmartQueue(maxsize=100)
+        self.stft_queue = SmartQueue(maxsize=100)
         
         # CPU core assignments
         self.cpu_cores = self._setup_cpu_cores()
@@ -519,17 +576,18 @@ class SpectrogramMain:
     def _get_queue_status(self):
         """Get status of all queues"""
         try:
-            rx_size = self.rx_queue.qsize()
-            stft_size = self.stft_queue.qsize()
-            return rx_size, stft_size
+            rx_stats = self.rx_queue.get_stats()
+            stft_stats = self.stft_queue.get_stats()
+            return rx_stats, stft_stats
         except Exception as e:
             self.logger.error(f"Error getting queue status: {e}")
-            return 0, 0
+            return None, None
     
     def _log_statistics(self, uptime):
         """Log system statistics"""
         try:
-            rx_size, stft_size = self._get_queue_status()
+            # Get queue status
+            rx_stats, stft_stats = self._get_queue_status()
             
             # Get memory usage
             process = psutil.Process()
@@ -538,7 +596,11 @@ class SpectrogramMain:
             self.logger.info("=" * 50)
             self.logger.info("STATISTICS UPDATE (Every 5s)")
             self.logger.info("=" * 50)
-            self.logger.info(f"Queue Status - RX: {rx_size}, STFT: {stft_size}")
+            if rx_stats and stft_stats:
+                self.logger.info(f"RX Queue - Size: {rx_stats['size']}/{rx_stats['maxsize']}, Dropped: {rx_stats['dropped_count']} ({rx_stats['drop_rate']:.1f}%)")
+                self.logger.info(f"STFT Queue - Size: {stft_stats['size']}/{stft_stats['maxsize']}, Dropped: {stft_stats['dropped_count']} ({stft_stats['drop_rate']:.1f}%)")
+            else:
+                self.logger.warning("Unable to get queue statistics")
             self.logger.info(f"Uptime: {uptime:.1f}s, Memory Usage: {memory_mb:.1f} MB")
             
             # Process status
@@ -549,10 +611,32 @@ class SpectrogramMain:
             
             self.logger.info(f"Processes Alive: {', '.join(alive_processes)}")
             
+            # Process FPS status (if available)
+            try:
+                if hasattr(self.tx_rx_process, 'frame_count') and hasattr(self.tx_rx_process, 'start_time'):
+                    tx_rx_uptime = time.time() - self.tx_rx_process.start_time
+                    if tx_rx_uptime > 0:
+                        tx_rx_fps = self.tx_rx_process.frame_count / tx_rx_uptime
+                        self.logger.info(f"TX/RX FPS: {tx_rx_fps:.2f} frames/sec")
+                
+                if hasattr(self.stft_process, 'frame_count') and hasattr(self.stft_process, 'start_time'):
+                    stft_uptime = time.time() - self.stft_process.start_time
+                    if stft_uptime > 0:
+                        stft_fps = self.stft_process.frame_count / stft_uptime
+                        self.logger.info(f"STFT FPS: {stft_fps:.2f} frames/sec")
+                
+                if hasattr(self.websocket_process, 'frame_count') and hasattr(self.websocket_process, 'start_time'):
+                    ws_uptime = time.time() - self.websocket_process.start_time
+                    if ws_uptime > 0:
+                        ws_fps = self.websocket_process.frame_count / ws_uptime
+                        self.logger.info(f"WebSocket FPS: {ws_fps:.2f} frames/sec")
+            except Exception as e:
+                self.logger.debug(f"Could not get process FPS: {e}")
+            
             # Queue warnings
-            if rx_size == 0:
+            if rx_stats and rx_stats['size'] == 0:
                 self.logger.warning("RX queue is empty - RX thread may be having issues")
-            if stft_size == 0:
+            if stft_stats and stft_stats['size'] == 0:
                 self.logger.warning("STFT queue is empty - STFT process may be having issues")
             
             # Restart info
@@ -667,19 +751,35 @@ class SpectrogramMain:
             # Process status
             for name, process in [('TX/RX', self.tx_rx_process), ('STFT', self.stft_process), ('WebSocket', self.websocket_process)]:
                 if process:
-                    status['processes'][name] = {
+                    process_status = {
                         'alive': process.is_alive(),
                         'pid': process.pid if process.is_alive() else None,
                         'exitcode': process.exitcode if hasattr(process, 'exitcode') else None
                     }
+                    
+                    # Add FPS information if available
+                    try:
+                        if hasattr(process, 'frame_count') and hasattr(process, 'start_time'):
+                            uptime = time.time() - process.start_time
+                            if uptime > 0:
+                                fps = process.frame_count / uptime
+                                process_status['fps'] = round(fps, 2)
+                                process_status['frames_processed'] = process.frame_count
+                                process_status['uptime'] = round(uptime, 1)
+                    except Exception:
+                        pass  # FPS info not available
+                    
+                    status['processes'][name] = process_status
                 else:
                     status['processes'][name] = {'alive': False, 'pid': None, 'exitcode': None}
             
             # Queue status
             try:
+                rx_stats = self.rx_queue.get_stats()
+                stft_stats = self.stft_queue.get_stats()
                 status['queues'] = {
-                    'rx_size': self.rx_queue.qsize(),
-                    'stft_size': self.stft_queue.qsize()
+                    'rx': rx_stats,
+                    'stft': stft_stats
                 }
             except Exception as e:
                 status['queues'] = {'error': str(e)}

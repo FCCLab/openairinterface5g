@@ -67,6 +67,12 @@ class TXRXProcess:
         self.tx_samples_sent = 0
         self.rx_frames_collected = 0
         
+        # FPS tracking
+        self.frame_count = 0
+        self.start_time = time.time()
+        self.last_fps_log_time = time.time()
+        self.fps_log_interval = 5.0  # Log FPS every 5 seconds
+        
         # Setup logging first (before any logging calls)
         self._setup_logging()
         
@@ -359,10 +365,20 @@ class TXRXProcess:
                         try:
                             self.rx_queue.put(frame_data, timeout=0.1)
                             local_frame_count += 1
+                            self.frame_count += 1  # Update global frame count for FPS tracking
                             
-                            # Log progress
+                            # Log progress and FPS
                             if local_frame_count % 5000 == 0:
                                 self.logger.info(f"RX thread {thread_id}: collected {local_frame_count} local frames")
+                            
+                            # Log FPS periodically
+                            current_time = time.time()
+                            if current_time - self.last_fps_log_time >= self.fps_log_interval:
+                                elapsed_time = current_time - self.start_time
+                                if elapsed_time > 0:
+                                    fps = self.frame_count / elapsed_time
+                                    self.logger.info(f"RX FPS: {fps:.2f} frames/sec (Total: {self.frame_count} frames in {elapsed_time:.1f}s)")
+                                    self.last_fps_log_time = current_time
                                 
                         except queue.Full:
                             self.logger.warning("RX queue is full, dropping frame")
