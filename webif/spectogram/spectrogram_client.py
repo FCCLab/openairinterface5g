@@ -20,7 +20,7 @@ import os
 from datetime import datetime
 
 class SpectrogramClient:
-    def __init__(self, host='localhost', port=40001, sample_rate=1e6):
+    def __init__(self, host='127.0.0.1', port=40001, sample_rate=1e6):
         """
         Initialize the spectrogram client.
         
@@ -116,20 +116,30 @@ class SpectrogramClient:
                 frame_count += 1
                 try:
                     data = json.loads(message)
+                    
+                    # Debug: Log the first few messages to see what we're receiving
+                    if frame_count <= 3:
+                        self.logger.info(f"📦 Received data frame {frame_count}:")
+                        self.logger.info(f"   Keys: {list(data.keys())}")
+                        self.logger.info(f"   Frame: {data.get('f', 'N/A')}")
+                        self.logger.info(f"   Timestamp: {data.get('ts', 'N/A')}")
+                        self.logger.info(f"   Freq length: {len(data.get('freq', []))}")
+                        self.logger.info(f"   Mag length: {len(data.get('mag', []))}")
+                    
                     # Process all received data as spectrogram data (no type check needed)
                     
                     # Store packet info every 10 packets for display
                     if frame_count % 10 == 0:
-                        frequencies = data.get('frequencies', [])
-                        magnitude = data.get('magnitude_db', [])
+                        frequencies = data.get('freq', [])  # Server sends 'freq'
+                        magnitude = data.get('mag', [])    # Server sends 'mag'
                         self.last_packet_info = {
-                            'frame_num': data.get('frame_num'),
-                            'timestamp': data.get('timestamp'),
+                            'frame_num': data.get('f', 0),      # Server sends 'f'
+                            'timestamp': data.get('ts', 0),     # Server sends 'ts'
                             'frequencies': frequencies,
-                            'times': data.get('times', []),
+                            'times': data.get('t', []),         # Server sends 't'
                             'magnitude': magnitude,
                             'frequencies_shape': f"{len(frequencies)}",
-                            'times_shape': f"{len(data.get('times', []))}",
+                            'times_shape': f"{len(data.get('t', []))}",
                             'magnitude_shape': f"{len(magnitude)}x{len(magnitude[0]) if isinstance(magnitude, list) and len(magnitude) > 0 and isinstance(magnitude[0], list) else 1}"
                         }
                     
@@ -157,11 +167,11 @@ class SpectrogramClient:
             data: Dictionary containing spectrogram data
         """
         try:
-            # Extract data
-            frame = data.get('frame_num', 0)
-            frequencies = np.array(data.get('frequencies', []))
-            timestamps = np.array(data.get('times', []))
-            magnitudes = np.array(data.get('magnitude_db', []))
+            # Extract data - use server's key names
+            frame = data.get('f', 0)                    # Server sends 'f'
+            frequencies = np.array(data.get('freq', [])) # Server sends 'freq'
+            timestamps = np.array(data.get('t', []))    # Server sends 't'
+            magnitudes = np.array(data.get('mag', []))  # Server sends 'mag'
             # print(frequencies.shape)
             # print(timestamps.shape)
             # print(magnitudes.shape)
@@ -172,9 +182,7 @@ class SpectrogramClient:
             
         except Exception as e:
             print(f"Error processing spectrogram data: {e}")
-    
 
-    
     def draw_ascii_spectrogram(self, timestamp, frequency, magnitude):
         """
         Draw ASCII spectrogram display for a time slice.
@@ -320,10 +328,10 @@ class SpectrogramClient:
     def print_data_example(self, data, frame_count):
         """Print an example of received data."""
         try:
-            frame_num = data.get('frame_num', 'N/A')
-            timestamp = data.get('timestamp', 'N/A')
-            frequencies = data.get('frequencies', [])
-            magnitude = data.get('magnitude_db', [])
+            frame_num = data.get('f', 'N/A')        # Server sends 'f'
+            timestamp = data.get('ts', 'N/A')       # Server sends 'ts'
+            frequencies = data.get('freq', [])      # Server sends 'freq'
+            magnitude = data.get('mag', [])         # Server sends 'mag'
             
             # Convert to numpy arrays for analysis
             freq_array = np.array(frequencies)
