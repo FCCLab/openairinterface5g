@@ -100,7 +100,15 @@ class STFTProcess:
     
     def _setup_signal_handlers(self):
         """Setup signal handlers for graceful shutdown"""
+        # Flag to prevent multiple signal processing
+        self._signal_received = False
+        
         def signal_handler(signum, frame):
+            # Only process signal once
+            if self._signal_received:
+                return
+            
+            self._signal_received = True
             self.logger.info(f"STFT Process received signal {signum}, stopping...")
             self.stop_event.set()
         

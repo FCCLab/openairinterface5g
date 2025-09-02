@@ -111,18 +111,25 @@ class SpectrogramMain:
     
     def _setup_signal_handlers(self):
         """Setup signal handlers for graceful shutdown"""
+        # Flag to prevent multiple signal processing
+        self._signal_received = False
+        
         def signal_handler(signum, frame):
-            self.logger.info(f"Main process received signal {signum}, initiating graceful shutdown...")
-            # Set stop event and trigger cleanup
+            # Only process signal once
+            if self._signal_received:
+                return
+            
+            self._signal_received = True
+            self.logger.info(f"Main process received signal {signum}, stopping...")
             self.stop_event.set()
-            # Force cleanup if signal is SIGTERM (backend termination)
+            
+            # Force immediate cleanup for SIGTERM
             if signum == signal.SIGTERM:
                 self.logger.info("SIGTERM received, forcing immediate cleanup...")
                 self._force_cleanup()
         
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
-        # Add SIGHUP for backend control
         signal.signal(signal.SIGHUP, signal_handler)
         self.logger.info("Main process: Signal handlers set up successfully")
     
