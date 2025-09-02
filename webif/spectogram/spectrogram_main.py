@@ -471,6 +471,12 @@ class SpectrogramMain:
                 process.join(timeout=1.0)  # Very short timeout for kill
         
         self.logger.info("All processes successfully terminated")
+        
+        # Force garbage collection after process cleanup
+        import gc
+        collected = gc.collect()
+        if collected > 0:
+            self.logger.info(f"Garbage collection after cleanup: freed {collected} objects")
     
     def _check_process_health(self):
         """Check health of all processes and restart if needed"""
@@ -567,6 +573,25 @@ class SpectrogramMain:
             # Check if restart was successful
             if new_process.is_alive():
                 self.logger.info(f"Successfully restarted {process_name} process (PID: {new_process.pid})")
+                
+                # Clean up old process reference to help garbage collection
+                old_process = None
+                if process_name == "TX/RX":
+                    old_process = self.tx_rx_process
+                elif process_name == "STFT":
+                    old_process = self.stft_process
+                elif process_name == "WebSocket":
+                    old_process = self.websocket_process
+                
+                if old_process and old_process != new_process:
+                    try:
+                        if old_process.is_alive():
+                            old_process.terminate()
+                            old_process.join(timeout=1.0)
+                        del old_process
+                    except Exception as e:
+                        self.logger.debug(f"Error cleaning up old {process_name} process: {e}")
+                
                 return True
             else:
                 self.logger.error(f"Failed to restart {process_name} process - process died immediately")
@@ -586,6 +611,62 @@ class SpectrogramMain:
             self.logger.error(f"Error getting queue status: {e}")
             return None, None
     
+    def _check_queue_memory(self):
+        """Check memory usage of queues and trigger cleanup if needed"""
+        try:
+            total_memory = 0
+            queue_info = []
+            
+            # Check RX queue memory
+            if hasattr(self.rx_queue, '_queue'):
+                rx_size = self.rx_queue.qsize()
+                rx_memory = sum(sys.getsizeof(item) for item in list(self.rx_queue._queue)[:10])  # Sample first 10 items
+                rx_memory_mb = rx_memory / 1024 / 1024
+                total_memory += rx_memory
+                queue_info.append(f"RX: {rx_size} items, ~{rx_memory_mb:.2f}MB")
+            
+            # Check STFT queue memory
+            if hasattr(self.stft_queue, '_queue'):
+                stft_size = self.stft_queue.qsize()
+                stft_memory = sum(sys.getsizeof(item) for item in list(self.stft_queue._queue)[:10])  # Sample first 10 items
+                stft_memory_mb = stft_memory / 1024 / 1024
+                total_memory += stft_memory
+                queue_info.append(f"STFT: {stft_size} items, ~{stft_memory_mb:.2f}MB")
+            
+            total_memory_mb = total_memory / 1024 / 1024
+            
+            # Log queue memory info
+            if queue_info:
+                self.logger.info(f"Queue Memory: {', '.join(queue_info)}, Total: ~{total_memory_mb:.2f}MB")
+            
+            # Trigger cleanup if queue memory is too high
+            if total_memory_mb > 100:  # 100MB threshold
+                self.logger.warning(f"Queue memory limit exceeded ({total_memory_mb:.1f}MB), triggering cleanup")
+                self._cleanup_queues()
+            
+            return total_memory_mb
+            
+        except Exception as e:
+            self.logger.debug(f"Queue memory monitoring failed: {e}")
+            return 0
+    
+    def _cleanup_queues(self):
+        """Clean up queues to reduce memory usage"""
+        try:
+            # Force garbage collection
+            import gc
+            collected = gc.collect()
+            if collected > 0:
+                self.logger.info(f"Queue cleanup: garbage collection freed {collected} objects")
+            
+            # Log current queue sizes
+            rx_size = self.rx_queue.qsize() if hasattr(self.rx_queue, 'qsize') else 0
+            stft_size = self.stft_queue.qsize() if hasattr(self.stft_queue, 'qsize') else 0
+            self.logger.info(f"Queue sizes after cleanup: RX={rx_size}, STFT={stft_size}")
+            
+        except Exception as e:
+            self.logger.error(f"Error during queue cleanup: {e}")
+    
     def _log_statistics(self, uptime):
         """Log system statistics"""
         try:
@@ -595,6 +676,9 @@ class SpectrogramMain:
             # Get memory usage
             process = psutil.Process()
             memory_mb = process.memory_info().rss / 1024 / 1024
+            
+            # Monitor queue memory usage
+            queue_memory_mb = self._check_queue_memory()
             
             self.logger.info("=" * 50)
             self.logger.info("STATISTICS UPDATE (Every 5s)")

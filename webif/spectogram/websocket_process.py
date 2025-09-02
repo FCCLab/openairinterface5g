@@ -4,30 +4,24 @@ WebSocket Process - Self-contained WebSocket server process
 Handles real-time broadcasting of processed spectrogram data
 """
 
-import os
-import sys
 import json
 import time
-import signal
-import logging
 import asyncio
 import websockets
-import multiprocessing
-import threading
 import numpy as np
+import threading
+import os
+import signal
+import gc
+import queue
 from pathlib import Path
 
 # Add the spectogram directory to Python path for imports
 script_dir = Path(__file__).parent
-sys.path.insert(0, str(script_dir))
 
-try:
-    import queue
-except ImportError as e:
-    logging.error(f"Import error: {e}")
-    sys.exit(1)
+from process_base import ProcessBase
 
-class WebSocketProcess:
+class WebSocketProcess(ProcessBase):
     """WebSocket process using the exact same hybrid approach as old working code"""
     
     def __init__(self, websocket_port, stop_event, stft_queue, timestamp, cpu_core=2, log_dir=None):
@@ -41,100 +35,30 @@ class WebSocketProcess:
             timestamp: Main process timestamp
             cpu_core: CPU core to bind to
         """
+        # Call parent constructor first
+        super().__init__("WebSocket", stop_event, timestamp, cpu_core, log_dir)
+        
+        # Process-specific attributes
         self.websocket_port = websocket_port
-        self.stop_event = stop_event
         self.stft_queue = stft_queue
-        self.timestamp = timestamp
-        self.cpu_core = cpu_core
-        self.log_dir = log_dir
         
         # WebSocket state (global variables like old code)
         self.websocket_clients = set()
         self.websocket_server = None
         self.frames_broadcast = 0
         
-        # FPS tracking
-        self.frame_count = 0
-        self.start_time = time.time()
-        self.last_fps_log_time = time.time()
-        self.fps_log_interval = 5.0  # Log FPS every 5 seconds
+        # Set WebSocket-specific memory threshold (800MB for client management)
+        self.set_memory_threshold(800)
+        self.set_memory_check_interval(15.0)  # Check every 15 seconds
         
-        # Setup logging
-        self._setup_logging()
-        
-        # Setup signal handlers
-        self._setup_signal_handlers()
-        
-        # Setup CPU affinity
-        self._setup_cpu_affinity()
-    
-    def _setup_logging(self):
-        """Setup process-specific logging"""
-        log_filename = f"spectrogram_{self.timestamp}_websocket.log"
-        # Use log directory passed from main process, or fallback to script directory
-        if self.log_dir:
-            log_path = self.log_dir / log_filename
-        else:
-            log_path = script_dir / "logs" / log_filename
-        
-        # Create logs directory if it doesn't exist
-        log_path.parent.mkdir(exist_ok=True)
-        
-        # Create a logger specific to this process
-        self.logger = logging.getLogger(f"WebSocketProcess_{self.timestamp}")
-        self.logger.setLevel(logging.INFO)
-        
-        # Clear any existing handlers to avoid duplicates
-        self.logger.handlers.clear()
-        
-        # Create formatter
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        
-        # Add console handler (this ensures output goes to console)
-        console_handler = logging.StreamHandler()
-        console_handler.setLevel(logging.INFO)
-        console_handler.setFormatter(formatter)
-        self.logger.addHandler(console_handler)
-        
-        # Add file handler
-        file_handler = logging.FileHandler(log_path)
-        file_handler.setLevel(logging.INFO)
-        file_handler.setFormatter(formatter)
-        self.logger.addHandler(file_handler)
-        
-        self.logger.info(f"WebSocket Process logging setup complete: {log_path}")
-        self.logger.info(f"Current working directory: {os.getcwd()}")
-        self.logger.info(f"Script directory: {script_dir}")
-    
-    def _setup_signal_handlers(self):
-        """Setup signal handlers for graceful shutdown"""
-        # Flag to prevent multiple signal processing
-        self._signal_received = False
-        
-        def signal_handler(signum, frame):
-            # Only process signal once
-            if self._signal_received:
-                return
-            
-            self._signal_received = True
-            self.logger.info(f"WebSocket Process received signal {signum}, stopping...")
-            self.stop_event.set()
-        
-        signal.signal(signal.SIGINT, signal_handler)
-        signal.signal(signal.SIGTERM, signal_handler)
-        # Add SIGHUP for backend control
-        signal.signal(signal.SIGHUP, signal_handler)
-        self.logger.info("WebSocket Process: Signal handlers set up successfully")
-    
-    def _setup_cpu_affinity(self):
-        """Set CPU affinity for this process"""
-        try:
-            import psutil
-            process = psutil.Process()
-            process.cpu_affinity([self.cpu_core])
-            self.logger.info(f"Successfully set WebSocket process affinity to core {self.cpu_core}")
-        except Exception as e:
-            self.logger.error(f"Error setting CPU affinity: {e}")
+        # Reusable data structures to avoid creating new objects every frame
+        self.spectrogram_data_template = {
+            'f': 0,
+            'freq': [],
+            't': [],
+            'mag': [],
+            'ts': 0
+        }
     
     async def websocket_handler(self, websocket):
         """Handle WebSocket connections - EXACT same as old working code"""
@@ -252,28 +176,7 @@ class WebSocketProcess:
         except Exception as e:
             self.logger.error(f"Error broadcasting spectrogram data: {e}")
     
-    def _check_parent_alive(self):
-        """Check if parent process (spectrogram_main) is still alive"""
-        try:
-            # Get parent PID (spectrogram_main)
-            parent_pid = os.getppid()
-            
-            # Check if parent is still running
-            if parent_pid == 1:  # Adopted by init - parent died or is orphaned
-                self.logger.warning("Parent process died or is orphaned, initiating self-cleanup...")
-                return False
-            
-            # Check if parent process exists
-            try:
-                os.kill(parent_pid, 0)  # Signal 0 just checks if process exists
-                return True
-            except OSError:
-                self.logger.warning("Parent process no longer exists, initiating self-cleanup...")
-                return False
-                
-        except Exception as e:
-            self.logger.error(f"Error checking parent process: {e}")
-            return False
+
     
     def _cleanup_websocket(self):
         """Clean up WebSocket resources"""
@@ -334,6 +237,12 @@ class WebSocketProcess:
                         os.kill(os.getpid(), signal.SIGKILL)  # Force kill self
                         break
                     
+                    # Get current time for monitoring
+                    current_time = time.time()
+                    
+                    # Use base class memory monitoring
+                    self._check_memory_periodic(current_time)
+                    
                     # Skip processing if no clients are connected (performance optimization)
                     if not self.websocket_clients:
                         # Just consume data to prevent queue buildup, but don't process
@@ -358,8 +267,8 @@ class WebSocketProcess:
                         if frame_count % 1000 == 0:  # Log every 1000th frame
                             self.logger.warning(f"WebSocket falling behind: {queue_size} frames in queue, processing frame {frame_num}")
                     
-                    # Prepare data for WebSocket broadcast - MAXIMUM PERFORMANCE
-                    # Pre-convert numpy arrays to lists for faster JSON serialization
+                    # Prepare data for WebSocket broadcast - OPTIMIZED MEMORY USAGE
+                    # Reuse template instead of creating new dict every frame
                     prep_start = time.time()
                     
                     # Convert numpy arrays to lists once - much faster than doing it in JSON
@@ -367,13 +276,15 @@ class WebSocketProcess:
                     t_list = t.tolist() if hasattr(t, 'tolist') else t
                     mag_list = magnitude_db.tolist() if hasattr(magnitude_db, 'tolist') else magnitude_db
                     
-                    spectrogram_data = {
-                        'f': frame_num,  # Simple int
-                        'freq': freq_list,  # Pre-converted list - much faster
-                        't': t_list,        # Pre-converted list - much faster
-                        'mag': mag_list,    # Pre-converted list - much faster
-                        'ts': timestamp     # Simple timestamp
-                    }
+                    # Update template instead of creating new dict - saves memory allocation
+                    self.spectrogram_data_template['f'] = frame_num
+                    self.spectrogram_data_template['freq'] = freq_list
+                    self.spectrogram_data_template['t'] = t_list
+                    self.spectrogram_data_template['mag'] = mag_list
+                    self.spectrogram_data_template['ts'] = timestamp
+                    
+                    # Create a copy for sending to avoid modification issues
+                    spectrogram_data = self.spectrogram_data_template.copy()
                     prep_time = time.time() - prep_start
                     
                     # Debug: Verify we're sending lists, not numpy arrays
@@ -410,14 +321,8 @@ class WebSocketProcess:
                     if frame_count % 5000 == 0:
                         self.logger.info(f"WebSocket process: broadcast {frame_count} frames")
                     
-                    # Log FPS periodically
-                    current_time = time.time()
-                    if current_time - self.last_fps_log_time >= self.fps_log_interval:
-                        elapsed_time = current_time - self.start_time
-                        if elapsed_time > 0:
-                            fps = self.frame_count / elapsed_time
-                            self.logger.info(f"WebSocket FPS: {fps:.2f} frames/sec (Total: {self.frame_count} frames in {elapsed_time:.1f}s)")
-                            self.last_fps_log_time = current_time
+                    # Use base class FPS logging
+                    self._log_fps(current_time)
                     
                 except queue.Empty:
                     # No data available, continue
@@ -437,35 +342,23 @@ class WebSocketProcess:
             self._cleanup_websocket()
             self.logger.info("WebSocket process cleanup completed")
     
-    def start(self):
-        """Start the WebSocket process"""
-        try:
-            self.run()
-            return True
-        except Exception as e:
-            self.logger.error(f"Error starting WebSocket process: {e}")
-            return False
+    def get_stats(self):
+        """Get process statistics"""
+        stats = super().get_stats()
+        stats.update({
+            'frames_broadcast': self.frames_broadcast,
+            'clients_connected': len(self.websocket_clients)
+        })
+        return stats
     
     def stop(self):
         """Stop the WebSocket process"""
-        self.logger.info("Stopping WebSocket process...")
-        self.stop_event.set()
-        
         # Close server if running
         if self.websocket_server:
             self.websocket_server.close()
-    
-    def is_alive(self):
-        """Check if the process is alive"""
-        return not self.stop_event.is_set()
-    
-    def get_stats(self):
-        """Get process statistics"""
-        return {
-            'frames_broadcast': self.frames_broadcast,
-            'clients_connected': len(self.websocket_clients),
-            'is_alive': self.is_alive()
-        }
+        
+        # Call parent stop method
+        super().stop()
 
 def main():
     """Main function for standalone testing"""
