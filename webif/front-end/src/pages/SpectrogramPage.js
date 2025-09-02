@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import SpectrogramContainerTemplate from '../components/SpectrogramContainer';
 import UserGuideContainerTemplate from '../components/UserGuideContainer';
 
@@ -13,32 +13,37 @@ function SpectrogramPage() {
     setShowUserGuide(false);
   };
 
+  // Update global state for button text
+  useEffect(() => {
+    window.showUserGuideState = showUserGuide;
+    // Dispatch event to notify SpectrogramContainer of state change
+    window.dispatchEvent(new CustomEvent('userGuideStateChanged'));
+  }, [showUserGuide]);
+
+  // Listen for custom event from SpectrogramContainer
+  useEffect(() => {
+    const handleToggleUserGuideEvent = (event) => {
+      const currentState = event.detail?.currentState || false;
+      setShowUserGuide(!currentState);
+    };
+
+    window.addEventListener('toggleUserGuide', handleToggleUserGuideEvent);
+    
+    return () => {
+      window.removeEventListener('toggleUserGuide', handleToggleUserGuideEvent);
+    };
+  }, []);
+
   return (
     <div className="page-container spectrogram-page">
       <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
         <SpectrogramContainerTemplate />
 
-        {!showUserGuide && (
-          <button
-            className="control-btn"
-            style={{ alignSelf: 'flex-start', marginBottom: '1rem', width: 'fit-content' }}
-            onClick={handleShowUserGuide}
-          >
-            Show User Guide
-          </button>
-        )}
-
+        {/* User Guide Section */}
         {showUserGuide && (
-          <>
-            <button
-              className="control-btn"
-              style={{ alignSelf: 'flex-start', marginBottom: '1rem', width: 'fit-content' }}
-              onClick={handleHideUserGuide}
-            >
-              Hide User Guide
-            </button>
+          <div style={{ marginTop: '20px' }}>
             <UserGuideContainerTemplate />
-          </>
+          </div>
         )}
       </div>
     </div>

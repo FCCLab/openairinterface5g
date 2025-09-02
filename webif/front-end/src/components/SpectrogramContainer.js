@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { useNotification } from '../context/NotificationContext';
 
+
 // Template for the spectrogram container
 const SpectrogramContainerTemplate = () => {
   const { showError, showSuccess, showInfo } = useNotification();
@@ -30,7 +31,7 @@ const SpectrogramContainerTemplate = () => {
 
   });
   const [loading, setLoading] = useState(false);
-  const [maxFrequency, setMaxFrequency] = useState({ freq: 0, amplitude: 0 });
+
   const [currentTime, setCurrentTime] = useState(0);
   const [streamConnected, setStreamConnected] = useState(false); // SSE connection status
   const [serviceStatus, setServiceStatus] = useState('stopped');
@@ -52,6 +53,9 @@ const SpectrogramContainerTemplate = () => {
   const [usrpDevices, setUsrpDevices] = useState([]);
   const [selectedUsrpDevice, setSelectedUsrpDevice] = useState('');
   const [lastSavedTime, setLastSavedTime] = useState(null);
+  
+  // User Guide button state
+  const [userGuideVisible, setUserGuideVisible] = useState(false);
   
   const canvasRef = useRef(null);
   const animationRef = useRef(null);
@@ -129,93 +133,14 @@ const SpectrogramContainerTemplate = () => {
     data.frameNum = 0;
     data.history = [];
     
-    console.log(`SpectrogramContainer: Initialized frequency-magnitude data structure`);
-  };
-
-  // Test function to populate frequency-magnitude data with random values
-  const populateWithRandomData = () => {
-    const data = freqMagDataRef.current;
-    
-    // Clear existing data
-    data.history = [];
-    
-    // Create test frequency array (full spectrum)
-    const numBins = 1024;
-    const sampleRate = 1000000; // 1 MHz
-    const freqStep = sampleRate / numBins;
-    const frequencies = [];
-    
-    for (let i = 0; i < numBins; i++) {
-      const freq = (i - numBins / 2) * freqStep;
-      frequencies.push(freq);
-    }
-    
-    // Create test magnitude array with more realistic data
-    const magnitudes = new Array(numBins).fill(-120.0);
-    
-    // Add some random peaks
-    for (let i = 0; i < numBins; i++) {
-      // Base noise level
-      let magnitude = -80 + Math.random() * 10; // -80 to -70 dB noise
-      
-      // Add some peaks at random frequencies
-      if (Math.random() < 0.02) { // 2% chance of a peak
-        magnitude = -40 + Math.random() * 20; // -40 to -20 dB peak
-      }
-      
-      // Add a stationary peak at center frequency (0 Hz)
-      const centerFreq = Math.floor(numBins * 0.5);
-      if (i === centerFreq) {
-        magnitude = -30 + Math.random() * 15; // -30 to -15 dB center peak
-      }
-      
-      // Add a peak at 1/4 frequency
-      const quarterFreq = Math.floor(numBins * 0.25);
-      if (i === quarterFreq) {
-        magnitude = -35 + Math.random() * 10; // -35 to -25 dB quarter peak
-      }
-      
-      // Add a peak at 3/4 frequency
-      const threeQuarterFreq = Math.floor(numBins * 0.75);
-      if (i === threeQuarterFreq) {
-        magnitude = -45 + Math.random() * 15; // -45 to -30 dB three-quarter peak
-      }
-      
-      magnitudes[i] = magnitude;
-    }
-    
-    // Update current data
-    data.frequencies = frequencies;
-    data.magnitudes = magnitudes;
-    data.timestamp = Date.now() / 1000;
-    data.frameNum = 1;
-    
-    // Add to history
-    const historyEntry = {
-      frequencies: [...frequencies],
-      magnitudes: [...magnitudes],
-      timestamp: data.timestamp,
-      frameNum: data.frameNum
-    };
-    
-    data.history.push(historyEntry);
-    
-    console.log(`SpectrogramContainer: Populated with test frequency-magnitude data`);
-    console.log(`SpectrogramContainer: ${frequencies.length} frequency points, range: ${(frequencies[0]/1e6).toFixed(3)} to ${(frequencies[frequencies.length-1]/1e6).toFixed(3)} MHz`);
-    
-    // Trigger a redraw to show the test data
-    if (!animationRef.current) {
-      animationRef.current = requestAnimationFrame(() => {
-        drawSpectrogram();
-        animationRef.current = null;
-      });
-    }
+    console.log('[INIT] ✅ Initialized frequency-magnitude data structure');
   };
 
   const updateFreqMagData = (frequencies, magnitude, timestamp, frameNum) => {
     const data = freqMagDataRef.current;
     
     if (!frequencies || frequencies.length === 0 || !magnitude || magnitude.length === 0) {
+      console.warn('[DATA] ⚠️ Invalid data received:', { frequencies: !!frequencies, magnitude: !!magnitude, lengths: { freq: frequencies?.length, mag: magnitude?.length } });
       return;
     }
     
@@ -224,30 +149,36 @@ const SpectrogramContainerTemplate = () => {
     if (Array.isArray(magnitude[0])) {
       // Magnitude is 2D array - take the last column (most recent data)
       mag1d = magnitude.map(row => row[row.length - 1]);
-      console.log(`SpectrogramContainer: Magnitude is 2D array (${magnitude.length}x${magnitude[0].length}), using last column`);
-      console.log(`SpectrogramContainer: 2D magnitude shape: ${magnitude.length} rows x ${magnitude[0].length} columns`);
+      // Only log every 10000th frame to reduce spam
+      if (frameNum % 10000 === 0) {
+        console.log(`[DATA] Magnitude is 2D array (${magnitude.length}x${magnitude[0].length}), using last column`);
+        console.log(`[DATA] 2D magnitude shape: ${magnitude.length} rows x ${magnitude[0].length} columns`);
+      }
     } else {
       mag1d = magnitude;
-      console.log(`SpectrogramContainer: Magnitude is 1D array`);
-    }
-    
-    // Debug: Check if all values are the same
-    if (mag1d.length > 1) {
-      const firstValue = mag1d[0];
-      const allSame = mag1d.every(val => val === firstValue);
-      if (allSame) {
-        console.log(`SpectrogramContainer: WARNING - All magnitude values are the same: ${firstValue} dB`);
+      // Only log every 10000th frame to reduce spam
+      if (frameNum % 10000 === 0) {
+        console.log('[DATA] Magnitude is 1D array');
       }
     }
     
-    // Debug: Show magnitude statistics
-    if (Array.isArray(magnitude[0])) {
+    // Debug: Check if all values are the same (every 10000 frames)
+    if (frameNum % 10000 === 0 && mag1d.length > 1) {
+      const firstValue = mag1d[0];
+      const allSame = mag1d.every(val => val === firstValue);
+      if (allSame) {
+        console.warn(`[DATA] ⚠️ All magnitude values are the same: ${firstValue} dB`);
+      }
+    }
+    
+    // Debug: Show magnitude statistics (every 10000 frames)
+    if (frameNum % 10000 === 0 && Array.isArray(magnitude[0])) {
       const allValues = magnitude.flat();
       const uniqueValues = [...new Set(allValues)];
-      console.log(`SpectrogramContainer: 2D magnitude - Total values: ${allValues.length}, Unique values: ${uniqueValues.length}`);
-      console.log(`SpectrogramContainer: 2D magnitude - All values range: ${Math.min(...allValues).toFixed(1)} to ${Math.max(...allValues).toFixed(1)} dB`);
+      console.log(`[DATA] 2D magnitude - Total values: ${allValues.length}, Unique values: ${uniqueValues.length}`);
+      console.log(`[DATA] 2D magnitude - All values range: ${Math.min(...allValues).toFixed(1)} to ${Math.max(...allValues).toFixed(1)} dB`);
       if (uniqueValues.length <= 5) {
-        console.log(`SpectrogramContainer: 2D magnitude - Unique values: ${uniqueValues.map(v => v.toFixed(1)).join(', ')} dB`);
+        console.log(`[DATA] 2D magnitude - Unique values: ${uniqueValues.map(v => v.toFixed(1)).join(', ')} dB`);
       }
     }
     
@@ -293,19 +224,21 @@ const SpectrogramContainerTemplate = () => {
     const minMag = Math.min(...reorderedMagnitudes);
     const maxMag = Math.max(...reorderedMagnitudes);
     
-    console.log(`SpectrogramContainer: Updated with ${frequencies.length} frequency points`);
-    console.log(`SpectrogramContainer: Original frequency range: ${(Math.min(...frequencies)/1e6).toFixed(3)} to ${(Math.max(...frequencies)/1e6).toFixed(3)} MHz`);
-    console.log(`SpectrogramContainer: Reordered frequency range: ${(minFreq/1e6).toFixed(3)} to ${(maxFreq/1e6).toFixed(3)} MHz`);
-    console.log(`SpectrogramContainer: Magnitude range: ${minMag.toFixed(1)} to ${maxMag.toFixed(1)} dB`);
-    console.log(`SpectrogramContainer: Frame: ${data.frameNum}, Timestamp: ${data.timestamp.toFixed(3)}s`);
-    console.log(`SpectrogramContainer: History entries: ${data.history.length}`);
-    
-    // Debug: Show first few magnitude values
-    if (mag1d.length > 0) {
-      console.log(`SpectrogramContainer: First 5 magnitudes: ${mag1d.slice(0, 5).map(m => m.toFixed(1)).join(', ')} dB`);
-      console.log(`SpectrogramContainer: Last 5 magnitudes: ${mag1d.slice(-5).map(m => m.toFixed(1)).join(', ')} dB`);
+    // Only log every 10000th frame to reduce spam
+    if (frameNum % 10000 === 0) {
+      console.log(`[DATA] Updated with ${frequencies.length} frequency points`);
+      console.log(`[DATA] Original frequency range: ${(Math.min(...frequencies)/1e6).toFixed(3)} to ${(Math.max(...frequencies)/1e6).toFixed(3)} MHz`);
+      console.log(`[DATA] Reordered frequency range: ${(minFreq/1e6).toFixed(3)} to ${(maxFreq/1e6).toFixed(3)} MHz`);
+      console.log(`[DATA] Magnitude range: ${minMag.toFixed(1)} to ${maxMag.toFixed(1)} dB`);
+      console.log(`[DATA] Frame: ${data.frameNum}, Timestamp: ${data.timestamp.toFixed(3)}s`);
+      console.log(`[DATA] History entries: ${data.history.length}`);
+      
+      // Debug: Show first few magnitude values
+      if (mag1d.length > 0) {
+        console.log(`[DATA] First 5 magnitudes: ${mag1d.slice(0, 5).map(m => m.toFixed(1)).join(', ')} dB`);
+        console.log(`[DATA] Last 5 magnitudes: ${mag1d.slice(-5).map(m => m.toFixed(1)).join(', ')} dB`);
+      }
     }
-    
   };
 
   // Colormap definitions (inspired by js-colormaps)
@@ -370,14 +303,17 @@ const SpectrogramContainerTemplate = () => {
 
   // Auto-adjust color range based on current data
   const autoAdjustColorRange = () => {
+    console.log('[COLOR] 🎨 Auto-adjusting color range...');
     const data = freqMagDataRef.current;
     if (!data.magnitudes || data.magnitudes.length === 0) {
+      console.warn('[COLOR] ⚠️ No magnitude data available for color adjustment');
       return;
     }
 
     // Filter out invalid values
     const validMagnitudes = data.magnitudes.filter(mag => typeof mag === 'number' && !isNaN(mag));
     if (validMagnitudes.length === 0) {
+      console.warn('[COLOR] ⚠️ No valid magnitude values for color adjustment');
       return;
     }
 
@@ -395,13 +331,17 @@ const SpectrogramContainerTemplate = () => {
       const adjustedMax = Math.ceil(center + 5);
       newMin = adjustedMin;
       newMax = adjustedMax;
+      console.log('[COLOR] 🔧 Adjusted range to ensure minimum 10 dB difference');
     }
     
-    console.log(`SpectrogramContainer: Auto-adjusting color range to ${newMin} to ${newMax} dB`);
+    console.log(`[COLOR] 📊 Auto-adjusting color range to ${newMin} to ${newMax} dB`);
+    console.log(`[COLOR] 📈 Data range: ${minAmp.toFixed(1)} to ${maxAmp.toFixed(1)} dB`);
     
     // Update settings
     updateSettings('colorRangeMin', newMin);
     updateSettings('colorRangeMax', newMax);
+    
+    console.log('[COLOR] ✅ Color range auto-adjusted successfully');
   };
 
   // Get colormap gradient for CSS
@@ -1001,7 +941,7 @@ const SpectrogramContainerTemplate = () => {
 
   // Spectrogram capture functions
   const startCapture = async () => {
-
+    console.log('[CAPTURE] 🚀 Starting spectrogram capture...');
     setLoading(true);
 
     try {
@@ -1010,10 +950,17 @@ const SpectrogramContainerTemplate = () => {
       const convertedSampleRate = convertFrequencyToHz(sampleRateInput);
       const convertedResolution = resolutionInput ? convertFrequencyToHz(resolutionInput) : null;
 
+      console.log('[CAPTURE] Settings converted:', {
+        frequency: `${convertedFreq.toLocaleString()} Hz`,
+        sampleRate: `${convertedSampleRate.toLocaleString()} Hz`,
+        resolution: convertedResolution ? `${convertedResolution.toLocaleString()} Hz` : 'Auto'
+      });
+
       // Calculate FFT size if resolution is provided
       let fftSize = settings.fftSize;
       if (convertedResolution && convertedSampleRate > 0) {
         fftSize = Math.pow(2, Math.ceil(Math.log2(convertedSampleRate / convertedResolution)));
+        console.log('[CAPTURE] FFT size calculated:', fftSize);
       }
 
       // Get the selected device's serial number
@@ -1032,22 +979,27 @@ const SpectrogramContainerTemplate = () => {
         device: deviceSerial // Send serial number instead of device name
       };
 
+      console.log('[CAPTURE] Sending request to backend:', requestPayload);
+
       const response = await axios.post('/api/spectrogram/start', requestPayload);
       
       if (response.data.success) {
+        console.log('[CAPTURE] ✅ Backend response successful');
         setIsCapturing(true);
         setStreamConnected(true);
         startTimeRef.current = Date.now();
         setCurrentTime(0);
         // Clear frequency map array
-            if (freqMagDataRef.current) {
-      freqMagDataRef.current.history = [];
-      freqMagDataRef.current.frequencies = [];
-      freqMagDataRef.current.magnitudes = [];
-    }
-        setMaxFrequency({ freq: 0, amplitude: 0 });
+        if (freqMagDataRef.current) {
+          freqMagDataRef.current.history = [];
+          freqMagDataRef.current.frequencies = [];
+          freqMagDataRef.current.magnitudes = [];
+          console.log('[CAPTURE] Cleared frequency-magnitude data history');
+        }
+  
         
         // Start WebSocket connection
+        console.log('[CAPTURE] 🔌 Initiating WebSocket connection...');
         connectToWebSocket();
         
         // Start auto-save timer
@@ -1058,11 +1010,13 @@ const SpectrogramContainerTemplate = () => {
           clearInterval(window.autoSaveInterval);
         }
         window.autoSaveInterval = autoSaveInterval;
+        
+        console.log('[CAPTURE] 🎯 Capture started successfully');
       } else {
         throw new Error(response.data.error || 'Failed to start capture');
       }
     } catch (error) {
-      console.error('Error starting capture:', error);
+      console.error('[CAPTURE] ❌ Error starting capture:', error);
       showError({ message: error.message || 'Failed to start capture' });
     } finally {
       setLoading(false);
@@ -1070,21 +1024,26 @@ const SpectrogramContainerTemplate = () => {
   };
 
   const stopCapture = async () => {
+    console.log('[CAPTURE] 🛑 Stopping spectrogram capture...');
     try {
       const response = await axios.post('/api/spectrogram/stop');
       
       if (response.data.success) {
+        console.log('[CAPTURE] ✅ Backend stop response successful');
         setIsCapturing(false);
         setStreamConnected(false);
         disconnectFromStream();
         
         // Auto-save final configuration
+        console.log('[CAPTURE] 💾 Auto-saving final configuration...');
         autoSaveConfig();
+        
+        console.log('[CAPTURE] 🎯 Capture stopped successfully');
       } else {
         throw new Error(response.data.error || 'Failed to stop capture');
       }
     } catch (error) {
-      console.error('Error stopping capture:', error);
+      console.error('[CAPTURE] ❌ Error stopping capture:', error);
       showError({ message: error.message || 'Failed to stop capture' });
     }
   };
@@ -1094,7 +1053,7 @@ const SpectrogramContainerTemplate = () => {
     // Connect directly to the spectrogram Python server
     const wsUrl = `ws://${window.location.hostname}:40001`;
     
-    console.log('🔌 Connecting to WebSocket:', wsUrl);
+    console.log('[WS_CONNECT] 🔌 Connecting to WebSocket:', wsUrl);
     
     const ws = new WebSocket(wsUrl);
     
@@ -1109,26 +1068,32 @@ const SpectrogramContainerTemplate = () => {
         }
         window.receivedFrameCount++;
         
-        // Log FPS every 1000 received messages
-        if (window.receivedFrameCount % 1000 === 0) {
-          const elapsed = (Date.now() - window.receivedStartTime) / 1000;
+        const elapsed = (Date.now() - window.receivedStartTime) / 1000;
+        if (elapsed >= 5) {
           const receivedFps = window.receivedFrameCount / elapsed;
-          console.log(`📡 RECEIVED FPS: ${receivedFps.toFixed(2)} frames/sec (Total: ${window.receivedFrameCount} frames in ${elapsed.toFixed(1)}s)`);
+          console.log(`[WS_FPS] 📡 RECEIVED FPS: ${receivedFps.toFixed(2)} frames/sec (Total: ${window.receivedFrameCount} frames in ${elapsed.toFixed(1)}s)`);
+          
+          // Reset counter for next 5-second interval
+          window.receivedFrameCount = 0;
+          window.receivedStartTime = Date.now();
         }
         
-        console.log('📡 WebSocket message received:', message.f, 'frame:', message.f);
+        // Only log WebSocket messages every 1000 frames to reduce spam
+        if (message.f % 1000 === 0) {
+          console.log('[WS_MSG] 📡 WebSocket message received:', `frame:${message.f}`);
+        }
         
         // Handle two-sided frequency data - show full range from -sample_rate/2 to +sample_rate/2
         if (message.freq && message.freq.length > 0) {
           const minFreq = message.freq[0];
           const maxFreq = message.freq[message.freq.length - 1];
           
-          // Log frequency range for debugging
-          if (message.f % 1000 === 0) {
+          // Log frequency range for debugging (every 10000 frames)
+          if (message.f % 10000 === 0) {
             const expectedRange = settings.sampleRate / 2;
-            console.log(`Spectrogram frequencies: ${minFreq?.toFixed(1)} to ${maxFreq?.toFixed(1)} kHz (expected: ±${expectedRange/1e3} kHz)`);
-            console.log(`First 5 frequencies: ${message.freq.slice(0, 5).map(f => f.toFixed(1)).join(', ')}`);
-            console.log(`Last 5 frequencies: ${message.freq.slice(-5).map(f => f.toFixed(1)).join(', ')}`);
+            console.log(`[WS_FREQ] Spectrogram frequencies: ${minFreq?.toFixed(1)} to ${maxFreq?.toFixed(1)} kHz (expected: ±${expectedRange/1e3} kHz)`);
+            console.log(`[WS_FREQ] First 5 frequencies: ${message.freq.slice(0, 5).map(f => f.toFixed(1)).join(', ')}`);
+            console.log(`[WS_FREQ] Last 5 frequencies: ${message.freq.slice(-5).map(f => f.toFixed(1)).join(', ')}`);
           }
           
           // Always ensure we have the full two-sided frequency range
@@ -1136,7 +1101,11 @@ const SpectrogramContainerTemplate = () => {
           const expectedMaxFreq = settings.sampleRate / 2;
           
           if (minFreq !== expectedMinFreq || maxFreq !== expectedMaxFreq) {
-            console.log('🔄 Adjusting frequency range to full two-sided spectrum');
+            // Only log frequency range adjustments every 1000 frames to reduce spam
+            if (message.f % 1000 === 0) {
+              console.log('[WS_FREQ] 🔄 Adjusting frequency range to full two-sided spectrum');
+            }
+            
             // Create proper two-sided frequency array
             const numBins = message.freq.length;
             const freqStep = settings.sampleRate / numBins;
@@ -1148,7 +1117,11 @@ const SpectrogramContainerTemplate = () => {
             }
             
             message.freq = twoSidedFrequencies;
-            console.log(`✅ Full frequency range: ${twoSidedFrequencies[0]?.toFixed(1)} to ${twoSidedFrequencies[twoSidedFrequencies.length-1]?.toFixed(1)} kHz`);
+            
+            // Only log success message every 1000 frames to reduce spam
+            if (message.f % 1000 === 0) {
+              console.log(`[WS_FREQ] ✅ Full frequency range: ${twoSidedFrequencies[0]?.toFixed(1)} to ${twoSidedFrequencies[twoSidedFrequencies.length-1]?.toFixed(1)} kHz`);
+            }
           }
         }
         
@@ -1162,12 +1135,9 @@ const SpectrogramContainerTemplate = () => {
             animationRef.current = null;
           });
         }
-        
-        // Add elapsed time
-        const elapsed = (Date.now() - startTimeRef.current) / 1000;
           
           // Update current time (throttled)
-          if (elapsed - currentTime > 0.1) { // Update every 100ms
+          if (elapsed - currentTime > 1) { // Update every 1000ms
             setCurrentTime(elapsed);
           }
           
@@ -1177,32 +1147,23 @@ const SpectrogramContainerTemplate = () => {
             if (data.magnitudes && data.magnitudes.length > 0) {
               const validMagnitudes = data.magnitudes.filter(mag => typeof mag === 'number' && !isNaN(mag));
               
-              if (validMagnitudes.length > 0) {
-                const maxIndex = data.magnitudes.indexOf(Math.max(...validMagnitudes));
-                const maxFreq = data.frequencies[maxIndex];
-                const maxAmplitude = Math.max(...validMagnitudes);
-                
-                setMaxFrequency({ freq: maxFreq, amplitude: maxAmplitude });
-                
-                // Log the detected peak for debugging
-                if (message.f % 1000 === 0) {
-                  console.log(`Peak detected at bin ${maxIndex}, frequency ${maxFreq?.toFixed(1)} Hz, amplitude ${maxAmplitude?.toFixed(1)} dB`);
-                }
-              }
+
             }
           }
       } catch (error) {
-        console.error('Error parsing WebSocket message:', error);
+        console.error('[WS_ERROR] Error parsing WebSocket message:', error);
       }
     };
     
     ws.onerror = (error) => {
+      console.error('[WS_ERROR] WebSocket error occurred:', error);
       setStreamConnected(false);
       setIsCapturing(false);
       setLoading(false);
     };
     
     ws.onclose = (event) => {
+      console.log('[WS_CLOSE] WebSocket connection closed:', event.code, event.reason);
       setStreamConnected(false);
       setIsCapturing(false);
       setLoading(false);
@@ -1214,7 +1175,7 @@ const SpectrogramContainerTemplate = () => {
      // Add connection timeout
      const connectionTimeout = setTimeout(() => {
        if (ws.readyState === WebSocket.CONNECTING) {
-         console.error('❌ WebSocket connection timeout');
+         console.error('[WS_TIMEOUT] ❌ WebSocket connection timeout after 5 seconds');
          ws.close();
          setStreamConnected(false);
          setIsCapturing(false);
@@ -1226,20 +1187,25 @@ const SpectrogramContainerTemplate = () => {
      // Clear timeout when connection is established
      ws.onopen = () => {
        clearTimeout(connectionTimeout);
+       console.log('[WS_OPEN] ✅ WebSocket connection established successfully');
        setStreamConnected(true);
      };
    };
 
   const disconnectFromStream = () => {
+    console.log('[STREAM] 🔌 Disconnecting from stream...');
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
       eventSourceRef.current = null;
+      console.log('[STREAM] ✅ WebSocket connection closed');
     }
     
     if (animationRef.current) {
       cancelAnimationFrame(animationRef.current);
       animationRef.current = null;
+      console.log('[STREAM] ✅ Animation frame cancelled');
     }
+    console.log('[STREAM] 🎯 Stream disconnected successfully');
   };
 
   // Canvas drawing functions
@@ -1252,23 +1218,32 @@ const SpectrogramContainerTemplate = () => {
   // Draw spectrogram waterfall display
   const drawFrequencyMap = () => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas) {
+      console.warn('[CANVAS] ⚠️ Canvas reference not available');
+      return;
+    }
     
     const ctx = canvas.getContext('2d');
     const width = canvas.width;
     const height = canvas.height;
     
     // Check if canvas has proper dimensions
-    if (width <= 0 || height <= 0) return;
+    if (width <= 0 || height <= 0) {
+      console.warn('[CANVAS] ⚠️ Canvas dimensions invalid:', { width, height });
+      return;
+    }
     
     // Use frequency-magnitude data history
     const data = freqMagDataRef.current;
     if (!data.history || data.history.length === 0) {
-      console.log('🎨 No spectrogram history data to draw');
+      console.log('[CANVAS] 🎨 No spectrogram history data to draw');
       return;
     }
     
-    console.log('🎨 Drawing spectrogram waterfall with', data.history.length, 'time slices');
+    // Only log every 100th draw to reduce spam
+    if (data.frameNum % 100 === 0) {
+      console.log(`[CANVAS] 🎨 Drawing spectrogram waterfall with ${data.history.length} time slices (frame: ${data.frameNum})`);
+    }
     
     // Clear canvas
     ctx.clearRect(0, 0, width, height);
@@ -1341,44 +1316,10 @@ const SpectrogramContainerTemplate = () => {
       }
     }
     
-    // // Draw frequency axis labels at the top
-    // ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-    // ctx.font = '10px monospace';
-    // ctx.textAlign = 'center';
-    // const labelY = plotY - 5;
-    // const freqStep = Math.max(1, Math.floor(frequencies.length / 10));
-    // for (let i = 0; i < frequencies.length; i += freqStep) {
-    //   const freq = frequencies[i];
-    //   const freqX = plotX + (i / frequencies.length) * plotWidth;
-    //   let freqLabel = '';
-    //   if (freq >= 1e9) {
-    //     freqLabel = `${(freq / 1e9).toFixed(2)} GHz`;
-    //   } else if (freq >= 1e6) {
-    //     freqLabel = `${(freq / 1e6).toFixed(1)} MHz`;
-    //   } else {
-    //     freqLabel = `${(freq / 1e3).toFixed(0)} kHz`;
-    //   }
-    //   ctx.fillText(freqLabel, freqX, labelY);
-    // }
-    
-    // // Draw time axis labels on the right
-    // ctx.textAlign = 'right';
-    // const labelX = plotX + plotWidth + 5;
-    // const timeStep = Math.max(1, Math.floor(displayHistory.length / 5));
-    // for (let i = 0; i < displayHistory.length; i += timeStep) {
-    //   const timeY = plotY + (displayHistory.length - 1 - i) * timeSliceHeight + timeSliceHeight / 2;
-    //   const timeAgo = (displayHistory.length - 1 - i) * 0.1;
-    //   let timeLabel = '';
-    //   if (timeAgo < 1) {
-    //     timeLabel = `${(timeAgo * 1000).toFixed(0)}ms ago`;
-    //   } else {
-    //     timeLabel = `${timeAgo.toFixed(1)}s ago`;
-    //   }
-    //   ctx.fillText(timeLabel, labelX, timeY);
-    // }
-    
-    // // Draw data statistics
-    // drawDataStatistics(ctx, width, data);
+    // Log drawing completion every 1000 frames
+    if (data.frameNum % 1000 === 0) {
+      console.log(`[CANVAS] ✅ Spectrogram drawn successfully - ${displayHistory.length} time slices, ${frequencies.length} frequency bins`);
+    }
   };
   
   // Draw frequency-magnitude data statistics
@@ -1613,10 +1554,7 @@ const SpectrogramContainerTemplate = () => {
     // Initialize frequency-magnitude data
     initializeFreqMagData();
     
-    // Auto-populate with test data after a short delay
-    setTimeout(() => {
-      populateWithRandomData();
-    }, 1000);
+
   }, []);
 
   useEffect(() => {
@@ -1766,7 +1704,6 @@ const SpectrogramContainerTemplate = () => {
           { label: 'Connection:', value: streamConnected ? 'Connected' : 'Disconnected', active: streamConnected },
               { label: 'Data Points:', value: freqMagDataRef.current?.history?.length || 0, active: null },
       { label: 'Max History:', value: Math.round(maxHistoryLengthRef.current), active: null },
-      { label: 'Max Frequency:', value: maxFrequency.freq > 0 ? `${Math.round(maxFrequency.freq)} Hz` : 'N/A', active: null },
     { label: 'Last Saved:', value: lastSavedTime ? new Date(lastSavedTime).toLocaleTimeString() : 'Never', active: null }
   ];
 
@@ -1801,6 +1738,30 @@ const SpectrogramContainerTemplate = () => {
       clearTimeout(scrollTimeout);
     };
   }, []);
+
+  // Listen for User Guide state changes
+  useEffect(() => {
+    const handleUserGuideStateChange = () => {
+      setUserGuideVisible(window.showUserGuideState || false);
+    };
+
+    // Check state immediately
+    handleUserGuideStateChange();
+
+    // Listen for custom events
+    window.addEventListener('userGuideStateChanged', handleUserGuideStateChange);
+    
+    return () => {
+      window.removeEventListener('userGuideStateChanged', handleUserGuideStateChange);
+    };
+  }, []);
+
+  const handleShowUserGuide = () => {
+    // Add any additional logic you want to execute when the user guide is shown
+    console.log('User guide is shown');
+  };
+
+
 
   return (
     <div className="spectrogram-container" style={{ 
@@ -1893,6 +1854,27 @@ const SpectrogramContainerTemplate = () => {
             >
               Load Latest
             </button>
+            <button 
+              className="control-btn config"
+              onClick={() => {
+                const currentState = userGuideVisible;
+                window.dispatchEvent(new CustomEvent('toggleUserGuide', { detail: { currentState } }));
+              }}
+              style={{
+                backgroundColor: userGuideVisible ? '#dc3545' : '#007bff',
+                color: 'white',
+                border: 'none'
+              }}
+            >
+              {userGuideVisible ? 'Hide User Guide' : 'Show User Guide'}
+            </button>
+            <button 
+              className="control-btn config"
+              onClick={autoAdjustColorRange}
+            >
+              Auto-Adjust Color Range
+            </button>
+
           </div>
           
 
@@ -1973,19 +1955,7 @@ const SpectrogramContainerTemplate = () => {
                </div>
              </div>
              
-             <div className="setting-item">
-               <label>
-                 Auto-Adjust Color Range
-                 {renderHelpIcon("Automatically adjust color range based on current signal amplitudes for optimal visualization.")}
-               </label>
-               <button
-                 className="control-btn config"
-                 onClick={autoAdjustColorRange}
-                 style={{ width: '100%', marginTop: '0.5rem' }}
-               >
-                 Auto-Adjust Range
-               </button>
-             </div>
+
             
             <div className="setting-item">
               <label>
@@ -2025,8 +1995,12 @@ const SpectrogramContainerTemplate = () => {
               </div>
             </div>
             
+
+            
           </div>
         </div>
+
+
 
         <div className="control-section">
           <h3>Analysis Settings</h3>
@@ -2505,11 +2479,6 @@ const SpectrogramContainerTemplate = () => {
             <span className={`status-indicator ${streamConnected ? 'active' : 'inactive'}`}>
               {streamConnected ? 'Stream Connected' : 'Stream Disconnected'}
             </span>
-            {maxFrequency.freq > 0 && (
-              <span className="max-frequency">
-                Max: {maxFrequency.freq.toFixed(1)} Hz ({maxFrequency.amplitude.toFixed(1)} dB)
-              </span>
-            )}
             {isCapturing && (
               <span className="current-time">
                 Time: {currentTime.toFixed(1)}s
@@ -2645,27 +2614,6 @@ const SpectrogramContainerTemplate = () => {
           {tooltipContent}
         </div>
       )}
-
-      {/* Test Controls */}
-      <div className="test-controls" style={{ marginBottom: '10px' }}>
-        <button 
-          onClick={populateWithRandomData}
-          style={{
-            padding: '8px 16px',
-            backgroundColor: '#4CAF50',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            marginRight: '10px'
-          }}
-        >
-          Generate Test Data
-        </button>
-        <span style={{ fontSize: '12px', color: '#666' }}>
-          Click to populate with random waterfall data for testing
-        </span>
-      </div>
 
       {/* Spectrogram Canvas */}
     </div>
