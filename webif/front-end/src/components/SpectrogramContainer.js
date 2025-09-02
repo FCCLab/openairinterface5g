@@ -306,8 +306,6 @@ const SpectrogramContainerTemplate = () => {
       console.log(`SpectrogramContainer: Last 5 magnitudes: ${mag1d.slice(-5).map(m => m.toFixed(1)).join(', ')} dB`);
     }
     
-    // Auto-adjust color range for better visualization
-    // autoAdjustColorRange();
   };
 
   // Colormap definitions (inspired by js-colormaps)
@@ -1104,19 +1102,33 @@ const SpectrogramContainerTemplate = () => {
       try {
         const message = JSON.parse(event.data);
         
-        console.log('📡 WebSocket message received:', message.frame_num, 'frame:', message.frame_num);
+        // FPS measurement for received messages (without processing/drawing)
+        if (!window.receivedFrameCount) {
+          window.receivedFrameCount = 0;
+          window.receivedStartTime = Date.now();
+        }
+        window.receivedFrameCount++;
+        
+        // Log FPS every 1000 received messages
+        if (window.receivedFrameCount % 1000 === 0) {
+          const elapsed = (Date.now() - window.receivedStartTime) / 1000;
+          const receivedFps = window.receivedFrameCount / elapsed;
+          console.log(`📡 RECEIVED FPS: ${receivedFps.toFixed(2)} frames/sec (Total: ${window.receivedFrameCount} frames in ${elapsed.toFixed(1)}s)`);
+        }
+        
+        console.log('📡 WebSocket message received:', message.f, 'frame:', message.f);
         
         // Handle two-sided frequency data - show full range from -sample_rate/2 to +sample_rate/2
-        if (message.frequencies && message.frequencies.length > 0) {
-          const minFreq = message.frequencies[0];
-          const maxFreq = message.frequencies[message.frequencies.length - 1];
+        if (message.freq && message.freq.length > 0) {
+          const minFreq = message.freq[0];
+          const maxFreq = message.freq[message.freq.length - 1];
           
           // Log frequency range for debugging
-          if (message.frame_num % 1000 === 0) {
+          if (message.f % 1000 === 0) {
             const expectedRange = settings.sampleRate / 2;
             console.log(`Spectrogram frequencies: ${minFreq?.toFixed(1)} to ${maxFreq?.toFixed(1)} kHz (expected: ±${expectedRange/1e3} kHz)`);
-            console.log(`First 5 frequencies: ${message.frequencies.slice(0, 5).map(f => f.toFixed(1)).join(', ')}`);
-            console.log(`Last 5 frequencies: ${message.frequencies.slice(-5).map(f => f.toFixed(1)).join(', ')}`);
+            console.log(`First 5 frequencies: ${message.freq.slice(0, 5).map(f => f.toFixed(1)).join(', ')}`);
+            console.log(`Last 5 frequencies: ${message.freq.slice(-5).map(f => f.toFixed(1)).join(', ')}`);
           }
           
           // Always ensure we have the full two-sided frequency range
@@ -1126,7 +1138,7 @@ const SpectrogramContainerTemplate = () => {
           if (minFreq !== expectedMinFreq || maxFreq !== expectedMaxFreq) {
             console.log('🔄 Adjusting frequency range to full two-sided spectrum');
             // Create proper two-sided frequency array
-            const numBins = message.frequencies.length;
+            const numBins = message.freq.length;
             const freqStep = settings.sampleRate / numBins;
             const twoSidedFrequencies = [];
             
@@ -1135,13 +1147,13 @@ const SpectrogramContainerTemplate = () => {
               twoSidedFrequencies.push(freq);
             }
             
-            message.frequencies = twoSidedFrequencies;
+            message.freq = twoSidedFrequencies;
             console.log(`✅ Full frequency range: ${twoSidedFrequencies[0]?.toFixed(1)} to ${twoSidedFrequencies[twoSidedFrequencies.length-1]?.toFixed(1)} kHz`);
           }
         }
         
-        // Update frequency-magnitude data with received data
-        updateFreqMagData(message.frequencies, message.magnitude_db, message.timestamp, message.frame_num);
+        // Update frequency-magnitude data with received data - using new key names
+        updateFreqMagData(message.freq, message.mag, message.ts, message.f);
         
         // Trigger canvas redraw to show updated frequency map
         if (!animationRef.current) {
@@ -1173,7 +1185,7 @@ const SpectrogramContainerTemplate = () => {
                 setMaxFrequency({ freq: maxFreq, amplitude: maxAmplitude });
                 
                 // Log the detected peak for debugging
-                if (message.frame_num % 1000 === 0) {
+                if (message.f % 1000 === 0) {
                   console.log(`Peak detected at bin ${maxIndex}, frequency ${maxFreq?.toFixed(1)} Hz, amplitude ${maxAmplitude?.toFixed(1)} dB`);
                 }
               }
@@ -1329,44 +1341,44 @@ const SpectrogramContainerTemplate = () => {
       }
     }
     
-    // Draw frequency axis labels at the top
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-    ctx.font = '10px monospace';
-    ctx.textAlign = 'center';
-    const labelY = plotY - 5;
-    const freqStep = Math.max(1, Math.floor(frequencies.length / 10));
-    for (let i = 0; i < frequencies.length; i += freqStep) {
-      const freq = frequencies[i];
-      const freqX = plotX + (i / frequencies.length) * plotWidth;
-      let freqLabel = '';
-      if (freq >= 1e9) {
-        freqLabel = `${(freq / 1e9).toFixed(2)} GHz`;
-      } else if (freq >= 1e6) {
-        freqLabel = `${(freq / 1e6).toFixed(1)} MHz`;
-      } else {
-        freqLabel = `${(freq / 1e3).toFixed(0)} kHz`;
-      }
-      ctx.fillText(freqLabel, freqX, labelY);
-    }
+    // // Draw frequency axis labels at the top
+    // ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+    // ctx.font = '10px monospace';
+    // ctx.textAlign = 'center';
+    // const labelY = plotY - 5;
+    // const freqStep = Math.max(1, Math.floor(frequencies.length / 10));
+    // for (let i = 0; i < frequencies.length; i += freqStep) {
+    //   const freq = frequencies[i];
+    //   const freqX = plotX + (i / frequencies.length) * plotWidth;
+    //   let freqLabel = '';
+    //   if (freq >= 1e9) {
+    //     freqLabel = `${(freq / 1e9).toFixed(2)} GHz`;
+    //   } else if (freq >= 1e6) {
+    //     freqLabel = `${(freq / 1e6).toFixed(1)} MHz`;
+    //   } else {
+    //     freqLabel = `${(freq / 1e3).toFixed(0)} kHz`;
+    //   }
+    //   ctx.fillText(freqLabel, freqX, labelY);
+    // }
     
-    // Draw time axis labels on the right
-    ctx.textAlign = 'right';
-    const labelX = plotX + plotWidth + 5;
-    const timeStep = Math.max(1, Math.floor(displayHistory.length / 5));
-    for (let i = 0; i < displayHistory.length; i += timeStep) {
-      const timeY = plotY + (displayHistory.length - 1 - i) * timeSliceHeight + timeSliceHeight / 2;
-      const timeAgo = (displayHistory.length - 1 - i) * 0.1;
-      let timeLabel = '';
-      if (timeAgo < 1) {
-        timeLabel = `${(timeAgo * 1000).toFixed(0)}ms ago`;
-      } else {
-        timeLabel = `${timeAgo.toFixed(1)}s ago`;
-      }
-      ctx.fillText(timeLabel, labelX, timeY);
-    }
+    // // Draw time axis labels on the right
+    // ctx.textAlign = 'right';
+    // const labelX = plotX + plotWidth + 5;
+    // const timeStep = Math.max(1, Math.floor(displayHistory.length / 5));
+    // for (let i = 0; i < displayHistory.length; i += timeStep) {
+    //   const timeY = plotY + (displayHistory.length - 1 - i) * timeSliceHeight + timeSliceHeight / 2;
+    //   const timeAgo = (displayHistory.length - 1 - i) * 0.1;
+    //   let timeLabel = '';
+    //   if (timeAgo < 1) {
+    //     timeLabel = `${(timeAgo * 1000).toFixed(0)}ms ago`;
+    //   } else {
+    //     timeLabel = `${timeAgo.toFixed(1)}s ago`;
+    //   }
+    //   ctx.fillText(timeLabel, labelX, timeY);
+    // }
     
-    // Draw data statistics
-    drawDataStatistics(ctx, width, data);
+    // // Draw data statistics
+    // drawDataStatistics(ctx, width, data);
   };
   
   // Draw frequency-magnitude data statistics
