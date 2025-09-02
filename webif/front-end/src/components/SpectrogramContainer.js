@@ -450,8 +450,11 @@ const SpectrogramContainerTemplate = () => {
 
   // Convert and update frequency settings
   const convertAndUpdateFrequency = (key, value) => {
-
+    console.log('[CONVERT] Function called with:', { key, value });
+    
     const frequencyHz = convertFrequencyToHz(value);
+    console.log('[CONVERT DEBUG] Converting frequency:', { key, value, frequencyHz });
+    
     if (frequencyHz > 0) {
       updateSettings(key, frequencyHz);
       
@@ -459,25 +462,59 @@ const SpectrogramContainerTemplate = () => {
       if (!isInitialLoad) {
         // If resolution is being updated, automatically update FFT size
         if (key === 'resolution' && frequencyHz > 0) {
+          console.log('[CONVERT DEBUG] Updating resolution setting:', frequencyHz);
+          // Update settings first, then call auto-calculation
+          setSettings(prev => {
+            console.log('[CONVERT DEBUG] Previous settings:', prev);
+            const newSettings = { ...prev, resolution: frequencyHz };
+            console.log('[CONVERT DEBUG] New settings:', newSettings);
+            return newSettings;
+          });
+          
+          // Call auto-calculation with the new resolution value
+          console.log('[CONVERT DEBUG] Calling auto-calculation with resolution:', frequencyHz);
           updateFFTSizeFromResolution(frequencyHz);
         }
         
         // If sample rate is being updated and resolution exists, update FFT size
         if (key === 'sampleRate' && settings.resolution > 0) {
-          updateFFTSizeFromResolution(settings.resolution);
+          console.log('[CONVERT DEBUG] Sample rate updated, calling auto-calculation with new sample rate:', frequencyHz);
+          // Use the new sample rate value directly instead of settings.sampleRate
+          updateFFTSizeFromResolution(settings.resolution, frequencyHz);
         }
       }
     }
   };
 
   // Update FFT size automatically based on resolution
-  const updateFFTSizeFromResolution = (resolutionHz) => {
-
+  const updateFFTSizeFromResolution = (resolutionHz, sampleRateOverride = null) => {
+    // Use override sample rate if provided, otherwise use current settings
+    const effectiveSampleRate = sampleRateOverride || settings.sampleRate;
     
-    // Calculate FFT size based on resolution and current sample rate
+    console.log('[AUTO-CALC] Starting auto-calculation with:', {
+      resolutionHz: resolutionHz,
+      effectiveSampleRate: effectiveSampleRate,
+      currentSampleRate: settings.sampleRate,
+      sampleRateOverride: sampleRateOverride,
+      currentFFTSize: settings.fftSize,
+      currentWindowSize: settings.windowSize,
+      currentHopSize: settings.hopSize
+    });
+    
+    // Calculate FFT size based on resolution and effective sample rate
     // Formula: FFT Size = Sample Rate / Resolution
-    if (settings.sampleRate > 0) {
-      const calculatedFFTSize = Math.pow(2, Math.ceil(Math.log2(settings.sampleRate / resolutionHz)));
+    if (effectiveSampleRate > 0 && resolutionHz > 0) {
+      const calculatedFFTSize = Math.pow(2, Math.ceil(Math.log2(effectiveSampleRate / resolutionHz)));
+      
+      console.log('[AUTO-CALC] FFT Size calculation:', {
+        effectiveSampleRate: effectiveSampleRate,
+        resolution: resolutionHz,
+        calculatedFFTSize: calculatedFFTSize,
+        formula: `${effectiveSampleRate} ÷ ${resolutionHz} = ${effectiveSampleRate / resolutionHz}`,
+        log2Result: Math.log2(effectiveSampleRate / resolutionHz),
+        roundedUp: Math.ceil(Math.log2(effectiveSampleRate / resolutionHz)),
+        finalFFTSize: Math.pow(2, Math.ceil(Math.log2(effectiveSampleRate / resolutionHz)))
+      });
       
       // Check if calculated FFT size is out of range
       const isOutOfRange = calculatedFFTSize < 16 || calculatedFFTSize > 65536;
@@ -485,15 +522,25 @@ const SpectrogramContainerTemplate = () => {
       // Limit FFT size to reasonable range (16 to 65536)
       const limitedFFTSize = Math.max(16, Math.min(65536, calculatedFFTSize));
       
+      console.log('[AUTO-CALC] Range check:', {
+        calculatedFFTSize: calculatedFFTSize,
+        isOutOfRange: isOutOfRange,
+        limitedFFTSize: limitedFFTSize,
+        range: '16 - 65,536'
+      });
+      
       // Update FFT size setting
+      console.log('[AUTO-CALC] Updating FFT Size:', limitedFFTSize);
       updateSettings('fftSize', limitedFFTSize);
       
       // Auto-update Window Size to match FFT size
+      console.log('[AUTO-CALC] Updating Window Size:', limitedFFTSize);
       updateSettings('windowSize', limitedFFTSize);
       setWindowSizeInput(''); // Clear the input to show the auto-updated value
       
       // Auto-update Hop Size to half of Window Size
       const newHopSize = Math.floor(limitedFFTSize / 2);
+      console.log('[AUTO-CALC] Updating Hop Size:', newHopSize, `(half of ${limitedFFTSize})`);
       updateSettings('hopSize', newHopSize);
       setHopSizeInput(''); // Clear the input to show the auto-updated value
       
@@ -504,7 +551,20 @@ const SpectrogramContainerTemplate = () => {
         originalCalculatedFFTSize: calculatedFFTSize
       }));
       
-
+      console.log('[AUTO-CALC] Final updated values:', {
+        fftSize: limitedFFTSize,
+        windowSize: limitedFFTSize,
+        hopSize: newHopSize,
+        isOutOfRange: isOutOfRange,
+        originalCalculatedFFTSize: calculatedFFTSize
+      });
+      
+      console.log('[AUTO-CALC] Auto-calculation complete! 🎯');
+    } else {
+      console.log('[AUTO-CALC] Skipping calculation - missing values:', {
+        sampleRate: settings.sampleRate,
+        resolutionHz: resolutionHz
+      });
     }
   };
 
@@ -594,7 +654,16 @@ const SpectrogramContainerTemplate = () => {
 
   // Helper functions for FFT Size tooltips
   const getFFTSizeWarningContent = () => {
-    const resolutionHz = settings.sampleRate / settings.originalCalculatedFFTSize;
+    // Use the actual resolution value instead of back-calculating it
+    const resolutionHz = settings.resolution;
+    
+    // Debug logging to see what values we're getting
+    console.log('[TOOLTIP DEBUG] Resolution values:', {
+      settingsResolution: settings.resolution,
+      resolutionInput: resolutionInput,
+      convertedResolution: resolutionInput ? convertFrequencyToHz(resolutionInput) : null
+    });
+    
     return `FFT size limited to ${settings.fftSize.toLocaleString()} (calculated: ${settings.originalCalculatedFFTSize?.toLocaleString()})\n\nCalculation:\n• Formula: FFT Size = Sample Rate ÷ Resolution\n• ${settings.sampleRate.toLocaleString()} Hz ÷ ${resolutionHz.toLocaleString()} Hz = ${settings.originalCalculatedFFTSize?.toLocaleString()}\n• Rounded up to power of 2: ${settings.originalCalculatedFFTSize?.toLocaleString()}\n• Limited to range: 16 - 65,536`;
   };
 
@@ -956,13 +1025,6 @@ const SpectrogramContainerTemplate = () => {
         resolution: convertedResolution ? `${convertedResolution.toLocaleString()} Hz` : 'Auto'
       });
 
-      // Calculate FFT size if resolution is provided
-      let fftSize = settings.fftSize;
-      if (convertedResolution && convertedSampleRate > 0) {
-        fftSize = Math.pow(2, Math.ceil(Math.log2(convertedSampleRate / convertedResolution)));
-        console.log('[CAPTURE] FFT size calculated:', fftSize);
-      }
-
       // Get the selected device's serial number
       const selectedDevice = usrpDevices.find(device => device.details && device.details['Serial Number']);
       const deviceSerial = selectedDevice?.details?.['Serial Number'] || 'X310'; // Default fallback
@@ -971,9 +1033,9 @@ const SpectrogramContainerTemplate = () => {
         centerFreq: convertedFreq,
         bandwidth: convertedSampleRate,
         resolution: convertedResolution,
-        windowLen: windowSizeInput ? parseInt(windowSizeInput) : null,
-        overlap: hopSizeInput ? parseInt(hopSizeInput) : null,
-        fftSize: fftSize,
+        windowLen: settings.windowSize,
+        overlap: settings.hopSize,
+        fftSize: settings.fftSize,
         windowType: settings.windowType,
         gain: settings.gain,
         device: deviceSerial // Send serial number instead of device name
