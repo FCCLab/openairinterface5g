@@ -299,9 +299,26 @@ class WebSocketProcess:
                         os.kill(os.getpid(), signal.SIGKILL)  # Force kill self
                         break
                     
+                    # Skip processing if no clients are connected (performance optimization)
+                    if not self.websocket_clients:
+                        # Just consume data to prevent queue buildup, but don't process
+                        try:
+                            self.stft_queue.get(timeout=0.1)  # Short timeout
+                            # Don't increment counters since we're not processing
+                            continue
+                        except queue.Empty:
+                            time.sleep(0.01)  # Very short sleep when no clients
+                            continue
+                    
                     # Get processed data from stft queue
-                    frame_data = self.stft_queue.get(timeout=1.0)  # 1 second timeout
+                    frame_data = self.stft_queue.get(timeout=0.1)  # 1 second timeout
                     frame_num, f, t, magnitude_db, timestamp = frame_data
+                    
+                    # Check if we're falling behind - log warning if queue is building up
+                    queue_size = self.stft_queue.qsize()
+                    if queue_size > 20:  # If more than 20 frames waiting
+                        if frame_count % 1000 == 0:  # Log every 1000th frame
+                            self.logger.warning(f"WebSocket falling behind: {queue_size} frames in queue, processing frame {frame_num}")
                     
                     # Prepare data for WebSocket broadcast
                     spectrogram_data = {

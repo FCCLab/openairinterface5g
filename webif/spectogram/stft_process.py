@@ -9,6 +9,7 @@ import time
 import signal
 import os
 import sys
+import gc
 from pathlib import Path
 
 # Add the spectogram directory to Python path for imports
@@ -26,39 +27,49 @@ except ImportError as e:
 class STFTProcess:
     """Self-contained STFT process for signal processing"""
     
-    def __init__(self, sample_rate, fft_size, stop_event, rx_queue, stft_queue, timestamp, cpu_core=1, log_dir=None):
+    def __init__(self, rx_queue, sample_rate, window_size, fft_size, hop_size, window_type, stop_event, stft_queue, timestamp, cpu_core=1, log_dir=None):
         """
         Initialize STFT process
         
         Args:
+            rx_queue: Queue for RX data input
             sample_rate: Sample rate
+            window_size: Window size for STFT
             fft_size: FFT size
+            hop_size: Hop size between windows
+            window_type: Window function type (hann, hamming, blackman, etc.)
             stop_event: Multiprocessing event to signal stop
-            rx_queue: Queue for RX data
             stft_queue: Queue for processed STFT data
             timestamp: Main process timestamp
             cpu_core: CPU core to bind to
         """
+        self.rx_queue = rx_queue
         self.sample_rate = sample_rate
         self.fft_size = fft_size
+        self.window_size = window_size
+        self.hop_size = hop_size
+        self.window_type = window_type
         self.stop_event = stop_event
-        self.rx_queue = rx_queue
         self.stft_queue = stft_queue
         self.timestamp = timestamp
         self.cpu_core = cpu_core
         self.log_dir = log_dir
+
+        # Setup logging
+        self._setup_logging()
+        
+        # Log STFT process initialization parameters
+        self.logger.info(f"STFT [INFO] Initializing STFTProcess: rx_queue={type(rx_queue)}, sample_rate={self.sample_rate}, window_size={self.window_size}, fft_size={self.fft_size}, hop_size={self.hop_size}, window_type={self.window_type}, cpu_core={self.cpu_core}, log_dir={self.log_dir}, timestamp={self.timestamp}")
         
         # Process state
         self.frame_count = 0
+        self.skipped_frames = 0
         
         # FPS tracking
         self.start_time = time.time()
         self.last_fps_log_time = time.time()
         self.fps_log_interval = 5.0  # Log FPS every 5 seconds
-        
-        # Setup logging
-        self._setup_logging()
-        
+
         # Setup signal handlers
         self._setup_signal_handlers()
         
@@ -159,24 +170,44 @@ class STFTProcess:
     def process_frame(self, frame_data):
         """Process a single frame of IQ data"""
         try:
-            # Handle both old format (3 items) and new format (4 items with thread_id)
+            if not frame_data or len(frame_data) < 3:
+                self.logger.warning(f"Invalid frame data: {frame_data}")
+                return None
+            
+            # Extract frame data
             if len(frame_data) == 4:
                 frame_num, samples, timestamp, thread_id = frame_data
             else:
                 frame_num, samples, timestamp = frame_data
                 thread_id = 0  # Default for backward compatibility
             
-            # Perform STFT processing
-            window_size = self.fft_size  # Use FFT size as window size
-            overlap_samples = window_size // 4  # 25% overlap instead of 50%
+            # Check if we have enough samples for STFT
+            actual_samples = len(samples)
+            if actual_samples == 0:
+                self.logger.warning(f"Frame {frame_num}: No samples received")
+                return None
             
-            # STFT calculation
+            # Ensure window size doesn't exceed signal length
+            effective_window_size = min(self.window_size, actual_samples)
+            if effective_window_size < self.window_size:
+                self.logger.debug(f"Frame {frame_num}: Reducing window size from {self.window_size} to {effective_window_size} (signal length: {actual_samples})")
+            
+            # Ensure hop size doesn't exceed window size
+            effective_hop_size = min(self.hop_size, effective_window_size)
+            if effective_hop_size < self.hop_size:
+                self.logger.debug(f"Frame {frame_num}: Reducing hop size from {self.hop_size} to {effective_hop_size}")
+            
+            # Calculate overlap samples from hop size
+            overlap_samples = effective_window_size - effective_hop_size
+            
+            # STFT calculation with adjusted parameters
             f, t, Zxx = scipy_signal.stft(
                 samples, 
                 fs=self.sample_rate, 
-                nperseg=window_size, 
+                nperseg=effective_window_size, 
                 noverlap=overlap_samples,
                 nfft=self.fft_size,
+                window=self.window_type.lower(),
                 return_onesided=False
             )
             
@@ -201,6 +232,10 @@ class STFTProcess:
         """Main processing loop with parent monitoring"""
         self.logger.info(f"Starting STFT process on CPU core {self.cpu_core}...")
         
+        # Performance monitoring variables
+        last_gc_time = time.time()
+        gc_interval = 10.0  # Run garbage collection every 10 seconds
+        
         try:
             while not self.stop_event.is_set():
                 try:
@@ -210,8 +245,28 @@ class STFTProcess:
                         os.kill(os.getpid(), signal.SIGKILL)  # Force kill self
                         break
                     
+                    # Periodic garbage collection to prevent memory buildup
+                    current_time = time.time()
+                    if current_time - last_gc_time >= gc_interval:
+                        collected = gc.collect()
+                        if collected > 0:
+                            self.logger.debug(f"Garbage collection: collected {collected} objects")
+                        last_gc_time = current_time
+                    
                     # Get IQ data from RX queue
                     frame_data = self.rx_queue.get(timeout=1.0)  # 1 second timeout
+                    
+                    # Check if STFT queue is getting too full - skip frames to maintain real-time performance
+                    queue_size = self.stft_queue.qsize()
+                    if queue_size > 200:  # Increased threshold from 50 to 200 for larger queue
+                        # Dynamic frame skipping based on queue size
+                        skip_frames = min(queue_size // 100, 10)  # Skip 1-10 frames based on queue size
+                        if self.frame_count % 100 == 0:  # Log every 100th skipped frame
+                            self.logger.warning(f"STFT queue full ({queue_size} frames), skipping {skip_frames} frames to maintain real-time performance")
+                        # Skip processing this frame to prevent queue buildup
+                        self.skipped_frames += 1
+                        del frame_data
+                        continue
                     
                     # Process the frame
                     result = self.process_frame(frame_data)
@@ -231,8 +286,13 @@ class STFTProcess:
                             elapsed_time = current_time - self.start_time
                             if elapsed_time > 0:
                                 fps = self.frame_count / elapsed_time
-                                self.logger.info(f"STFT FPS: {fps:.2f} frames/sec (Total: {self.frame_count} frames in {elapsed_time:.1f}s)")
+                                self.logger.info(f"STFT FPS: {fps:.2f} frames/sec (Total: {self.frame_count} frames, Skipped: {self.skipped_frames} frames in {elapsed_time:.1f}s)")
                                 self.last_fps_log_time = current_time
+                    
+                    # Clear frame_data and result to help garbage collection
+                    del frame_data
+                    if result is not None:
+                        del result
                     
                 except queue.Empty:
                     # No data available, continue

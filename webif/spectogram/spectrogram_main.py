@@ -27,20 +27,20 @@ class SmartQueue:
         self.total_put_count = 0
     
     def put(self, item, timeout=None, block=True):
-        """Put item in queue, drop oldest if full"""
+        """Put item in queue, drop oldest if full - NEVER WAIT"""
         try:
-            # Try to put item normally
-            self.queue.put(item, timeout=timeout, block=block)
+            # Try to put item without waiting
+            self.queue.put_nowait(item)
             self.total_put_count += 1
             return True
         except:
-            # Queue is full, drop oldest item and try again
+            # Queue is full, immediately drop oldest and put new one
             try:
                 # Get and drop oldest item
                 _ = self.queue.get_nowait()
                 self.dropped_count += 1
-                # Now put the new item
-                self.queue.put(item, timeout=timeout, block=block)
+                # Now put the new item without waiting
+                self.queue.put_nowait(item)
                 self.total_put_count += 1
                 return True
             except:
@@ -326,8 +326,8 @@ class SpectrogramMain:
             # Process 2: STFT process
             self.stft_process = multiprocessing.Process(
                 target=self._run_stft_process,
-                args=(self.args.sample_rate, self.args.fft_size, self.stop_event,
-                      self.rx_queue, self.stft_queue, self.main_timestamp,
+                args=(self.rx_queue, self.args.sample_rate, self.args.window_size, self.args.fft_size, self.args.hop_size, self.args.window_type, self.stop_event,
+                      self.stft_queue, self.main_timestamp,
                       self.cpu_cores['stft'], self.log_dir)
             )
             self.stft_process.start()
@@ -380,14 +380,17 @@ class SpectrogramMain:
         )
         process.start()
     
-    def _run_stft_process(self, sample_rate, fft_size, stop_event, rx_queue, 
+    def _run_stft_process(self, rx_queue, sample_rate, window_size, fft_size, hop_size, window_type, stop_event,
                           stft_queue, timestamp, cpu_core, log_dir):
         """Run STFT process in separate process"""
         process = STFTProcess(
+            rx_queue=rx_queue,
             sample_rate=sample_rate,
             fft_size=fft_size,
+            window_size=window_size,
+            hop_size=hop_size,
+            window_type=window_type,
             stop_event=stop_event,
-            rx_queue=rx_queue,
             stft_queue=stft_queue,
             timestamp=timestamp,
             cpu_core=cpu_core,
@@ -540,8 +543,8 @@ class SpectrogramMain:
             elif process_name == "STFT":
                 new_process = multiprocessing.Process(
                     target=self._run_stft_process,
-                    args=(self.args.sample_rate, self.args.fft_size, self.stop_event,
-                          self.rx_queue, self.stft_queue, self.main_timestamp,
+                    args=(self.rx_queue, self.args.sample_rate, self.args.window_size, self.args.fft_size, self.args.hop_size, self.args.window_type, self.stop_event,
+                          self.stft_queue, self.main_timestamp,
                           self.cpu_cores['stft'], self.log_dir)
                 )
                 new_process.start()
@@ -889,7 +892,10 @@ def main():
     parser.add_argument('--sample_rate', type=float, default=1e6, help='Sample rate')
     parser.add_argument('--gain', type=float, default=37.5, help='RX gain')
     parser.add_argument('--fft_size', type=int, default=1024, help='FFT size')
+    # Window size for STFT processing (separate from FFT size for flexibility)
+    parser.add_argument('--window_size', type=int, default=1024, help='Window size for STFT')
     parser.add_argument('--hop_size', type=int, default=1000, help='Hop size')
+    parser.add_argument('--window_type', type=str, default='hann', help='Window function type (hann, hamming, blackman, kaiser, gaussian, bartlett, flattop, nuttall, rectangular)')
     parser.add_argument('--websocket-port', type=int, default=40001, help='WebSocket port')
     
     # Additional parameters for backward compatibility
@@ -897,9 +903,7 @@ def main():
     parser.add_argument('--fft-size', type=int, help='FFT size (alternative format)')
     parser.add_argument('--hop-size', type=int, help='Hop size (alternative format)')
     parser.add_argument('--resolution', type=int, help='Resolution (legacy parameter)')
-    parser.add_argument('--window_size', type=int, help='Window size (legacy parameter)')
-    parser.add_argument('--window_type', type=str, help='Window type (legacy parameter)')
-    
+ 
     args = parser.parse_args()
     
     # Handle argument mapping and legacy parameters
@@ -917,9 +921,7 @@ def main():
         if args.resolution and args.hop_size == 1000:  # Only if hop_size is still default
             args.hop_size = args.resolution
             
-        # Handle legacy window_size parameter (map to fft_size if not set)
-        if args.window_size and args.fft_size == 1024:  # Only if fft_size is still default
-            args.fft_size = args.window_size
+        # Note: window_size is now a primary parameter, not legacy
             
         # Window type is not currently used but accepted for compatibility
         if args.window_type:

@@ -341,6 +341,10 @@ class TXRXProcess:
         frame_size = 5000
         local_frame_count = 0
         
+        # Performance monitoring
+        last_gc_time = time.time()
+        gc_interval = 15.0  # Run garbage collection every 15 seconds
+        
         try:
             # Start continuous streaming like the old code
             self.rx_streamer.issue_stream_cmd(uhd.types.StreamCMD(uhd.types.StreamMode.start_cont))
@@ -351,6 +355,15 @@ class TXRXProcess:
             
             while not self.stop_event.is_set():
                 try:
+                    # Periodic garbage collection to prevent memory buildup
+                    current_time = time.time()
+                    if current_time - last_gc_time >= gc_interval:
+                        import gc
+                        collected = gc.collect()
+                        if collected > 0:
+                            self.logger.debug(f"RX thread {thread_id}: Garbage collection collected {collected} objects")
+                        last_gc_time = current_time
+                    
                     # Create buffer for samples
                     samples = np.zeros(frame_size, dtype=np.complex64)
                     
@@ -387,6 +400,11 @@ class TXRXProcess:
                         # Log when no samples received
                         if local_frame_count % 1000 == 0:
                             self.logger.debug(f"RX thread {thread_id}: no samples received, num_samps={num_samps}")
+                    
+                    # Clear variables to help garbage collection
+                    del samples
+                    if 'frame_data' in locals():
+                        del frame_data
                     
                     # Small delay to prevent overwhelming
                     time.sleep(0.001)
