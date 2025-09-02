@@ -301,13 +301,13 @@ class TXRXProcess:
                         remaining = max_tx - len(chunk)
                         chunk = np.concatenate([chunk, self.tx_wave[:remaining]])
                     
-                    # Transmit the chunk with metadata
-                    sent = self.tx_streamer.send(chunk, tx_md)
-                    samps_sent += sent
+                    # # Transmit the chunk with metadata
+                    # sent = self.tx_streamer.send(chunk, tx_md)
+                    # samps_sent += sent
                     
-                    # Log progress occasionally
-                    if samps_sent % 5000 == 0:
-                        self.logger.info(f"TX thread {thread_id}: sent {samps_sent} samples")
+                    # # Log progress occasionally
+                    # if samps_sent % 5000 == 0:
+                    #     self.logger.info(f"TX thread {thread_id}: sent {samps_sent} samples")
                     
                     # Small delay to prevent overwhelming
                     time.sleep(0.001)
@@ -410,19 +410,29 @@ class TXRXProcess:
             while not self.stop_event.is_set():
                 # Check if parent process is still alive
                 if not self._check_parent_alive():
-                    self.logger.warning("Parent process died or is orphaned, sending SIGKILL to self...")
-                    os.kill(os.getpid(), signal.SIGKILL)  # Force kill self
+                    self.logger.warning("Parent process died or is orphaned, stopping TX/RX process...")
                     break
                 
                 time.sleep(1)
                 
-                # Check if threads are still alive
-                if not self.tx_thread.is_alive():
-                    self.logger.error("TX thread died unexpectedly")
+                # Check if threads are still alive (only if we're not stopping)
+                if not self.stop_event.is_set():
+                    if not self.tx_thread.is_alive():
+                        self.logger.error("TX thread died unexpectedly")
+                        break
+                    if not self.rx_thread.is_alive():
+                        self.logger.error("RX thread died unexpectedly")
+                        break
+                else:
+                    # We're stopping, threads are expected to die
+                    self.logger.info("Stop signal received, threads are expected to terminate")
                     break
-                if not self.rx_thread.is_alive():
-                    self.logger.error("RX thread died unexpectedly")
-                    break
+            
+            # Log the shutdown process
+            if self.stop_event.is_set():
+                self.logger.info("TX/RX process shutting down normally (stop signal received)")
+            else:
+                self.logger.info("TX/RX process shutting down due to parent/thread issues")
             
             self.logger.info("TX/RX process main thread exiting")
             return True

@@ -437,49 +437,280 @@ router.post('/service/stop', async (req, res) => {
       return res.json(response);
     }
 
-    // Kill the process
-    spectrogramServiceProcess.kill('SIGTERM');
+    // Use the new Process Group termination strategy
+    const result = await stopSpectrogramService();
     
-    // Wait a bit for graceful shutdown
-    setTimeout(() => {
-      if (spectrogramServiceProcess) {
-        spectrogramServiceProcess.kill('SIGKILL');
-      }
-    }, 5000);
-
-    const response = {
-      success: true,
-      message: 'Spectrogram service stop requested',
-      status: 'stopping'
-    };
+    if (result.success) {
+      const response = {
+        success: true,
+        message: result.message,
+        status: 'stopping',
+        pid: result.pid,
+        pgid: result.pgid,
+        method: result.method
+      };
+      
+      logger.spectrogram('Spectrogram service stop successful', { 
+        ip: req.ip, 
+        method: result.method,
+        pgid: result.pgid 
+      });
+      res.json(response);
+    } else {
+      logger.spectrogram('Spectrogram service stop failed', { 
+        ip: req.ip, 
+        error: result.error 
+      });
+      res.status(500).json({ 
+        success: false, 
+        error: result.error 
+      });
+    }
     
-    logger.spectrogram('Spectrogram service stop successful', { ip: req.ip });
-    res.json(response);
   } catch (error) {
     logger.spectrogram('Error stopping spectrogram service', { error: error.message, stack: error.stack, ip: req.ip });
     res.status(500).json({ success: false, error: 'Failed to stop spectrogram service' });
   }
 });
 
-// Get spectrogram service status
-router.get('/service/status', async (req, res) => {
+// Process Group termination functions
+async function stopSpectrogramService() {
   try {
-    logger.spectrogram('Spectrogram service status requested', { ip: req.ip });
+    // Get the PID of the running spectrogram service
+    const pid = spectrogramServiceProcess ? spectrogramServiceProcess.pid : null;
     
-    const response = {
-      success: true,
-      status: spectrogramServiceStatus,
-      pid: spectrogramServiceProcess ? spectrogramServiceProcess.pid : null,
-      running: !!spectrogramServiceProcess
-    };
+    if (!pid) {
+      return { success: false, error: 'No spectrogram service running' };
+    }
     
-    logger.spectrogram('Spectrogram service status retrieved', { ip: req.ip, status: spectrogramServiceStatus });
-    res.json(response);
+    logger.spectrogram(`Found spectrogram service with PID: ${pid}`);
+    
+    // Get the process group ID
+    const pgid = await getProcessGroupID(pid);
+    
+    if (pgid) {
+      logger.spectrogram(`Using process group termination (PGID: ${pgid})`);
+      return await terminateProcessGroup(pgid, pid);
+    } else {
+      logger.spectrogram('Process group not found, using individual process termination');
+      return await terminateIndividualProcess(pid);
+    }
+    
   } catch (error) {
-    logger.spectrogram('Error getting spectrogram service status', { error: error.message, stack: error.stack, ip: req.ip });
-    res.status(500).json({ success: false, error: 'Failed to get spectrogram service status' });
+    logger.spectrogram('Error stopping spectrogram service:', error);
+    return { success: false, error: error.message };
   }
-});
+}
+
+async function terminateProcessGroup(pgid, mainPid) {
+  try {
+    // Step 1: Send SIGTERM to entire process group
+    logger.spectrogram(`Sending SIGTERM to process group ${pgid} (graceful shutdown)...`);
+    process.kill(-pgid, 'SIGTERM'); // Negative PID kills process group
+    
+    // Step 2: Wait up to 10 seconds for graceful termination
+    logger.spectrogram('Waiting up to 10 seconds for graceful termination...');
+    const terminated = await waitForProcessGroupTermination(pgid, 10000);
+    
+    if (terminated) {
+      logger.spectrogram('Process group terminated gracefully with SIGTERM');
+      // Clear the process reference
+      spectrogramServiceProcess = null;
+      spectrogramServiceStatus = 'stopped';
+      
+      return { 
+        success: true, 
+        message: 'Service terminated gracefully with SIGTERM',
+        pid: mainPid,
+        pgid: pgid,
+        method: 'SIGTERM'
+      };
+    }
+    
+    // Step 3: Force termination with SIGKILL
+    logger.spectrogram('Process group did not terminate gracefully, sending SIGKILL...');
+    process.kill(-pgid, 'SIGKILL');
+    
+    // Wait for SIGKILL to take effect
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // Verify the process group is gone
+    const stillRunning = await isProcessGroupRunning(pgid);
+    if (!stillRunning) {
+      logger.spectrogram('Process group terminated with SIGKILL');
+      // Clear the process reference
+      spectrogramServiceProcess = null;
+      spectrogramServiceStatus = 'stopped';
+      
+      return { 
+        success: true, 
+        message: 'Service terminated with SIGKILL',
+        pid: mainPid,
+        pgid: pgid,
+        method: 'SIGKILL'
+      };
+    } else {
+      return { 
+        success: false, 
+        error: 'Process group still running after SIGKILL',
+        pid: mainPid,
+        pgid: pgid
+      };
+    }
+    
+  } catch (error) {
+    logger.spectrogram('Error terminating process group:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+async function terminateIndividualProcess(pid) {
+  try {
+    // Step 1: Send SIGTERM
+    logger.spectrogram(`Sending SIGTERM to individual process ${pid}...`);
+    process.kill(pid, 'SIGTERM');
+    
+    // Step 2: Wait for termination
+    const terminated = await waitForProcessTermination(pid, 10000);
+    
+    if (terminated) {
+      logger.spectrogram('Individual process terminated gracefully');
+      // Clear the process reference
+      spectrogramServiceProcess = null;
+      spectrogramServiceStatus = 'stopped';
+      
+      return { 
+        success: true, 
+        message: 'Service terminated gracefully (individual)',
+        pid: pid,
+        method: 'SIGTERM'
+      };
+    }
+    
+    // Step 3: Send SIGKILL
+    logger.spectrogram('Individual process did not terminate, sending SIGKILL...');
+    process.kill(pid, 'SIGKILL');
+    
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    const stillRunning = await isProcessRunning(pid);
+    if (!stillRunning) {
+      // Clear the process reference
+      spectrogramServiceProcess = null;
+      spectrogramServiceStatus = 'stopped';
+      
+      return { 
+        success: true, 
+        message: 'Service terminated with SIGKILL (individual)',
+        pid: pid,
+        method: 'SIGKILL'
+      };
+    } else {
+      return { 
+        success: false, 
+        error: 'Individual process still running after SIGKILL',
+        pid: pid
+      };
+    }
+    
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+async function waitForProcessGroupTermination(pgid, timeoutMs) {
+  const startTime = Date.now();
+  
+  while (Date.now() - startTime < timeoutMs) {
+    try {
+      // Check if process group is still running
+      const running = await isProcessGroupRunning(pgid);
+      if (!running) {
+        return true; // Process group terminated
+      }
+      
+      // Wait 100ms before next check
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+    } catch (error) {
+      logger.spectrogram('Error checking process group status:', error);
+      return false;
+    }
+  }
+  
+  return false; // Timeout reached
+}
+
+async function isProcessGroupRunning(pgid) {
+  try {
+    // Check if any process in the group is still running
+    const { exec } = require('child_process');
+    
+    return new Promise((resolve, reject) => {
+      exec(`pgrep -g ${pgid}`, (error, stdout) => {
+        if (error || !stdout.trim()) {
+          resolve(false); // Process group not running
+        } else {
+          resolve(true); // Process group still running
+        }
+      });
+    });
+    
+  } catch (error) {
+    logger.spectrogram('Error checking process group status:', error);
+    return false;
+  }
+}
+
+async function getProcessGroupID(pid) {
+  try {
+    const { exec } = require('child_process');
+    
+    return new Promise((resolve, reject) => {
+      exec(`ps -o pgid= -p ${pid}`, (error, stdout) => {
+        if (error || !stdout.trim()) {
+          resolve(null);
+        } else {
+          const pgid = parseInt(stdout.trim());
+          resolve(pgid);
+        }
+      });
+    });
+    
+  } catch (error) {
+    logger.spectrogram('Error getting process group ID:', error);
+    return null;
+  }
+}
+
+async function waitForProcessTermination(pid, timeoutMs) {
+  const startTime = Date.now();
+  
+  while (Date.now() - startTime < timeoutMs) {
+    try {
+      const running = await isProcessRunning(pid);
+      if (!running) {
+        return true;
+      }
+      await new Promise(resolve => setTimeout(resolve, 100));
+    } catch (error) {
+      return false;
+    }
+  }
+  return false;
+}
+
+async function isProcessRunning(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    if (error.code === 'ESRCH') {
+      return false;
+    }
+    throw error;
+  }
+}
 
 // Start spectrogram data generation
 router.post('/start', async (req, res) => {

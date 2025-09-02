@@ -24,7 +24,7 @@ const SpectrogramContainerTemplate = () => {
       scrollDirection: 'up',
           colorRangeMin: -80,   // dB minimum - typical RF range
     colorRangeMax: -20,   // dB maximum - typical RF range
-
+    maxHistoryLength: 100,   // Maximum number of time slices to display
     pauseScrolling: false,
     displayMode: 'linear', // 'linear' or 'mel'
 
@@ -1270,17 +1270,36 @@ const SpectrogramContainerTemplate = () => {
     // Get frequency range from first history entry
     const firstEntry = data.history[0];
     const frequencies = firstEntry.frequencies;
-    const freqRange = Math.max(...frequencies) - Math.min(...frequencies);
-    const freqMin = Math.min(...frequencies);
     
-    // Calculate time slice height
-    const timeSliceHeight = plotHeight / data.history.length;
+    // Calculate time slice height - CONSTANT based on canvas height and max history
+    // Each time slice maintains the same height regardless of actual data amount
+    const maxHistoryLength = settings.maxHistoryLength || 100;
+    const timeSliceHeight = Math.max(1, Math.floor(plotHeight / maxHistoryLength));
     
-    // Draw spectrogram waterfall - each history entry as a horizontal line
-    for (let timeIndex = 0; timeIndex < data.history.length; timeIndex++) {
-      const entry = data.history[timeIndex];
+    // Use limited history to maintain consistent slice heights
+    const displayHistory = data.history.slice(-maxHistoryLength);
+    
+    // Calculate scroll offset for configurable scrolling waterfall
+    // Direction based on settings.scrollDirection ('up' or 'down')
+    const totalSlices = data.history.length;
+    const scrollOffset = Math.max(0, totalSlices - maxHistoryLength);
+    
+    // Draw spectrogram waterfall with configurable scrolling direction
+    for (let timeIndex = 0; timeIndex < displayHistory.length; timeIndex++) {
+      const entry = displayHistory[timeIndex];
       const magnitudes = entry.magnitudes;
-      const timeY = plotY + timeIndex * timeSliceHeight;
+      
+      // Calculate Y position based on scroll direction setting
+      let adjustedTimeY;
+      if (settings.scrollDirection === 'up') {
+        // Up: Newest data at bottom, everything moves up
+        const baseTimeY = plotY + (displayHistory.length - 1 - timeIndex) * timeSliceHeight;
+        adjustedTimeY = baseTimeY - (scrollOffset * timeSliceHeight);
+      } else {
+        // Down: Newest data at top, everything moves down
+        const baseTimeY = plotY + timeIndex * timeSliceHeight;
+        adjustedTimeY = baseTimeY + (scrollOffset * timeSliceHeight);
+      }
       
       // Calculate frequency width per bin
       const freqWidth = plotWidth / frequencies.length;
@@ -1303,11 +1322,47 @@ const SpectrogramContainerTemplate = () => {
         ctx.fillStyle = color;
         ctx.fillRect(
           freqX, 
-          timeY, 
+          adjustedTimeY, 
           freqWidth, 
           timeSliceHeight
         );
       }
+    }
+    
+    // Draw frequency axis labels at the top
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+    ctx.font = '10px monospace';
+    ctx.textAlign = 'center';
+    const labelY = plotY - 5;
+    const freqStep = Math.max(1, Math.floor(frequencies.length / 10));
+    for (let i = 0; i < frequencies.length; i += freqStep) {
+      const freq = frequencies[i];
+      const freqX = plotX + (i / frequencies.length) * plotWidth;
+      let freqLabel = '';
+      if (freq >= 1e9) {
+        freqLabel = `${(freq / 1e9).toFixed(2)} GHz`;
+      } else if (freq >= 1e6) {
+        freqLabel = `${(freq / 1e6).toFixed(1)} MHz`;
+      } else {
+        freqLabel = `${(freq / 1e3).toFixed(0)} kHz`;
+      }
+      ctx.fillText(freqLabel, freqX, labelY);
+    }
+    
+    // Draw time axis labels on the right
+    ctx.textAlign = 'right';
+    const labelX = plotX + plotWidth + 5;
+    const timeStep = Math.max(1, Math.floor(displayHistory.length / 5));
+    for (let i = 0; i < displayHistory.length; i += timeStep) {
+      const timeY = plotY + (displayHistory.length - 1 - i) * timeSliceHeight + timeSliceHeight / 2;
+      const timeAgo = (displayHistory.length - 1 - i) * 0.1;
+      let timeLabel = '';
+      if (timeAgo < 1) {
+        timeLabel = `${(timeAgo * 1000).toFixed(0)}ms ago`;
+      } else {
+        timeLabel = `${timeAgo.toFixed(1)}s ago`;
+      }
+      ctx.fillText(timeLabel, labelX, timeY);
     }
     
     // Draw data statistics
