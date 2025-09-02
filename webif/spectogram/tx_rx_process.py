@@ -290,36 +290,38 @@ class TXRXProcess(ProcessBase):
                     # Use base class memory monitoring
                     self._check_memory_periodic(current_time)
                     
-                    # Read until we have enough samples for hop_size
-                    hop_accumulated = 0
-                    loop_count = 0
-                    while hop_accumulated < samples_per_frame and not self.stop_event.is_set():
-                        # self.logger.info(f"RX thread {thread_id}: hop_accumulated={hop_accumulated}, samples_per_frame={samples_per_frame}")
-                        loop_count += 1
-                        # Read samples into temporary buffer
-                        temp_samples = np.zeros(samples_per_frame - hop_accumulated, dtype=np.complex64)
-                        num_samps = self.rx_streamer.recv(temp_samples, rx_md)
+                    # # Read until we have enough samples for hop_size
+                    # hop_accumulated = 0
+                    # loop_count = 0
+                    # while hop_accumulated < samples_per_frame and not self.stop_event.is_set():
+                    #     # self.logger.info(f"RX thread {thread_id}: hop_accumulated={hop_accumulated}, samples_per_frame={samples_per_frame}")
+                    #     loop_count += 1
+                    #     # Read samples into temporary buffer
+                    #     temp_samples = np.zeros(samples_per_frame - hop_accumulated, dtype=np.complex64)
+                    #     num_samps = self.rx_streamer.recv(temp_samples, rx_md)
                         
-                        if num_samps > 0:
-                            # Add samples to accumulator
-                            hop_accumulator[hop_accumulated:hop_accumulated + num_samps] = temp_samples[:num_samps]
-                            hop_accumulated += num_samps
-                        else:
-                            # self.logger.info(f"RX thread {thread_id}: no samples received")
-                            # No samples received, small delay and retry
-                            time.sleep(0.001)
-                            continue
-                        if loop_count > 1000:
-                            self.logger.error(f" Error in RX thread {thread_id}: RX loop completed: {loop_count} iterations, accumulated {hop_accumulated}/{samples_per_frame} samples")
-                            break
+                    #     if num_samps > 0:
+                    #         # Add samples to accumulator
+                    #         hop_accumulator[hop_accumulated:hop_accumulated + num_samps] = temp_samples[:num_samps]
+                    #         hop_accumulated += num_samps
+                    #     else:
+                    #         # self.logger.info(f"RX thread {thread_id}: no samples received")
+                    #         # No samples received, small delay and retry
+                    #         time.sleep(0.001)
+                    #         continue
+                    #     if loop_count > 1000:
+                    #         self.logger.error(f" Error in RX thread {thread_id}: RX loop completed: {loop_count} iterations, accumulated {hop_accumulated}/{samples_per_frame} samples")
+                    #         break
+                    # # Log loop completion occasionally
+                    # if local_frame_count % 1000 == 0:
+                    #     self.logger.debug(f"RX loop completed: {loop_count} iterations, accumulated {hop_accumulated}/{samples_per_frame} samples")
 
-                    # Log loop completion occasionally
-                    if local_frame_count % 1000 == 0:
-                        self.logger.debug(f"RX loop completed: {loop_count} iterations, accumulated {hop_accumulated}/{samples_per_frame} samples")
-                    
+                    temp_samples = np.zeros(samples_per_frame, dtype=np.complex64)
+                    num_samps = self.rx_streamer.recv(temp_samples, rx_md, timeout=0.1)
+
                     # Always shift buffer by hop_size and add new samples
                     sample_buffer[:-samples_per_frame] = sample_buffer[samples_per_frame:]
-                    sample_buffer[-samples_per_frame:] = hop_accumulator[:samples_per_frame]
+                    sample_buffer[-samples_per_frame:] = temp_samples
                     
                     # Send frame (buffer is always full after shift)
                     frame_data = (local_frame_count, sample_buffer.copy(), time.time(), thread_id)
@@ -346,9 +348,6 @@ class TXRXProcess(ProcessBase):
                     del temp_samples
                     if 'frame_data' in locals():
                         del frame_data
-                    
-                    # Small delay to prevent overwhelming
-                    time.sleep(0.001)
                         
                 except Exception as e:
                     self.logger.error(f"Error in RX thread {thread_id} receive loop: {e}")
