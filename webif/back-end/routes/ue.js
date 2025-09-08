@@ -94,7 +94,6 @@ const getUEStatus = () => {
   const status = manager.getStatus();
   return {
     ...status,
-    currentMode: ueManager.getMode(),
     timestamp: new Date().toISOString()
   };
 };
@@ -170,8 +169,20 @@ router.put('/config', (req, res) => {
 // Start UE process with configurations
 router.post('/start', async (req, res) => {
   try {
-    const config = req.body || {};
+    const { mode, ...config } = req.body || {};
+    
+    // Validate mode if provided
+    if (mode && mode !== 'simulated' && mode !== 'real') {
+      return res.status(400).json({ error: 'Mode must be "simulated" or "real"' });
+    }
+    
+    // Set mode if provided
+    if (mode) {
+      ueManager.setMode(mode);
+    }
+    
     logger.info('Starting UE process with configurations', { 
+      mode: mode || ueManager.getMode(),
       hasAuth: !!config.authentication,
       hasNetwork: !!config.network,
       hasRadio: !!config.radio,
@@ -180,7 +191,10 @@ router.post('/start', async (req, res) => {
     
     const manager = ueManager.getCurrentManager();
     const result = await manager.start(config);
-    res.json(result);
+    res.json({
+      ...result,
+      mode: ueManager.getMode()
+    });
   } catch (error) {
     logger.error('Error starting UE process', { error: error.message });
     res.status(500).json({ error: error.message });
@@ -206,10 +220,24 @@ router.post('/stop', async (req, res) => {
 // Restart UE
 router.post('/restart', async (req, res) => {
   try {
-    const config = req.body || {};
+    const { mode, ...config } = req.body || {};
+    
+    // Validate mode if provided
+    if (mode && mode !== 'simulated' && mode !== 'real') {
+      return res.status(400).json({ error: 'Mode must be "simulated" or "real"' });
+    }
+    
+    // Set mode if provided
+    if (mode) {
+      ueManager.setMode(mode);
+    }
+    
     const manager = ueManager.getCurrentManager();
     const result = await manager.restart(config);
-    res.json(result);
+    res.json({
+      ...result,
+      mode: ueManager.getMode()
+    });
   } catch (error) {
     logger.error('Error restarting UE', { error: error.message });
     res.status(500).json({ error: error.message });
@@ -286,46 +314,14 @@ router.get('/scan/cells', async (req, res) => {
   }
 });
 
-// Switch UE mode (simulated or real)
-router.post('/mode', (req, res) => {
-  try {
-    const { mode } = req.body;
-    if (!mode || (mode !== 'simulated' && mode !== 'real')) {
-      return res.status(400).json({ error: 'Mode must be "simulated" or "real"' });
-    }
-
-    ueManager.setMode(mode);
-    res.json({ 
-      success: true, 
-      message: `UE mode switched to ${mode}`,
-      currentMode: ueManager.getMode()
-    });
-
-  } catch (error) {
-    logger.error('Error switching UE mode', { error: error.message });
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Get current UE mode
-router.get('/mode', (req, res) => {
-  try {
-    res.json({ 
-      currentMode: ueManager.getMode(),
-      availableModes: ['simulated', 'real']
-    });
-  } catch (error) {
-    logger.error('Error getting UE mode', { error: error.message });
-    res.status(500).json({ error: error.message });
-  }
-});
+// Mode switching removed - mode is now specified in the start request
 
 // Get singleton manager status
 router.get('/manager/status', (req, res) => {
   try {
     const managerStatus = ueManager.getManagerStatus();
-    res.json({
-      success: true,
+    res.json({ 
+      success: true, 
       managerStatus: managerStatus
     });
   } catch (error) {
@@ -358,56 +354,6 @@ router.post('/manager/reinitialize', (req, res) => {
 
 
 
-// Get UE logs
-router.get('/logs', async (req, res) => {
-  try {
-    const { lines = 100 } = req.query;
-    
-    // Get logs from process manager
-    const manager = ueManager.getCurrentManager();
-    const processLogs = manager.getLogs(parseInt(lines));
-    const consoleLogs = manager.getConsoleOutput ? manager.getConsoleOutput(parseInt(lines)) : [];
-    
-    // Also try to get UE logs from various possible locations
-    const logPaths = [
-      '/tmp/ue.log',
-      '/var/log/ue.log',
-      path.join(process.cwd(), 'logs/ue.log'),
-      path.join(__dirname, '../../logs/ue.log'),
-      path.join(__dirname, '../ue/logs')
-    ];
-
-    let fileLogContent = '';
-    let logPath = null;
-
-    for (const logPathCandidate of logPaths) {
-      try {
-        if (fs.existsSync(logPathCandidate)) {
-          const content = await fsPromises.readFile(logPathCandidate, 'utf8');
-          const lines_array = content.split('\n');
-          const recentLines = lines_array.slice(-parseInt(lines)).join('\n');
-          fileLogContent = recentLines;
-          logPath = logPathCandidate;
-          break;
-        }
-      } catch (err) {
-        continue;
-      }
-    }
-
-    res.json({
-      processLogs: processLogs,
-      consoleLogs: consoleLogs,
-      fileLogs: fileLogContent,
-      logPath: logPath,
-      lines: parseInt(lines),
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    logger.error('Error getting UE logs', { error: error.message });
-    res.status(500).json({ error: 'Failed to get UE logs' });
-  }
-});
 
 // Get UE performance metrics
 router.get('/metrics', (req, res) => {

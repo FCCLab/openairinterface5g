@@ -12,6 +12,58 @@
   border-bottom: 1px solid rgba(255, 255, 255, 0.2);
 }
 
+/* Logs Tab Styles */
+.logs-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  padding: 0 2rem;
+  width: 100%;
+  max-width: 1400px;
+  justify-content: flex-start;
+}
+
+.tab-button {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: white;
+  padding: 0.75rem 1.5rem;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.tab-button:hover {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.tab-button.active {
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.ue-log-info {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.info-item {
+  margin-bottom: 0.5rem;
+  color: white;
+  font-size: 0.9rem;
+}
+
+.info-item:last-child {
+  margin-bottom: 0;
+}
+
 .nav-container {
   width: 100%;
   max-width: 1400px;
@@ -73,6 +125,58 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+}
+
+/* Special handling for logs page */
+.logs-page {
+  align-items: stretch;
+  background: transparent;
+  width: 100%;
+  max-width: none;
+  padding: 0.5rem;
+  min-height: 100vh;
+  height: 100vh;
+}
+
+.logs-page .page-header {
+  background: transparent;
+  color: white;
+  margin-bottom: 0.5rem;
+  padding: 0.5rem 0;
+}
+
+.logs-page .page-header h1 {
+  margin: 0 0 0.25rem 0;
+  font-size: 1.5rem;
+}
+
+.logs-page .page-header p {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.logs-page .logs-tabs {
+  background: transparent;
+  width: 100%;
+  max-width: none;
+  padding: 0 1rem;
+}
+
+.logs-page .logs-container {
+  background: transparent;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: 100%;
+  flex: 1;
+}
+
+.logs-page .logs-content {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.logs-page .logs-sidebar {
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .page-header {
@@ -1194,13 +1298,13 @@
 .logs-container {
   display: grid;
   grid-template-columns: 300px 1fr;
-  gap: 2rem;
-  height: calc(100vh - 200px);
-  min-height: 500px;
-  max-height: calc(100vh - 200px);
+  gap: 1rem;
+  height: 100%;
+  min-height: 0;
   overflow: hidden;
   width: 100%;
   max-width: 100%;
+  margin: 0;
 }
 
 .logs-sidebar {
@@ -1307,19 +1411,21 @@
   gap: 1rem;
   align-items: center;
   margin-bottom: 1.5rem;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   padding-bottom: 1rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  flex-shrink: 0;
   width: 100%;
   min-width: 0;
   position: relative;
+  overflow-x: auto;
 }
 
 .control-group {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  white-space: nowrap;
+  min-width: fit-content;
 }
 
 .control-group label {
@@ -1539,12 +1645,14 @@
   gap: 0.75rem;
   margin-bottom: 0.5rem;
   flex-wrap: wrap;
+  width: 100%;
 }
 
 .log-timestamp {
   color: rgba(255, 255, 255, 0.7);
   font-size: 0.8rem;
   font-family: monospace;
+  flex-shrink: 0;
 }
 
 .log-level {
@@ -1554,6 +1662,7 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  flex-shrink: 0;
 }
 
 .log-level-error {
@@ -1584,12 +1693,14 @@
   color: white;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  flex-shrink: 0;
 }
 
 .log-meta {
   color: rgba(255, 255, 255, 0.6);
   font-size: 0.8rem;
   font-family: monospace;
+  flex-shrink: 0;
 }
 
 .log-message {
@@ -1597,6 +1708,8 @@
   font-size: 0.9rem;
   line-height: 1.4;
   word-break: break-word;
+  flex: 1;
+  min-width: 0;
 }
 
 .log-error {
@@ -1682,32 +1795,39 @@
 }
 
 /* Auto-detected field styling */
+.log-fields-container {
+  display: block !important;
+  width: 100%;
+  margin-top: 0.5rem;
+}
+
 .log-field-item {
-  margin-bottom: 0.5rem;
-  padding: 0.5rem;
+  margin-bottom: 0.25rem;
+  padding: 0.25rem 0.5rem;
   background: rgba(59, 130, 246, 0.1);
   border-radius: 4px;
   border-left: 3px solid #3b82f6;
-  display: flex;
-  flex-direction: row;
-  align-items: flex-start;
+  display: flex !important;
+  align-items: center;
   gap: 0.5rem;
+  width: 100%;
 }
 
 .log-field-item:last-child {
   margin-bottom: 0;
 }
 
+
 .log-field-label {
   color: #fbbf24;
   font-weight: 700;
   font-family: 'Courier New', monospace;
-  white-space: nowrap;
-  flex-shrink: 0;
   text-transform: uppercase;
   font-size: 0.85rem;
   letter-spacing: 0.5px;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .log-field-content {
@@ -1715,9 +1835,11 @@
   font-family: 'Courier New', monospace;
   word-break: break-word;
   text-align: left;
-  flex: 1;
   font-size: 0.9rem;
+  flex: 1;
+  min-width: 0;
 }
+
 
 /* Spectrogram Page Styles */
 .spectrogram-page {

@@ -20,6 +20,7 @@ function LogsPage() {
   const [showSearchHistory, setShowSearchHistory] = useState(false);
   const [showExcludeHistory, setShowExcludeHistory] = useState(false);
   
+  
   // Ref to track the current interval
   const intervalRef = useRef(null);
 
@@ -77,6 +78,7 @@ function LogsPage() {
     }
   };
 
+
   // Handle scroll to top refresh and auto-refresh management
   const handleScroll = (e) => {
     const scrollTop = e.target.scrollTop;
@@ -126,9 +128,11 @@ function LogsPage() {
       intervalRef.current = null;
     }
     
-    if (autoRefresh && selectedFile) {
+    if (autoRefresh) {
       intervalRef.current = setInterval(() => {
-        fetchLogContent(selectedFile, lines);
+        if (selectedFile) {
+          fetchLogContent(selectedFile, lines);
+        }
       }, refreshInterval);
     }
     
@@ -168,9 +172,10 @@ function LogsPage() {
     }
   }, [selectedFile, lines]);
 
+
   const formatLogEntry = (logEntry) => {
     const timestamp = new Date(logEntry.timestamp).toLocaleString();
-    const level = logEntry.level.toUpperCase();
+    const level = logEntry.level ? logEntry.level.toUpperCase() : 'INFO';
     const message = logEntry.message;
     const type = logEntry.type || '';
     const meta = logEntry.ip ? `[${logEntry.ip}]` : '';
@@ -197,6 +202,7 @@ function LogsPage() {
       raw: logEntry
     };
   };
+
 
   const getLevelColor = (level) => {
     switch (level.toLowerCase()) {
@@ -351,7 +357,7 @@ function LogsPage() {
   };
 
   return (
-    <div className="page-container">
+    <div className="page-container logs-page">
       <div className="page-header">
         <h1>System Logs</h1>
         <p>View and monitor backend system logs</p>
@@ -574,7 +580,7 @@ function LogsPage() {
                           
                           {/* Auto-detected fields */}
                           {Object.keys(log.allFields).length > 0 && (
-                            <>
+                            <div className="log-fields-container">
                               {Object.entries(log.allFields).map(([key, value]) => (
                                 <div key={key} className="log-field-item">
                                   <span className="log-field-label">{key}:</span>
@@ -583,7 +589,7 @@ function LogsPage() {
                                   </span>
                                 </div>
                               ))}
-                            </>
+                            </div>
                           )}
                           
                           {log.data && (

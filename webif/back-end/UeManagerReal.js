@@ -80,11 +80,11 @@ class UeManagerReal extends UeInterface {
 
       logger.info('UE command', { command });
 
-      // Start UE process
+      // Start UE process using the script
       this.process = spawn('bash', ['-c', command], {
         stdio: ['pipe', 'pipe', 'pipe'],
         detached: false,
-        cwd: path.join(process.env.HOME, 'openairinterface5g/cmake_targets/ran_build/build')
+        cwd: path.join(__dirname, '../ue') // Script will handle the build directory change
       });
 
       this.process.on('spawn', () => {
@@ -104,6 +104,9 @@ class UeManagerReal extends UeInterface {
         this.addToLogBuffer('stdout', output);
         this.status.lastActivity = new Date().toISOString();
         
+        // Also print to backend console for visibility
+        console.log('[UE OUTPUT]', output.trim());
+        
         // Parse UE output for status updates
         this.parseUEOutput(output);
       });
@@ -112,6 +115,9 @@ class UeManagerReal extends UeInterface {
         const error = data.toString();
         this.addToLogBuffer('stderr', error);
         this.status.lastActivity = new Date().toISOString();
+        
+        // Also print to backend console for visibility
+        console.error('[UE ERROR]', error.trim());
         
         // Check for critical errors
         if (error.includes('ERROR') || error.includes('FATAL')) {
@@ -220,19 +226,10 @@ class UeManagerReal extends UeInterface {
     }
   }
 
-  // Build UE command
+  // Build UE command using ue_usrp.sh script
   buildUECommand() {
-    const ueConfPath = path.join(__dirname, '../ue/ue.conf');
-    
-    return `sudo ./nr-uesoftmodem \
-      --usrp-args "${this.config.usrpArgs}" \
-      -r 133 \
-      --numerology ${this.config.radio?.numerology || this.config.numerology || 1} \
-      --band ${this.config.band} \
-      -C ${this.config.radio?.freq || this.config.frequency} \
-      --ue-scan-carrier \
-      -O ${ueConfPath} \
-      --ue-fo-compensation`;
+    const scriptPath = path.join(__dirname, '../ue/ue_usrp.sh');
+    return `bash ${scriptPath}`;
   }
 
   // Update UE configuration file

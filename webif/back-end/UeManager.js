@@ -13,7 +13,7 @@ class SingletonUeManager {
     }
 
     // Initialize state
-    this.currentMode = 'simulated';
+    this.currentMode = 'real';
     this.simulatedManager = null;
     this.realManager = null;
     this.isInitialized = false;

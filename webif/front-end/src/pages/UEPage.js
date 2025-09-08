@@ -43,9 +43,9 @@ function UEPage() {
     grpcPort: 50051,
     uptime: 0,
     status: 'Inactive',
-    currentMode: 'simulated',
     timestamp: null
   });
+  const [selectedMode, setSelectedMode] = useState('simulated');
   const [consoleOutput, setConsoleOutput] = useState([]);
   const [isConsoleExpanded, setIsConsoleExpanded] = useState(false);
   const [isConsoleAutoScroll, setIsConsoleAutoScroll] = useState(true);
@@ -226,8 +226,9 @@ function UEPage() {
       console.log('Current ueConfig:', ueConfig);
       console.log('Current centerFrequency:', centerFrequency);
       
-      // Prepare complete configuration
+      // Prepare complete configuration with selected mode
       const configData = {
+        mode: selectedMode, // Include the selected mode from dropdown
         radio: {
           freq: parseInt(centerFrequency),
           bw: ueConfig.bandwidth,
@@ -308,35 +309,12 @@ function UEPage() {
     }
   };
 
-  const handleModeChange = async (event) => {
+  const handleModeChange = (event) => {
     const newMode = event.target.value;
-    try {
-      console.log('Switching UE mode to:', newMode);
-      
-      // Call backend API to switch mode
-      const response = await fetch('http://10.1.100.143:40000/api/ue/mode', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ mode: newMode })
-      });
-      
-      if (response.ok) {
-        const result = await response.json();
-        console.log('UE mode switched:', result);
-        showNotification('success', `UE mode switched to ${newMode}`);
-        // Update local state
-        setRealTimeStatus(prev => ({ ...prev, currentMode: newMode }));
-      } else {
-        console.error('Failed to switch UE mode');
-        showNotification('error', 'Failed to switch UE mode');
-      }
-      
-    } catch (error) {
-      console.error('Error switching UE mode:', error);
-      showNotification('error', 'Error switching UE mode: ' + error.message);
-    }
+    console.log('Mode selector changed to:', newMode);
+    
+    // Update the selected mode state
+    setSelectedMode(newMode);
   };
 
   const handleStartScan = async () => {
@@ -902,7 +880,7 @@ function UEPage() {
             {/* UE Mode Selector */}
             <div className="control-group">
               <select 
-                value={realTimeStatus.currentMode} 
+                value={selectedMode} 
                 onChange={handleModeChange}
                 className="mode-selector"
               >
@@ -928,38 +906,12 @@ function UEPage() {
             <div className="process-status">
               <div className={`process-indicator ${realTimeStatus.isRunning ? 'running' : 'stopped'}`}></div>
               <span className="process-text">
-                {realTimeStatus.currentMode === 'simulated' ? 'Simulated' : 'Real'} UE: {realTimeStatus.status}
+                UE: {realTimeStatus.status}
               </span>
             </div>
           </div>
 
           <div className="floating-info">
-            <div className="info-row">
-              <span className="info-label">Frequency:</span>
-              <span className="info-value">{centerFrequency} Hz</span>
-            </div>
-            <div className="info-row">
-              <span className="info-label">Mode:</span>
-              <span className="info-value">{realTimeStatus.currentMode}</span>
-            </div>
-            <div className="info-row">
-              <span className="info-label">Status:</span>
-              <span className={`info-value ${realTimeStatus.isRunning ? 'running' : 'stopped'}`}>
-                {realTimeStatus.status}
-              </span>
-            </div>
-            {realTimeStatus.isRunning && (
-              <div className="info-row">
-                <span className="info-label">Uptime:</span>
-                <span className="info-value">{realTimeStatus.uptime}s</span>
-              </div>
-            )}
-            {realTimeStatus.isRunning && realTimeStatus.grpcPort && (
-              <div className="info-row">
-                <span className="info-label">gRPC Port:</span>
-                <span className="info-value">{realTimeStatus.grpcPort}</span>
-              </div>
-            )}
             {realTimeStatus.timestamp && (
               <div className="info-row">
                 <span className="info-label">Last Update:</span>
@@ -967,6 +919,7 @@ function UEPage() {
               </div>
             )}
           </div>
+
         </div>
       </div>
 
