@@ -2,3 +2,6 @@
 	path = openair2/E2AP/flexric
 	url = https://gitlab.eurecom.fr/mosaic5g/flexric.git
 	branch = remotes/origin/service-models-integration
+[submodule "nr_docs"]
+	path = nr_docs
+	url = https://github.com/FCCLab/nr_docs.git

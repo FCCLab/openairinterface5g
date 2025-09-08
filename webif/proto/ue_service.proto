@@ -1,0 +1,192 @@
+syntax = "proto3";
+
+package ue_service;
+
+// UE Control Service
+service UEControlService {
+  // Start UE process
+  rpc StartUE(StartUERequest) returns (StartUEResponse);
+  
+  // Stop UE process
+  rpc StopUE(StopUERequest) returns (StopUEResponse);
+  
+  // Get UE status
+  rpc GetStatus(StatusRequest) returns (StatusResponse);
+  
+  // Configure UE parameters
+  rpc ConfigureUE(ConfigureUERequest) returns (ConfigureUEResponse);
+  
+  // Start cell scanning procedure
+  rpc StartScanning(StartScanningRequest) returns (StartScanningResponse);
+  
+  // Stop cell scanning procedure
+  rpc StopScanning(StopScanningRequest) returns (StopScanningResponse);
+}
+
+// UE Data Acquisition Service
+service UEDataService {
+  // Stream cell scan data
+  rpc StreamCellData(CellDataRequest) returns (stream CellDataResponse);
+  
+  // Stream UE logs
+  rpc StreamLogs(LogRequest) returns (stream LogResponse);
+  
+  // Get current cell information
+  rpc GetCurrentCells(CurrentCellsRequest) returns (CurrentCellsResponse);
+}
+
+// Request/Response Messages
+message StartUERequest {
+  string frequency = 1;
+  UEConfig config = 2;
+}
+
+message StartUEResponse {
+  bool success = 1;
+  string message = 2;
+  string process_id = 3;
+}
+
+message StopUERequest {
+  string process_id = 1;
+}
+
+message StopUEResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message StatusRequest {
+  string process_id = 1;
+}
+
+message StatusResponse {
+  bool is_running = 1;
+  string status = 2;
+  string connection_state = 3;
+  string frequency = 4;
+  int64 uptime = 5;
+}
+
+message ConfigureUERequest {
+  string process_id = 1;
+  UEConfig config = 2;
+}
+
+message ConfigureUEResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message StartScanningRequest {
+  string process_id = 1;
+}
+
+message StartScanningResponse {
+  bool success = 1;
+  string message = 2;
+  string scan_id = 3;
+}
+
+message StopScanningRequest {
+  string process_id = 1;
+  string scan_id = 2;
+}
+
+message StopScanningResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message CellDataRequest {
+  string process_id = 1;
+  bool continuous = 2;
+}
+
+message CellDataResponse {
+  repeated CellInfo cells = 1;
+  int64 timestamp = 2;
+}
+
+message LogRequest {
+  string process_id = 1;
+  string level = 2; // DEBUG, INFO, WARN, ERROR
+}
+
+message LogResponse {
+  string message = 1;
+  string level = 2;
+  int64 timestamp = 3;
+}
+
+message CurrentCellsRequest {
+  string process_id = 1;
+}
+
+message CurrentCellsResponse {
+  repeated CellInfo cells = 1;
+  int64 timestamp = 2;
+}
+
+// Data Structures
+message UEConfig {
+  string frequency = 1;
+  AuthenticationConfig auth = 2;
+  NetworkConfig network = 3;
+  RadioConfig radio = 4;
+}
+
+message AuthenticationConfig {
+  string imsi = 1;
+  string key = 2;
+  string opc = 3;
+}
+
+message NetworkConfig {
+  string mcc = 1;
+  string mnc = 2;
+  string tac = 3;
+}
+
+message RadioConfig {
+  string frequency = 1;
+  string bandwidth = 2;
+  string power = 3;
+}
+
+message CellInfo {
+  int32 pci = 1;
+  int32 pss = 2;
+  int32 sss = 3;
+  double ss_rsrp = 4;
+  double ss_rsrq = 5;
+  double ss_sinr = 6;
+  bool pbch_decoded = 7;
+  MIBInfo mib = 8;
+  bool sib1_detected = 9;
+  SIB1Info sib1 = 10;
+}
+
+message MIBInfo {
+  string system_frame_number = 1;
+  string subcarrier_spacing = 2;
+  string ssb_subcarrier_offset = 3;
+  string dmrs_type_a_position = 4;
+  string pdcch_config_sib1 = 5;
+  string cell_barred = 6;
+  string intra_freq_reselection = 7;
+  string spare = 8;
+}
+
+message SIB1Info {
+  string cell_access_related_info = 1;
+  string cell_selection_info = 2;
+  string p_max = 3;
+  string frequency_band_list = 4;
+  string scs_specific_carrier_list = 5;
+  string tdd_ul_dl_configuration_common = 6;
+  string ssb_positions_in_burst = 7;
+  string ssb_periodicity_serving_cell = 8;
+  string dmrs_type_a_position = 9;
+  string pdcch_config_sib1 = 10;
+}

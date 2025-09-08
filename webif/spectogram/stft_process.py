@@ -138,9 +138,9 @@ class STFTProcess(ProcessBase):
                 self.logger.warning(f"Frame {frame_num}: fftshift failed on STFT output: {e}")
             
             # Force to use only 1 time point (first time slice)
-            if Zxx.shape[1] > 1:
-                Zxx = Zxx[:, 0:1]  # Take only the first time slice
-                t = t[0:1]  # Take only the first time point
+            # if Zxx.shape[1] > 1:
+            #     Zxx = Zxx[:, 0:1]  # Take only the first time slice
+            #     t = t[0:1]  # Take only the first time point
             
             # Convert to magnitude in dB
             magnitude_db = 20 * np.log10(np.abs(Zxx) + 1e-10)
@@ -194,7 +194,7 @@ class STFTProcess(ProcessBase):
                     if queue_size > 200:  # Increased threshold from 50 to 200 for larger queue
                         # Dynamic frame skipping based on queue size
                         skip_frames = min(queue_size // 100, 10)  # Skip 1-10 frames based on queue size
-                        if self.frame_count % 100 == 0:  # Log every 100th skipped frame
+                        if self.frame_count % 1000 == 0:  # Increased from 100 to 1000
                             self.logger.warning(f"STFT queue full ({queue_size} frames), skipping {skip_frames} frames to maintain real-time performance")
                         # Skip processing this frame to prevent queue buildup
                         self.skipped_frames += 1
@@ -210,7 +210,7 @@ class STFTProcess(ProcessBase):
                         self.frame_count += 1
                         
                         # Log progress and FPS occasionally
-                        if self.frame_count % 5000 == 0:
+                        if self.frame_count % 25000 == 0:  # Increased from 5000 to 25000
                             self.logger.info(f"STFT process: Processed {self.frame_count} frames, latest frame {result[0]}")
                         
                         # Use base class FPS logging

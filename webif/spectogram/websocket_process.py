@@ -264,7 +264,7 @@ class WebSocketProcess(ProcessBase):
                     # Check if we're falling behind - log warning if queue is building up
                     queue_size = self.stft_queue.qsize()
                     if queue_size > 20:  # If more than 20 frames waiting
-                        if frame_count % 1000 == 0:  # Log every 1000th frame
+                        if frame_count % 10000 == 0:  # Increased from 1000 to 10000
                             self.logger.warning(f"WebSocket falling behind: {queue_size} frames in queue, processing frame {frame_num}")
                     
                     # Prepare data for WebSocket broadcast - OPTIMIZED MEMORY USAGE
@@ -288,7 +288,7 @@ class WebSocketProcess(ProcessBase):
                     prep_time = time.time() - prep_start
                     
                     # Debug: Verify we're sending lists, not numpy arrays
-                    if frame_count % 1000 == 0:  # Log every 1000th frame
+                    if frame_count % 10000 == 0:  # Increased from 1000 to 10000
                         self.logger.info(f"Main loop data types (frame {frame_num}):")
                         self.logger.info(f"  freq_list type: {type(freq_list)}, length: {len(freq_list) if hasattr(freq_list, '__len__') else 'N/A'}")
                         self.logger.info(f"  t_list type: {type(t_list)}, length: {len(t_list) if hasattr(t_list, '__len__') else 'N/A'}")
@@ -308,17 +308,17 @@ class WebSocketProcess(ProcessBase):
                     frame_count += 1
                     self.frame_count += 1  # Update global frame count for FPS tracking
                     
-                    # Log timing details every 1000 frames
-                    if frame_count % 1000 == 0:
+                    # Log timing details every 10000 frames
+                    if frame_count % 10000 == 0:  # Increased from 1000 to 10000
                         total_time = queue_time + prep_time + broadcast_time
                         self.logger.info(f"WebSocket timing breakdown (frame {frame_num}):")
                         self.logger.info(f"  Queue get: {queue_time*1000:.2f}ms")
-                        self.logger.info(f"  Data prep: {prep_time*1000:.2f}ms")
+                        self.logger.info(f"  Data_prep: {prep_time*1000:.2f}ms")
                         self.logger.info(f"  Broadcast: {broadcast_time*1000:.2f}ms")
                         self.logger.info(f"  Total: {total_time*1000:.2f}ms")
                     
                     # Log progress and FPS occasionally
-                    if frame_count % 5000 == 0:
+                    if frame_count % 25000 == 0:  # Increased from 5000 to 25000
                         self.logger.info(f"WebSocket process: broadcast {frame_count} frames")
                     
                     # Use base class FPS logging

@@ -331,7 +331,7 @@ class TXRXProcess(ProcessBase):
                         local_frame_count += 1
                         self.frame_count += 1
                         
-                        if local_frame_count % 5000 == 0:
+                        if local_frame_count % 25000 == 0:  # Increased from 5000 to 25000
                             self.logger.info(f"RX thread {thread_id}: collected {local_frame_count} frames")
                         
                         self._log_fps(current_time)
@@ -340,7 +340,7 @@ class TXRXProcess(ProcessBase):
                         self.logger.warning("RX queue is full, dropping frame")
                         continue
                     
-                    if local_frame_count % 1000 == 0:
+                    if local_frame_count % 10000 == 0:  # Increased from 1000 to 10000
                         self.logger.debug(f"RX frame sent: frame_size={frame_size}, hop_size={samples_per_frame}")
 
                     

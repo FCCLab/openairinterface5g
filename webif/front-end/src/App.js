@@ -3,8 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react
 import './App.css';
 import { NotificationProvider } from './context/NotificationContext';
 import HomePage from './pages/HomePage';
-import CellScanPage from './pages/CellScanPage';
-import CellAttachedPage from './pages/CellAttachedPage';
+import UEPage from './pages/UEPage';
 import LogsPage from './pages/LogsPage';
 import SpectrogramPage from './pages/SpectrogramPage';
 
@@ -25,11 +24,8 @@ function Navigation() {
           <Link to="/spectrogram" className={`nav-link ${location.pathname === '/spectrogram' ? 'active' : ''}`}>
             Spectrogram
           </Link>
-          <Link to="/cell-scan" className={`nav-link ${location.pathname === '/cell-scan' ? 'active' : ''}`}>
-            Cell Scan
-          </Link>
-          <Link to="/cell-attached" className={`nav-link ${location.pathname === '/cell-attached' ? 'active' : ''}`}>
-            Cell Attached
+          <Link to="/ue" className={`nav-link ${location.pathname === '/ue' ? 'active' : ''}`}>
+            UE
           </Link>
           <Link to="/logs" className={`nav-link ${location.pathname === '/logs' ? 'active' : ''}`}>
             Logs
@@ -48,10 +44,9 @@ function App() {
           <Navigation />
           <Routes>
             <Route path="/" element={<HomePage />} />
-            <Route path="/cell-scan" element={<CellScanPage />} />
-            <Route path="/cell-attached" element={<CellAttachedPage />} />
-            <Route path="/logs" element={<LogsPage />} />
             <Route path="/spectrogram" element={<SpectrogramPage />} />
+            <Route path="/ue" element={<UEPage />} />
+            <Route path="/logs" element={<LogsPage />} />
           </Routes>
         </div>
       </Router>

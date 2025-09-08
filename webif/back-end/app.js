@@ -16,6 +16,7 @@ const systemRoutes = require('./routes/system');
 const usrpRoutes = require('./routes/usrp');
 const logsRoutes = require('./routes/logs');
 const spectrogramRoutes = require('./routes/spectrogram');
+const ueRoutes = require('./routes/ue');
 
 const app = express();
 const port = process.env.PORT || 40000;
@@ -68,6 +69,30 @@ wss.on('connection', (ws, req) => {
   });
 });
 
+// Start periodic UE status updates
+let ueStatusInterval = null;
+const startUEStatusUpdates = () => {
+  if (ueStatusInterval) return; // Already running
+  
+  ueStatusInterval = setInterval(() => {
+    // Get UE status from routes
+    const ueRoutes = require('./routes/ue');
+    const status = ueRoutes.getCurrentUEStatus();
+    
+    broadcastUEStatus(status);
+  }, 1000); // Update every second
+};
+
+const stopUEStatusUpdates = () => {
+  if (ueStatusInterval) {
+    clearInterval(ueStatusInterval);
+    ueStatusInterval = null;
+  }
+};
+
+app.locals.startUEStatusUpdates = startUEStatusUpdates;
+app.locals.stopUEStatusUpdates = stopUEStatusUpdates;
+
 // Security middleware
 app.use(helmet({
   contentSecurityPolicy: {
@@ -119,7 +144,7 @@ app.use(morgan('combined', { stream: logger.stream }));
 const corsOptions = {
   origin: process.env.NODE_ENV === 'production' 
     ? ['http://localhost:41000', 'https://yourdomain.com'] 
-    : ['http://localhost:41000', 'http://localhost:40000'],
+    : ['http://localhost:41000', 'http://localhost:40000', 'http://10.1.100.143:41000'],
   credentials: true,
   optionsSuccessStatus: 200
 };
@@ -134,6 +159,7 @@ app.use('/api/system', systemRoutes);
 app.use('/api/usrp', usrpRoutes);
 app.use('/api/logs', logsRoutes);
 app.use('/api/spectrogram', spectrogramRoutes);
+app.use('/api/ue', ueRoutes);
 
 // Request logging middleware
 app.use((req, res, next) => {
@@ -255,6 +281,20 @@ app.get('/api', (req, res) => {
       '/api/logs/files': 'Get list of available log files',
       '/api/logs/view/:filename': 'Get log file content',
       '/api/logs/download/:filename': 'Download log file',
+      '/api/ue/status': 'Get UE status and connection information',
+      '/api/ue/config': 'Get/Update UE configuration',
+      '/api/ue/start': 'Start UE process',
+      '/api/ue/stop': 'Stop UE process',
+      '/api/ue/restart': 'Restart UE process',
+      '/api/ue/scan/start': 'Start cell scan with center frequency',
+      '/api/ue/scan/stop': 'Stop cell scan',
+      '/api/ue/scan/status': 'Get cell scan status',
+      '/api/ue/scan/cells': 'Get detected cells information',
+      '/api/ue/acquire/start': 'Start continuous cell acquisition (1s interval)',
+      '/api/ue/acquire/stop': 'Stop continuous cell acquisition',
+      '/api/ue/acquire/status': 'Get cell acquisition status',
+      '/api/ue/logs': 'Get UE process logs',
+      '/api/ue/metrics': 'Get UE performance metrics',
       '/health': 'Health check endpoint'
     }
   });
