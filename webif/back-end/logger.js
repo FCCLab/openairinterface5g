@@ -92,6 +92,41 @@ const spectrogramLogger = winston.createLogger({
   ]
 });
 
+// Create a separate UE logger for real UE manager
+const ueLogger = winston.createLogger({
+  level: process.env.LOG_LEVEL || 'debug',
+  format: fileFormat,
+  defaultMeta: { 
+    service: 'openairinterface5g-backend',
+    version: '1.0.0',
+    component: 'ue-manager'
+  },
+  transports: [
+    // UE log file (daily rotation) - only UE functionality
+    new DailyRotateFile({
+      filename: path.join(logsDir, 'ue-%DATE%.log'),
+      datePattern: 'YYYY-MM-DD',
+      maxSize: '20m',
+      maxFiles: '30d',
+      zippedArchive: true,
+      format: fileFormat,
+      level: 'debug'
+    }),
+    // Console transport for UE logs
+    new winston.transports.Console({
+      format: winston.format.combine(
+        winston.format.colorize(),
+        winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+        winston.format.printf(({ timestamp, level, message, ...meta }) => {
+          const metaStr = Object.keys(meta).length ? JSON.stringify(meta, null, 2) : '';
+          return `[UE] ${timestamp} ${level}: ${message} ${metaStr}`;
+        })
+      ),
+      level: 'debug'
+    })
+  ]
+});
+
 // Add console transport in development
 if (process.env.NODE_ENV !== 'production') {
   logger.add(new winston.transports.Console({
@@ -136,6 +171,18 @@ logger.spectrogram = (message, meta = {}) => {
 logger.spectrogramLevel = (level, message, meta = {}) => {
   spectrogramLogger.log(level, message, { ...meta, type: 'spectrogram' });
 };
+
+// UE logger helper functions
+logger.ue = (message, meta = {}) => {
+  ueLogger.info(message, { ...meta, type: 'ue' });
+};
+
+logger.ueLevel = (level, message, meta = {}) => {
+  ueLogger.log(level, message, { ...meta, type: 'ue' });
+};
+
+// Export the UE logger for direct access if needed
+logger.ueLogger = ueLogger;
 
 // Log uncaught exceptions and unhandled rejections
 logger.exceptions.handle(

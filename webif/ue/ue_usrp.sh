@@ -37,18 +37,7 @@ echo "Starting nr-uesoftmodem..."
 echo "Working directory: $(pwd)"
 
 echo "Attempting to run nr-uesoftmodem..."
-echo "Command: ./nr-uesoftmodem --usrp-args \"type=x300,addr=192.168.40.2,clock=internal,time=internal\" --ue-scan-carrier -O $DIR/ue.conf --ue-fo-compensation $@"
+COMMAND="sudo -S ./nr-uesoftmodem --usrp-args \"type=x300,addr=192.168.40.2,clock=internal,time=internal\" --ue-scan-carrier -O $DIR/ue.conf --ue-fo-compensation $@"
+echo "Command: $COMMAND"
 
-if [ -x "./nr-uesoftmodem" ]; then
-    echo "nr-uesoftmodem is executable, running..."
-    if [ "$EUID" -ne 0 ]; then
-        echo "Running with sudo and password..."
-        exec echo 'fcpsutd' | sudo -S ./nr-uesoftmodem --usrp-args "type=x300,addr=192.168.40.2,clock=internal,time=internal" --ue-scan-carrier -O $DIR/ue.conf --ue-fo-compensation "$@"
-    else
-        echo "Running as root..."
-        exec ./nr-uesoftmodem --usrp-args "type=x300,addr=192.168.40.2,clock=internal,time=internal" --ue-scan-carrier -O $DIR/ue.conf --ue-fo-compensation "$@"
-    fi
-else
-    echo "nr-uesoftmodem not executable or not found."
-    exit 1
-fi
+exec echo 'fcpsutd' | $COMMAND 

@@ -1708,6 +1708,7 @@
   font-size: 0.9rem;
   line-height: 1.4;
   word-break: break-word;
+  text-align: left;
   flex: 1;
   min-width: 0;
 }
@@ -3349,4 +3350,40 @@
     opacity: 0;
     transform: translateY(-2px) scale(0.99);
   }
+}
+
+/* Input group styles for frequency and bandwidth */
+.freq-input-group,
+.bandwidth-input-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.freq-input-group input,
+.bandwidth-input-group input {
+  flex: 1;
+  padding: 0.5rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+  font-size: 0.9rem;
+}
+
+.freq-input-group input:focus,
+.bandwidth-input-group input:focus {
+  outline: none;
+  border-color: #4ade80;
+  box-shadow: 0 0 0 2px rgba(74, 222, 128, 0.2);
+}
+
+.freq-unit,
+.bandwidth-unit {
+  color: #374151 !important;
+  font-size: 0.8rem !important;
+  font-weight: 500 !important;
+  white-space: nowrap !important;
+  display: inline-block !important;
+  min-width: 30px !important;
 }

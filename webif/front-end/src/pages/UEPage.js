@@ -21,7 +21,9 @@ function UEPage() {
     nssai_sd: 1,
     frequency: '3425010000',
     bandwidth: '100',
-    numerology: '1'
+    numerology: '1',
+    resourceBlocks: '133',
+    band: '78'
   });
 
   const [isConfigEditing, setIsConfigEditing] = useState(false);
@@ -122,22 +124,21 @@ function UEPage() {
   // Poll console output
   const pollConsoleOutput = async () => {
     try {
-      const response = await fetch('http://10.1.100.143:40000/api/ue/logs?lines=50');
+      const response = await fetch('http://10.1.100.143:40000/api/ue/console?lines=50');
       if (response.ok) {
         const data = await response.json();
-        if (data.consoleLogs && Array.isArray(data.consoleLogs)) {
-          // Convert console logs to simple string array for display
-          const logLines = data.consoleLogs.map(log => {
-            const timestamp = new Date(log.timestamp).toLocaleTimeString();
-            const type = log.type === 'stderr' ? '[ERR]' : log.type === 'stdout' ? '[OUT]' : '[SYS]';
-            return `${timestamp} ${type} ${log.message}`;
-          });
-          setConsoleOutput(logLines);
-        } else if (data.processLogs && Array.isArray(data.processLogs)) {
-          // Fallback to process logs if console logs not available
-          const logLines = data.processLogs.map(log => {
-            const timestamp = new Date(log.timestamp).toLocaleTimeString();
-            return `${timestamp} ${log.message}`;
+        if (data.success && data.output && Array.isArray(data.output)) {
+          // Convert console output to simple string array for display
+          const logLines = data.output.map(log => {
+            if (typeof log === 'string') {
+              return log;
+            } else if (log.timestamp && log.message) {
+              const timestamp = new Date(log.timestamp).toLocaleTimeString();
+              const type = log.type === 'stderr' ? '[ERR]' : log.type === 'stdout' ? '[OUT]' : '[SYS]';
+              return `${timestamp} ${type} ${log.message}`;
+            } else {
+              return JSON.stringify(log);
+            }
           });
           setConsoleOutput(logLines);
         }
@@ -231,8 +232,9 @@ function UEPage() {
         mode: selectedMode, // Include the selected mode from dropdown
         radio: {
           freq: parseInt(centerFrequency),
-          bw: ueConfig.bandwidth,
-          numerology: ueConfig.numerology
+          numerology: ueConfig.numerology,
+          resourceBlocks: ueConfig.resourceBlocks,
+          band: ueConfig.band
         },
         authentication: {
           imsi: ueConfig.imsi,
@@ -495,7 +497,7 @@ function UEPage() {
             <div className="config-group">
               <h3>Radio</h3>
               <div className="config-item">
-                <label>Center Frequency (Hz):</label>
+                <label>Center Frequency (-C):</label>
                 <div className="freq-input-group">
                   <input 
                     type="text" 
@@ -515,15 +517,6 @@ function UEPage() {
                 )}
               </div>
               <div className="config-item">
-                <label>Bandwidth (MHz):</label>
-                <input 
-                  type="text" 
-                  value={ueConfig.bandwidth} 
-                  onChange={(e) => setUeConfig({...ueConfig, bandwidth: e.target.value})}
-                  disabled={!isConfigEditing}
-                />
-              </div>
-              <div className="config-item">
                 <label>Numerology:</label>
                 <input 
                   type="text" 
@@ -531,6 +524,32 @@ function UEPage() {
                   onChange={(e) => setUeConfig({...ueConfig, numerology: e.target.value})}
                   disabled={!isConfigEditing}
                 />
+              </div>
+              <div className="config-item">
+                <label>Resource Blocks (-r):</label>
+                <div className="bandwidth-input-group">
+                  <input 
+                    type="text" 
+                    value={ueConfig.resourceBlocks} 
+                    onChange={(e) => setUeConfig({...ueConfig, resourceBlocks: e.target.value})}
+                    placeholder="133"
+                    disabled={!isConfigEditing}
+                  />
+                  <span className="bandwidth-unit">PRB</span>
+                </div>
+              </div>
+              <div className="config-item">
+                <label>Band (--band):</label>
+                <div className="bandwidth-input-group">
+                  <span className="bandwidth-unit">n</span>
+                  <input 
+                    type="text" 
+                    value={ueConfig.band} 
+                    onChange={(e) => setUeConfig({...ueConfig, band: e.target.value})}
+                    placeholder="78"
+                    disabled={!isConfigEditing}
+                  />
+                </div>
               </div>
             </div>
 
@@ -988,4 +1007,5 @@ function UEPage() {
 }
 
 export default UEPage;
+
 

@@ -18,20 +18,29 @@ class UeManagerReal extends UeInterface {
       error: null
     };
     this.config = {
-      imsi: '001010000000003',
-      key: 'fec86ba6eb707ed08905757b1bb44b8f',
-      opc: 'c42449363bbad02b66d16bc975d77cc1',
-      dnn: 'oai',
-      nssai_sst: 1,
-      usrpArgs: 'type=x300,addr=192.168.40.2,clock=internal,time=internal',
-      frequency: 3425010000,
-      numerology: 1,
-      band: 78
+      authentication: {
+        imsi: '001010000000003',
+        key: 'fec86ba6eb707ed08905757b1bb44b8f',
+        opc: 'c42449363bbad02b66d16bc975d77cc1'
+      },
+      network: {
+        dnn: 'oai',
+        nssai_sst: 1,
+        nssai_sd: 1
+      },
+      radio: {
+        freq: 3425010000,
+        numerology: '1',
+        resourceBlocks: '133',
+        band: '78'
+      },
+      usrpArgs: 'type=x300,addr=192.168.40.2,clock=internal,time=internal'
     };
     this.consoleOutput = [];
     this.logBuffer = [];
     this.maxLogBufferSize = 1000;
   }
+
 
   // Get current status (unified interface)
   getStatus() {
@@ -70,7 +79,11 @@ class UeManagerReal extends UeInterface {
       // Update configuration
       this.config = { ...this.config, ...config };
 
-      logger.info('Starting UE process', { config: this.config });
+      logger.ue('Starting UE process', { 
+        receivedConfig: config,
+        mergedConfig: this.config,
+        radioConfig: this.config.radio
+      });
 
       // Update UE configuration file
       await this.updateConfigFile();
@@ -78,13 +91,20 @@ class UeManagerReal extends UeInterface {
       // Build UE command
       const command = this.buildUECommand();
 
-      logger.info('UE command', { command });
+      logger.ue('UE command', { command });
+      
+      const workingDir = path.join(__dirname, '../ue');
+      logger.ue('UE process details', { 
+        command, 
+        workingDir, 
+        spawnCommand: `bash -c "${command}"` 
+      });
 
       // Start UE process using the script
       this.process = spawn('bash', ['-c', command], {
         stdio: ['pipe', 'pipe', 'pipe'],
         detached: false,
-        cwd: path.join(__dirname, '../ue') // Script will handle the build directory change
+        cwd: workingDir // Script will handle the build directory change
       });
 
       this.process.on('spawn', () => {
@@ -97,6 +117,8 @@ class UeManagerReal extends UeInterface {
           lastActivity: new Date().toISOString(),
           error: null
         };
+        this.addToLogBuffer('system', `UE process started with PID: ${this.process.pid}`);
+        logger.ue('UE process spawned successfully', { pid: this.process.pid });
       });
 
       this.process.stdout.on('data', (data) => {
@@ -106,6 +128,9 @@ class UeManagerReal extends UeInterface {
         
         // Also print to backend console for visibility
         console.log('[UE OUTPUT]', output.trim());
+        
+        // Log UE output
+        logger.ueLevel('debug', 'UE stdout', { output: output.trim() });
         
         // Parse UE output for status updates
         this.parseUEOutput(output);
@@ -118,6 +143,9 @@ class UeManagerReal extends UeInterface {
         
         // Also print to backend console for visibility
         console.error('[UE ERROR]', error.trim());
+        
+        // Log UE error
+        logger.ueLevel('error', 'UE stderr', { error: error.trim() });
         
         // Check for critical errors
         if (error.includes('ERROR') || error.includes('FATAL')) {
@@ -140,7 +168,7 @@ class UeManagerReal extends UeInterface {
       });
 
       this.process.on('error', (error) => {
-        logger.error('UE process error', { error: error.message });
+        logger.ueLevel('error', 'UE process error', { error: error.message });
         this.addToLogBuffer('system', `Process error: ${error.message}`);
         this.status = {
           connected: false,
@@ -161,7 +189,7 @@ class UeManagerReal extends UeInterface {
       };
 
     } catch (error) {
-      logger.error('Error starting UE', { error: error.message });
+      logger.ueLevel('error', 'Error starting UE', { error: error.message });
       this.status.error = error.message;
       throw error;
     }
@@ -174,28 +202,39 @@ class UeManagerReal extends UeInterface {
         return { success: true, message: 'UE process is not running' };
       }
 
-      logger.info('Stopping UE process', { pid: this.process.pid });
+      logger.ue('Stopping UE process', { pid: this.process.pid });
 
-      // Try graceful shutdown first
-      this.process.kill('SIGTERM');
-      this.addToLogBuffer('system', 'Sending SIGTERM to UE process');
-
-      // Wait for graceful shutdown
-      await new Promise((resolve) => {
-        const timeout = setTimeout(() => {
-          if (this.process && !this.process.killed) {
-            logger.warn('Force killing UE process');
-            this.process.kill('SIGKILL');
-            this.addToLogBuffer('system', 'Force killing UE process with SIGKILL');
-          }
-          resolve();
-        }, 5000);
-
-        this.process.on('close', () => {
-          clearTimeout(timeout);
-          resolve();
+      // Stop process and all children gracefully
+      logger.ue('Stopping UE process and all children', { pid: this.process.pid });
+      this.addToLogBuffer('system', 'Stopping UE process and all children');
+      
+      // Stop process tree using ue_usrp_stop.sh script
+      if (this.process && this.process.pid) {
+        const { exec } = require('child_process');
+        const stopScriptPath = path.join(__dirname, '../ue/ue_usrp_stop.sh');
+        
+        logger.ue('Stopping process tree using stop script', { 
+          mainPid: this.process.pid, 
+          scriptPath: stopScriptPath 
         });
-      });
+        
+        await new Promise((resolve) => {
+          exec(`bash ${stopScriptPath} ${this.process.pid}`, (error, stdout, stderr) => {
+            if (stdout) {
+              logger.ue('Stop script output', { output: stdout.trim() });
+            }
+            if (stderr) {
+              logger.ue('Stop script error', { error: stderr.trim() });
+            }
+            if (error) {
+              logger.ue('Error running stop script', { error: error.message });
+            } else {
+              logger.ue('Stop script completed successfully');
+            }
+            resolve();
+          });
+        });
+      }
 
       this.status = {
         connected: false,
@@ -209,7 +248,7 @@ class UeManagerReal extends UeInterface {
       return { success: true, message: 'UE process stopped' };
 
     } catch (error) {
-      logger.error('Error stopping UE', { error: error.message });
+      logger.ueLevel('error', 'Error stopping UE', { error: error.message });
       throw error;
     }
   }
@@ -221,7 +260,7 @@ class UeManagerReal extends UeInterface {
       await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
       return await this.start(config);
     } catch (error) {
-      logger.error('Error restarting UE', { error: error.message });
+      logger.ueLevel('error', 'Error restarting UE', { error: error.message });
       throw error;
     }
   }
@@ -229,8 +268,43 @@ class UeManagerReal extends UeInterface {
   // Build UE command using ue_usrp.sh script
   buildUECommand() {
     const scriptPath = path.join(__dirname, '../ue/ue_usrp.sh');
-    return `bash ${scriptPath}`;
+    
+    // Extract parameters from config
+    const radio = this.config.radio || {};
+    const resourceBlocks = radio.resourceBlocks || '133';
+    const numerology = radio.numerology || '1';
+    const band = radio.band || '78';
+    const centerFreq = radio.freq || '3425010000';
+    
+    logger.ue('Extracting radio parameters', {
+      fullConfig: this.config,
+      radioConfig: radio,
+      extractedParams: {
+        resourceBlocks,
+        numerology,
+        band,
+        centerFreq
+      }
+    });
+    
+    // Build command with parameters
+    const command = `bash ${scriptPath} -r ${resourceBlocks} --numerology ${numerology} --band ${band} -C ${centerFreq}`;
+    
+    // Log the command details
+    logger.ue('Building UE command', { 
+      scriptPath, 
+      command,
+      parameters: {
+        resourceBlocks,
+        numerology,
+        band,
+        centerFreq
+      }
+    });
+    
+    return command;
   }
+
 
   // Update UE configuration file
   async updateConfigFile() {
@@ -246,10 +320,10 @@ class UeManagerReal extends UeInterface {
 }`;
 
       await fs.promises.writeFile(configPath, configContent, 'utf8');
-      logger.info('UE configuration file updated', { configPath });
+      logger.ue('UE configuration file updated', { configPath, configContent });
 
     } catch (error) {
-      logger.error('Error updating UE config file', { error: error.message });
+      logger.ueLevel('error', 'Error updating UE config file', { error: error.message });
       throw error;
     }
   }
@@ -301,6 +375,7 @@ class UeManagerReal extends UeInterface {
   getConsoleOutput(lines = 100) {
     return this.consoleOutput.slice(-lines);
   }
+
 
   // Get performance metrics
   getMetrics() {

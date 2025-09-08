@@ -186,7 +186,9 @@ router.post('/start', async (req, res) => {
       hasAuth: !!config.authentication,
       hasNetwork: !!config.network,
       hasRadio: !!config.radio,
-      frequency: config.radio?.freq || config.frequency
+      frequency: config.radio?.freq || config.frequency,
+      fullConfig: config,
+      radioConfig: config.radio
     });
     
     const manager = ueManager.getCurrentManager();
