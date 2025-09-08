@@ -865,27 +865,6 @@ function UEPage() {
 
 
 
-        {/* Recent Logs */}
-        <div className="ue-section">
-          <h2>Recent Logs</h2>
-          <div className="logs-container">
-            <div className="log-entry">
-              <span className="log-time">[12:34:56]</span>
-              <span className="log-level info">[INFO]</span>
-              <span className="log-message">UE initialized successfully</span>
-            </div>
-            <div className="log-entry">
-              <span className="log-time">[12:34:55]</span>
-              <span className="log-level debug">[DEBUG]</span>
-              <span className="log-message">Starting cell search...</span>
-            </div>
-            <div className="log-entry">
-              <span className="log-time">[12:34:54]</span>
-              <span className="log-level info">[INFO]</span>
-              <span className="log-message">USRP device connected</span>
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* Floating UE Process Management Panel */}
