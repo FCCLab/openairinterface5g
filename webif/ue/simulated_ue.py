@@ -19,13 +19,23 @@ from typing import List, Dict, Any
 import argparse
 
 # Import generated protobuf classes (we'll generate these)
+
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+
 try:
-    import ue_service_pb2
-    import ue_service_pb2_grpc
+    from proto import ue_service_pb2
+    from proto import ue_service_pb2_grpc
 except ImportError:
-    print("Error: protobuf files not found. Please generate them first.")
-    print("Run: python -m grpc_tools.protoc --python_out=. --grpc_python_out=. proto/ue_service.proto")
-    sys.exit(1)
+    try:
+        import ue_service_pb2
+        import ue_service_pb2_grpc
+    except ImportError as e:
+        print(f"Error importing protobuf files: {e}")
+        print("Run: python -m grpc_tools.protoc --python_out=. --grpc_python_out=. proto/ue_service.proto")
+        sys.exit(1)
 
 # Configure logging to file
 import os
@@ -81,8 +91,6 @@ class SimulatedUEProcess:
         
         # Scanning state
         self.is_scanning = False
-        self.scan_id = None
-        self.scan_frequency = None
         self.scan_thread = None
         self.scan_stop_event = threading.Event()
         
@@ -321,8 +329,7 @@ class SimulatedUEProcess:
             'metrics': self.metrics,
             'config': self.config,
             'uptime': time.time() - self.start_time if self.is_running else 0,
-            'is_scanning': self.is_scanning,
-            'scan_id': self.scan_id
+            'is_scanning': self.is_scanning
         }
     
     def start_scanning(self) -> Dict[str, Any]:
@@ -333,16 +340,13 @@ class SimulatedUEProcess:
         if self.is_scanning:
             return {
                 'success': True,
-                'message': 'Cell scan is already running',
-                'scan_id': self.scan_id
+                'message': 'Cell scan is already running'
             }
         
-        self.scan_id = f"scan_{int(time.time() * 1000)}"
         self.is_scanning = True
         self.scan_stop_event.clear()
         
         self.log("Starting cell scanning", "info")
-        self.log(f"Scan ID: {self.scan_id}", "info")
         
         # Start scanning thread
         self.scan_thread = threading.Thread(target=self.cell_scanning_procedure, daemon=True)
@@ -350,8 +354,7 @@ class SimulatedUEProcess:
         
         return {
             'success': True,
-            'message': 'Cell scanning started successfully',
-            'scan_id': self.scan_id
+            'message': 'Cell scanning started successfully'
         }
     
     def stop_scanning(self) -> Dict[str, Any]:
@@ -369,8 +372,6 @@ class SimulatedUEProcess:
             self.scan_thread.join(timeout=2.0)
         
         self.is_scanning = False
-        self.scan_id = None
-        self.scan_frequency = None
         
         return {
             'success': True,
@@ -439,7 +440,7 @@ class SimulatedUEProcess:
                 'sib1_detected': random.choice([True, False]),
                 'sib1': self.generate_sib1_info() if random.choice([True, False]) else None,
                 'cell_id': f"cell_{i+1}",
-                'frequency': self.scan_frequency,
+                'frequency': self.config.get('frequency', 3425010000),
                 'timestamp': time.time()
             }
             cells.append(cell)
@@ -566,18 +567,6 @@ class UEControlServiceImpl(ue_service_pb2_grpc.UEControlServiceServicer):
             message="UE stopped via gRPC"
         )
     
-    def GetStatus(self, request, context):
-        """Get UE status"""
-        status = self.ue_process.get_status()
-        
-        return ue_service_pb2.StatusResponse(
-            is_running=status['is_running'],
-            status=status['connection_state'],
-            connection_state=status['connection_state'],
-            frequency=str(status['config'].get('frequency', 0)),
-            uptime=int(status['uptime'])
-        )
-    
     def ConfigureUE(self, request, context):
         """Configure UE"""
         self.ue_process.log("gRPC ConfigureUE called", "info")
@@ -596,21 +585,19 @@ class UEControlServiceImpl(ue_service_pb2_grpc.UEControlServiceServicer):
             
             return ue_service_pb2.StartScanningResponse(
                 success=result['success'],
-                message=result['message'],
-                scan_id=result['scan_id']
+                message=result['message']
             )
         except Exception as e:
             self.ue_process.log(f"Error starting scanning: {str(e)}", "error")
             
             return ue_service_pb2.StartScanningResponse(
                 success=False,
-                message=f"Failed to start scanning: {str(e)}",
-                scan_id=""
+                message=f"Failed to start scanning: {str(e)}"
             )
     
     def StopScanning(self, request, context):
         """Stop cell scanning procedure"""
-        self.ue_process.log(f"gRPC StopScanning called for scan_id: {request.scan_id}", "info")
+        self.ue_process.log("gRPC StopScanning called", "info")
         
         try:
             result = self.ue_process.stop_scanning()
@@ -634,85 +621,10 @@ class UEDataServiceImpl(ue_service_pb2_grpc.UEDataServiceServicer):
     def __init__(self, ue_process: SimulatedUEProcess):
         self.ue_process = ue_process
     
-    def StreamCellData(self, request, context):
-        """Stream cell data"""
-        self.ue_process.log("gRPC StreamCellData started", "info")
-        
-        while self.ue_process.is_running:
-            # Convert cells to protobuf format
-            cells = []
-            for cell in self.ue_process.detected_cells:
-                mib = None
-                if cell['mib']:
-                    mib = ue_service_pb2.MIBInfo(
-                        system_frame_number=str(cell['mib']['system_frame_number']),
-                        subcarrier_spacing=str(cell['mib']['subcarrier_spacing_common']),
-                        ssb_subcarrier_offset=str(cell['mib']['ssb_subcarrier_offset']),
-                        dmrs_type_a_position=str(cell['mib']['dmrs_type_a_position']),
-                        pdcch_config_sib1=str(cell['mib']['pdcch_config_sib1']),
-                        cell_barred=str(cell['mib']['cell_barred']),
-                        intra_freq_reselection=str(cell['mib']['intra_freq_reselection']),
-                        spare=str(cell['mib']['spare'])
-                    )
-                
-                sib1 = None
-                if cell['sib1_info']:
-                    sib1 = ue_service_pb2.SIB1Info(
-                        cell_access_related_info=json.dumps(cell['sib1_info'].get('cell_identity', {})),
-                        cell_selection_info=json.dumps(cell['sib1_info'].get('cell_selection_info', {})),
-                        p_max='23',
-                        frequency_band_list=str(cell['sib1_info'].get('freq_band_indicator', 1)),
-                        scs_specific_carrier_list='[]',
-                        tdd_ul_dl_configuration_common='{}',
-                        ssb_positions_in_burst='{}',
-                        ssb_periodicity_serving_cell='ms20',
-                        dmrs_type_a_position='0',
-                        pdcch_config_sib1='0'
-                    )
-                
-                cell_pb = ue_service_pb2.CellInfo(
-                    pci=cell['pci'],
-                    pss=cell['pss']['value'],
-                    sss=cell['sss']['value'],
-                    ss_rsrp=cell['ss_rsrp'],
-                    ss_rsrq=cell['ss_rsrq'],
-                    ss_sinr=cell['ss_sinr'],
-                    pbch_decoded=(cell['pbch'] == 'Decoded'),
-                    mib=mib,
-                    sib1_detected=(cell['sib1'] == 'Detected'),
-                    sib1=sib1
-                )
-                cells.append(cell_pb)
-            
-            response = ue_service_pb2.CellDataResponse(
-                cells=cells,
-                timestamp=int(time.time() * 1000)
-            )
-            
-            yield response
-            time.sleep(2)  # Send updates every 2 seconds
-    
-    def StreamLogs(self, request, context):
-        """Stream logs"""
-        self.ue_process.log("gRPC StreamLogs started", "info")
-        
-        # Send existing logs
-        for log_entry in self.ue_process.logs:
-                
-            response = ue_service_pb2.LogResponse(
-                message=log_entry['message'],
-                level=log_entry['level'],
-                timestamp=int(time.time() * 1000)
-            )
-            yield response
-        
-        # Note: In a real implementation, you'd want to stream new logs as they arrive
-        # For simplicity, we just send existing logs
-    
-    def GetCurrentCells(self, request, context):
-        """Get current cells"""
+    def GetDetectedCells(self, request, context):
+        """Get detected cells"""
         try:
-            self.ue_process.log(f"GetCurrentCells called, found {len(self.ue_process.detected_cells)} cells", "info")
+            self.ue_process.log(f"GetDetectedCells called, found {len(self.ue_process.detected_cells)} cells", "info")
             cells = []
             for cell in self.ue_process.detected_cells:
                 mib = None
@@ -751,31 +663,30 @@ class UEDataServiceImpl(ue_service_pb2_grpc.UEDataServiceServicer):
                         self.ue_process.log(f"Error creating SIB1 for cell {cell.get('id', 'unknown')}: {str(e)}", "error")
                         sib1 = None
                 
-                # Ensure all required fields are present and of correct type
+                # Extract PSS and SSS values
+                pss_value = 0
+                if isinstance(cell.get('pss'), dict):
+                    pss_value = cell['pss'].get('value', 0)
+                else:
+                    pss_value = cell.get('pss', 0)
+                
+                sss_value = 0
+                if isinstance(cell.get('sss'), dict):
+                    sss_value = cell['sss'].get('value', 0)
+                else:
+                    sss_value = cell.get('sss', 0)
+                
+                # Check PBCH decoded status
+                pbch_decoded = False
+                if cell.get('pbch') == 'Decoded':
+                    pbch_decoded = True
+                
+                # Check SIB1 detected status
+                sib1_detected = False
+                if cell.get('sib1') == 'Detected':
+                    sib1_detected = True
+                
                 try:
-                    # Extract PSS and SSS values from the dictionary structure
-                    pss_value = 0
-                    if isinstance(cell.get('pss'), dict):
-                        pss_value = cell['pss'].get('value', 0)
-                    else:
-                        pss_value = cell.get('pss', 0)
-                    
-                    sss_value = 0
-                    if isinstance(cell.get('sss'), dict):
-                        sss_value = cell['sss'].get('value', 0)
-                    else:
-                        sss_value = cell.get('sss', 0)
-                    
-                    # Check PBCH decoded status
-                    pbch_decoded = False
-                    if cell.get('pbch') == 'Decoded':
-                        pbch_decoded = True
-                    
-                    # Check SIB1 detected status
-                    sib1_detected = False
-                    if cell.get('sib1') == 'Detected':
-                        sib1_detected = True
-                    
                     cell_pb = ue_service_pb2.CellInfo(
                         pci=int(cell.get('pci', 0)),
                         pss=int(pss_value),
@@ -793,17 +704,18 @@ class UEDataServiceImpl(ue_service_pb2_grpc.UEDataServiceServicer):
                     self.ue_process.log(f"Error creating CellInfo for cell {cell.get('id', 'unknown')}: {str(e)}", "error")
                     continue
             
-            return ue_service_pb2.CurrentCellsResponse(
+            return ue_service_pb2.DetectedCellResponse(
                 cells=cells,
                 timestamp=int(time.time() * 1000)
             )
         except Exception as e:
-            self.ue_process.log(f"Error in GetCurrentCells: {str(e)}", "error")
-            return ue_service_pb2.CurrentCellsResponse(
+            self.ue_process.log(f"Error in GetDetectedCells: {str(e)}", "error")
+            return ue_service_pb2.DetectedCellResponse(
                 cells=[],
                 timestamp=int(time.time() * 1000)
             )
-
+    
+    
 
 def signal_handler(signum, frame):
     """Handle shutdown signals"""

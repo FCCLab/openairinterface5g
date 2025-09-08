@@ -4,15 +4,6 @@ package ue_service;
 
 // UE Control Service
 service UEControlService {
-  // Start UE process
-  rpc StartUE(StartUERequest) returns (StartUEResponse);
-  
-  // Stop UE process
-  rpc StopUE(StopUERequest) returns (StopUEResponse);
-  
-  // Get UE status
-  rpc GetStatus(StatusRequest) returns (StatusResponse);
-  
   // Configure UE parameters
   rpc ConfigureUE(ConfigureUERequest) returns (ConfigureUEResponse);
   
@@ -25,49 +16,11 @@ service UEControlService {
 
 // UE Data Acquisition Service
 service UEDataService {
-  // Stream cell scan data
-  rpc StreamCellData(CellDataRequest) returns (stream CellDataResponse);
-  
-  // Stream UE logs
-  rpc StreamLogs(LogRequest) returns (stream LogResponse);
-  
-  // Get current cell information
-  rpc GetCurrentCells(CurrentCellsRequest) returns (CurrentCellsResponse);
+  // Get detected cells
+  rpc GetDetectedCells(DetectedCellRequest) returns (DetectedCellResponse);
 }
 
 // Request/Response Messages
-message StartUERequest {
-  string frequency = 1;
-  UEConfig config = 2;
-}
-
-message StartUEResponse {
-  bool success = 1;
-  string message = 2;
-  string process_id = 3;
-}
-
-message StopUERequest {
-  string process_id = 1;
-}
-
-message StopUEResponse {
-  bool success = 1;
-  string message = 2;
-}
-
-message StatusRequest {
-  string process_id = 1;
-}
-
-message StatusResponse {
-  bool is_running = 1;
-  string status = 2;
-  string connection_state = 3;
-  string frequency = 4;
-  int64 uptime = 5;
-}
-
 message ConfigureUERequest {
   string process_id = 1;
   UEConfig config = 2;
@@ -79,18 +32,14 @@ message ConfigureUEResponse {
 }
 
 message StartScanningRequest {
-  string process_id = 1;
 }
 
 message StartScanningResponse {
   bool success = 1;
   string message = 2;
-  string scan_id = 3;
 }
 
 message StopScanningRequest {
-  string process_id = 1;
-  string scan_id = 2;
 }
 
 message StopScanningResponse {
@@ -98,35 +47,14 @@ message StopScanningResponse {
   string message = 2;
 }
 
-message CellDataRequest {
-  string process_id = 1;
-  bool continuous = 2;
+message DetectedCellRequest {
 }
 
-message CellDataResponse {
+message DetectedCellResponse {
   repeated CellInfo cells = 1;
   int64 timestamp = 2;
 }
 
-message LogRequest {
-  string process_id = 1;
-  string level = 2; // DEBUG, INFO, WARN, ERROR
-}
-
-message LogResponse {
-  string message = 1;
-  string level = 2;
-  int64 timestamp = 3;
-}
-
-message CurrentCellsRequest {
-  string process_id = 1;
-}
-
-message CurrentCellsResponse {
-  repeated CellInfo cells = 1;
-  int64 timestamp = 2;
-}
 
 // Data Structures
 message UEConfig {

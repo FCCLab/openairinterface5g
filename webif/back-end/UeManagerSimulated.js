@@ -20,7 +20,6 @@ class UeManagerSimulated extends UeInterface {
     this.consoleOutput = [];
     this.scanStatus = {
       isScanning: false,
-      scanId: null,
       detectedCells: []
     };
     this.grpcClient = null;
@@ -66,8 +65,8 @@ class UeManagerSimulated extends UeInterface {
 
       logger.info('Starting simulated UE process', { config: this.config });
 
-      // Start Python simulated UE process
-      const pythonScript = path.join(__dirname, '..', 'ue', 'simulated_ue.py');
+      // Start Python simulated UE process using the shell script
+      const pythonScript = path.join(__dirname, '..', 'ue', 'simulated_ue.sh');
       const args = [
         '--frequency', (this.config.radio?.freq || this.config.frequency || 3425010000).toString(),
         '--port', this.config.port.toString()
@@ -95,7 +94,7 @@ class UeManagerSimulated extends UeInterface {
         args.push('--numerology', (this.config.radio.numerology || 1).toString());
       }
 
-      this.process = spawn('python3', [pythonScript, ...args], {
+      this.process = spawn(pythonScript, args, {
         cwd: path.join(__dirname, '..', 'ue'),
         stdio: ['pipe', 'pipe', 'pipe']
       });
@@ -283,8 +282,7 @@ class UeManagerSimulated extends UeInterface {
       if (this.scanStatus.isScanning) {
         return {
           success: true,
-          message: 'Cell scan is already running',
-          scanId: this.scanStatus.scanId
+          message: 'Cell scan is already running'
         };
       }
 
@@ -293,12 +291,8 @@ class UeManagerSimulated extends UeInterface {
         throw new Error('Failed to create gRPC client');
       }
 
-      const scanId = `scan_${Date.now()}`;
-      
       return new Promise((resolve, reject) => {
-        client.StartScanning({
-          process_id: `sim_ue_${this.startTime}`
-        }, (error, response) => {
+        client.StartScanning({}, (error, response) => {
           if (error) {
             logger.error('gRPC StartScanning error', { error: error.message });
             reject(new Error(`gRPC error: ${error.code} ${error.details}`));
@@ -306,12 +300,10 @@ class UeManagerSimulated extends UeInterface {
             // Check the response from the Python script
             if (response.success) {
               this.scanStatus.isScanning = true;
-              this.scanStatus.scanId = response.scan_id || scanId;
               
               resolve({
                 success: true,
-                message: response.message || 'Cell scanning started successfully',
-                scanId: response.scan_id || scanId
+                message: response.message || 'Cell scanning started successfully'
               });
             } else {
               reject(new Error(response.message || 'Failed to start cell scan'));
@@ -339,16 +331,12 @@ class UeManagerSimulated extends UeInterface {
       }
 
       return new Promise((resolve, reject) => {
-        client.StopScanning({
-          process_id: `sim_ue_${this.startTime}`,
-          scan_id: this.scanStatus.scanId
-        }, (error, response) => {
+        client.StopScanning({}, (error, response) => {
           if (error) {
             logger.error('gRPC StopScanning error', { error: error.message });
             reject(new Error(`gRPC error: ${error.code} ${error.details}`));
           } else {
             this.scanStatus.isScanning = false;
-            this.scanStatus.scanId = null;
             
             resolve({
               success: true,
@@ -386,9 +374,9 @@ class UeManagerSimulated extends UeInterface {
       );
 
       return new Promise((resolve, reject) => {
-        dataClient.GetCurrentCells({}, (error, response) => {
+        dataClient.GetDetectedCells({}, (error, response) => {
           if (error) {
-            logger.error('gRPC GetCurrentCells error', { error: error.message });
+            logger.error('gRPC GetDetectedCells error', { error: error.message });
             reject(new Error(`gRPC error: ${error.code} ${error.details}`));
           } else {
             const cells = response.cells.map(cell => ({
@@ -426,8 +414,7 @@ class UeManagerSimulated extends UeInterface {
   getScanStatus() {
     return {
       isScanning: this.scanStatus.isScanning,
-      detectedCells: this.scanStatus.detectedCells,
-      scanId: this.scanStatus.scanId
+      detectedCells: this.scanStatus.detectedCells
     };
   }
 

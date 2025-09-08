@@ -121,6 +121,23 @@ router.get('/status', (req, res) => {
   }
 });
 
+// Get UE console output (stdout/stderr)
+router.get('/console', (req, res) => {
+  try {
+    const manager = ueManager.getCurrentManager();
+    const lines = parseInt(req.query.lines) || 100; // Default to last 100 lines
+    const consoleOutput = manager.getConsoleOutput(lines);
+    res.json({
+      success: true,
+      output: consoleOutput,
+      count: consoleOutput.length
+    });
+  } catch (error) {
+    logger.error('Error getting UE console output', { error: error.message });
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Old simulated UE endpoints removed - now using unified interface
 
 // Old simulated UE endpoints removed - now using unified interface
