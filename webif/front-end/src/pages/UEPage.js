@@ -46,7 +46,11 @@ function UEPage() {
     currentMode: 'simulated',
     timestamp: null
   });
+  const [consoleOutput, setConsoleOutput] = useState([]);
+  const [isConsoleExpanded, setIsConsoleExpanded] = useState(false);
+  const [isConsoleAutoScroll, setIsConsoleAutoScroll] = useState(true);
   const signalQualityIntervalRef = useRef(null);
+  const consoleIntervalRef = useRef(null);
 
   // Notification helper functions
   const showNotification = (type, message) => {
@@ -115,6 +119,55 @@ function UEPage() {
     }
   };
 
+  // Poll console output
+  const pollConsoleOutput = async () => {
+    try {
+      const response = await fetch('http://10.1.100.143:40000/api/ue/logs?lines=50');
+      if (response.ok) {
+        const data = await response.json();
+        if (data.consoleLogs && Array.isArray(data.consoleLogs)) {
+          // Convert console logs to simple string array for display
+          const logLines = data.consoleLogs.map(log => {
+            const timestamp = new Date(log.timestamp).toLocaleTimeString();
+            const type = log.type === 'stderr' ? '[ERR]' : log.type === 'stdout' ? '[OUT]' : '[SYS]';
+            return `${timestamp} ${type} ${log.message}`;
+          });
+          setConsoleOutput(logLines);
+        } else if (data.processLogs && Array.isArray(data.processLogs)) {
+          // Fallback to process logs if console logs not available
+          const logLines = data.processLogs.map(log => {
+            const timestamp = new Date(log.timestamp).toLocaleTimeString();
+            return `${timestamp} ${log.message}`;
+          });
+          setConsoleOutput(logLines);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching console output:', error);
+    }
+  };
+
+  // Start console polling
+  const startConsolePolling = () => {
+    if (consoleIntervalRef.current) {
+      clearInterval(consoleIntervalRef.current);
+    }
+    
+    // Poll immediately
+    pollConsoleOutput();
+    
+    // Then poll every 2 seconds
+    consoleIntervalRef.current = setInterval(pollConsoleOutput, 2000);
+  };
+
+  // Stop console polling
+  const stopConsolePolling = () => {
+    if (consoleIntervalRef.current) {
+      clearInterval(consoleIntervalRef.current);
+      consoleIntervalRef.current = null;
+    }
+  };
+
   // Simulate UE status updates
   useEffect(() => {
     const interval = setInterval(() => {
@@ -134,6 +187,9 @@ function UEPage() {
     return () => {
       if (signalQualityIntervalRef.current) {
         clearInterval(signalQualityIntervalRef.current);
+      }
+      if (consoleIntervalRef.current) {
+        clearInterval(consoleIntervalRef.current);
       }
     };
   }, []);
@@ -205,6 +261,9 @@ function UEPage() {
         console.log('UE process started:', result);
         setIsSimulatedUE(true); // Only set to true when API call is successful
         showNotification('success', 'UE process started successfully!');
+        
+        // Start console polling
+        startConsolePolling();
       } else {
         console.error('Failed to start UE process');
         setIsSimulatedUE(false);
@@ -234,6 +293,9 @@ function UEPage() {
         console.log('UE process stopped:', result);
         setIsSimulatedUE(false); // Only set to false when API call is successful
         showNotification('success', 'UE process stopped successfully!');
+        
+        // Stop console polling
+        stopConsolePolling();
       } else {
         console.error('Failed to stop UE process');
         showNotification('error', 'Failed to stop UE process');
@@ -299,9 +361,10 @@ function UEPage() {
         // Start polling for cells
         startCellPolling();
       } else {
-        console.error('Failed to start cell scan');
+        const errorData = await response.json();
+        console.error('Failed to start cell scan:', errorData);
         setIsScanning(false);
-        showNotification('error', 'Failed to start cell scan');
+        showNotification('error', `Failed to start cell scan: ${errorData.error || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('Error starting cell scan:', error);
@@ -905,6 +968,67 @@ function UEPage() {
             )}
           </div>
         </div>
+      </div>
+
+      {/* Floating Console Tab */}
+      <div className={`floating-console ${isConsoleExpanded ? 'expanded' : 'collapsed'}`}>
+        <div 
+          className="console-tab-header"
+          onClick={() => setIsConsoleExpanded(!isConsoleExpanded)}
+        >
+          <div className="console-tab-title">
+            <span className="console-icon">📟</span>
+            <span>UE Console</span>
+            <span className="console-status">
+              {isSimulatedUE ? '●' : '○'}
+            </span>
+          </div>
+          <div className="console-tab-controls">
+            <button 
+              className="console-control-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsConsoleAutoScroll(!isConsoleAutoScroll);
+              }}
+              title={isConsoleAutoScroll ? 'Disable auto-scroll' : 'Enable auto-scroll'}
+            >
+              {isConsoleAutoScroll ? '📌' : '📌'}
+            </button>
+            <button 
+              className="console-control-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                setConsoleOutput([]);
+              }}
+              title="Clear console"
+            >
+              🗑️
+            </button>
+            <span className="console-toggle">
+              {isConsoleExpanded ? '▼' : '▲'}
+            </span>
+          </div>
+        </div>
+        
+        {isConsoleExpanded && (
+          <div className="console-content">
+            <div className="console-output" id="console-output">
+              {consoleOutput.length === 0 ? (
+                <div className="console-empty">
+                  <span>No console output available</span>
+                  <br />
+                  <small>Start the UE process to see console logs</small>
+                </div>
+              ) : (
+                consoleOutput.map((line, index) => (
+                  <div key={index} className="console-line">
+                    <span className="console-text">{line}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

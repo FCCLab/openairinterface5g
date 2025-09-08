@@ -169,11 +169,11 @@ class SimulatedUEProcess:
         connection_thread.start()
     
     def cell_scanning_loop(self):
-        """Background cell scanning simulation"""
+        """Background cell scanning simulation - only runs when explicitly started"""
         while not self.stop_event.is_set():
-            if self.is_running:
+            if self.is_running and self.is_scanning:
                 self.perform_cell_scan()
-            time.sleep(5)  # Scan every 5 seconds
+            time.sleep(5)  # Check every 5 seconds
     
     def signal_quality_loop(self):
         """Background signal quality update simulation"""
@@ -331,14 +331,17 @@ class SimulatedUEProcess:
             raise Exception("Simulated UE process is not running")
         
         if self.is_scanning:
-            raise Exception("Scanning is already in progress")
+            return {
+                'success': True,
+                'message': 'Cell scan is already running',
+                'scan_id': self.scan_id
+            }
         
         self.scan_id = f"scan_{int(time.time() * 1000)}"
-        self.scan_frequency = self.config.get('frequency', 3425010000)
         self.is_scanning = True
         self.scan_stop_event.clear()
         
-        self.log(f"Starting cell scanning at frequency {self.scan_frequency} Hz", "info")
+        self.log("Starting cell scanning", "info")
         self.log(f"Scan ID: {self.scan_id}", "info")
         
         # Start scanning thread
@@ -348,8 +351,7 @@ class SimulatedUEProcess:
         return {
             'success': True,
             'message': 'Cell scanning started successfully',
-            'scan_id': self.scan_id,
-            'frequency': frequency
+            'scan_id': self.scan_id
         }
     
     def stop_scanning(self) -> Dict[str, Any]:

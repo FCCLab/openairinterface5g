@@ -28,6 +28,7 @@ class UeManagerReal extends UeInterface {
       numerology: 1,
       band: 78
     };
+    this.consoleOutput = [];
     this.logBuffer = [];
     this.maxLogBufferSize = 1000;
   }
@@ -281,15 +282,27 @@ class UeManagerReal extends UeInterface {
 
     this.logBuffer.push(logEntry);
 
+    // Also add to console output
+    this.consoleOutput.push(logEntry);
+
     // Keep buffer size manageable
     if (this.logBuffer.length > this.maxLogBufferSize) {
       this.logBuffer = this.logBuffer.slice(-this.maxLogBufferSize);
+    }
+    
+    if (this.consoleOutput.length > this.maxLogBufferSize) {
+      this.consoleOutput = this.consoleOutput.slice(-this.maxLogBufferSize);
     }
   }
 
   // Get logs
   getLogs(lines = 100) {
     return this.logBuffer.slice(-lines);
+  }
+
+  // Get console output
+  getConsoleOutput(lines = 100) {
+    return this.consoleOutput.slice(-lines);
   }
 
   // Get performance metrics

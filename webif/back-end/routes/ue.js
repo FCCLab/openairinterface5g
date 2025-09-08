@@ -349,13 +349,15 @@ router.get('/logs', async (req, res) => {
     // Get logs from process manager
     const manager = ueManager.getCurrentManager();
     const processLogs = manager.getLogs(parseInt(lines));
+    const consoleLogs = manager.getConsoleOutput ? manager.getConsoleOutput(parseInt(lines)) : [];
     
     // Also try to get UE logs from various possible locations
     const logPaths = [
       '/tmp/ue.log',
       '/var/log/ue.log',
       path.join(process.cwd(), 'logs/ue.log'),
-      path.join(__dirname, '../../logs/ue.log')
+      path.join(__dirname, '../../logs/ue.log'),
+      path.join(__dirname, '../ue/logs')
     ];
 
     let fileLogContent = '';
@@ -378,6 +380,7 @@ router.get('/logs', async (req, res) => {
 
     res.json({
       processLogs: processLogs,
+      consoleLogs: consoleLogs,
       fileLogs: fileLogContent,
       logPath: logPath,
       lines: parseInt(lines),

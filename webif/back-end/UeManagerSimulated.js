@@ -17,6 +17,7 @@ class UeManagerSimulated extends UeInterface {
       port: 50051,
       imsi: '001010000000003'
     };
+    this.consoleOutput = [];
     this.scanStatus = {
       isScanning: false,
       scanId: null,
@@ -106,11 +107,15 @@ class UeManagerSimulated extends UeInterface {
       });
 
       this.process.stdout.on('data', (data) => {
-        logger.info('Simulated UE stdout', { output: data.toString().trim() });
+        const output = data.toString().trim();
+        logger.info('Simulated UE stdout', { output });
+        this.addConsoleOutput(output, 'stdout');
       });
 
       this.process.stderr.on('data', (data) => {
-        logger.warn('Simulated UE stderr', { error: data.toString().trim() });
+        const output = data.toString().trim();
+        logger.warn('Simulated UE stderr', { error: output });
+        this.addConsoleOutput(output, 'stderr');
       });
 
       this.process.on('close', (code) => {
@@ -207,6 +212,26 @@ class UeManagerSimulated extends UeInterface {
     return [];
   }
 
+  addConsoleOutput(output, type = 'stdout') {
+    if (output) {
+      const timestamp = new Date().toISOString();
+      this.consoleOutput.push({
+        timestamp,
+        type,
+        message: output
+      });
+      
+      // Keep only last 1000 lines
+      if (this.consoleOutput.length > 1000) {
+        this.consoleOutput = this.consoleOutput.slice(-1000);
+      }
+    }
+  }
+
+  getConsoleOutput(lines = 100) {
+    return this.consoleOutput.slice(-lines);
+  }
+
   // Get UE performance metrics
   getMetrics() {
     const now = Date.now();
@@ -256,7 +281,11 @@ class UeManagerSimulated extends UeInterface {
       }
 
       if (this.scanStatus.isScanning) {
-        throw new Error('Cell scan is already in progress');
+        return {
+          success: true,
+          message: 'Cell scan is already running',
+          scanId: this.scanStatus.scanId
+        };
       }
 
       const client = this.createGrpcClient();
@@ -274,14 +303,19 @@ class UeManagerSimulated extends UeInterface {
             logger.error('gRPC StartScanning error', { error: error.message });
             reject(new Error(`gRPC error: ${error.code} ${error.details}`));
           } else {
-            this.scanStatus.isScanning = true;
-            this.scanStatus.scanId = scanId;
-            
-            resolve({
-              success: true,
-              message: 'Cell scanning started successfully',
-              scanId: scanId
-            });
+            // Check the response from the Python script
+            if (response.success) {
+              this.scanStatus.isScanning = true;
+              this.scanStatus.scanId = response.scan_id || scanId;
+              
+              resolve({
+                success: true,
+                message: response.message || 'Cell scanning started successfully',
+                scanId: response.scan_id || scanId
+              });
+            } else {
+              reject(new Error(response.message || 'Failed to start cell scan'));
+            }
           }
         });
       });
