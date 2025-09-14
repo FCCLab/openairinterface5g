@@ -12,4 +12,4 @@ sudo sysctl -w net.core.wmem_default=62500000
 sudo sysctl -w net.core.rmem_default=62500000
 sudo ethtool -G enp12s0f0np tx 4096 rx 4096
 
-sudo ../cmake_targets/ran_build/build/nr-softmodem -O ./gnb.sa.band78.fr1.106PRB.2x2.usrpx410.352501.conf | tee gnb.log
+sudo ../cmake_targets/ran_build/build/nr-softmodem -O ./gnb.sa.band78.fr1.51PRB.2x2.usrpx410.352501.conf --gNBs.[0].min_rxtxtime 6 | tee gnb.log
