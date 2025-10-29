@@ -7,6 +7,6 @@ logging_level           6
 summary_interval        0
 #priority1               127
 
-[your_PTP_ENABLED_NIC]
+[enp1s0f0np0]
 network_transport       L2
 hybrid_e2e              0

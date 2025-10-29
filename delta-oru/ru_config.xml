@@ -1,0 +1,29 @@
+<edit-config xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
+    <target>
+        <candidate/>
+    </target>
+    <config>
+        <processing-elements xmlns="urn:o-ran:processing-element:1.0">
+            <ru-elements>
+                <name>delta_RU</name>
+                <transport-flow>
+                    <eth-flow>
+                        <vlan-id>3</vlan-id>
+                        <ru-mac-address>6c:b9:c5:22:92:cc</ru-mac-address>
+                        <o-du-mac-address>00:1b:21:b9:45:e8</o-du-mac-address>
+                    </eth-flow>
+                    <interface-name>eth0-CU</interface-name>
+                </transport-flow>
+            </ru-elements>
+        </processing-elements>
+        <interfaces xmlns="urn:ietf:params:xml:ns:yang:ietf-interfaces">
+            <interface>
+                <name>eth0-CU</name>
+                <type xmlns:ianaift="urn:ietf:params:xml:ns:yang:iana-if-type">ianaift:l2vlan</type>
+                <base-interface xmlns="urn:o-ran:interfaces:1.0">fheth0</base-interface>
+                <vlan-id xmlns="urn:o-ran:interfaces:1.0">3</vlan-id>
+                <mac-address xmlns="urn:o-ran:interfaces:1.0">6c:b9:c5:22:92:cc</mac-address>
+            </interface>
+        </interfaces>
+    </config>
+</edit-config>

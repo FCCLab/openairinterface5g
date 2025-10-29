@@ -13,7 +13,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration variables
-INTERFACE="enp1s0f0"
+INTERFACE="enp1s0f0np0"
 PTP_CONFIG_FILE="/etc/ptp4l.conf"
 LOCAL_PTP_CONFIG="ptp4l.conf.slave"
 

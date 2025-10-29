@@ -1,1 +1,1 @@
-OPTIONS="-a -r -r -n 24"
+OPTIONS="-a -r -n 24 -S 0"

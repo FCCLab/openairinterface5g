@@ -16,5 +16,14 @@
 
 # RU
 ```
+./ssh_delta.sh
+
 tail -f /var/log/slabtimingptp2.log
+
+netopeer2-cli 
+
+connect localhost
+delta_amsbd!
+
+copy-config --source running --target startup
 ```
