@@ -825,7 +825,7 @@ static void nr_rx_ra_sdu(const module_id_t mod_id,
   if (timing_advance != 0xffff)
     UE_scheduling_control->ta_update = timing_advance;
   UE_scheduling_control->raw_rssi = rssi;
-  LOG_D(NR_MAC, "[UE %04x] PUSCH TPC %d and TA %d\n", UE->rnti, UE_scheduling_control->tpc0, UE_scheduling_control->ta_update);
+  LOG_I(NR_MAC, "[UE %04x] PUSCH TPC %d and TA %d\n", UE->rnti, UE_scheduling_control->tpc0, UE_scheduling_control->ta_update);
   NR_ServingCellConfigCommon_t *scc = mac->common_channels[0].ServingCellConfigCommon;
   if (ra->cfra) {
     LOG_A(NR_MAC, "(rnti 0x%04x) CFRA procedure succeeded!\n", UE->rnti);
@@ -973,10 +973,12 @@ static void _nr_rx_sdu(const module_id_t gnb_mod_idP,
 
       if (timing_advance != 0xffff)
         UE_scheduling_control->ta_update = timing_advance;
+
+      // UE_scheduling_control->ta_update = 15;
       UE_scheduling_control->raw_rssi = rssi;
       UE_scheduling_control->pusch_snrx10 = ul_cqi * 5 - 640 - (txpower_calc * 10);
       if (UE_scheduling_control->tpc0 > 1)
-        LOG_D(NR_MAC,
+        LOG_I(NR_MAC,
               "[UE %04x] %d.%d. PUSCH TPC %d and TA %d pusch_snrx10 %d rssi %d phrx_tx_power %d PHR (1PRB) %d mcs %d, nb_rb %d\n",
               UE->rnti,
               frameP,

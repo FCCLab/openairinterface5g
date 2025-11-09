@@ -726,6 +726,8 @@ void nr_initiate_ra_proc(module_id_t module_idP,
   ra->preamble_frame = frame;
   ra->preamble_slot = slot;
   ra->preamble_index = preamble_index;
+  timing_offset = 10;
+  LOG_I(NR_MAC, "preamble_index %d, timing_offset %d\n", preamble_index, timing_offset);
   ra->timing_offset = timing_offset;
   ra->msg3_TPC = nr_get_msg3_tpc(preamble_power);
 
@@ -1899,6 +1901,7 @@ static void nr_generate_Msg4_MsgB(module_id_t module_idP,
                     harq->round,
                     tb_scaling,
                     pduindex);
+    LOG_I(NR_MAC, "sched_pdsch: R %d Qm %d mcs %d tb_size %d, time_domain_assignment %d rbStart %d rbSize %d\n", mcsIndex, nr_get_Qm_dl(mcsIndex, mcsTableIdx), mcsIndex, tb_size, time_domain_assignment, rbStart, rbSize);
 
     // Reset TPC to 0 dB to not request new gain multiple times before computing new value for SNR
     sched_ctrl->tpc1 = 1;
