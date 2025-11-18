@@ -726,7 +726,7 @@ void nr_initiate_ra_proc(module_id_t module_idP,
   ra->preamble_frame = frame;
   ra->preamble_slot = slot;
   ra->preamble_index = preamble_index;
-  timing_offset = 10;
+  timing_offset = 15;
   LOG_I(NR_MAC, "preamble_index %d, timing_offset %d\n", preamble_index, timing_offset);
   ra->timing_offset = timing_offset;
   ra->msg3_TPC = nr_get_msg3_tpc(preamble_power);
