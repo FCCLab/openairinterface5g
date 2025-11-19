@@ -108,6 +108,12 @@ bool read_mac_sm(void* data)
       rd->ul_harq[j] = UE->mac_stats.ul.rounds[j];
     rd->ul_harq[numUlHarq] = UE->mac_stats.ul.errors;
 
+    rd->ssb_rsrp = sched_ctrl->CSI_report.ssb_rsrp_report.RSRP[0];
+    rd->csi_rsrp = sched_ctrl->CSI_report.csirs_rsrp_report.RSRP[0];
+
+    rd->ssb_sinrx10 = sched_ctrl->CSI_report.ssb_rsrp_report.SINRx10[0];
+    rd->csi_sinrx10 = sched_ctrl->CSI_report.csirs_rsrp_report.SINRx10[0];
+
     ++i;
   }
 
