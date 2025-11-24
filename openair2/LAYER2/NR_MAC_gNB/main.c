@@ -154,11 +154,26 @@ size_t dump_mac_stats(gNB_MAC_INST *gNB, char *output, size_t strlen, bool reset
       output = st_append(output, end, "(none)");
     }
 
+    // Find the most recent scheduled PUSCH transmit power from HARQ processes
+    // Look for a HARQ process that has been scheduled (has RB allocation)
+    int tx_power = 0;
+    for (int i = 0; i < NR_MAX_HARQ_PROCESSES; i++) {
+      if (sched_ctrl->ul_harq_processes[i].sched_pusch.rbSize > 0) {
+        tx_power = sched_ctrl->ul_harq_processes[i].sched_pusch.phr_txpower_calc;
+        break; // Use the first scheduled PUSCH found
+      }
+    }
+    // If no scheduled PUSCH found, estimate from PCMAX and PH
+    if (sched_ctrl->pcmax != 0 && sched_ctrl->ph != 0) {
+      tx_power = sched_ctrl->pcmax - sched_ctrl->ph;
+    }
+
     bool in_sync = !sched_ctrl->ul_failure;
     output = st_append(output,
                        end,
-                       " %s PH %d dB PCMAX %d dBm",
+                       " %s TxP %d dB PH %d dB PCMAX %d dBm",
                        in_sync ? "in-sync" : "out-of-sync",
+                       tx_power,
                        sched_ctrl->ph,
                        sched_ctrl->pcmax);
 

@@ -688,6 +688,8 @@ void nr_initiate_ra_proc(module_id_t module_idP,
                          int16_t timing_offset,
                          uint32_t preamble_power)
 {
+  timing_offset = 15;
+
   VCD_SIGNAL_DUMPER_DUMP_FUNCTION_BY_NAME(VCD_SIGNAL_DUMPER_FUNCTIONS_INITIATE_RA_PROC, 1);
 
   gNB_MAC_INST *nr_mac = RC.nrmac[module_idP];

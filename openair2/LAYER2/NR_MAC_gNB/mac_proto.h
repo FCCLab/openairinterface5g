@@ -286,6 +286,7 @@ NR_pusch_dmrs_t get_ul_dmrs_params(const NR_ServingCellConfigCommon_t *scc,
                                    const int Layers);
 
 uint8_t nr_get_tpc(int target, uint8_t cqi, int incr, int tx_power);
+uint8_t nr_get_pusch_tpc(int tx_power);
 uint8_t nr_limit_tpc(int tpc, int rssi, int rssi_threshold);
 
 int get_spf(nfapi_nr_config_request_scf_t *cfg);

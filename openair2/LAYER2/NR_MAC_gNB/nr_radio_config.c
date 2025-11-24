@@ -1555,7 +1555,7 @@ static NR_SetupRelease_PUSCH_Config_t *config_pusch(const bool use_deltaMCS,
   aset->p0 = calloc(1, sizeof(*aset->p0));
   *aset->p0 = 0;
   aset->alpha = calloc(1, sizeof(*aset->alpha));
-  *aset->alpha = NR_Alpha_alpha1;
+  *aset->alpha = NR_Alpha_alpha0;
   asn1cSeqAdd(&pusch_Config->pusch_PowerControl->p0_AlphaSets->list, aset);
   pusch_Config->pusch_PowerControl->pathlossReferenceRSToAddModList = calloc(1, sizeof(*pusch_Config->pusch_PowerControl->pathlossReferenceRSToAddModList));
   NR_PUSCH_PathlossReferenceRS_t *plrefRS = calloc(1, sizeof(*plrefRS));

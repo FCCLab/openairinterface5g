@@ -819,7 +819,7 @@ static void nr_rx_ra_sdu(const module_id_t mod_id,
   DevAssert(harq_pid >= 0 && harq_pid < 8);
   if (ul_cqi != 0xff) {
     NR_UE_ul_harq_t *harq = &UE_scheduling_control->ul_harq_processes[harq_pid];
-    UE_scheduling_control->tpc0 = nr_get_tpc(target_snrx10, ul_cqi, 30, harq->sched_pusch.phr_txpower_calc);
+    UE_scheduling_control->tpc0 = 1;
     UE_scheduling_control->pusch_snrx10 = ul_cqi * 5 - 640 - harq->sched_pusch.phr_txpower_calc * 10;
   }
   if (timing_advance != 0xffff)
@@ -965,18 +965,27 @@ static void _nr_rx_sdu(const module_id_t gnb_mod_idP,
       UE->mac_stats.deltaMCS = txpower_calc;
       UE->mac_stats.NPRB = UE_scheduling_control->ul_harq_processes[harq_pid].sched_pusch.rbSize;
       if (ul_cqi != 0xff)
-        UE_scheduling_control->tpc0 = nr_get_tpc(target_snrx10, ul_cqi, 30, txpower_calc);
-      if (UE_scheduling_control->ph < 0 && UE_scheduling_control->tpc0 > 1)
+      {
         UE_scheduling_control->tpc0 = 1;
+        // LOG_I(NR_MAC, "1. PUSCH TPC %d : target %d, cqi %d, snrx10 %d, tx_power %d\n", UE_scheduling_control->tpc0, target_snrx10, ul_cqi, UE_scheduling_control->pusch_snrx10, txpower_calc);
+      }
+
+      if (UE_scheduling_control->ph < 0 && UE_scheduling_control->tpc0 > 1)
+      {
+        // LOG_I(NR_MAC, "PUSCH TPC %d : ph < 0, tpc0 > 1\n", UE_scheduling_control->tpc0);
+        UE_scheduling_control->tpc0 = 1;
+      }
 
       UE_scheduling_control->tpc0 = nr_limit_tpc(UE_scheduling_control->tpc0, rssi, rssi_threshold);
-
+      // LOG_I(NR_MAC, "PUSCH TPC %d : rssi %d, rssi_threshold %d\n", UE_scheduling_control->tpc0, rssi, rssi_threshold);
+      
       if (timing_advance != 0xffff)
         UE_scheduling_control->ta_update = timing_advance;
       UE_scheduling_control->raw_rssi = rssi;
       UE_scheduling_control->pusch_snrx10 = ul_cqi * 5 - 640 - (txpower_calc * 10);
+      
       if (UE_scheduling_control->tpc0 > 1)
-        LOG_D(NR_MAC,
+        LOG_I(NR_MAC,
               "[UE %04x] %d.%d. PUSCH TPC %d and TA %d pusch_snrx10 %d rssi %d phrx_tx_power %d PHR (1PRB) %d mcs %d, nb_rb %d\n",
               UE->rnti,
               frameP,
