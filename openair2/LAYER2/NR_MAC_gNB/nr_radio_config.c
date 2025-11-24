@@ -1081,9 +1081,9 @@ void nr_rrc_config_ul_tda(NR_ServingCellConfigCommon_t *scc, int min_fb_delay, i
   const int k2 = min_fb_delay;
   const int mu = scc->uplinkConfigCommon->initialUplinkBWP->genericParameters.subcarrierSpacing;
 
-  // UL TDA index 0 is basic slot configuration starting in symbol 0 til the last but one symbol
+  // UL TDA index 0 is basic slot configuration starting in symbol 0 til the end of the slot
   NR_PUSCH_TimeDomainResourceAllocation_t *tda;
-  tda = set_TimeDomainResourceAllocation(k2, get_SLIV(0, 13));
+  tda = set_TimeDomainResourceAllocation(k2, get_SLIV(0, 14));
   asn1cSeqAdd(&tda_list->list, tda);
 
   // UL TDA index 1 in case of SRS
@@ -1139,7 +1139,7 @@ void nr_rrc_config_ul_tda(NR_ServingCellConfigCommon_t *scc, int min_fb_delay, i
       // and taken into account above
       AssertFatal(N_dl1 >= k2 - 1, "cannot fulfil TDD pattern: N_dl1 %d, k2 %d\n", N_dl1, k2);
       for (int i = k2 + 1; i <= N_ul; ++i) {
-        tda = set_TimeDomainResourceAllocation(i, get_SLIV(0, 13));
+        tda = set_TimeDomainResourceAllocation(i, get_SLIV(0, 14));
         asn1cSeqAdd(&tda_list->list, tda);
         if (do_SRS) {
           tda = set_TimeDomainResourceAllocation(i, get_SLIV(0, 12));
@@ -1160,7 +1160,7 @@ void nr_rrc_config_ul_tda(NR_ServingCellConfigCommon_t *scc, int min_fb_delay, i
         && k2_msg3 > N_ul /* otherwise, can always have a D that reaches U */
         && !has_ul_mixed /* if mixed slot, even for DDDSU would reach */) {
       /* reach next UL from mixed slot in previous period */
-      tda = set_TimeDomainResourceAllocation(k2_msg3, get_SLIV(0, 13));
+      tda = set_TimeDomainResourceAllocation(k2_msg3, get_SLIV(0, 14));
       asn1cSeqAdd(&tda_list->list, tda);
     }
   }
