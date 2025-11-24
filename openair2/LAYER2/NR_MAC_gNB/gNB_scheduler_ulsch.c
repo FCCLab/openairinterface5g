@@ -1966,6 +1966,11 @@ static int  pf_ul(gNB_MAC_INST *nrmac,
   const int sched_frame = (frame + (slot + k2) / slots_per_frame) % MAX_FRAME_NUMBER;
   const int sched_slot = (slot + k2) % slots_per_frame;
   DevAssert(is_ul_slot(sched_slot, &nrmac->frame_structure));
+  
+  /* Skip PUSCH scheduling for mixed slots */
+  if (is_mixed_slot(sched_slot, &nrmac->frame_structure)) {
+    return 0;
+  }
 
   const int min_rb = nrmac->min_grant_prb;
   // UEs that could be scheduled
@@ -2680,7 +2685,7 @@ static void nr_ulsch_preprocessor(gNB_MAC_INST *nr_mac, post_process_pusch_t *pp
   while (max_dci > 0) {
     /* go to the next UL slot, skipping DL if necessary */
     *next = fs_get_max(fs, *next, min_next);
-    while (!is_ul_slot(next->s, fs))
+    while (!is_ul_slot(next->s, fs) || is_mixed_slot(next->s, fs))
       *next = fs_add_delta(fs, 1, *next);
     if (!is_dl_slot(current.s, fs)) // if current slot is not DL, nothing to do
       break;
@@ -2735,6 +2740,11 @@ void nr_schedule_ulsch(module_id_t module_id, frame_t frame, slot_t slot, nfapi_
   gNB_MAC_INST *nr_mac = RC.nrmac[module_id];
   /* already mutex protected: held in gNB_dlsch_ulsch_scheduler() */
   NR_SCHED_ENSURE_LOCKED(&nr_mac->sched_lock);
+
+  /* Skip PUSCH scheduling for mixed slots */
+  if (is_mixed_slot(slot, &nr_mac->frame_structure)) {
+    return;
+  }
 
   ul_dci_req->SFN = frame;
   ul_dci_req->Slot = slot;
