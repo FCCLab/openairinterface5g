@@ -3124,6 +3124,7 @@ uint8_t nr_get_tpc(int target, uint8_t cqi, int incr, int tx_power)
   if (snrx10 < target - (3*incr)) return 3; // increase 3dB
   if (snrx10 < target - incr) return 2; // increase 1dB
   LOG_D(NR_MAC,"tpc : target %d, snrx10 %d\n",target,snrx10);
+  return 1; // no change
 }
 
 uint8_t nr_get_pusch_tpc(int tx_power)
