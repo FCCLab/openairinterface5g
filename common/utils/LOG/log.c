@@ -532,6 +532,11 @@ int logInit (void)
   AssertFatal(__builtin_popcount(g_log->flag & (FLAG_TIME | FLAG_REAL_TIME | FLAG_UTC_TIME)) <= 1,
           "Invalid log options: time, wall_clock and utc_time are mutually exclusive\n");
 
+  // Enable wall_clock timestamps by default if no timestamp option is set
+  if (!(g_log->flag & (FLAG_TIME | FLAG_REAL_TIME | FLAG_UTC_TIME))) {
+    g_log->flag |= FLAG_REAL_TIME;
+  }
+
   g_log->flag =  g_log->flag | FLAG_INITIALIZED;
   return 0;
 }
@@ -584,10 +589,20 @@ static inline int log_header(log_component_t *c,
       struct tm utc_time;
       if (gmtime_r(&t.tv_sec, &utc_time) == NULL)
         abort();
-      snprintf(timeString, sizeof(timeString), "[%02d:%02d:%02d.%06lu] ",
+      snprintf(timeString, sizeof(timeString), "[%04d-%02d-%02d %02d:%02d:%02d.%06lu] ",
+               utc_time.tm_year + 1900, utc_time.tm_mon + 1, utc_time.tm_mday,
                utc_time.tm_hour, utc_time.tm_min, utc_time.tm_sec, t.tv_nsec / 1000);
+    } else if (flag & FLAG_REAL_TIME) {
+      // Use wall clock time with readable format
+      struct tm local_time;
+      if (localtime_r(&t.tv_sec, &local_time) == NULL)
+        abort();
+      snprintf(timeString, sizeof(timeString), "[%04d-%02d-%02d %02d:%02d:%02d.%06lu] ",
+               local_time.tm_year + 1900, local_time.tm_mon + 1, local_time.tm_mday,
+               local_time.tm_hour, local_time.tm_min, local_time.tm_sec, t.tv_nsec / 1000);
     } else {
-      snprintf(timeString, sizeof(timeString), "%lu.%06lu ",
+      // FLAG_TIME: monotonic time - show as elapsed seconds with microseconds
+      snprintf(timeString, sizeof(timeString), "[%lu.%06lu] ",
                t.tv_sec,
                t.tv_nsec / 1000);
     }

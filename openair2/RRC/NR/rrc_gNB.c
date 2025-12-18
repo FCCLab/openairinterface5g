@@ -1538,6 +1538,89 @@ static void process_Periodical_Measurement_Report(gNB_RRC_UE_t *ue_ctxt, NR_Meas
 
   const NR_MeasId_t id = measurementReport->criticalExtensions.choice.measurementReport->measResults.measId;
   AssertFatal(id, "unexpected MeasResult for MeasurementId %ld received\n", id);
+  
+  const NR_MeasResults_t *measResults = &measurementReport->criticalExtensions.choice.measurementReport->measResults;
+  
+  // Log measurement report details for handover monitoring
+  LOG_I(NR_RRC, "HO LOG: Periodic Measurement Report received for UE %d, MeasId: %ld\n", 
+        ue_ctxt->rrc_ue_id, id);
+  
+  // Log serving cell measurements
+  for (int serving_cell_idx = 0; serving_cell_idx < measResults->measResultServingMOList.list.count; serving_cell_idx++) {
+    const NR_MeasResultServMO_t *meas_result_serv_MO = measResults->measResultServingMOList.list.array[serving_cell_idx];
+    int scell_pci = *(meas_result_serv_MO->measResultServingCell.physCellId);
+    int servingCellRSRP = 0;
+    int servingCellRSRQ = 0;
+    int servingCellSINR = 0;
+    
+    if (meas_result_serv_MO->measResultServingCell.measResult.cellResults.resultsSSB_Cell) {
+      if (meas_result_serv_MO->measResultServingCell.measResult.cellResults.resultsSSB_Cell->rsrp) {
+        servingCellRSRP = *(meas_result_serv_MO->measResultServingCell.measResult.cellResults.resultsSSB_Cell->rsrp) - 157;
+      }
+      if (meas_result_serv_MO->measResultServingCell.measResult.cellResults.resultsSSB_Cell->rsrq) {
+        servingCellRSRQ = *(meas_result_serv_MO->measResultServingCell.measResult.cellResults.resultsSSB_Cell->rsrq) - 40;
+      }
+      if (meas_result_serv_MO->measResultServingCell.measResult.cellResults.resultsSSB_Cell->sinr) {
+        servingCellSINR = *(meas_result_serv_MO->measResultServingCell.measResult.cellResults.resultsSSB_Cell->sinr) - 30;
+      }
+    } else if (meas_result_serv_MO->measResultServingCell.measResult.cellResults.resultsCSI_RS_Cell) {
+      if (meas_result_serv_MO->measResultServingCell.measResult.cellResults.resultsCSI_RS_Cell->rsrp) {
+        servingCellRSRP = *(meas_result_serv_MO->measResultServingCell.measResult.cellResults.resultsCSI_RS_Cell->rsrp) - 157;
+      }
+      if (meas_result_serv_MO->measResultServingCell.measResult.cellResults.resultsCSI_RS_Cell->rsrq) {
+        servingCellRSRQ = *(meas_result_serv_MO->measResultServingCell.measResult.cellResults.resultsCSI_RS_Cell->rsrq) - 40;
+      }
+      if (meas_result_serv_MO->measResultServingCell.measResult.cellResults.resultsCSI_RS_Cell->sinr) {
+        servingCellSINR = *(meas_result_serv_MO->measResultServingCell.measResult.cellResults.resultsCSI_RS_Cell->sinr) - 30;
+      }
+    }
+    
+    LOG_I(NR_RRC, "HO LOG: Serving Cell PCI: %d, RSRP: %d dBm, RSRQ: %d dB, SINR: %d dB\n",
+          scell_pci, servingCellRSRP, servingCellRSRQ, servingCellSINR);
+  }
+  
+  // Log neighbor cell measurements
+  if (measResults->measResultNeighCells != NULL &&
+      measResults->measResultNeighCells->present == NR_MeasResults__measResultNeighCells_PR_measResultListNR) {
+    const NR_MeasResultListNR_t *measResultListNR = measResults->measResultNeighCells->choice.measResultListNR;
+    LOG_I(NR_RRC, "HO LOG: Neighbor cells measured: %d\n", measResultListNR->list.count);
+    
+    for (int neigh_meas_idx = 0; neigh_meas_idx < measResultListNR->list.count; neigh_meas_idx++) {
+      const NR_MeasResultNR_t *meas_result_neigh_cell = (measResultListNR->list.array[neigh_meas_idx]);
+      const int neighbour_pci = *(meas_result_neigh_cell->physCellId);
+      int neighbourCellRSRP = 0;
+      int neighbourCellRSRQ = 0;
+      int neighbourCellSINR = 0;
+      
+      const struct NR_MeasResultNR__measResult__cellResults *cellResults = &(meas_result_neigh_cell->measResult.cellResults);
+      
+      if (cellResults->resultsSSB_Cell) {
+        if (cellResults->resultsSSB_Cell->rsrp) {
+          neighbourCellRSRP = *(cellResults->resultsSSB_Cell->rsrp) - 157;
+        }
+        if (cellResults->resultsSSB_Cell->rsrq) {
+          neighbourCellRSRQ = *(cellResults->resultsSSB_Cell->rsrq) - 40;
+        }
+        if (cellResults->resultsSSB_Cell->sinr) {
+          neighbourCellSINR = *(cellResults->resultsSSB_Cell->sinr) - 30;
+        }
+      } else if (cellResults->resultsCSI_RS_Cell) {
+        if (cellResults->resultsCSI_RS_Cell->rsrp) {
+          neighbourCellRSRP = *(cellResults->resultsCSI_RS_Cell->rsrp) - 157;
+        }
+        if (cellResults->resultsCSI_RS_Cell->rsrq) {
+          neighbourCellRSRQ = *(cellResults->resultsCSI_RS_Cell->rsrq) - 40;
+        }
+        if (cellResults->resultsCSI_RS_Cell->sinr) {
+          neighbourCellSINR = *(cellResults->resultsCSI_RS_Cell->sinr) - 30;
+        }
+      }
+      
+      LOG_I(NR_RRC, "HO LOG: Neighbor Cell PCI: %d, RSRP: %d dBm, RSRQ: %d dB, SINR: %d dB\n",
+            neighbour_pci, neighbourCellRSRP, neighbourCellRSRQ, neighbourCellSINR);
+    }
+  }
+  
   asn1cCallocOne(ue_ctxt->measResults, measurementReport->criticalExtensions.choice.measurementReport->measResults);
   /* we "keep" the measurement report, so set to 0 */
   free(measurementReport->criticalExtensions.choice.measurementReport);
