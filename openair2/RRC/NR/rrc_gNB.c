@@ -1645,7 +1645,9 @@ static void process_Event_Based_Measurement_Report(gNB_RRC_INST *rrc,
       break;
 
     case NR_EventTriggerConfig__eventId_PR_eventA3: {
-      LOG_W(NR_RRC, "HO LOG: Event A3 Report for UE %d - Neighbour Becomes Better than Serving!\n", ue->rrc_ue_id);
+      LOG_I(NR_RRC, "HO LOG: ========== Event A3 Report Received ==========\n");
+      LOG_I(NR_RRC, "HO LOG: UE ID=%d, RNTI=0x%04x, AMF_UE_NGAP_ID=%lu\n", 
+            ue->rrc_ue_id, ue->rnti, ue->amf_ue_ngap_id);
       if (!measurementReport->criticalExtensions.choice.measurementReport) {
         LOG_E(NR_RRC, "HO LOG: Event A3 Report: measurementReport is null\n");
         break;
@@ -1655,12 +1657,27 @@ static void process_Event_Based_Measurement_Report(gNB_RRC_INST *rrc,
       for (int serving_cell_idx = 0; serving_cell_idx < measResults->measResultServingMOList.list.count; serving_cell_idx++) {
         const NR_MeasResultServMO_t *meas_result_serv_MO = measResults->measResultServingMOList.list.array[serving_cell_idx];
         scell_pci = *(meas_result_serv_MO->measResultServingCell.physCellId);
+        int servingCellRSRQ = 0;
+        int servingCellSINR = 0;
         if (meas_result_serv_MO->measResultServingCell.measResult.cellResults.resultsSSB_Cell) {
           servingCellRSRP = *(meas_result_serv_MO->measResultServingCell.measResult.cellResults.resultsSSB_Cell->rsrp) - 157;
+          if (meas_result_serv_MO->measResultServingCell.measResult.cellResults.resultsSSB_Cell->rsrq) {
+            servingCellRSRQ = *(meas_result_serv_MO->measResultServingCell.measResult.cellResults.resultsSSB_Cell->rsrq) - 40;
+          }
+          if (meas_result_serv_MO->measResultServingCell.measResult.cellResults.resultsSSB_Cell->sinr) {
+            servingCellSINR = *(meas_result_serv_MO->measResultServingCell.measResult.cellResults.resultsSSB_Cell->sinr) - 23;
+          }
         } else {
           servingCellRSRP = *(meas_result_serv_MO->measResultServingCell.measResult.cellResults.resultsCSI_RS_Cell->rsrp) - 157;
+          if (meas_result_serv_MO->measResultServingCell.measResult.cellResults.resultsCSI_RS_Cell->rsrq) {
+            servingCellRSRQ = *(meas_result_serv_MO->measResultServingCell.measResult.cellResults.resultsCSI_RS_Cell->rsrq) - 40;
+          }
+          if (meas_result_serv_MO->measResultServingCell.measResult.cellResults.resultsCSI_RS_Cell->sinr) {
+            servingCellSINR = *(meas_result_serv_MO->measResultServingCell.measResult.cellResults.resultsCSI_RS_Cell->sinr) - 23;
+          }
         }
-        LOG_D(NR_RRC, "Serving Cell RSRP: %d\n", servingCellRSRP);
+        LOG_I(NR_RRC, "HO LOG: Serving Cell PCI=%d, RSRP=%d dBm, RSRQ=%d dB, SINR=%d dB\n", 
+              scell_pci, servingCellRSRP, servingCellRSRQ, servingCellSINR);
       }
 
       if (measResults->measResultNeighCells == NULL ||
@@ -1670,6 +1687,7 @@ static void process_Event_Based_Measurement_Report(gNB_RRC_INST *rrc,
       }
 
       const NR_MeasResultListNR_t *measResultListNR = measResults->measResultNeighCells->choice.measResultListNR;
+      LOG_I(NR_RRC, "HO LOG: Neighbor cells measured: %d\n", measResultListNR->list.count);
       for (int neigh_meas_idx = 0; neigh_meas_idx < measResultListNR->list.count; neigh_meas_idx++) {
         const NR_MeasResultNR_t *meas_result_neigh_cell = (measResultListNR->list.array[neigh_meas_idx]);
         const int neighbour_pci = *(meas_result_neigh_cell->physCellId);
@@ -1677,16 +1695,28 @@ static void process_Event_Based_Measurement_Report(gNB_RRC_INST *rrc,
         // TS 138 133 Table 10.1.6.1-1: SS-RSRP and CSI-RSRP measurement report mapping
         const struct NR_MeasResultNR__measResult__cellResults *cellResults = &(meas_result_neigh_cell->measResult.cellResults);
 
+        int neighbourCellRSRQ = 0;
+        int neighbourCellSINR = 0;
         if (cellResults->resultsSSB_Cell) {
           neighbourCellRSRP = *(cellResults->resultsSSB_Cell->rsrp) - 157;
+          if (cellResults->resultsSSB_Cell->rsrq) {
+            neighbourCellRSRQ = *(cellResults->resultsSSB_Cell->rsrq) - 40;
+          }
+          if (cellResults->resultsSSB_Cell->sinr) {
+            neighbourCellSINR = *(cellResults->resultsSSB_Cell->sinr) - 23;
+          }
         } else {
           neighbourCellRSRP = *(cellResults->resultsCSI_RS_Cell->rsrp) - 157;
+          if (cellResults->resultsCSI_RS_Cell->rsrq) {
+            neighbourCellRSRQ = *(cellResults->resultsCSI_RS_Cell->rsrq) - 40;
+          }
+          if (cellResults->resultsCSI_RS_Cell->sinr) {
+            neighbourCellSINR = *(cellResults->resultsCSI_RS_Cell->sinr) - 23;
+          }
         }
 
-        LOG_I(NR_RRC,
-              "HO LOG: Measurement Report for the neighbour %d with RSRP: %d\n",
-              neighbour_pci,
-              neighbourCellRSRP);
+        LOG_I(NR_RRC, "HO LOG: Neighbor Cell PCI=%d, RSRP=%d dBm, RSRQ=%d dB, SINR=%d dB\n",
+              neighbour_pci, neighbourCellRSRP, neighbourCellRSRQ, neighbourCellSINR);
 
         const f1ap_served_cell_info_t *neigh_cell = get_cell_information_by_phycellId(neighbour_pci);
         const f1ap_served_cell_info_t *serving_cell = get_cell_information_by_phycellId(scell_pci);
@@ -1697,29 +1727,56 @@ static void process_Event_Based_Measurement_Report(gNB_RRC_INST *rrc,
         if (!neigh_cell && neighbour) {
           // No F1 connection but static neighbour configuration is available
           const nr_a3_event_t *a3_event_configuration = get_a3_configuration(rrc, neighbour->physicalCellId);
-          // Additional check - This part can be modified according to additional cell specific Handover Margin
-          // a3-Offset: The actual value is field value * 0.5 dB.
-          if (a3_event_configuration
-              && ((a3_event_configuration->a3_offset * 0.5 + a3_event_configuration->hysteresis)
-                  < (neighbourCellRSRP - servingCellRSRP))) {
-            if (neighbourCellRSRP > best_rsrp) {
-              // UE can send multiple neighbour cells A3 event report in 1 Meas Report. So, we need to find the best neighbour
-              best_rsrp = neighbourCellRSRP;
-              LOG_I(NR_RRC, "HO LOG: Serving Cell RSRP: %d - Best Neighbor RSRP: %d ! Trigger N2 HO\n", servingCellRSRP, best_rsrp);
-              nr_rrc_trigger_n2_ho(rrc, ue, scell_pci, neighbour);
+          if (a3_event_configuration) {
+            double a3_offset_db = a3_event_configuration->a3_offset * 0.5;
+            double hysteresis_db = a3_event_configuration->hysteresis;
+            double threshold_db = a3_offset_db + hysteresis_db;
+            int rsrp_diff = neighbourCellRSRP - servingCellRSRP;
+            LOG_I(NR_RRC, "HO LOG: A3 Configuration for PCI %d: a3_offset=%.1f dB, hysteresis=%.1f dB, threshold=%.1f dB\n",
+                  neighbour_pci, a3_offset_db, hysteresis_db, threshold_db);
+            LOG_I(NR_RRC, "HO LOG: RSRP difference (neighbor - serving) = %d dB, threshold = %.1f dB\n",
+                  rsrp_diff, threshold_db);
+            // Additional check - This part can be modified according to additional cell specific Handover Margin
+            // a3-Offset: The actual value is field value * 0.5 dB.
+            if (rsrp_diff > threshold_db) {
+              LOG_I(NR_RRC, "HO LOG: A3 condition satisfied (RSRP diff > threshold)!\n");
+              if (neighbourCellRSRP > best_rsrp) {
+                // UE can send multiple neighbour cells A3 event report in 1 Meas Report. So, we need to find the best neighbour
+                best_rsrp = neighbourCellRSRP;
+                LOG_I(NR_RRC, "HO LOG: Serving Cell RSRP: %d - Best Neighbor RSRP: %d ! Trigger N2 HO\n", servingCellRSRP, best_rsrp);
+                LOG_I(NR_RRC, "HO LOG: Target gNB ID=%u, Target Cell ID=%lu, Target PCI=%d\n",
+                      neighbour->gNB_ID, neighbour->nrcell_id, neighbour->physicalCellId);
+                nr_rrc_trigger_n2_ho(rrc, ue, scell_pci, neighbour);
+              } else {
+                LOG_D(NR_RRC, "HO LOG: Neighbor RSRP %d <= best RSRP %d, skipping\n", neighbourCellRSRP, best_rsrp);
+              }
+            } else {
+              LOG_D(NR_RRC, "HO LOG: A3 condition NOT satisfied (RSRP diff %d <= threshold %.1f), skipping HO\n",
+                    rsrp_diff, threshold_db);
             }
-            LOG_D(NR_RRC, "HO LOG: Trigger N2 HO for the neighbour gnb: %u cell: %lu\n", neighbour->gNB_ID, neighbour->nrcell_id);
+          } else {
+            LOG_W(NR_RRC, "HO LOG: No A3 event configuration found for neighbor PCI %d\n", neighbour_pci);
           }
         } else if (neigh_cell && neighbour) {
           /* we know the cell and are connected to the DU! */
+          LOG_I(NR_RRC, "HO LOG: F1 handover available - Source Cell ID=%lu, Target Cell ID=%lu\n",
+                serving_cell->nr_cellid, neigh_cell->nr_cellid);
           nr_rrc_du_container_t *source_du = get_du_by_cell_id(rrc, serving_cell->nr_cellid);
           DevAssert(source_du);
           nr_rrc_du_container_t *target_du = get_du_by_cell_id(rrc, neigh_cell->nr_cellid);
           nr_rrc_trigger_f1_ho(rrc, ue, source_du, target_du);
         } else {
-          LOG_W(NR_RRC, "UE %d: received A3 event for stronger neighbor PCI %d, but no such neighbour in configuration\n", ue->rrc_ue_id, neighbour_pci);
+          LOG_W(NR_RRC, "HO LOG: UE %d: received A3 event for stronger neighbor PCI %d, but no such neighbour in configuration\n", 
+                ue->rrc_ue_id, neighbour_pci);
+          if (!neigh_cell) {
+            LOG_W(NR_RRC, "HO LOG: No F1 connection to neighbor cell PCI %d\n", neighbour_pci);
+          }
+          if (!neighbour) {
+            LOG_W(NR_RRC, "HO LOG: Neighbor PCI %d not found in static configuration\n", neighbour_pci);
+          }
         }
       }
+      LOG_I(NR_RRC, "HO LOG: ========== End Event A3 Report Processing ==========\n");
     } break;
     default:
       LOG_D(NR_RRC, "NR_EventTriggerConfig__eventId_PR_NOTHING or Other event report\n");

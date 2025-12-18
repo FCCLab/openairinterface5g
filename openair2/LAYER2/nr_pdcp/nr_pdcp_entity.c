@@ -158,11 +158,6 @@ static void nr_pdcp_entity_recv_pdu(nr_pdcp_entity_t *entity,
       return;
     }
   }
-  #else
-  // Integrity check disabled by default for debugging
-  if (entity->has_integrity) {
-    LOG_I(PDCP, "DEBUG: Integrity check DISABLED by default - THIS IS INSECURE! (Enable with PDCP_ENABLE_INTEGRITY_CHECK)\n");
-  }
   #endif
 
   if (rcvd_count < entity->rx_deliv
