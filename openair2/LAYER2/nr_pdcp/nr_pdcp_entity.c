@@ -141,6 +141,10 @@ static void nr_pdcp_entity_recv_pdu(nr_pdcp_entity_t *entity,
                      size - (header_size + sdap_header_size),
                      entity->rb_id, rcvd_count, entity->is_gnb ? 0 : 1);
 
+  // Integrity check disabled by default for debugging
+  // WARNING: This is INSECURE and should ONLY be used for debugging!
+  // To enable integrity checking: add -DPDCP_ENABLE_INTEGRITY_CHECK to CMAKE_C_FLAGS
+  #ifdef PDCP_ENABLE_INTEGRITY_CHECK
   if (entity->has_integrity) {
     unsigned char integrity[PDCP_INTEGRITY_SIZE] = {0};
     entity->integrity(entity->integrity_context, integrity,
@@ -154,6 +158,12 @@ static void nr_pdcp_entity_recv_pdu(nr_pdcp_entity_t *entity,
       return;
     }
   }
+  #else
+  // Integrity check disabled by default for debugging
+  if (entity->has_integrity) {
+    LOG_I(PDCP, "DEBUG: Integrity check DISABLED by default - THIS IS INSECURE! (Enable with PDCP_ENABLE_INTEGRITY_CHECK)\n");
+  }
+  #endif
 
   if (rcvd_count < entity->rx_deliv
       || nr_pdcp_sdu_in_list(entity->rx_list, rcvd_count)) {
