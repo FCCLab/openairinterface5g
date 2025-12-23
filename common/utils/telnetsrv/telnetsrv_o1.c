@@ -28,6 +28,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
+#include <stdint.h>
 
 #define TELNETSERVERCODE
 #include "telnetsrv.h"
@@ -38,6 +39,9 @@
 #include "openair2/LAYER2/NR_MAC_gNB/mac_proto.h"
 #include "openair2/LAYER2/nr_rlc/nr_rlc_oai_api.c"
 #include "common/utils/nr/nr_common.h"
+#include "common/config/config_userapi.h"
+#include "common/config/config_paramdesc.h"
+#include "openair2/GNB_APP/gnb_paramdef.h"
 
 #define ERROR_MSG_RET(mSG, aRGS...) do { prnt("FAILURE: " mSG, ##aRGS); return 1; } while (0)
 
@@ -87,7 +91,58 @@ static int get_stats(char *buf, int debug, telnet_printfunc_t prnt)
   NR_SCHED_LOCK(&mac->sched_lock);
 
   const f1ap_setup_req_t *sr = mac->f1_config.setup_req;
-  const f1ap_served_cell_info_t *cell_info = &sr->cell[0].info;
+  const f1ap_served_cell_info_t *cell_info = NULL;
+  
+  // For AERIAL interface, setup_req is NULL, so we need to get info from config
+  uint16_t tac = 1;
+  uint16_t mcc = 1;
+  uint16_t mnc = 1;
+  uint8_t mnc_digit_length = 2;
+  uint8_t sst = 1;
+  uint32_t sd = 0xffffff;
+  int32_t gnb_id = 0xe00;
+  const char *gnb_name = "gNB-OAI";
+  
+  if (sr != NULL) {
+    // F1 interface - use existing data
+    cell_info = &sr->cell[0].info;
+  } else {
+    // AERIAL interface - read from config
+    paramlist_def_t GNBParamList = {GNB_CONFIG_STRING_GNB_LIST, NULL, 0};
+    config_getlist(config_get_if(), &GNBParamList, NULL, 0, NULL);
+    if (GNBParamList.numelt > 0 && GNBParamList.paramarray[0] != NULL) {
+      if (GNBParamList.paramarray[0][GNB_TRACKING_AREA_CODE_IDX].uptr != NULL)
+        tac = *GNBParamList.paramarray[0][GNB_TRACKING_AREA_CODE_IDX].uptr;
+      if (GNBParamList.paramarray[0][GNB_GNB_ID_IDX].uptr != NULL)
+        gnb_id = *GNBParamList.paramarray[0][GNB_GNB_ID_IDX].uptr;
+      if (GNBParamList.paramarray[0][GNB_GNB_NAME_IDX].strptr != NULL)
+        gnb_name = *GNBParamList.paramarray[0][GNB_GNB_NAME_IDX].strptr;
+      
+      // Get PLMN from plmn_list (get first PLMN)
+      char gnbpath[MAX_OPTNAME_SIZE * 2 + 8];
+      snprintf(gnbpath, sizeof(gnbpath), "%s.[%i]", GNB_CONFIG_STRING_GNB_LIST, 0);
+      GET_PARAMS_LIST(PLMNList, PLMNParams, GNBPLMNPARAMS_DESC, GNB_CONFIG_STRING_PLMN_LIST, gnbpath, PLMNPARAMS_CHECK);
+      if (PLMNList.numelt > 0 && PLMNList.paramarray[0] != NULL) {
+        if (PLMNList.paramarray[0][GNB_MOBILE_COUNTRY_CODE_IDX].uptr != NULL)
+          mcc = *PLMNList.paramarray[0][GNB_MOBILE_COUNTRY_CODE_IDX].uptr;
+        if (PLMNList.paramarray[0][GNB_MOBILE_NETWORK_CODE_IDX].uptr != NULL)
+          mnc = *PLMNList.paramarray[0][GNB_MOBILE_NETWORK_CODE_IDX].uptr;
+        if (PLMNList.paramarray[0][GNB_MNC_DIGIT_LENGTH].u8ptr != NULL)
+          mnc_digit_length = *PLMNList.paramarray[0][GNB_MNC_DIGIT_LENGTH].u8ptr;
+        
+        // Get S-NSSAI from snssaiList (get first S-NSSAI)
+        char snssaistr[MAX_OPTNAME_SIZE * 2 + 8];
+        snprintf(snssaistr, sizeof(snssaistr), "%s.[%i].%s.[%i]", GNB_CONFIG_STRING_GNB_LIST, 0, GNB_CONFIG_STRING_PLMN_LIST, 0);
+        GET_PARAMS_LIST(SNSSAIList, SNSSAIParams, GNBSNSSAIPARAMS_DESC, GNB_CONFIG_STRING_SNSSAI_LIST, snssaistr, SNSSAIPARAMS_CHECK);
+        if (SNSSAIList.numelt > 0 && SNSSAIList.paramarray[0] != NULL) {
+          if (SNSSAIList.paramarray[0][GNB_SLICE_SERVICE_TYPE_IDX].uptr != NULL)
+            sst = *SNSSAIList.paramarray[0][GNB_SLICE_SERVICE_TYPE_IDX].uptr;
+          if (SNSSAIList.paramarray[0][GNB_SLICE_DIFFERENTIATOR_IDX].uptr != NULL)
+            sd = *SNSSAIList.paramarray[0][GNB_SLICE_DIFFERENTIATOR_IDX].uptr;
+        }
+      }
+    }
+  }
 
   const NR_ServingCellConfigCommon_t *scc = mac->common_channels[0].ServingCellConfigCommon;
   const NR_FrequencyInfoDL_t *frequencyInfoDL = scc->downlinkConfigCommon->frequencyInfoDL;
@@ -169,15 +224,30 @@ static int get_stats(char *buf, int debug, telnet_printfunc_t prnt)
     prnt("      \"" ARFCNUL "\": %ld,\n", frequencyInfoUL->absoluteFrequencyPointA ? *frequencyInfoUL->absoluteFrequencyPointA : frequencyInfoDL->absoluteFrequencyPointA);
     prnt("      \"" BWUL "\": %ld,\n", bw_mhz);
     prnt("      \"" PCI "\": %ld,\n", *scc->physCellId);
-    prnt("      \"" TAC "\": %ld,\n", *cell_info->tac);
-    prnt("      \"" MCC "\": \"%03d\",\n", cell_info->plmn.mcc);
-    prnt("      \"" MNC "\": \"%0*d\",\n", cell_info->plmn.mnc_digit_length, cell_info->plmn.mnc);
-    prnt("      \"" SD  "\": %d,\n", cell_info->nssai[0].sd);
-    prnt("      \"" SST "\": %d\n", cell_info->nssai[0].sst);
+    if (cell_info != NULL) {
+      // F1 interface
+      prnt("      \"" TAC "\": %ld,\n", *cell_info->tac);
+      prnt("      \"" MCC "\": \"%03d\",\n", cell_info->plmn.mcc);
+      prnt("      \"" MNC "\": \"%0*d\",\n", cell_info->plmn.mnc_digit_length, cell_info->plmn.mnc);
+      prnt("      \"" SD  "\": %d,\n", cell_info->nssai[0].sd);
+      prnt("      \"" SST "\": %d\n", cell_info->nssai[0].sst);
+    } else {
+      // AERIAL interface - use values from config
+      prnt("      \"" TAC "\": %d,\n", tac);
+      prnt("      \"" MCC "\": \"%03d\",\n", mcc);
+      prnt("      \"" MNC "\": \"%0*d\",\n", mnc_digit_length, mnc);
+      prnt("      \"" SD  "\": %d,\n", sd);
+      prnt("      \"" SST "\": %d\n", sst);
+    }
     prnt("    },\n");
     prnt("    \"device\": {\n");
-    prnt("      \"gnbId\": %d,\n", sr->gNB_DU_id);
-    prnt("      \"gnbName\": \"%s\",\n", sr->gNB_DU_name);
+    if (sr != NULL) {
+      prnt("      \"gnbId\": %d,\n", sr->gNB_DU_id);
+      prnt("      \"gnbName\": \"%s\",\n", sr->gNB_DU_name);
+    } else {
+      prnt("      \"gnbId\": %d,\n", (int)gnb_id);
+      prnt("      \"gnbName\": \"%s\",\n", gnb_name);
+    }
     prnt("      \"vendor\": \"OpenAirInterface\"\n");
     prnt("    }\n");
     prnt("  },\n");
