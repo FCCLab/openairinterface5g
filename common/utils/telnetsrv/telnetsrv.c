@@ -139,6 +139,42 @@ void client_printf(const char *message, ...) {
   return ;
 }
 
+/* Send data to all connected telnet clients */
+int telnet_send_to_clients(const char *data, size_t len)
+{
+  if (data == NULL || len == 0) {
+    return -1;
+  }
+
+  /* Check if there's a connected client */
+  if (telnetparams.new_socket > 0) {
+    ssize_t sent = send(telnetparams.new_socket, data, len, MSG_NOSIGNAL);
+    if (sent < 0) {
+      TELNET_LOG("Failed to send data to telnet client: %s\n", strerror(errno));
+      return -1;
+    }
+    return 0;
+  }
+
+  /* No client connected, silently ignore */
+  return 0;
+}
+
+/* Get callback function pointer by callback type */
+void *telnetsrv_get_callback(telnetserv_callback_t callback_type)
+{
+  switch (callback_type) {
+    case TELNETSRV_CALLBACK_HANDOVER: {
+      /* Directly look up handover_complete_callback from o1 module */
+      void *callback = dlsym(RTLD_DEFAULT, "handover_complete_callback");
+      return callback;
+    }
+    case TELNETSRV_CALLBACK_MAX:
+    default:
+      return NULL;
+  }
+}
+
 void set_sched(pthread_t tid, int pid, int priority) {
   int rt;
   struct sched_param schedp;

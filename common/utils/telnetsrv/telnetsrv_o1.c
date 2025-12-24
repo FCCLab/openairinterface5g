@@ -29,9 +29,12 @@
 #include <string.h>
 #include <stdarg.h>
 #include <stdint.h>
+#include <time.h>
+#include <sys/time.h>
 
 #define TELNETSERVERCODE
 #include "telnetsrv.h"
+#include "telnetsrv_o1.h"
 
 #include "openair2/RRC/NR/nr_rrc_defs.h"
 #include "openair2/LAYER2/NR_MAC_gNB/nr_mac_gNB.h"
@@ -485,4 +488,106 @@ static telnetshell_vardef_t o1vars[] = {
 
 void add_o1_cmds(void) {
   add_telnetcmd("o1", o1vars, o1cmds);
+}
+
+/* Get current timestamp in microseconds since epoch */
+static uint64_t get_timestamp_microsec(void) {
+  struct timeval tv;
+  gettimeofday(&tv, NULL);
+  return (uint64_t)tv.tv_sec * 1000000ULL + (uint64_t)tv.tv_usec;
+}
+
+/* Format ISO 8601 timestamp */
+static void format_iso_timestamp(char *buf, size_t buf_size) {
+  time_t now = time(NULL);
+  struct tm *tm_info = gmtime(&now);
+  strftime(buf, buf_size, "%Y-%m-%dT%H:%M:%S.000Z", tm_info);
+}
+
+/* Send handover event notification via telnet (default implementation) */
+void handover_complete_callback(const char *status, 
+                                 uint32_t ue_id,
+                                 uint64_t amf_ue_ngap_id,
+                                 uint64_t nr_cellid,
+                                 uint32_t node_id,
+                                 uint16_t pci,
+                                 const char *source_gnb_id,
+                                 uint64_t source_cellid,
+                                 uint16_t source_pci,
+                                 const char *failure_cause,
+                                 const char *failure_reason)
+{
+  char json_buf[2048];
+  uint64_t timestamp_microsec = get_timestamp_microsec();
+  char iso_timestamp[32];
+  format_iso_timestamp(iso_timestamp, sizeof(iso_timestamp));
+  
+  /* Generate handover ID */
+  char ho_id[64];
+  snprintf(ho_id, sizeof(ho_id), "ho-%u-%lu", ue_id, timestamp_microsec);
+  
+  /* Generate UE ID */
+  char ue_id_str[64];
+  snprintf(ue_id_str, sizeof(ue_id_str), "UE-%u", ue_id);
+  
+  /* Format JSON notification */
+  if (status != NULL && strcmp(status, "success") == 0) {
+    snprintf(json_buf, sizeof(json_buf),
+      "{\"eventType\":\"handover\","
+      "\"handoverStatus\":\"success\","
+      "\"handoverId\":\"%s\","
+      "\"ueId\":\"%s\","
+      "\"sourceGnb\":{"
+        "\"gnbId\":\"%s\","
+        "\"cellId\":\"%lu\","
+        "\"pci\":%u"
+      "},"
+      "\"targetGnb\":{"
+        "\"gnbId\":\"gNB-%u\","
+        "\"cellId\":\"%lu\","
+        "\"pci\":%u"
+      "},"
+      "\"handoverType\":\"intra-gNB\","
+      "\"handoverCause\":\"betterCell\","
+      "\"successTimestamp\":\"%s\","
+      "\"handoverDurationMs\":0"
+      "}\n",
+      ho_id, ue_id_str, 
+      source_gnb_id ? source_gnb_id : "unknown", source_cellid, source_pci,
+      node_id, nr_cellid, pci,
+      iso_timestamp);
+  } else {
+    /* Failure case */
+    snprintf(json_buf, sizeof(json_buf),
+      "{\"eventType\":\"handover\","
+      "\"handoverStatus\":\"failure\","
+      "\"handoverId\":\"%s\","
+      "\"ueId\":\"%s\","
+      "\"sourceGnb\":{"
+        "\"gnbId\":\"%s\","
+        "\"cellId\":\"%lu\","
+        "\"pci\":%u"
+      "},"
+      "\"targetGnb\":{"
+        "\"gnbId\":\"gNB-%u\","
+        "\"cellId\":\"%lu\","
+        "\"pci\":%u"
+      "},"
+      "\"handoverType\":\"intra-gNB\","
+      "\"handoverCause\":\"betterCell\","
+      "\"failureCause\":\"%s\","
+      "\"failureReason\":\"%s\","
+      "\"failureTimestamp\":\"%s\","
+      "\"handoverDurationMs\":0"
+      "}\n",
+      ho_id, ue_id_str,
+      source_gnb_id ? source_gnb_id : "unknown", source_cellid, source_pci,
+      node_id, nr_cellid, pci,
+      failure_cause ? failure_cause : "unknown",
+      failure_reason ? failure_reason : "unknown",
+      iso_timestamp);
+  }
+  
+  /* Send via telnet */
+  telnet_send_to_clients(json_buf, strlen(json_buf));
 }

@@ -24,6 +24,10 @@
 #include "assertions.h"
 
 #include "rrc_gNB_mobility.h"
+#ifdef TELNETSERVERCODE
+#include "common/utils/telnetsrv/telnetsrv.h"
+#include "common/utils/telnetsrv/telnetsrv_o1.h"  /* For handover_callback_func_t type */
+#endif
 
 #include "nr_rrc_proto.h"
 #include "rrc_gNB_du.h"
@@ -490,6 +494,40 @@ static void nr_rrc_n2_ho_acknowledge(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE)
 static void nr_rrc_n2_ho_complete(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE)
 {
   rrc_gNB_send_NGAP_HANDOVER_NOTIFY(rrc, UE);
+  
+#ifdef TELNETSERVERCODE
+  /* Check if handover callback is assigned and call it */
+  handover_callback_func_t ho_callback = (handover_callback_func_t)telnetsrv_get_callback(TELNETSRV_CALLBACK_HANDOVER);
+  if (ho_callback != NULL) {
+    nr_rrc_du_container_t *du = get_du_by_cell_id(rrc, rrc->nr_cellid);
+    if (du && du->setup_req && du->setup_req->cell) {
+      const char *source_gnb_id = NULL;
+      uint64_t source_cellid = 0;
+      uint16_t source_pci = 0;
+      
+      /* Try to get source gNB info from handover context */
+      if (UE->ho_context && UE->ho_context->source && UE->ho_context->source->du) {
+        source_gnb_id = "gNB-source";
+        if (UE->ho_context->source->du->setup_req && UE->ho_context->source->du->setup_req->cell) {
+          source_pci = UE->ho_context->source->du->setup_req->cell[0].info.nr_pci;
+          source_cellid = UE->ho_context->source->du->setup_req->cell[0].info.nr_cellid;
+        }
+      }
+      
+      ho_callback("success",
+                  UE->rrc_ue_id,
+                  UE->amf_ue_ngap_id,
+                  rrc->nr_cellid,
+                  rrc->node_id,
+                  du->setup_req->cell->info.nr_pci,
+                  source_gnb_id,
+                  source_cellid,
+                  source_pci,
+                  NULL,
+                  NULL);
+    }
+  }
+#endif
 }
 
 /** @brief This callback is used by the source gNB to inform the AMF
@@ -512,6 +550,54 @@ void nr_rrc_n2_ho_failure(gNB_RRC_INST *rrc, uint32_t gnb_ue_id, ngap_handover_f
   LOG_I(NR_RRC, "Send UE Context Release for gnb_ue_id %d\n", gnb_ue_id);
   rrc_gNB_ue_context_t *ue_context_p = rrc_gNB_get_ue_context(rrc, gnb_ue_id);
   rrc_gNB_send_NGAP_UE_CONTEXT_RELEASE_REQ(rrc->module_id, ue_context_p, msg->cause);
+
+#ifdef TELNETSERVERCODE
+  /* Send handover failure notification via telnet */
+  if (ue_context_p != NULL) {
+    handover_callback_func_t ho_callback = (handover_callback_func_t)telnetsrv_get_callback(TELNETSRV_CALLBACK_HANDOVER);
+    if (ho_callback != NULL) {
+      gNB_RRC_UE_t *UE = &ue_context_p->ue_context;
+      nr_rrc_du_container_t *du = get_du_by_cell_id(rrc, rrc->nr_cellid);
+      
+      if (du && du->setup_req && du->setup_req->cell) {
+        const char *source_gnb_id = NULL;
+        uint64_t source_cellid = 0;
+        uint16_t source_pci = 0;
+        
+        /* Try to get source gNB info from handover context */
+        if (UE->ho_context && UE->ho_context->source && UE->ho_context->source->du) {
+          source_gnb_id = "gNB-source";
+          if (UE->ho_context->source->du->setup_req && UE->ho_context->source->du->setup_req->cell) {
+            source_pci = UE->ho_context->source->du->setup_req->cell[0].info.nr_pci;
+            source_cellid = UE->ho_context->source->du->setup_req->cell[0].info.nr_cellid;
+          }
+        }
+        
+        /* Format failure cause */
+        char failure_cause[64];
+        char failure_reason[128];
+        snprintf(failure_cause, sizeof(failure_cause), "cause_type_%d_value_%d", 
+                 msg->cause.type, msg->cause.value);
+        snprintf(failure_reason, sizeof(failure_reason), 
+                 "Handover failure: type=%d, value=%d", 
+                 msg->cause.type, msg->cause.value);
+        
+        ho_callback("failure",
+                    gnb_ue_id,
+                    msg->amf_ue_ngap_id,
+                    rrc->nr_cellid,
+                    rrc->node_id,
+                    du->setup_req->cell->info.nr_pci,
+                    source_gnb_id,
+                    source_cellid,
+                    source_pci,
+                    failure_cause,
+                    failure_reason);
+      }
+    }
+  }
+#endif
+
   return;
 }
 

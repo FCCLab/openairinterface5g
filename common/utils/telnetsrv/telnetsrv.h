@@ -128,6 +128,12 @@ typedef struct telnetsrv_qmsg {
 #define TELNET_VAR_NEEDFREE 64
 #define TELNET_CHECKVAL_LOGLVL 128
 #define TELNET_CHECKVAL_SIMALGO 256
+
+/* Enum for telnet server callback types */
+typedef enum {
+  TELNETSRV_CALLBACK_HANDOVER = 0,  /* Handover completion callback */
+  TELNETSRV_CALLBACK_MAX
+} telnetserv_callback_t;
 typedef struct variabledef {
     char varname[TELNET_CMD_MAXSIZE];
     char vartype;
@@ -202,7 +208,11 @@ typedef void (*push_telnetcmd_func_t)(telnetshell_cmddef_t *cmd, char *cmdbuff, 
 int add_telnetcmd(char *modulename, telnetshell_vardef_t *var, telnetshell_cmddef_t *cmd);
 void set_sched(pthread_t tid, int pid,int priority);
 void set_affinity(pthread_t tid, int pid, int coreid);
-extern int get_phybsize(void); 
+extern int get_phybsize(void);
+/* Send data to all connected telnet clients */
+extern int telnet_send_to_clients(const char *data, size_t len);
+/* Get callback function pointer by callback type */
+extern void *telnetsrv_get_callback(telnetserv_callback_t callback_type);
 #endif
 #ifdef WEBSERVERCODE
 extern void telnet_pushcmd(telnetshell_cmddef_t *cmd, char *cmdbuff, telnet_printfunc_t prnt);
