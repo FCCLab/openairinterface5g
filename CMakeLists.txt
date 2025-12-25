@@ -1324,6 +1324,9 @@ target_link_libraries(L2_NR PRIVATE f1ap x2ap s1ap ngap nr_rrc e1ap nr_rlc nr_co
 if(OAI_AERIAL)
     target_compile_definitions(L2_NR PRIVATE ENABLE_AERIAL)
 endif()
+if(ENABLE_TELNETSRV)
+    target_compile_definitions(L2_NR PRIVATE TELNETSERVERCODE)
+endif()
 
 add_library(L2_LTE_NR
   # temporary solution until 4G/5G code completely untangled (as evidenced by deletion of the following file)

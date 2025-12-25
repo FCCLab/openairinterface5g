@@ -20,6 +20,7 @@
  */
 
 #include <stdlib.h>
+#include <dlfcn.h>
 
 #include "assertions.h"
 
@@ -493,14 +494,27 @@ static void nr_rrc_n2_ho_acknowledge(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE)
  *         to trigger the Handover Notify towards the AMF */
 static void nr_rrc_n2_ho_complete(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE)
 {
+  LOG_I(NR_RRC, "[HO] Starting handover complete for UE %u (rrc_ue_id=%u, amf_ue_ngap_id=%lu)\n", 
+        UE->rrc_ue_id, UE->rrc_ue_id, UE->amf_ue_ngap_id);
+  
   rrc_gNB_send_NGAP_HANDOVER_NOTIFY(rrc, UE);
   
 #ifdef TELNETSERVERCODE
+  LOG_I(NR_RRC, "[HO] Entering TELNETSERVERCODE block for UE %u\n", UE->rrc_ue_id);
   /* Check if handover callback is assigned and call it */
-  handover_callback_func_t ho_callback = (handover_callback_func_t)telnetsrv_get_callback(TELNETSRV_CALLBACK_HANDOVER);
+  LOG_I(NR_RRC, "[HO] Checking for telnet handover callback\n");
+  /* Use dlsym to get telnetsrv_get_callback at runtime since telnet server is dynamically loaded */
+  typedef void *(*telnetsrv_get_callback_func_t)(telnetserv_callback_t);
+  telnetsrv_get_callback_func_t get_callback = (telnetsrv_get_callback_func_t)dlsym(RTLD_DEFAULT, "telnetsrv_get_callback");
+  handover_callback_func_t ho_callback = NULL;
+  if (get_callback != NULL) {
+    ho_callback = (handover_callback_func_t)get_callback(TELNETSRV_CALLBACK_HANDOVER);
+  }
   if (ho_callback != NULL) {
+    LOG_I(NR_RRC, "[HO] Handover callback found, getting DU container for cell_id=%lu\n", rrc->nr_cellid);
     nr_rrc_du_container_t *du = get_du_by_cell_id(rrc, rrc->nr_cellid);
-    if (du && du->setup_req && du->setup_req->cell) {
+    if (du && du->setup_req) {
+      LOG_I(NR_RRC, "[HO] DU container found, extracting handover info\n");
       const char *source_gnb_id = NULL;
       uint64_t source_cellid = 0;
       uint16_t source_pci = 0;
@@ -508,11 +522,21 @@ static void nr_rrc_n2_ho_complete(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE)
       /* Try to get source gNB info from handover context */
       if (UE->ho_context && UE->ho_context->source && UE->ho_context->source->du) {
         source_gnb_id = "gNB-source";
-        if (UE->ho_context->source->du->setup_req && UE->ho_context->source->du->setup_req->cell) {
+        if (UE->ho_context->source->du->setup_req) {
           source_pci = UE->ho_context->source->du->setup_req->cell[0].info.nr_pci;
           source_cellid = UE->ho_context->source->du->setup_req->cell[0].info.nr_cellid;
         }
+        LOG_I(NR_RRC, "[HO] Source gNB info: gnb_id=%s, cell_id=%lu, pci=%u\n", 
+              source_gnb_id, source_cellid, source_pci);
+      } else {
+        LOG_I(NR_RRC, "[HO] No source gNB context found\n");
       }
+      
+      LOG_I(NR_RRC, "[HO] Calling handover callback with: status=success, ue_id=%u, amf_ue_ngap_id=%lu, "
+            "target_cell_id=%lu, node_id=%u, target_pci=%u, source_gnb_id=%s, source_cell_id=%lu, source_pci=%u\n",
+            UE->rrc_ue_id, UE->amf_ue_ngap_id, rrc->nr_cellid, rrc->node_id, 
+            du->setup_req->cell->info.nr_pci, source_gnb_id ? source_gnb_id : "NULL", 
+            source_cellid, source_pci);
       
       ho_callback("success",
                   UE->rrc_ue_id,
@@ -525,8 +549,16 @@ static void nr_rrc_n2_ho_complete(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE)
                   source_pci,
                   NULL,
                   NULL);
+      
+      LOG_I(NR_RRC, "[HO] Handover callback executed successfully\n");
+    } else {
+      LOG_E(NR_RRC, "[HO] Failed to get DU container or cell info (du=%p)\n", du);
     }
+  } else {
+    LOG_E(NR_RRC, "[HO] Handover callback is NULL, not sending to o1-adapter\n");
   }
+#else
+  LOG_I(NR_RRC, "[HO] TELNETSERVERCODE not defined, skipping telnet callback\n");
 #endif
 }
 
@@ -545,21 +577,34 @@ static void nr_rrc_n2_ho_cancel(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE)
  * This message represents an Unsuccessful Outcome of the Handover Resource Allocation */
 void nr_rrc_n2_ho_failure(gNB_RRC_INST *rrc, uint32_t gnb_ue_id, ngap_handover_failure_t *msg)
 {
-  LOG_I(NR_RRC, "Triggering N2 Handover Failure\n");
+  LOG_I(NR_RRC, "[HO] Starting handover failure for gnb_ue_id=%u, amf_ue_ngap_id=%lu, cause_type=%d, cause_value=%d\n",
+        gnb_ue_id, msg->amf_ue_ngap_id, msg->cause.type, msg->cause.value);
+  
+  LOG_I(NR_RRC, "[HO] Triggering N2 Handover Failure\n");
   rrc_gNB_send_NGAP_HANDOVER_FAILURE(rrc, msg);
-  LOG_I(NR_RRC, "Send UE Context Release for gnb_ue_id %d\n", gnb_ue_id);
+  LOG_I(NR_RRC, "[HO] Send UE Context Release for gnb_ue_id %d\n", gnb_ue_id);
   rrc_gNB_ue_context_t *ue_context_p = rrc_gNB_get_ue_context(rrc, gnb_ue_id);
   rrc_gNB_send_NGAP_UE_CONTEXT_RELEASE_REQ(rrc->module_id, ue_context_p, msg->cause);
 
 #ifdef TELNETSERVERCODE
+  LOG_I(NR_RRC, "[HO] Entering TELNETSERVERCODE block for gnb_ue_id=%u\n", gnb_ue_id);
   /* Send handover failure notification via telnet */
   if (ue_context_p != NULL) {
-    handover_callback_func_t ho_callback = (handover_callback_func_t)telnetsrv_get_callback(TELNETSRV_CALLBACK_HANDOVER);
+    LOG_I(NR_RRC, "[HO] UE context found, checking for telnet handover callback\n");
+    /* Use dlsym to get telnetsrv_get_callback at runtime since telnet server is dynamically loaded */
+    typedef void *(*telnetsrv_get_callback_func_t)(telnetserv_callback_t);
+    telnetsrv_get_callback_func_t get_callback = (telnetsrv_get_callback_func_t)dlsym(RTLD_DEFAULT, "telnetsrv_get_callback");
+    handover_callback_func_t ho_callback = NULL;
+    if (get_callback != NULL) {
+      ho_callback = (handover_callback_func_t)get_callback(TELNETSRV_CALLBACK_HANDOVER);
+    }
     if (ho_callback != NULL) {
+      LOG_I(NR_RRC, "[HO] Handover callback found, getting DU container for cell_id=%lu\n", rrc->nr_cellid);
       gNB_RRC_UE_t *UE = &ue_context_p->ue_context;
       nr_rrc_du_container_t *du = get_du_by_cell_id(rrc, rrc->nr_cellid);
       
-      if (du && du->setup_req && du->setup_req->cell) {
+      if (du && du->setup_req) {
+        LOG_I(NR_RRC, "[HO] DU container found, extracting handover info\n");
         const char *source_gnb_id = NULL;
         uint64_t source_cellid = 0;
         uint16_t source_pci = 0;
@@ -567,10 +612,14 @@ void nr_rrc_n2_ho_failure(gNB_RRC_INST *rrc, uint32_t gnb_ue_id, ngap_handover_f
         /* Try to get source gNB info from handover context */
         if (UE->ho_context && UE->ho_context->source && UE->ho_context->source->du) {
           source_gnb_id = "gNB-source";
-          if (UE->ho_context->source->du->setup_req && UE->ho_context->source->du->setup_req->cell) {
+          if (UE->ho_context->source->du->setup_req) {
             source_pci = UE->ho_context->source->du->setup_req->cell[0].info.nr_pci;
             source_cellid = UE->ho_context->source->du->setup_req->cell[0].info.nr_cellid;
           }
+          LOG_I(NR_RRC, "[HO] Source gNB info: gnb_id=%s, cell_id=%lu, pci=%u\n", 
+                source_gnb_id, source_cellid, source_pci);
+        } else {
+          LOG_I(NR_RRC, "[HO] No source gNB context found\n");
         }
         
         /* Format failure cause */
@@ -581,6 +630,13 @@ void nr_rrc_n2_ho_failure(gNB_RRC_INST *rrc, uint32_t gnb_ue_id, ngap_handover_f
         snprintf(failure_reason, sizeof(failure_reason), 
                  "Handover failure: type=%d, value=%d", 
                  msg->cause.type, msg->cause.value);
+        
+        LOG_I(NR_RRC, "[HO] Calling handover callback with: status=failure, gnb_ue_id=%u, amf_ue_ngap_id=%lu, "
+              "target_cell_id=%lu, node_id=%u, target_pci=%u, source_gnb_id=%s, source_cell_id=%lu, source_pci=%u, "
+              "failure_cause=%s, failure_reason=%s\n",
+              gnb_ue_id, msg->amf_ue_ngap_id, rrc->nr_cellid, rrc->node_id, 
+              du->setup_req->cell->info.nr_pci, source_gnb_id ? source_gnb_id : "NULL", 
+              source_cellid, source_pci, failure_cause, failure_reason);
         
         ho_callback("failure",
                     gnb_ue_id,
@@ -593,9 +649,19 @@ void nr_rrc_n2_ho_failure(gNB_RRC_INST *rrc, uint32_t gnb_ue_id, ngap_handover_f
                     source_pci,
                     failure_cause,
                     failure_reason);
+        
+        LOG_I(NR_RRC, "[HO] Handover callback executed successfully\n");
+      } else {
+        LOG_E(NR_RRC, "[HO] Failed to get DU container or cell info (du=%p)\n", du);
       }
+    } else {
+      LOG_E(NR_RRC, "[HO] Handover callback is NULL, not sending to o1-adapter\n");
     }
+  } else {
+    LOG_E(NR_RRC, "[HO] UE context is NULL for gnb_ue_id=%u\n", gnb_ue_id);
   }
+#else
+  LOG_I(NR_RRC, "[HO] TELNETSERVERCODE not defined, skipping telnet callback\n");
 #endif
 
   return;
