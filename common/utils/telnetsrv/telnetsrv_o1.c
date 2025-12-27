@@ -511,9 +511,6 @@ void handover_complete_callback(const char *status,
                                  uint64_t nr_cellid,
                                  uint32_t node_id,
                                  uint16_t pci,
-                                 const char *source_gnb_id,
-                                 uint64_t source_cellid,
-                                 uint16_t source_pci,
                                  const char *failure_cause,
                                  const char *failure_reason)
 {
@@ -537,11 +534,6 @@ void handover_complete_callback(const char *status,
       "\"handoverStatus\":\"success\","
       "\"handoverId\":\"%s\","
       "\"ueId\":\"%s\","
-      "\"sourceGnb\":{"
-        "\"gnbId\":\"%s\","
-        "\"cellId\":\"%lu\","
-        "\"pci\":%u"
-      "},"
       "\"targetGnb\":{"
         "\"gnbId\":\"gNB-%u\","
         "\"cellId\":\"%lu\","
@@ -549,11 +541,10 @@ void handover_complete_callback(const char *status,
       "},"
       "\"handoverType\":\"intra-gNB\","
       "\"handoverCause\":\"betterCell\","
-      "\"successTimestamp\":\"%s\","
+      "\"timestamp\":\"%s\","
       "\"handoverDurationMs\":0"
       "}\n",
       ho_id, ue_id_str, 
-      source_gnb_id ? source_gnb_id : "unknown", source_cellid, source_pci,
       node_id, nr_cellid, pci,
       iso_timestamp);
   } else {
@@ -563,11 +554,6 @@ void handover_complete_callback(const char *status,
       "\"handoverStatus\":\"failure\","
       "\"handoverId\":\"%s\","
       "\"ueId\":\"%s\","
-      "\"sourceGnb\":{"
-        "\"gnbId\":\"%s\","
-        "\"cellId\":\"%lu\","
-        "\"pci\":%u"
-      "},"
       "\"targetGnb\":{"
         "\"gnbId\":\"gNB-%u\","
         "\"cellId\":\"%lu\","
@@ -577,11 +563,10 @@ void handover_complete_callback(const char *status,
       "\"handoverCause\":\"betterCell\","
       "\"failureCause\":\"%s\","
       "\"failureReason\":\"%s\","
-      "\"failureTimestamp\":\"%s\","
+      "\"timestamp\":\"%s\","
       "\"handoverDurationMs\":0"
       "}\n",
       ho_id, ue_id_str,
-      source_gnb_id ? source_gnb_id : "unknown", source_cellid, source_pci,
       node_id, nr_cellid, pci,
       failure_cause ? failure_cause : "unknown",
       failure_reason ? failure_reason : "unknown",

@@ -19,7 +19,9 @@
  *      contact@openairinterface.org
  */
 
+#define _GNU_SOURCE
 #include <stdlib.h>
+#include <stdio.h>
 #include <dlfcn.h>
 
 #include "assertions.h"
@@ -514,39 +516,18 @@ static void nr_rrc_n2_ho_complete(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE)
     LOG_I(NR_RRC, "[HO] Handover callback found, getting DU container for cell_id=%lu\n", rrc->nr_cellid);
     nr_rrc_du_container_t *du = get_du_by_cell_id(rrc, rrc->nr_cellid);
     if (du && du->setup_req) {
-      LOG_I(NR_RRC, "[HO] DU container found, extracting handover info\n");
-      const char *source_gnb_id = NULL;
-      uint64_t source_cellid = 0;
-      uint16_t source_pci = 0;
-      
-      /* Try to get source gNB info from handover context */
-      if (UE->ho_context && UE->ho_context->source && UE->ho_context->source->du) {
-        source_gnb_id = "gNB-source";
-        if (UE->ho_context->source->du->setup_req) {
-          source_pci = UE->ho_context->source->du->setup_req->cell[0].info.nr_pci;
-          source_cellid = UE->ho_context->source->du->setup_req->cell[0].info.nr_cellid;
-        }
-        LOG_I(NR_RRC, "[HO] Source gNB info: gnb_id=%s, cell_id=%lu, pci=%u\n", 
-              source_gnb_id, source_cellid, source_pci);
-      } else {
-        LOG_I(NR_RRC, "[HO] No source gNB context found\n");
-      }
-      
+      LOG_I(NR_RRC, "[HO] DU container found, calling handover callback\n");
       LOG_I(NR_RRC, "[HO] Calling handover callback with: status=success, ue_id=%u, amf_ue_ngap_id=%lu, "
-            "target_cell_id=%lu, node_id=%u, target_pci=%u, source_gnb_id=%s, source_cell_id=%lu, source_pci=%u\n",
+            "target_cell_id=%lu, node_id=%u, target_pci=%u\n",
             UE->rrc_ue_id, UE->amf_ue_ngap_id, rrc->nr_cellid, rrc->node_id, 
-            du->setup_req->cell->info.nr_pci, source_gnb_id ? source_gnb_id : "NULL", 
-            source_cellid, source_pci);
+            du->setup_req->cell[0].info.nr_pci);
       
       ho_callback("success",
                   UE->rrc_ue_id,
                   UE->amf_ue_ngap_id,
                   rrc->nr_cellid,
                   rrc->node_id,
-                  du->setup_req->cell->info.nr_pci,
-                  source_gnb_id,
-                  source_cellid,
-                  source_pci,
+                  du->setup_req->cell[0].info.nr_pci,
                   NULL,
                   NULL);
       
@@ -600,27 +581,10 @@ void nr_rrc_n2_ho_failure(gNB_RRC_INST *rrc, uint32_t gnb_ue_id, ngap_handover_f
     }
     if (ho_callback != NULL) {
       LOG_I(NR_RRC, "[HO] Handover callback found, getting DU container for cell_id=%lu\n", rrc->nr_cellid);
-      gNB_RRC_UE_t *UE = &ue_context_p->ue_context;
       nr_rrc_du_container_t *du = get_du_by_cell_id(rrc, rrc->nr_cellid);
       
       if (du && du->setup_req) {
-        LOG_I(NR_RRC, "[HO] DU container found, extracting handover info\n");
-        const char *source_gnb_id = NULL;
-        uint64_t source_cellid = 0;
-        uint16_t source_pci = 0;
-        
-        /* Try to get source gNB info from handover context */
-        if (UE->ho_context && UE->ho_context->source && UE->ho_context->source->du) {
-          source_gnb_id = "gNB-source";
-          if (UE->ho_context->source->du->setup_req) {
-            source_pci = UE->ho_context->source->du->setup_req->cell[0].info.nr_pci;
-            source_cellid = UE->ho_context->source->du->setup_req->cell[0].info.nr_cellid;
-          }
-          LOG_I(NR_RRC, "[HO] Source gNB info: gnb_id=%s, cell_id=%lu, pci=%u\n", 
-                source_gnb_id, source_cellid, source_pci);
-        } else {
-          LOG_I(NR_RRC, "[HO] No source gNB context found\n");
-        }
+        LOG_I(NR_RRC, "[HO] DU container found, calling handover callback\n");
         
         /* Format failure cause */
         char failure_cause[64];
@@ -632,21 +596,17 @@ void nr_rrc_n2_ho_failure(gNB_RRC_INST *rrc, uint32_t gnb_ue_id, ngap_handover_f
                  msg->cause.type, msg->cause.value);
         
         LOG_I(NR_RRC, "[HO] Calling handover callback with: status=failure, gnb_ue_id=%u, amf_ue_ngap_id=%lu, "
-              "target_cell_id=%lu, node_id=%u, target_pci=%u, source_gnb_id=%s, source_cell_id=%lu, source_pci=%u, "
+              "target_cell_id=%lu, node_id=%u, target_pci=%u, "
               "failure_cause=%s, failure_reason=%s\n",
               gnb_ue_id, msg->amf_ue_ngap_id, rrc->nr_cellid, rrc->node_id, 
-              du->setup_req->cell->info.nr_pci, source_gnb_id ? source_gnb_id : "NULL", 
-              source_cellid, source_pci, failure_cause, failure_reason);
+              du->setup_req->cell[0].info.nr_pci, failure_cause, failure_reason);
         
         ho_callback("failure",
                     gnb_ue_id,
                     msg->amf_ue_ngap_id,
                     rrc->nr_cellid,
                     rrc->node_id,
-                    du->setup_req->cell->info.nr_pci,
-                    source_gnb_id,
-                    source_cellid,
-                    source_pci,
+                    du->setup_req->cell[0].info.nr_pci,
                     failure_cause,
                     failure_reason);
         

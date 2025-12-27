@@ -31,9 +31,6 @@ typedef void (*handover_callback_func_t)(const char *status,
                                           uint64_t nr_cellid,
                                           uint32_t node_id,
                                           uint16_t pci,
-                                          const char *source_gnb_id,
-                                          uint64_t source_cellid,
-                                          uint16_t source_pci,
                                           const char *failure_cause,
                                           const char *failure_reason);
 
