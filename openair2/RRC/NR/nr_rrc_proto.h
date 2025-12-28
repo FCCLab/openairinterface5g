@@ -68,6 +68,12 @@ int nr_rrc_reconfiguration_req(gNB_RRC_INST *rrc, gNB_RRC_UE_t *ue_p, const int 
 
 NR_MeasConfig_t *nr_rrc_get_measconfig(const gNB_RRC_INST *rrc, uint64_t nr_cellid);
 
+/* Get all A3 configurations */
+int nr_rrc_get_a3_configurations(gNB_RRC_INST *rrc, nr_a3_event_t **configs, int *count);
+
+/* Update A3 configuration at runtime */
+int nr_rrc_update_a3_configuration(gNB_RRC_INST *rrc, int32_t pci, int32_t offset, int32_t hysteresis, int32_t timeToTrigger);
+
 bool ue_associated_to_cuup(const gNB_RRC_INST *rrc, const gNB_RRC_UE_t *ue);
 sctp_assoc_t get_existing_cuup_for_ue(const gNB_RRC_INST *rrc, const gNB_RRC_UE_t *ue);
 sctp_assoc_t get_new_cuup_for_ue(const gNB_RRC_INST *rrc, const gNB_RRC_UE_t *ue, int sst, int sd);

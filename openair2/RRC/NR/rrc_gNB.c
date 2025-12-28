@@ -628,6 +628,113 @@ static nr_a3_event_t *get_a3_configuration(gNB_RRC_INST *rrc, int pci)
   return NULL;
 }
 
+/* Get all A3 configurations */
+int nr_rrc_get_a3_configurations(gNB_RRC_INST *rrc, nr_a3_event_t **configs, int *count)
+{
+  if (!rrc || !configs || !count) {
+    return -1;
+  }
+
+  nr_measurement_configuration_t *measurementConfiguration = &rrc->measurementConfiguration;
+  if (!measurementConfiguration->a3_event_list || measurementConfiguration->a3_event_list->size == 0) {
+    *configs = NULL;
+    *count = 0;
+    return 0;
+  }
+
+  *count = measurementConfiguration->a3_event_list->size;
+  *configs = (nr_a3_event_t *)calloc(*count, sizeof(nr_a3_event_t));
+  if (!*configs) {
+    *count = 0;
+    return -1;
+  }
+
+  for (uint8_t i = 0; i < *count; i++) {
+    nr_a3_event_t *src = (nr_a3_event_t *)seq_arr_at(measurementConfiguration->a3_event_list, i);
+    (*configs)[i] = *src;
+  }
+
+  return 0;
+}
+
+/* Update A3 configuration at runtime */
+int nr_rrc_update_a3_configuration(gNB_RRC_INST *rrc, int32_t pci, int32_t offset, int32_t hysteresis, int32_t timeToTrigger)
+{
+  if (!rrc) {
+    return -1;
+  }
+
+  /* Validate parameter ranges */
+  if (offset < 0 || offset > 30) {
+    LOG_E(NR_RRC, "Invalid A3 offset: %d (range: 0-30)\n", offset);
+    return -1;
+  }
+  if (hysteresis < 0 || hysteresis > 30) {
+    LOG_E(NR_RRC, "Invalid A3 hysteresis: %d (range: 0-30)\n", hysteresis);
+    return -1;
+  }
+  if (timeToTrigger < 0 || timeToTrigger > 15) {
+    LOG_E(NR_RRC, "Invalid A3 timeToTrigger: %d (range: 0-15)\n", timeToTrigger);
+    return -1;
+  }
+  if (pci < -1 || pci >= 1024) {
+    LOG_E(NR_RRC, "Invalid PCI: %d (range: -1 to 1023)\n", pci);
+    return -1;
+  }
+
+  nr_measurement_configuration_t *measurementConfiguration = &rrc->measurementConfiguration;
+  
+  /* Initialize a3_event_list if it doesn't exist */
+  if (!measurementConfiguration->a3_event_list) {
+    measurementConfiguration->a3_event_list = (seq_arr_t *)malloc(sizeof(seq_arr_t));
+    if (!measurementConfiguration->a3_event_list) {
+      LOG_E(NR_RRC, "Failed to allocate memory for a3_event_list\n");
+      return -1;
+    }
+    seq_arr_init(measurementConfiguration->a3_event_list, sizeof(nr_a3_event_t));
+  }
+
+  /* Find existing configuration for this PCI */
+  bool found = false;
+  for (uint8_t i = 0; i < measurementConfiguration->a3_event_list->size; i++) {
+    nr_a3_event_t *a3_event = (nr_a3_event_t *)seq_arr_at(measurementConfiguration->a3_event_list, i);
+    if (a3_event->pci == pci) {
+      /* Update existing configuration */
+      a3_event->a3_offset = offset;
+      a3_event->hysteresis = hysteresis;
+      a3_event->timeToTrigger = timeToTrigger;
+      found = true;
+      LOG_I(NR_RRC, "Updated A3 configuration for PCI %d: offset=%d, hysteresis=%d, timeToTrigger=%d\n",
+            pci, offset, hysteresis, timeToTrigger);
+      break;
+    }
+  }
+
+  if (!found) {
+    /* Create new configuration */
+    nr_a3_event_t new_a3_event = {0};
+    new_a3_event.pci = pci;
+    new_a3_event.a3_offset = offset;
+    new_a3_event.hysteresis = hysteresis;
+    new_a3_event.timeToTrigger = timeToTrigger;
+    
+    seq_arr_push_back(measurementConfiguration->a3_event_list, &new_a3_event, sizeof(nr_a3_event_t));
+    
+    if (pci == -1) {
+      measurementConfiguration->is_default_a3_configuration_exists = true;
+    }
+    
+    LOG_I(NR_RRC, "Created new A3 configuration for PCI %d: offset=%d, hysteresis=%d, timeToTrigger=%d\n",
+          pci, offset, hysteresis, timeToTrigger);
+  }
+
+  /* Note: Active UEs will continue with old parameters until next measurement configuration update.
+   * New UEs will use the updated parameters. For immediate effect, we would need to trigger
+   * RRC reconfiguration for all connected UEs, which is more complex and may cause service disruption. */
+
+  return 0;
+}
+
 static NR_ReportConfigToAddMod_t *prepare_periodic_event_report(const nr_per_event_t *per_event)
 {
   NR_ReportConfigToAddMod_t *rc = calloc(1, sizeof(*rc));

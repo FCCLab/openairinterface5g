@@ -37,6 +37,7 @@
 #include "telnetsrv_o1.h"
 
 #include "openair2/RRC/NR/nr_rrc_defs.h"
+#include "openair2/RRC/NR/nr_rrc_proto.h"
 #include "openair2/LAYER2/NR_MAC_gNB/nr_mac_gNB.h"
 #include "openair2/LAYER2/NR_MAC_gNB/nr_radio_config.h"
 #include "openair2/LAYER2/NR_MAC_gNB/mac_proto.h"
@@ -45,6 +46,7 @@
 #include "common/config/config_userapi.h"
 #include "common/config/config_paramdesc.h"
 #include "openair2/GNB_APP/gnb_paramdef.h"
+#include "common/ran_context.h"
 
 #define ERROR_MSG_RET(mSG, aRGS...) do { prnt("FAILURE: " mSG, ##aRGS); return 1; } while (0)
 
@@ -472,6 +474,196 @@ static int remove_mac_ues(char *buf, int debug, telnet_printfunc_t prnt)
   return 0;
 }
 
+/* Get A3 handover configuration */
+static int get_ho_config(char *buf, int debug, telnet_printfunc_t prnt)
+{
+  int32_t pci_filter = -999; // -999 means get all, -1 means default, >=0 means specific PCI
+  
+  /* Parse optional PCI parameter */
+  if (buf && strlen(buf) > 0) {
+    char *endptr = NULL;
+    long pci_val = strtol(buf, &endptr, 10);
+    if (endptr != buf && *endptr == '\0') {
+      pci_filter = (int32_t)pci_val;
+    } else {
+      /* Invalid PCI format, ignore and get all */
+      pci_filter = -999;
+    }
+  }
+
+  /* Get RRC instance */
+  if (!RC.nrrrc || !RC.nrrrc[0]) {
+    ERROR_MSG_RET("RRC instance not available\n");
+  }
+
+  gNB_RRC_INST *rrc = RC.nrrrc[0];
+  nr_a3_event_t *configs = NULL;
+  int count = 0;
+
+  /* Get all A3 configurations */
+  int rc = nr_rrc_get_a3_configurations(rrc, &configs, &count);
+  if (rc != 0) {
+    ERROR_MSG_RET("Failed to get A3 configurations\n");
+  }
+
+  /* Output JSON */
+  prnt("{\n");
+  prnt("  \"a3-configurations\": [\n");
+  
+  bool first = true;
+  for (int i = 0; i < count; i++) {
+    /* Apply filter if specified */
+    if (pci_filter != -999 && configs[i].pci != pci_filter) {
+      continue;
+    }
+
+    if (!first) {
+      prnt(",\n");
+    }
+    first = false;
+
+    prnt("    {\n");
+    prnt("      \"physCellId\": %d,\n", configs[i].pci);
+    prnt("      \"offset\": %ld,\n", configs[i].a3_offset);
+    prnt("      \"hysteresis\": %ld,\n", configs[i].hysteresis);
+    prnt("      \"timeToTrigger\": %ld\n", configs[i].timeToTrigger);
+    prnt("    }");
+  }
+
+  prnt("\n  ]\n");
+  prnt("}\n");
+  prnt("OK\n");
+
+  /* Free allocated memory */
+  if (configs) {
+    free(configs);
+  }
+
+  return 0;
+}
+
+/* Set A3 handover configuration */
+static int set_ho_config(char *buf, int debug, telnet_printfunc_t prnt)
+{
+  if (!buf) {
+    ERROR_MSG_RET("need param: o1 ho_config set [physCellId] offset <value> hysteresis <value> timeToTrigger <value>\n");
+  }
+
+  /* Get RRC instance */
+  if (!RC.nrrrc || !RC.nrrrc[0]) {
+    ERROR_MSG_RET("RRC instance not available\n");
+  }
+
+  gNB_RRC_INST *rrc = RC.nrrrc[0];
+
+  /* Parse command: "[physCellId] offset <value> hysteresis <value> timeToTrigger <value>" 
+   * Note: "set" has already been stripped by ho_config() */
+  int32_t pci = -1;  // Default to -1 (all cells)
+  int32_t offset = -1;
+  int32_t hysteresis = -1;
+  int32_t timeToTrigger = -1;
+
+  /* Make a copy of buf since strtok modifies it */
+  char *buf_copy = strdup(buf);
+  if (!buf_copy) {
+    ERROR_MSG_RET("memory allocation failed\n");
+  }
+
+  char *token = strtok(buf_copy, " \t\n\r");
+  if (!token) {
+    free(buf_copy);
+    ERROR_MSG_RET("missing parameters\n");
+  }
+
+  /* First token could be PCI or a parameter name - check if it's a number */
+  char *endptr = NULL;
+  long first_val = strtol(token, &endptr, 10);
+  if (endptr != token && *endptr == '\0') {
+    /* First token is a number, treat it as PCI */
+    pci = (int32_t)first_val;
+    token = strtok(NULL, " \t\n\r");
+  }
+  /* Otherwise, first token is a parameter name, continue parsing */
+
+  /* Parse parameters */
+  while (token != NULL) {
+    if (strcmp(token, "offset") == 0) {
+      token = strtok(NULL, " \t\n\r");
+      if (!token) {
+        free(buf_copy);
+        ERROR_MSG_RET("missing offset value\n");
+      }
+      offset = (int32_t)strtol(token, NULL, 10);
+      token = strtok(NULL, " \t\n\r");
+    } else if (strcmp(token, "hysteresis") == 0) {
+      token = strtok(NULL, " \t\n\r");
+      if (!token) {
+        free(buf_copy);
+        ERROR_MSG_RET("missing hysteresis value\n");
+      }
+      hysteresis = (int32_t)strtol(token, NULL, 10);
+      token = strtok(NULL, " \t\n\r");
+    } else if (strcmp(token, "timeToTrigger") == 0) {
+      token = strtok(NULL, " \t\n\r");
+      if (!token) {
+        free(buf_copy);
+        ERROR_MSG_RET("missing timeToTrigger value\n");
+      }
+      timeToTrigger = (int32_t)strtol(token, NULL, 10);
+      token = strtok(NULL, " \t\n\r");
+    } else {
+      /* Unknown parameter - ignore or error? For now, ignore to be flexible */
+      token = strtok(NULL, " \t\n\r");
+    }
+  }
+
+  /* Free the copy */
+  free(buf_copy);
+
+  /* Validate required parameters */
+  if (offset < 0 || hysteresis < 0 || timeToTrigger < 0) {
+    ERROR_MSG_RET("missing required parameters: offset, hysteresis, timeToTrigger\n");
+  }
+
+  /* Update configuration */
+  int rc = nr_rrc_update_a3_configuration(rrc, pci, offset, hysteresis, timeToTrigger);
+  if (rc != 0) {
+    ERROR_MSG_RET("Failed to update A3 configuration\n");
+  }
+
+  prnt("OK\n");
+  return 0;
+}
+
+/* Combined handler for ho_config command */
+static int ho_config(char *buf, int debug, telnet_printfunc_t prnt)
+{
+  if (!buf) {
+    ERROR_MSG_RET("need param: o1 ho_config get [physCellId] | o1 ho_config set [physCellId] offset <value> hysteresis <value> timeToTrigger <value>\n");
+  }
+
+  /* Check if it's a get or set command */
+  if (strncmp(buf, "get", 3) == 0) {
+    /* Skip "get" and pass rest to get_ho_config */
+    char *get_buf = buf + 3;
+    while (*get_buf == ' ' || *get_buf == '\t') {
+      get_buf++;
+    }
+    return get_ho_config(get_buf, debug, prnt);
+  } else if (strncmp(buf, "set", 3) == 0) {
+    /* Skip "set" and pass rest to set_ho_config */
+    char *set_buf = buf + 3;
+    while (*set_buf == ' ' || *set_buf == '\t') {
+      set_buf++;
+    }
+    return set_ho_config(set_buf, debug, prnt);
+  } else {
+    ERROR_MSG_RET("expected 'get' or 'set' command\n");
+  }
+
+  return 0;
+}
+
 static telnetshell_cmddef_t o1cmds[] = {
   {"stats", "", get_stats},
   {"config", "[]", set_config},
@@ -479,6 +671,7 @@ static telnetshell_cmddef_t o1cmds[] = {
   {"stop_modem", "", stop_modem},
   {"start_modem", "", start_modem},
   {"remove_mac_ues", "", remove_mac_ues},
+  {"ho_config", "[]", ho_config},
   {"", "", NULL},
 };
 
