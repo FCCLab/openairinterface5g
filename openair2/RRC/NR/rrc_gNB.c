@@ -822,6 +822,18 @@ static NR_ReportConfigToAddMod_t *prepare_a3_event_report(const nr_a3_event_t *a
   rcnr_A3->reportType.present = NR_ReportConfigNR__reportType_PR_eventTriggered;
   rcnr_A3->reportType.choice.eventTriggered = etrc_A3;
   rc_A3->reportConfig.choice.reportConfigNR = rcnr_A3;
+  
+  // Log A3 configuration being prepared
+  double a3_offset_db = a3_event->a3_offset * 0.5;
+  double hysteresis_db = a3_event->hysteresis * 0.5;
+  // TimeToTrigger enum to milliseconds mapping (NR_TimeToTrigger_ms0=0, ms40=1, ms64=2, ms80=3, etc.)
+  static const int timeToTrigger_ms_map[] = {0, 40, 64, 80, 100, 128, 160, 256, 320, 480, 512, 640, 1024, 1280, 2560, 5120};
+  int timeToTrigger_ms = (a3_event->timeToTrigger >= 0 && a3_event->timeToTrigger < 16) ? 
+                         timeToTrigger_ms_map[a3_event->timeToTrigger] : 0;
+  LOG_I(NR_RRC, "HO LOG [Config]: Preparing A3 Event Report Config ID=%ld, PCI=%d, offset=%ld (%.1f dB), hysteresis=%ld (%.1f dB), timeToTrigger=%ld (%d ms)\n",
+        reportConfigId, a3_event->pci, a3_event->a3_offset, a3_offset_db, 
+        a3_event->hysteresis, hysteresis_db, a3_event->timeToTrigger, timeToTrigger_ms);
+  
   return rc_A3;
 }
 
@@ -862,8 +874,9 @@ NR_MeasConfig_t *nr_rrc_get_measconfig(const gNB_RRC_INST *rrc, uint64_t nr_cell
          If no related A3 but there is default add the default one.
          If default one added once as a report, no need to add it again && duplication.
       */
-      LOG_D(NR_RRC, "Preparing A3 Event Measurement Configuration!\n");
+      LOG_I(NR_RRC, "HO LOG [Config]: Preparing A3 Event Measurement Configuration for %zu neighbor cells\n", neighbour_cells->size);
       bool default_a3_added = false; // To ensure that the default configuration is only added once
+      int a3_config_count = 0;
       for (int i = 0; i < neighbour_cells->size; i++) {
         nr_neighbour_cell_t *neighbourCell = (nr_neighbour_cell_t *)seq_arr_at(neighbour_cells, i);
         if (default_a3_added && neighbourCell->physicalCellId == -1)
@@ -873,10 +886,14 @@ NR_MeasConfig_t *nr_rrc_get_measconfig(const gNB_RRC_INST *rrc, uint64_t nr_cell
         if (a3Event) {
           NR_ReportConfigId_t reportConfigId = neighbourCell->physicalCellId == -1 ? 3 : i + 4;
           seq_arr_push_back(&rc_A3_seq, prepare_a3_event_report(a3Event, reportConfigId), sizeof(NR_ReportConfigToAddMod_t));
+          LOG_I(NR_RRC, "HO LOG [Config]: Applied A3 config to neighbor cell PCI=%d, ReportConfigId=%ld\n",
+                neighbourCell->physicalCellId, reportConfigId);
+          a3_config_count++;
           if (neighbourCell->physicalCellId == -1)
             default_a3_added = true;
         }
       }
+      LOG_I(NR_RRC, "HO LOG [Config]: Total A3 configurations prepared: %d\n", a3_config_count);
     }
     if (rrc->measurementConfiguration.per_event)
       rc_PER = prepare_periodic_event_report(rrc->measurementConfiguration.per_event);
@@ -977,6 +994,25 @@ static void rrc_gNB_generate_dedicatedRRCReconfiguration(gNB_RRC_INST *rrc, gNB_
 
   // Set xid for RRC transaction
   ue_p->xids[params.transaction_id] = params.n_drb_rel > 0 ? RRC_PDUSESSION_RELEASE : RRC_PDUSESSION_ESTABLISH;
+
+  // Log HO configuration being sent to UE
+  if (params.meas_config && params.meas_config->reportConfigToAddModList) {
+    int a3_config_count = 0;
+    for (int i = 0; i < params.meas_config->reportConfigToAddModList->list.count; i++) {
+      NR_ReportConfigToAddMod_t *report_config = params.meas_config->reportConfigToAddModList->list.array[i];
+      if (report_config->reportConfig.choice.reportConfigNR &&
+          report_config->reportConfig.choice.reportConfigNR->reportType.present == NR_ReportConfigNR__reportType_PR_eventTriggered) {
+        NR_EventTriggerConfig_t *event_config = report_config->reportConfig.choice.reportConfigNR->reportType.choice.eventTriggered;
+        if (event_config->eventId.present == NR_EventTriggerConfig__eventId_PR_eventA3) {
+          a3_config_count++;
+        }
+      }
+    }
+    if (a3_config_count > 0) {
+      LOG_I(NR_RRC, "HO LOG [Config]: Applying HO configuration to UE %d (RNTI=0x%04x): %d A3 event config(s) included in RRC Reconfiguration\n",
+            ue_p->rrc_ue_id, ue_p->rnti, a3_config_count);
+    }
+  }
 
   byte_array_t msg = rrc_gNB_encode_RRCReconfiguration(rrc, ue_p, params);
   if (msg.len <= 0) {
