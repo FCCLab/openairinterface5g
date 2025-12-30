@@ -1649,7 +1649,7 @@ static void process_Periodical_Measurement_Report(gNB_RRC_UE_t *ue_ctxt, NR_Meas
   const NR_MeasResults_t *measResults = &measurementReport->criticalExtensions.choice.measurementReport->measResults;
   
   // Log measurement report details for handover monitoring
-  LOG_I(NR_RRC, "HO LOG: Periodic Measurement Report received for UE %d, MeasId: %ld\n", 
+  LOG_I(NR_RRC, "HO LOG [Periodic Report]: Periodic Measurement Report received for UE %d, MeasId: %ld\n", 
         ue_ctxt->rrc_ue_id, id);
   
   // Log serving cell measurements
@@ -1682,7 +1682,7 @@ static void process_Periodical_Measurement_Report(gNB_RRC_UE_t *ue_ctxt, NR_Meas
       }
     }
     
-    LOG_I(NR_RRC, "HO LOG: Serving Cell PCI: %d, RSRP: %d dBm, RSRQ: %d dB, SINR: %d dB\n",
+    LOG_I(NR_RRC, "HO LOG [Periodic Report]: Serving Cell PCI: %d, RSRP: %d dBm, RSRQ: %d dB, SINR: %d dB\n",
           scell_pci, servingCellRSRP, servingCellRSRQ, servingCellSINR);
   }
   
@@ -1690,7 +1690,7 @@ static void process_Periodical_Measurement_Report(gNB_RRC_UE_t *ue_ctxt, NR_Meas
   if (measResults->measResultNeighCells != NULL &&
       measResults->measResultNeighCells->present == NR_MeasResults__measResultNeighCells_PR_measResultListNR) {
     const NR_MeasResultListNR_t *measResultListNR = measResults->measResultNeighCells->choice.measResultListNR;
-    LOG_I(NR_RRC, "HO LOG: Neighbor cells measured: %d\n", measResultListNR->list.count);
+    LOG_I(NR_RRC, "HO LOG [Periodic Report]: Neighbor cells measured: %d\n", measResultListNR->list.count);
     
     for (int neigh_meas_idx = 0; neigh_meas_idx < measResultListNR->list.count; neigh_meas_idx++) {
       const NR_MeasResultNR_t *meas_result_neigh_cell = (measResultListNR->list.array[neigh_meas_idx]);
@@ -1723,7 +1723,7 @@ static void process_Periodical_Measurement_Report(gNB_RRC_UE_t *ue_ctxt, NR_Meas
         }
       }
       
-      LOG_I(NR_RRC, "HO LOG: Neighbor Cell PCI: %d, RSRP: %d dBm, RSRQ: %d dB, SINR: %d dB\n",
+      LOG_I(NR_RRC, "HO LOG [Periodic Report]: Neighbor Cell PCI: %d, RSRP: %d dBm, RSRQ: %d dB, SINR: %d dB\n",
             neighbour_pci, neighbourCellRSRP, neighbourCellRSRQ, neighbourCellSINR);
     }
   }
@@ -1748,15 +1748,15 @@ static void process_Event_Based_Measurement_Report(gNB_RRC_INST *rrc,
 
   switch (event_triggered->eventId.present) {
     case NR_EventTriggerConfig__eventId_PR_eventA2:
-      LOG_I(NR_RRC, "HO LOG: Event A2 (Serving becomes worse than threshold)\n");
+      LOG_I(NR_RRC, "HO LOG [Event Based Report]: Event A2 (Serving becomes worse than threshold)\n");
       break;
 
     case NR_EventTriggerConfig__eventId_PR_eventA3: {
-      LOG_I(NR_RRC, "HO LOG: ========== Event A3 Report Received ==========\n");
-      LOG_I(NR_RRC, "HO LOG: UE ID=%d, RNTI=0x%04x, AMF_UE_NGAP_ID=%lu\n", 
+      LOG_I(NR_RRC, "HO LOG [Event Based Report]: ========== Event A3 Report Received ==========\n");
+      LOG_I(NR_RRC, "HO LOG [Event Based Report]: UE ID=%d, RNTI=0x%04x, AMF_UE_NGAP_ID=%lu\n", 
             ue->rrc_ue_id, ue->rnti, ue->amf_ue_ngap_id);
       if (!measurementReport->criticalExtensions.choice.measurementReport) {
-        LOG_E(NR_RRC, "HO LOG: Event A3 Report: measurementReport is null\n");
+        LOG_E(NR_RRC, "HO LOG [Event Based Report]: Event A3 Report: measurementReport is null\n");
         break;
       }
       const NR_MeasResults_t *measResults = &measurementReport->criticalExtensions.choice.measurementReport->measResults;
@@ -1783,18 +1783,18 @@ static void process_Event_Based_Measurement_Report(gNB_RRC_INST *rrc,
             servingCellSINR = *(meas_result_serv_MO->measResultServingCell.measResult.cellResults.resultsCSI_RS_Cell->sinr) - 23;
           }
         }
-        LOG_I(NR_RRC, "HO LOG: Serving Cell PCI=%d, RSRP=%d dBm, RSRQ=%d dB, SINR=%d dB\n", 
+        LOG_I(NR_RRC, "HO LOG [Event Based Report]: Serving Cell PCI=%d, RSRP=%d dBm, RSRQ=%d dB, SINR=%d dB\n", 
               scell_pci, servingCellRSRP, servingCellRSRQ, servingCellSINR);
       }
 
       if (measResults->measResultNeighCells == NULL ||
           measResults->measResultNeighCells->present != NR_MeasResults__measResultNeighCells_PR_measResultListNR) {
-        LOG_D(NR_RRC, "HO LOG: No neighbor cell measurements available\n");
+        LOG_D(NR_RRC, "HO LOG [Event Based Report]: No neighbor cell measurements available\n");
         break;
       }
 
       const NR_MeasResultListNR_t *measResultListNR = measResults->measResultNeighCells->choice.measResultListNR;
-      LOG_I(NR_RRC, "HO LOG: Neighbor cells measured: %d\n", measResultListNR->list.count);
+      LOG_I(NR_RRC, "HO LOG [Event Based Report]: Neighbor cells measured: %d\n", measResultListNR->list.count);
       for (int neigh_meas_idx = 0; neigh_meas_idx < measResultListNR->list.count; neigh_meas_idx++) {
         const NR_MeasResultNR_t *meas_result_neigh_cell = (measResultListNR->list.array[neigh_meas_idx]);
         const int neighbour_pci = *(meas_result_neigh_cell->physCellId);
@@ -1822,7 +1822,7 @@ static void process_Event_Based_Measurement_Report(gNB_RRC_INST *rrc,
           }
         }
 
-        LOG_I(NR_RRC, "HO LOG: Neighbor Cell PCI=%d, RSRP=%d dBm, RSRQ=%d dB, SINR=%d dB\n",
+        LOG_I(NR_RRC, "HO LOG [Event Based Report]: Neighbor Cell PCI=%d, RSRP=%d dBm, RSRQ=%d dB, SINR=%d dB\n",
               neighbour_pci, neighbourCellRSRP, neighbourCellRSRQ, neighbourCellSINR);
 
         const f1ap_served_cell_info_t *neigh_cell = get_cell_information_by_phycellId(neighbour_pci);
@@ -1839,51 +1839,51 @@ static void process_Event_Based_Measurement_Report(gNB_RRC_INST *rrc,
             double hysteresis_db = a3_event_configuration->hysteresis;
             double threshold_db = a3_offset_db + hysteresis_db;
             int rsrp_diff = neighbourCellRSRP - servingCellRSRP;
-            LOG_I(NR_RRC, "HO LOG: A3 Configuration for PCI %d: a3_offset=%.1f dB, hysteresis=%.1f dB, threshold=%.1f dB\n",
+            LOG_I(NR_RRC, "HO LOG [Event Based Report]: A3 Configuration for PCI %d: a3_offset=%.1f dB, hysteresis=%.1f dB, threshold=%.1f dB\n",
                   neighbour_pci, a3_offset_db, hysteresis_db, threshold_db);
-            LOG_I(NR_RRC, "HO LOG: RSRP difference (neighbor - serving) = %d dB, threshold = %.1f dB\n",
+            LOG_I(NR_RRC, "HO LOG [Event Based Report]: RSRP difference (neighbor - serving) = %d dB, threshold = %.1f dB\n",
                   rsrp_diff, threshold_db);
             // Additional check - This part can be modified according to additional cell specific Handover Margin
             // a3-Offset: The actual value is field value * 0.5 dB.
             if (rsrp_diff > threshold_db) {
-              LOG_I(NR_RRC, "HO LOG: A3 condition satisfied (RSRP diff > threshold)!\n");
+              LOG_I(NR_RRC, "HO LOG [Event Based Report]: A3 condition satisfied (RSRP diff > threshold)!\n");
               if (neighbourCellRSRP > best_rsrp) {
                 // UE can send multiple neighbour cells A3 event report in 1 Meas Report. So, we need to find the best neighbour
                 best_rsrp = neighbourCellRSRP;
-                LOG_I(NR_RRC, "HO LOG: Serving Cell RSRP: %d - Best Neighbor RSRP: %d ! Trigger N2 HO\n", servingCellRSRP, best_rsrp);
-                LOG_I(NR_RRC, "HO LOG: Target gNB ID=%u, Target Cell ID=%lu, Target PCI=%d\n",
+                LOG_I(NR_RRC, "HO LOG [Event Based Report]: Serving Cell RSRP: %d - Best Neighbor RSRP: %d ! Trigger N2 HO\n", servingCellRSRP, best_rsrp);
+                LOG_I(NR_RRC, "HO LOG [Event Based Report]: Target gNB ID=%u, Target Cell ID=%lu, Target PCI=%d\n",
                       neighbour->gNB_ID, neighbour->nrcell_id, neighbour->physicalCellId);
                 nr_rrc_trigger_n2_ho(rrc, ue, scell_pci, neighbour);
               } else {
-                LOG_D(NR_RRC, "HO LOG: Neighbor RSRP %d <= best RSRP %d, skipping\n", neighbourCellRSRP, best_rsrp);
+                LOG_D(NR_RRC, "HO LOG [Event Based Report]: Neighbor RSRP %d <= best RSRP %d, skipping\n", neighbourCellRSRP, best_rsrp);
               }
             } else {
-              LOG_D(NR_RRC, "HO LOG: A3 condition NOT satisfied (RSRP diff %d <= threshold %.1f), skipping HO\n",
+              LOG_D(NR_RRC, "HO LOG [Event Based Report]: A3 condition NOT satisfied (RSRP diff %d <= threshold %.1f), skipping HO\n",
                     rsrp_diff, threshold_db);
             }
           } else {
-            LOG_W(NR_RRC, "HO LOG: No A3 event configuration found for neighbor PCI %d\n", neighbour_pci);
+            LOG_W(NR_RRC, "HO LOG [Event Based Report]: No A3 event configuration found for neighbor PCI %d\n", neighbour_pci);
           }
         } else if (neigh_cell && neighbour) {
           /* we know the cell and are connected to the DU! */
-          LOG_I(NR_RRC, "HO LOG: F1 handover available - Source Cell ID=%lu, Target Cell ID=%lu\n",
+          LOG_I(NR_RRC, "HO LOG [Event Based Report]: F1 handover available - Source Cell ID=%lu, Target Cell ID=%lu\n",
                 serving_cell->nr_cellid, neigh_cell->nr_cellid);
           nr_rrc_du_container_t *source_du = get_du_by_cell_id(rrc, serving_cell->nr_cellid);
           DevAssert(source_du);
           nr_rrc_du_container_t *target_du = get_du_by_cell_id(rrc, neigh_cell->nr_cellid);
           nr_rrc_trigger_f1_ho(rrc, ue, source_du, target_du);
         } else {
-          LOG_W(NR_RRC, "HO LOG: UE %d: received A3 event for stronger neighbor PCI %d, but no such neighbour in configuration\n", 
+          LOG_W(NR_RRC, "HO LOG [Event Based Report]: UE %d: received A3 event for stronger neighbor PCI %d, but no such neighbour in configuration\n", 
                 ue->rrc_ue_id, neighbour_pci);
           if (!neigh_cell) {
-            LOG_W(NR_RRC, "HO LOG: No F1 connection to neighbor cell PCI %d\n", neighbour_pci);
+            LOG_W(NR_RRC, "HO LOG [Event Based Report]: No F1 connection to neighbor cell PCI %d\n", neighbour_pci);
           }
           if (!neighbour) {
-            LOG_W(NR_RRC, "HO LOG: Neighbor PCI %d not found in static configuration\n", neighbour_pci);
+            LOG_W(NR_RRC, "HO LOG [Event Based Report]: Neighbor PCI %d not found in static configuration\n", neighbour_pci);
           }
         }
       }
-      LOG_I(NR_RRC, "HO LOG: ========== End Event A3 Report Processing ==========\n");
+      LOG_I(NR_RRC, "HO LOG [Event Based Report]: ========== End Event A3 Report Processing ==========\n");
     } break;
     default:
       LOG_D(NR_RRC, "NR_EventTriggerConfig__eventId_PR_NOTHING or Other event report\n");
