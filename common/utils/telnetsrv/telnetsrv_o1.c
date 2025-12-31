@@ -732,10 +732,10 @@ void handover_complete_callback(const char *status,
         "\"cellId\":\"%lu\","
         "\"pci\":%u"
       "},"
-      "\"handoverType\":\"intra-gNB\","
+      "\"handoverType\":\"inter-gNB\","
       "\"handoverCause\":\"betterCell\","
       "\"timestamp\":\"%s\","
-      "\"handoverDurationMs\":0"
+      "\"handoverDurationMs\":10"
       "}\n",
       ho_id, ue_id_str, 
       node_id, nr_cellid, pci,
@@ -752,12 +752,12 @@ void handover_complete_callback(const char *status,
         "\"cellId\":\"%lu\","
         "\"pci\":%u"
       "},"
-      "\"handoverType\":\"intra-gNB\","
+      "\"handoverType\":\"inter-gNB\","
       "\"handoverCause\":\"betterCell\","
       "\"failureCause\":\"%s\","
       "\"failureReason\":\"%s\","
       "\"timestamp\":\"%s\","
-      "\"handoverDurationMs\":0"
+      "\"handoverDurationMs\":10"
       "}\n",
       ho_id, ue_id_str,
       node_id, nr_cellid, pci,
