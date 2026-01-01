@@ -3781,6 +3781,11 @@ bool prepare_initial_ul_rrc_message(gNB_MAC_INST *mac, NR_UE_info_t *UE)
   nr_rlc_add_srb(UE->rnti, bearer->servedRadioBearer->choice.srb_Identity, bearer);
   int priority = bearer->mac_LogicalChannelConfig->ul_SpecificParameters->priority;
   nr_lc_config_t c = {.lcid = bearer->logicalChannelIdentity, .priority = priority};
+  
+  // Assign first LCID (SRB1) to slice 01 ffffff by default
+  c.nssai.sst = 1;
+  c.nssai.sd = 0xffffff;
+  
   nr_mac_add_lcid(&UE->UE_sched_ctrl, &c);
   return true;
 }

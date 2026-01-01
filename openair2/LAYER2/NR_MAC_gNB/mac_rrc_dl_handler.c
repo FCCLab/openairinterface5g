@@ -36,6 +36,7 @@
 #include "lib/f1ap_ue_context.h"
 
 #include "executables/softmodem-common.h"
+#include "slice_prb_allocator/slice_prb_allocator.h"
 
 #include "uper_decoder.h"
 #include "uper_encoder.h"
@@ -232,6 +233,32 @@ static NR_RLC_BearerConfig_t *get_bearerconfig_from_srb(const f1ap_srb_to_setup_
   return get_SRB_RLC_BearerConfig(get_lcid_from_srbid(srb->id), priority, bucket, rlc_config);
 }
 
+/*! \brief Get the first available NSSAI from slice scheduler configuration
+ *  \param mac MAC instance containing slice scheduler
+ *  \param nssai_out Output parameter for the first NSSAI (if found)
+ *  \return true if a slice is found and nssai_out is set, false otherwise
+ */
+static bool get_first_nssai_from_config(gNB_MAC_INST *mac, nssai_t *nssai_out)
+{
+  if (mac == NULL || mac->slice_scheduler == NULL || nssai_out == NULL) {
+    return false;
+  }
+  
+  int num_slices = slice_sch_get_num_slices(mac->slice_scheduler);
+  if (num_slices == 0) {
+    return false;
+  }
+  
+  const slice_nssai_t *slice_nssai = slice_sch_get_slice_nssai(mac->slice_scheduler, 0);
+  if (slice_nssai == NULL) {
+    return false;
+  }
+  
+  nssai_out->sst = slice_nssai->sst;
+  nssai_out->sd = slice_nssai->sd;
+  return true;
+}
+
 static int handle_ue_context_srbs_setup(NR_UE_info_t *UE,
                                         int srbs_len,
                                         const f1ap_srb_to_setup_t *req_srbs,
@@ -250,6 +277,22 @@ static int handle_ue_context_srbs_setup(NR_UE_info_t *UE,
 
     int priority = rlc_BearerConfig->mac_LogicalChannelConfig->ul_SpecificParameters->priority;
     nr_lc_config_t c = {.lcid = rlc_BearerConfig->logicalChannelIdentity, .priority = priority};
+
+    // Initialize SRB with first available NSSAI from slice scheduler configuration
+    // Get MAC instance from global RC (standard way in this codebase)
+    gNB_MAC_INST *mac = RC.nrmac[0];
+    nssai_t nssai;
+    LOG_I(NR_MAC, "UE ID %d SRB ID %d: Getting first NSSAI from slice scheduler configuration\n", UE->rnti, srb->id);
+    if (get_first_nssai_from_config(mac, &nssai)) {
+      c.nssai = nssai;
+      LOG_I(NR_MAC, "UE ID %d SRB ID %d: NSSAI SST 0x%02x SD 0x%06x\n", UE->rnti, srb->id, nssai.sst, nssai.sd);
+    } else {
+      LOG_E(NR_MAC, "No NSSAI found in slice scheduler configuration. initializing with default values SST=1, SD=0xffffff \n");
+      // If no slice configuration available, use default (sst=1, sd=0xffffff)
+      c.nssai.sst = 1;
+      c.nssai.sd = 0xffffff;
+    }
+
     nr_mac_add_lcid(&UE->UE_sched_ctrl, &c);
 
     (*resp_srbs)[i].id = srb->id;

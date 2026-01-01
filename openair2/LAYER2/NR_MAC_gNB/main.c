@@ -376,6 +376,12 @@ void mac_top_destroy_gNB(gNB_MAC_INST *mac)
   if (mac->f1_config.setup_resp)
     free_f1ap_setup_response(mac->f1_config.setup_resp);
   free(mac->f1_config.setup_resp);
+  
+  // Clean up slice scheduler
+  if (mac->slice_scheduler != NULL) {
+    slice_sch_destroy(mac->slice_scheduler);
+    mac->slice_scheduler = NULL;
+  }
 }
 
 void nr_mac_send_f1_setup_req(void)

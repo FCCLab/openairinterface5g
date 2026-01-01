@@ -410,6 +410,8 @@ bwp_info_t get_pdsch_bwp_start_size(gNB_MAC_INST *nr_mac, NR_UE_info_t *UE)
       bwp_info.bwpStart = nr_mac->cset0_bwp_start;
     } else {
       bwp_info.bwpStart = dl_bwp->BWPStart + sched_ctrl->sched_pdcch.rb_start;
+      LOG_I(NR_MAC, "[UE %04x] DCI 1_0 in common SS: dl_bwp->BWPStart=%d, sched_pdcch.rb_start=%d, final bwpStart=%d\n",
+            UE->rnti, dl_bwp->BWPStart, sched_ctrl->sched_pdcch.rb_start, bwp_info.bwpStart);
     }
     if (nr_mac->cset0_bwp_size > 0) {
       bwp_info.bwpSize = min(dl_bwp->BWPSize, nr_mac->cset0_bwp_size);
@@ -665,602 +667,6 @@ static void log_scheduler_allocations(frame_t frame, slot_t slot, scheduler_allo
   }
 
   fflush(log_file);
-}
-
-/*! \brief Check if an LCID belongs to a specific slice based on NSSAI
- *  \param lc_config Logical channel configuration
- *  \param slice Slice to check against
- *  \return true if LCID belongs to slice, false otherwise
- */
-static bool lcid_belongs_to_slice(const nr_lc_config_t *lc_config, const network_slice_t *slice)
-{
-  // Only consider DRBs (LCID >= 3), skip SRBs
-  if (lc_config->lcid < 3) {
-    return false;
-  }
-  
-  // Match SST and SD (0xffffff means "no SD")
-  if (lc_config->nssai.sst == slice->sst) {
-    // If SD is 0xffffff, it means "no SD" - match any SD or no SD
-    if (slice->sd == 0xffffff || lc_config->nssai.sd == 0xffffff) {
-      if (slice->sd == 0xffffff && lc_config->nssai.sd == 0xffffff) {
-        return true; // Both have no SD, match
-      }
-    } else if (lc_config->nssai.sd == slice->sd) {
-      return true; // Exact match
-    }
-  }
-  
-  return false;
-}
-
-/*! \brief Calculate buffer status for a UE filtered by slice (only LCIDs belonging to the slice)
- *  \param frame Current frame
- *  \param slot Current slot
- *  \param UE UE info structure
- *  \param slice Slice to filter LCIDs
- *  \param sched_ctrl Output: Updated scheduling control with filtered buffer status
- *  \return Total bytes available for this slice
- */
-static uint32_t update_dlsch_buffer_for_slice(frame_t frame, slot_t slot, NR_UE_info_t *UE, 
-                                               const network_slice_t *slice, NR_UE_sched_ctrl_t *sched_ctrl)
-{
-  uint32_t total_bytes = 0;
-  sched_ctrl->dl_pdus_total = 0;
-  
-  /* loop over all activated logical channels */
-  for (int i = 0; i < seq_arr_size(&sched_ctrl->lc_config); ++i) {
-    const nr_lc_config_t *c = seq_arr_at(&sched_ctrl->lc_config, i);
-    const int lcid = c->lcid;
-    
-    // Only consider LCIDs that belong to this slice
-    if (!lcid_belongs_to_slice(c, slice)) {
-      continue;
-    }
-    
-    const uint16_t rnti = UE->rnti;
-    memset(&sched_ctrl->rlc_status[lcid], 0, sizeof(sched_ctrl->rlc_status[lcid]));
-    if (c->suspended)
-      continue;
-    if (lcid == DL_SCH_LCID_DTCH && nr_timer_is_active(&sched_ctrl->transm_interrupt))
-      continue;
-    sched_ctrl->rlc_status[lcid] = nr_mac_rlc_status_ind(rnti, frame, lcid);
-
-    if (sched_ctrl->rlc_status[lcid].bytes_in_buffer == 0)
-      continue;
-
-    sched_ctrl->dl_pdus_total += sched_ctrl->rlc_status[lcid].pdus_in_buffer;
-    total_bytes += sched_ctrl->rlc_status[lcid].bytes_in_buffer;
-    LOG_D(MAC,
-          "%4d.%2d UE %04x LCID %d (slice %d): %d bytes, total buffer %d bytes %d PDUs\n",
-          frame,
-          slot,
-          UE->rnti,
-          lcid,
-          slice->slice_id,
-          sched_ctrl->rlc_status[lcid].bytes_in_buffer,
-          total_bytes,
-          sched_ctrl->dl_pdus_total);
-  }
-  
-  // Update num_total_bytes for slice-aware scheduling
-  sched_ctrl->num_total_bytes = total_bytes;
-  
-  return total_bytes;
-}
-
-/*! \brief PRB range for a slice
- *  Note: slice_prb_range_t is now defined in slice_prb_allocator.h
- */
-
-/*! \brief Log slice PRB ranges to scheduler log file
- *  \param frame Current frame number
- *  \param slot Current slot number
- *  \param mac MAC instance
- *  \param ranges Array of PRB ranges for each slice
- *  \param num_active_slices Number of active slices
- *  \param total_prbs Total number of PRBs available
- */
-static void log_slice_prb_ranges(frame_t frame, slot_t slot, gNB_MAC_INST *mac, 
-                                  slice_prb_range_t *ranges, int num_active_slices, int total_prbs)
-{
-  static FILE *log_file = NULL;
-
-  if (num_active_slices == 0)
-    return;
-
-  if (log_file == NULL) {
-    log_file = fopen("scheduler_slice_allocations.log", "a");
-    if (log_file == NULL) {
-      LOG_W(NR_MAC, "Failed to open scheduler_slice_allocations.log for writing\n");
-      return;
-}
-  }
-
-  fprintf(log_file, "=== Slice PRB Ranges %d.%d (Total PRBs: %d) ===\n", frame, slot, total_prbs);
-
-  for (int s = 0; s < mac->slice_info.num_slices; ++s) {
-    network_slice_t *slice = mac->slice_info.slices[s];
-    if (slice == NULL || ranges[s].num_prbs == 0) {
-      continue;
-    }
-    
-    fprintf(log_file, "Slice %d (SST=%d, SD=0x%06x): PRBs [%d, %d) (%d PRBs/%d ~=%.1f%%) - Dedicated=%.1f%%, Min=%.1f%%, Max=%.1f%%\n",
-            ranges[s].slice_id,
-            slice->sst,
-            slice->sd,
-            ranges[s].start_prb,
-            ranges[s].end_prb,
-            ranges[s].num_prbs,
-            total_prbs,
-            (float)ranges[s].num_prbs / total_prbs * 100.0,
-            slice->dedicated_prb_ratio * 100.0,
-            slice->min_prb_ratio * 100.0,
-            slice->max_prb_ratio * 100.0);
-  }
-
-  fflush(log_file);
-}
-
-/* Forward declarations */
-static void pf_dl(gNB_MAC_INST *mac,
-                  post_process_pdsch_t *pp_pdsch,
-                     NR_UE_info_t **UE_list,
-                     int max_num_ue,
-                  int num_beams,
-                  int n_rb_sched[num_beams]);
-
-static int pf_dl_slice(gNB_MAC_INST *mac,
-                        post_process_pdsch_t *pp_pdsch,
-                        NR_UE_info_t **UE_list,
-                        int max_num_ue,
-                        int num_beams,
-                        int n_rb_sched[num_beams],
-                        const network_slice_t *slice,
-                        const slice_prb_range_t *prb_range,
-                        uint32_t *total_prbs,
-                        uint32_t *total_tbs);
-
-/*! \brief Calculate PRB ranges for each slice using the new slice PRB allocator
- *  \param mac MAC instance
- *  \param total_prbs Total number of PRBs available
- *  \param ranges Output array of PRB ranges (must be at least MAX_NUM_SLICES in size)
- *  \param frame Current frame number (for logging)
- *  \param slot Current slot number (for logging)
- *  \return Number of slices with allocated PRBs
- */
-static int calculate_slice_prb_ranges_impl(gNB_MAC_INST *mac, int total_prbs, slice_prb_range_t *ranges,
-                                           frame_t frame, slot_t slot)
-{
-  if (mac->slice_info.num_slices == 0) {
-    return 0;
-  }
-  
-  // Check if total_prbs is valid
-  if (total_prbs <= 0) {
-    LOG_D(NR_MAC, "[%4d.%2d] Invalid total_prbs (%d), skipping PRB allocation\n", frame, slot, total_prbs);
-    return 0;
-  }
-  
-  // Initialize output ranges
-  memset(ranges, 0, sizeof(slice_prb_range_t) * MAX_NUM_SLICES);
-  
-  // Allocate input structure on heap (structure is large with MAX_NUM_SLICES=1024)
-  slice_alloc_input_t *input = (slice_alloc_input_t *)calloc(1, sizeof(slice_alloc_input_t));
-  if (input == NULL) {
-    LOG_E(NR_MAC, "[%4d.%2d] ERROR: Failed to allocate input structure\n", frame, slot);
-    return 0;
-  }
-  
-  input->total_prbs = total_prbs;
-  
-  // Double-check total_prbs is valid (defensive programming)
-  if (input->total_prbs <= 0) {
-    LOG_E(NR_MAC, "[%4d.%2d] ERROR: total_prbs is invalid (%d) after assignment, skipping\n", 
-          frame, slot, input->total_prbs);
-    free(input);
-    return 0;
-  }
-  
-  // Calculate required PRBs and check for active UEs per slice
-  // Use slice_id as key to map between OAI slices and allocator slices
-  uint32_t slice_bytes_by_id[MAX_NUM_SLICES] = {0};
-  bool slice_has_active_ues_by_id[MAX_NUM_SLICES] = {false};
-  bool any_slice_has_active_ues = false;
-  
-  // Iterate through UEs to calculate required PRBs and check for active UEs
-  UE_iterator(mac->UE_info.connected_ue_list, UE) {
-    if (!nr_mac_ue_is_active(UE)) {
-      continue;
-    }
-    
-    NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
-    uint16_t rnti = UE->rnti;
-    
-    // Check RLC status for each logical channel
-    for (int i = 0; i < seq_arr_size(&sched_ctrl->lc_config); ++i) {
-      const nr_lc_config_t *c = seq_arr_at(&sched_ctrl->lc_config, i);
-      if (c->suspended) {
-        continue;
-      }
-      
-      // Get RLC status
-      sched_ctrl->rlc_status[c->lcid] = nr_mac_rlc_status_ind(rnti, frame, c->lcid);
-      
-      // Find which slice this LCID belongs to
-      for (int s = 0; s < mac->slice_info.num_slices; ++s) {
-        network_slice_t *slice = mac->slice_info.slices[s];
-        if (slice != NULL && lcid_belongs_to_slice(c, slice)) {
-          // Use slice_id as key (slice IDs should be unique and in valid range)
-          int slice_id = slice->slice_id;
-          if (slice_id >= 0 && slice_id < MAX_NUM_SLICES) {
-            // Mark slice as having active UEs if it has any UEs with LCIDs belonging to it
-            // This ensures dedicated PRBs are allocated even when buffer is temporarily empty
-            slice_has_active_ues_by_id[slice_id] = true;
-            any_slice_has_active_ues = true;
-            
-            // Accumulate bytes for required PRB calculation
-            if (sched_ctrl->rlc_status[c->lcid].bytes_in_buffer > 0) {
-              slice_bytes_by_id[slice_id] += sched_ctrl->rlc_status[c->lcid].bytes_in_buffer;
-            }
-          }
-          break;
-        }
-      }
-    }
-  }
-  
-  // If no slices have active UEs, return early (no allocation needed)
-  if (!any_slice_has_active_ues) {
-    LOG_D(NR_MAC, "[%4d.%2d] No slices have active UEs with data, skipping PRB allocation\n", frame, slot);
-    free(input);
-    return 0;
-  }
-  
-  // Estimate required PRBs for each slice based on bytes in buffer
-  // Using a simple estimation: assume average MCS 20 (QPSK, ~2 bits/symbol)
-  // With 14 symbols per slot, 1 PRB = 12 subcarriers * 14 symbols * 2 bits = 336 bits = 42 bytes
-  // This is a rough estimate; actual allocation will be refined by the scheduler
-  const int bytes_per_prb_estimate = 42; // Conservative estimate
-  
-  // Map OAI slice structures to allocator input structures
-  // Only include non-NULL slices to avoid validation errors
-  int allocator_slice_idx = 0;
-  for (int s = 0; s < mac->slice_info.num_slices && allocator_slice_idx < MAX_NUM_SLICES; ++s) {
-    network_slice_t *slice = mac->slice_info.slices[s];
-    if (slice == NULL) {
-      continue;
-    }
-    
-    int slice_id = slice->slice_id;
-    input->slices[allocator_slice_idx].slice_id = slice_id;
-    input->slices[allocator_slice_idx].dedicated_prb_ratio = slice->dedicated_prb_ratio;
-    input->slices[allocator_slice_idx].min_prb_ratio = slice->min_prb_ratio;
-    input->slices[allocator_slice_idx].max_prb_ratio = slice->max_prb_ratio;
-    
-    // Use slice_id to look up active UEs and bytes
-    if (slice_id >= 0 && slice_id < MAX_NUM_SLICES) {
-      input->slices[allocator_slice_idx].has_active_ues = slice_has_active_ues_by_id[slice_id];
-      
-      // Calculate required PRBs based on bytes in buffer
-      if (slice_bytes_by_id[slice_id] > 0) {
-        input->slices[allocator_slice_idx].required_prbs = (slice_bytes_by_id[slice_id] + bytes_per_prb_estimate - 1) / bytes_per_prb_estimate;
-        // Cap at total PRBs
-        if (input->slices[allocator_slice_idx].required_prbs > total_prbs) {
-          input->slices[allocator_slice_idx].required_prbs = total_prbs;
-        }
-      } else {
-        input->slices[allocator_slice_idx].required_prbs = 0;
-      }
-    } else {
-      // Invalid slice_id, default to no active UEs
-      input->slices[allocator_slice_idx].has_active_ues = false;
-      input->slices[allocator_slice_idx].required_prbs = 0;
-    }
-    
-    allocator_slice_idx++;
-  }
-  
-  input->num_slices = allocator_slice_idx;
-  
-  // Allocate result structure on heap (structure is large with MAX_NUM_SLICES=1024)
-  slice_alloc_result_t *result = (slice_alloc_result_t *)calloc(1, sizeof(slice_alloc_result_t));
-  if (result == NULL) {
-    LOG_E(NR_MAC, "[%4d.%2d] ERROR: Failed to allocate result structure\n", frame, slot);
-    free(input);
-    return 0;
-  }
-  
-  // Call the allocator (using the allocator's calculate_slice_prb_ranges function)
-  int ret = calculate_slice_prb_ranges(input, result);
-  
-  if (ret < 0) {
-    LOG_E(NR_MAC, "[%4d.%2d] Failed to calculate slice PRB ranges: num_slices=%d, total_prbs=%d\n",
-          frame, slot, input->num_slices, input->total_prbs);
-    // Log all slice configurations for debugging
-    for (int s = 0; s < input->num_slices; ++s) {
-      LOG_E(NR_MAC, "[%4d.%2d]   Slice %d (ID %d): dedicated=%.3f, min=%.3f, max=%.3f, has_ues=%d, required=%d\n",
-            frame, slot, s, input->slices[s].slice_id,
-            input->slices[s].dedicated_prb_ratio,
-            input->slices[s].min_prb_ratio,
-            input->slices[s].max_prb_ratio,
-            input->slices[s].has_active_ues,
-            input->slices[s].required_prbs);
-      // Check validation issues
-      if (input->slices[s].dedicated_prb_ratio < 0.0 || input->slices[s].dedicated_prb_ratio > 1.0) {
-        LOG_E(NR_MAC, "[%4d.%2d]     ERROR: dedicated ratio out of range [0.0, 1.0]\n", frame, slot);
-      }
-      if (input->slices[s].min_prb_ratio < 0.0 || input->slices[s].min_prb_ratio > 1.0) {
-        LOG_E(NR_MAC, "[%4d.%2d]     ERROR: min ratio out of range [0.0, 1.0]\n", frame, slot);
-      }
-      if (input->slices[s].max_prb_ratio < 0.0 || input->slices[s].max_prb_ratio > 1.0) {
-        LOG_E(NR_MAC, "[%4d.%2d]     ERROR: max ratio out of range [0.0, 1.0]\n", frame, slot);
-      }
-      if (input->slices[s].min_prb_ratio <= input->slices[s].max_prb_ratio) {
-        if (input->slices[s].dedicated_prb_ratio > input->slices[s].min_prb_ratio) {
-          LOG_E(NR_MAC, "[%4d.%2d]     ERROR: dedicated (%.3f) > min (%.3f)\n",
-                frame, slot, input->slices[s].dedicated_prb_ratio, input->slices[s].min_prb_ratio);
-        }
-      } else {
-        if (input->slices[s].dedicated_prb_ratio > input->slices[s].max_prb_ratio) {
-          LOG_E(NR_MAC, "[%4d.%2d]     ERROR: dedicated (%.3f) > max (%.3f) [max < min case]\n",
-                frame, slot, input->slices[s].dedicated_prb_ratio, input->slices[s].max_prb_ratio);
-        }
-      }
-    }
-    free(input);
-    free(result);
-    return 0;
-  }
-  
-  // Map allocator results back to OAI ranges structure
-  // Note: allocator uses slice_id to identify slices, but OAI uses array index
-  for (int s = 0; s < mac->slice_info.num_slices; ++s) {
-    network_slice_t *slice = mac->slice_info.slices[s];
-    if (slice == NULL) {
-      ranges[s].slice_id = -1;
-      ranges[s].start_prb = 0;
-      ranges[s].end_prb = 0;
-      ranges[s].num_prbs = 0;
-      continue;
-    }
-    
-    // Find the result for this slice by slice_id
-    bool found = false;
-    for (int r = 0; r < MAX_NUM_SLICES; ++r) {
-      if (result->ranges[r].slice_id == slice->slice_id && result->ranges[r].num_prbs > 0) {
-        ranges[s].slice_id = result->ranges[r].slice_id;
-        ranges[s].start_prb = result->ranges[r].start_prb;
-        ranges[s].end_prb = result->ranges[r].end_prb;
-        ranges[s].num_prbs = result->ranges[r].num_prbs;
-        found = true;
-        
-        // Find required_prbs for logging
-        int required_prbs = 0;
-        for (int ai = 0; ai < input->num_slices; ++ai) {
-          if (input->slices[ai].slice_id == slice->slice_id) {
-            required_prbs = input->slices[ai].required_prbs;
-            break;
-          }
-        }
-        LOG_D(NR_MAC, "[%4d.%2d] Slice %d: PRBs [%d, %d) (%d PRBs), required=%d\n",
-              frame, slot, ranges[s].slice_id, ranges[s].start_prb, ranges[s].end_prb,
-              ranges[s].num_prbs, required_prbs);
-        break;
-      }
-    }
-    
-    if (!found) {
-      ranges[s].slice_id = slice->slice_id;
-      ranges[s].start_prb = 0;
-      ranges[s].end_prb = 0;
-      ranges[s].num_prbs = 0;
-    }
-  }
-  
-  // Log PRB ranges to scheduler log file
-  log_slice_prb_ranges(frame, slot, mac, ranges, result->num_active_slices, total_prbs);
-  
-  int num_active = result->num_active_slices;
-  
-  // Free allocated structures
-  free(input);
-  free(result);
-  
-  return num_active;
-}
-
-/*! \brief Network Slicing scheduler - 3GPP-compliant frequency-domain PRB allocation
- *  \param mac MAC instance
- *  \param pp_pdsch Post-process PDSCH structure
- *  \param max_num_ue Maximum number of UEs to schedule
- *  \param num_beams Number of beams
- *  \param n_rb_sched Array of scheduled PRBs per beam
- */
-static void network_slicing_dl(gNB_MAC_INST *mac,
-                                post_process_pdsch_t *pp_pdsch,
-                                int max_num_ue,
-                                int num_beams,
-                                int n_rb_sched[num_beams])
-{
-  frame_t frame = pp_pdsch->frame;
-  slot_t slot = pp_pdsch->slot;
-  
-  // Get total PRBs (assuming same for all beams)
-  int total_prbs = n_rb_sched[0];
-  
-  if (mac->slice_info.num_slices == 0) {
-    LOG_W(NR_MAC, "[%4d.%2d] No slices configured, falling back to PF scheduler\n", frame, slot);
-    pf_dl(mac, pp_pdsch, mac->UE_info.connected_ue_list, max_num_ue, num_beams, n_rb_sched);
-    return;
-  }
-  
-  // First, schedule SRBs (control plane - LCID < 3) separately
-  // SRBs should always be scheduled regardless of slice configuration
-  NR_UE_info_t *srb_ue_list[MAX_MOBILES_PER_GNB + 1] = {NULL};
-  int srb_ue_idx = 0;
-  
-  UE_iterator(mac->UE_info.connected_ue_list, UE) {
-    if (!nr_mac_ue_is_active(UE)) {
-      continue;
-    }
-    NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
-    
-    // Check if UE has SRB data (LCID < 3) or needs TA
-    uint32_t srb_bytes = 0;
-    for (int i = 0; i < seq_arr_size(&sched_ctrl->lc_config); ++i) {
-      const nr_lc_config_t *c = seq_arr_at(&sched_ctrl->lc_config, i);
-      if (c->lcid < 3 && !c->suspended) {
-        const uint16_t rnti = UE->rnti;
-        const int lcid = c->lcid;
-        sched_ctrl->rlc_status[lcid] = nr_mac_rlc_status_ind(rnti, frame, lcid);
-        if (sched_ctrl->rlc_status[lcid].bytes_in_buffer > 0) {
-          srb_bytes += sched_ctrl->rlc_status[lcid].bytes_in_buffer;
-        }
-      }
-    }
-    
-    if (srb_bytes > 0 || sched_ctrl->ta_apply) {
-      if (srb_ue_idx < MAX_MOBILES_PER_GNB) {
-        srb_ue_list[srb_ue_idx++] = UE;
-      }
-    }
-  }
-  
-  // Schedule SRBs using PF scheduler (control plane traffic, not slice-specific)
-  if (srb_ue_idx > 0) {
-    LOG_D(NR_MAC, "[%4d.%2d] Scheduling %d UEs with SRB data (control plane)\n", frame, slot, srb_ue_idx);
-    // Use a small portion of PRBs for SRBs (e.g., 10% or minimum 10 PRBs)
-    int srb_prbs = (total_prbs / 10 > 10) ? total_prbs / 10 : 10;
-    int srb_n_rb_sched[num_beams];
-    for (int b = 0; b < num_beams; ++b) {
-      srb_n_rb_sched[b] = srb_prbs;
-    }
-    pf_dl(mac, pp_pdsch, srb_ue_list, max_num_ue, num_beams, srb_n_rb_sched);
-  }
-  
-  // Calculate PRB ranges for each slice
-  slice_prb_range_t ranges[MAX_NUM_SLICES];
-  int num_active_slices = calculate_slice_prb_ranges_impl(mac, total_prbs, ranges, frame, slot);
-  
-  if (num_active_slices == 0) {
-    // Log at INFO level periodically (every 100 slots) to avoid spam
-    static int log_counter = 0;
-    if ((log_counter++ % 100) == 0) {
-      LOG_I(NR_MAC, "[%4d.%2d] No active slices with UEs (no DRBs with matching NSSAI), skipping slice scheduling\n", frame, slot);
-    }
-    return;
-  }
-  
-  // Track total UEs scheduled across all slices in this slot
-  int total_ues_scheduled = 0;
-  int slice_ues_scheduled[MAX_NUM_SLICES] = {0};
-  uint32_t slice_total_prbs[MAX_NUM_SLICES] = {0};
-  uint32_t slice_total_tbs[MAX_NUM_SLICES] = {0};
-  uint32_t total_slot_prbs = 0;
-  uint32_t total_slot_tbs = 0;
-  
-  // Schedule each slice independently within its PRB range
-  // For each slice, iterate over all UEs but only schedule LCIDs belonging to that slice
-  for (int s = 0; s < mac->slice_info.num_slices; ++s) {
-    network_slice_t *slice = mac->slice_info.slices[s];
-    if (slice == NULL || ranges[s].num_prbs == 0) {
-      continue;
-    }
-    
-    // Count UEs with data for this slice
-    int slice_ues_with_data = 0;
-    UE_iterator(mac->UE_info.connected_ue_list, UE) {
-      if (!nr_mac_ue_is_active(UE)) {
-        continue;
-      }
-      // Check if UE has any LCID belonging to this slice
-      NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
-      uint32_t slice_bytes = update_dlsch_buffer_for_slice(frame, slot, UE, slice, sched_ctrl);
-      if (slice_bytes > 0 || sched_ctrl->ta_apply) {
-        slice_ues_with_data++;
-      }
-    }
-    
-    if (slice_ues_with_data == 0) {
-      continue;
-    }
-    
-    LOG_I(NR_MAC, "[%4d.%2d] Scheduling slice %d (SST %d, SD 0x%06x): %d UEs with data, PRBs [%d, %d) (%d PRBs)\n",
-          frame, slot, slice->slice_id, slice->sst, slice->sd, slice_ues_with_data, 
-          ranges[s].start_prb, ranges[s].end_prb, ranges[s].num_prbs);
-    
-    // Create per-slice n_rb_sched array (constrain to slice's PRB range)
-    int slice_n_rb_sched[num_beams];
-    for (int b = 0; b < num_beams; ++b) {
-      slice_n_rb_sched[b] = ranges[s].num_prbs;
-    }
-    
-    // Create a filtered UE list for this slice (UEs that have LCIDs in this slice)
-    // But we need to modify pf_dl to filter LCIDs, or create a slice-aware version
-    // For now, we'll create a temporary UE list and modify the scheduling logic
-    // TODO: Create a slice-aware scheduling function that filters LCIDs during scheduling
-    
-    // Collect UEs with data for this slice
-    NR_UE_info_t *slice_ue_list[MAX_MOBILES_PER_GNB + 1] = {NULL};
-    int slice_ue_idx = 0;
-    
-    UE_iterator(mac->UE_info.connected_ue_list, UE) {
-      if (!nr_mac_ue_is_active(UE)) {
-        continue;
-      }
-      
-      // Check if UE has any LCID belonging to this slice
-      NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
-      uint32_t slice_bytes = update_dlsch_buffer_for_slice(frame, slot, UE, slice, sched_ctrl);
-      
-      if (slice_bytes > 0 || sched_ctrl->ta_apply) {
-        if (slice_ue_idx < MAX_MOBILES_PER_GNB) {
-          slice_ue_list[slice_ue_idx++] = UE;
-          LOG_D(NR_MAC, "[%4d.%2d] UE RNTI 0x%04x has %u bytes for slice %d (SST %d, SD 0x%06x)\n",
-                frame, slot, UE->rnti, slice_bytes, slice->slice_id, slice->sst, slice->sd);
-        }
-      }
-    }
-    
-    if (slice_ue_idx > 0) {
-      // Use slice-aware PF scheduler that filters LCIDs and respects PRB range
-      uint32_t slice_prbs = 0, slice_tbs = 0;
-      int ues_scheduled = pf_dl_slice(mac, pp_pdsch, slice_ue_list, max_num_ue, num_beams, slice_n_rb_sched, 
-                                      slice, &ranges[s], &slice_prbs, &slice_tbs);
-      slice_ues_scheduled[s] = ues_scheduled;
-      slice_total_prbs[s] = slice_prbs;
-      slice_total_tbs[s] = slice_tbs;
-      total_ues_scheduled += ues_scheduled;
-      total_slot_prbs += slice_prbs;
-      total_slot_tbs += slice_tbs;
-    }
-  }
-  
-  // Log summary of scheduling results with resource information
-  if (total_ues_scheduled > 0) {
-    LOG_I(NR_MAC, "[%4d.%2d] *** SLOT SUMMARY: %d UE(s) scheduled, Total: %u PRBs, %u bytes TBS ***\n",
-          frame, slot, total_ues_scheduled, total_slot_prbs, total_slot_tbs);
-    
-    // Log when more than 2 UEs are scheduled in the same slot
-    if (total_ues_scheduled > 2) {
-      LOG_I(NR_MAC, "[%4d.%2d] *** MULTI-UE SLOT: %d UE(s) scheduled in same slot (more than 2) ***\n",
-            frame, slot, total_ues_scheduled);
-    }
-    
-    // Log per-slice resource allocation
-    for (int s = 0; s < mac->slice_info.num_slices; ++s) {
-      if (slice_ues_scheduled[s] > 0) {
-        network_slice_t *slice = mac->slice_info.slices[s];
-        LOG_I(NR_MAC, "[%4d.%2d]   - Slice %d (SST %d, SD 0x%06x): %d UE(s), %u PRBs, %u bytes TBS\n",
-              frame, slot, slice->slice_id, slice->sst, slice->sd, 
-              slice_ues_scheduled[s], slice_total_prbs[s], slice_total_tbs[s]);
-      }
-    }
-  } else {
-    LOG_D(NR_MAC, "[%4d.%2d] Network Slicing scheduler completed: %d active slices, 0 UEs scheduled\n",
-          frame, slot, num_active_slices);
-  }
 }
 
 static void pf_dl(gNB_MAC_INST *mac,
@@ -1595,53 +1001,66 @@ static void pf_dl(gNB_MAC_INST *mac,
  *  \param max_num_ue Maximum number of UEs to schedule
  *  \param num_beams Number of beams
  *  \param n_rb_sched Array of scheduled PRBs per beam
- *  \param slice Slice to filter LCIDs
+ *  \param sst Slice/Service Type to filter LCIDs
+ *  \param sd Slice Differentiator to filter LCIDs
  *  \param prb_range PRB range for this slice (start_prb, end_prb)
  *  \return Number of UEs successfully scheduled
  */
-static int pf_dl_slice(gNB_MAC_INST *mac,
-                        post_process_pdsch_t *pp_pdsch,
-                        NR_UE_info_t **UE_list,
-                        int max_num_ue,
-                        int num_beams,
-                        int n_rb_sched[num_beams],
-                        const network_slice_t *slice,
-                        const slice_prb_range_t *prb_range,
-                        uint32_t *total_prbs,
-                        uint32_t *total_tbs)
+/*! \brief Proportional Fair scheduler for a single slice - schedules UEs within slice PRB range
+ *  \param mac MAC instance
+ *  \param pp_pdsch Post-process PDSCH structure
+ *  \param UE_list Array of UE pointers for this slice (NULL-terminated)
+ *  \param max_num_ue Number of UEs in UE_list
+ *  \param prb_range PRB range allocated to this slice (start_prb inclusive, end_prb exclusive)
+ */
+static void pf_dl_slice(gNB_MAC_INST *mac,
+                         post_process_pdsch_t *pp_pdsch,
+                         NR_UE_info_t **UE_list,
+                         int max_num_ue,
+                         const slice_prb_range_t *prb_range)
 {
+  if (mac == NULL || pp_pdsch == NULL || UE_list == NULL || prb_range == NULL) {
+    return;
+  }
+
+  if (prb_range->num_prbs <= 0) {
+    return;  // No PRBs allocated to this slice
+  }
+
   frame_t frame = pp_pdsch->frame;
   slot_t slot = pp_pdsch->slot;
 
   NR_ServingCellConfigCommon_t *scc = mac->common_channels[0].ServingCellConfigCommon;
-  // UEs that could be scheduled
-  UEsched_t UE_sched[MAX_MOBILES_PER_GNB + 1] = {0};
-  int remainUEs[num_beams];
-  for (int i = 0; i < num_beams; i++)
-    remainUEs[i] = max_num_ue;
-  int numUE = 0;
   int CC_id = 0;
   int slots_per_frame = mac->frame_structure.numb_slots_frame;
-  
-  // Initialize resource totals
-  if (total_prbs) *total_prbs = 0;
-  if (total_tbs) *total_tbs = 0;
-  
-  // Array to collect scheduler allocations for logging
-  scheduler_allocation_t allocations[MAX_MOBILES_PER_GNB];
-  int num_allocations = 0;
 
-  /* Loop UE_info->list to check retransmission */
+  // UEs that could be scheduled
+  UEsched_t UE_sched[MAX_MOBILES_PER_GNB + 1] = {0};
+  int numUE = 0;
+
+  // Available PRBs for this slice (relative to carrier Point A, i.e., absolute PRB indices)
+  // Note: Slice ranges are relative to the carrier's Point A (absolute coordinates)
+  // They need to be converted to BWP-relative coordinates for each UE
+  int slice_start_prb = prb_range->start_prb;
+  int slice_end_prb = prb_range->end_prb;
+  int slice_available_prbs = prb_range->num_prbs;
+  
+  // LOG_I(NR_MAC, "[UE %04x][%4d.%2d] Scheduling in slice [%d, %d): num_prbs=%d\n",
+  //       UE_list[0]->rnti, frame, slot, prb_range->start_prb, prb_range->end_prb, prb_range->num_prbs);
+
+  /* Loop UE_list to check retransmission and prepare new transmissions */
   UE_iterator(UE_list, UE) {
     NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
     NR_UE_DL_BWP_t *current_BWP = &UE->current_DL_BWP;
 
-    if (!nr_mac_ue_is_active(UE))
+    if (!nr_mac_ue_is_active(UE)) {
       continue;
+    }
 
     NR_mac_dir_stats_t *stats = &UE->mac_stats.dl;
     /* get the PID of a HARQ process awaiting retransmission, or -1 otherwise */
     int harq_pid = sched_ctrl->retrans_dl_harq.head;
+    
 
     /* Calculate Throughput */
     const float a = 0.01f;
@@ -1655,58 +1074,46 @@ static int pf_dl_slice(gNB_MAC_INST *mac,
     if (frame == sched_ctrl->ta_frame)
       sched_ctrl->ta_apply = true;
 
-    int total_rem_ues = 0;
-    for (int i = 0; i < num_beams; i++)
-      total_rem_ues += remainUEs[i];
-    if (total_rem_ues == 0)
-      continue;
-
     /* retransmission */
     if (harq_pid >= 0) {
       NR_beam_alloc_t beam = beam_allocation_procedure(&mac->beam_info, frame, slot, UE->UE_beam_index, slots_per_frame);
-      bool sch_ret = beam.idx >= 0;
-      /* Allocate retransmission */
-      if (sch_ret)
-        sch_ret = allocate_dl_retransmission(mac, pp_pdsch, &n_rb_sched[beam.idx], UE, beam.idx, harq_pid);
-      if (!sch_ret) {
-        LOG_D(NR_MAC, "[UE %04x][%4d.%2d] DL retransmission could not be allocated\n", UE->rnti, frame, slot);
-        reset_beam_status(&mac->beam_info, frame, slot, UE->UE_beam_index, slots_per_frame, beam.new_beam);
-        continue;
-      }
-      /* Collect allocation info for retransmission */
-      if (num_allocations < MAX_MOBILES_PER_GNB) {
-        NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
-        NR_UE_harq_t *harq = &sched_ctrl->harq_processes[harq_pid];
+      if (beam.idx >= 0) {
         bwp_info_t bwp_info = get_pdsch_bwp_start_size(mac, UE);
-        const NR_tda_info_t *tda_info = &harq->sched_pdsch.tda_info;
-        allocations[num_allocations].rnti = UE->rnti;
-        allocations[num_allocations].start_symbol = tda_info->startSymbolIndex;
-        allocations[num_allocations].stop_symbol = tda_info->startSymbolIndex + tda_info->nrOfSymbols - 1;
-        allocations[num_allocations].start_prb = harq->sched_pdsch.rbStart + bwp_info.bwpStart;
-        allocations[num_allocations].stop_prb = allocations[num_allocations].start_prb + harq->sched_pdsch.rbSize - 1;
-        num_allocations++;
-      }
-      /* reduce max_num_ue once we are sure UE can be allocated, i.e., has CCE */
-      remainUEs[beam.idx]--;
+        int bwp_start = bwp_info.bwpStart;
+        
+        // Check if retransmission can fit within slice PRB range
+        NR_UE_harq_t *harq = &sched_ctrl->harq_processes[harq_pid];
+        int retx_rbStart = harq->sched_pdsch.rbStart;
+        int retx_rbSize = harq->sched_pdsch.rbSize;
+        int retx_abs_start = retx_rbStart + bwp_start;
+        int retx_abs_end = retx_abs_start + retx_rbSize;
 
+        // Only allow retransmission if it fits within slice range
+        if (retx_abs_start >= slice_start_prb && retx_abs_end <= slice_end_prb) {
+          bool sch_ret = allocate_dl_retransmission(mac, pp_pdsch, &slice_available_prbs, UE, beam.idx, harq_pid);
+          if (!sch_ret) {
+            LOG_D(NR_MAC, "[UE %04x][%4d.%2d] DL retransmission could not be allocated\n", UE->rnti, frame, slot);
+            reset_beam_status(&mac->beam_info, frame, slot, UE->UE_beam_index, slots_per_frame, beam.new_beam);
+          }
+        } else {
+          LOG_D(NR_MAC, "[UE %04x][%4d.%2d] DL retransmission outside slice PRB range [%d, %d)\n",
+                UE->rnti, frame, slot, slice_start_prb, slice_end_prb);
+          reset_beam_status(&mac->beam_info, frame, slot, UE->UE_beam_index, slots_per_frame, beam.new_beam);
+        }
+      }
     } else {
-      /* skip this UE if there are no free HARQ processes. This can happen e.g.
-       * if the UE disconnected in L2sim, in which case the gNB is not notified
-       * (this can be considered a design flaw) */
+      /* skip this UE if there are no free HARQ processes */
       if (sched_ctrl->available_dl_harq.head < 0) {
-        LOG_D(NR_MAC, "[UE %04x][%4d.%2d] UE has no free DL HARQ process, skipping\n",
-              UE->rnti,
-              frame,
-              slot);
         continue;
       }
 
-      // Use slice-filtered buffer status instead of update_dlsch_buffer()
-      update_dlsch_buffer_for_slice(frame, slot, UE, slice, sched_ctrl);
+      update_dlsch_buffer(pp_pdsch->frame, pp_pdsch->slot, UE);
 
       /* Check DL buffer and skip this UE if no bytes and no TA necessary */
-      if (sched_ctrl->num_total_bytes == 0 && sched_ctrl->ta_apply == false)
+      if (sched_ctrl->num_total_bytes == 0 && sched_ctrl->ta_apply == false) {
         continue;
+      }
+      
 
       /* Calculate coeff */
       const NR_bler_options_t *bo = &mac->dl_bler;
@@ -1731,44 +1138,34 @@ static int pf_dl_slice(gNB_MAC_INST *mac,
                                     0 /* tb_scaling */,
                                     l) >> 3;
       float coeff_ue = (float) tbs / UE->dl_thr_ue;
-      LOG_D(NR_MAC, "[UE %04x][%4d.%2d] slice %d: b %d, thr_ue %f, tbs %d, coeff_ue %f\n",
-            UE->rnti,
-            frame,
-            slot,
-            slice->slice_id,
-            b,
-            UE->dl_thr_ue,
-            tbs,
-            coeff_ue);
+      LOG_D(NR_MAC, "[UE %04x][%4d.%2d] b %d, thr_ue %f, tbs %d, coeff_ue %f\n",
+            UE->rnti, frame, slot, b, UE->dl_thr_ue, tbs, coeff_ue);
       /* Create UE_sched list for UEs eligible for new transmission*/
       UE_sched[numUE].coef = coeff_ue;
       UE_sched[numUE].UE = UE;
       UE_sched[numUE].selected_mcs = selected_mcs;
       numUE++;
+    }
   }
-  }
+
+  // LOG_I(NR_MAC, "[%4d.%2d] Sorting UEs by coeff\n", frame, slot);
 
   qsort(UE_sched, numUE, sizeof(UEsched_t), comparator);
   UEsched_t *iterator = UE_sched;
 
+
   const int min_rbSize = 5;
-  
-  // Track failure reasons for logging
-  int harq_failures = 0, beam_failures = 0, prb_failures = 0, cce_failures = 0, pucch_failures = 0, tbs_failures = 0;
 
-  /* Loop UE_sched to find max coeff and allocate transmission */
-  while (iterator->UE != NULL) {
-
+  /* Loop UE_sched to find max coeff and allocate transmission within slice PRB range */
+  while (iterator->UE != NULL && slice_available_prbs >= min_rbSize) {
     NR_UE_sched_ctrl_t *sched_ctrl = &iterator->UE->UE_sched_ctrl;
     const uint16_t rnti = iterator->UE->rnti;
 
     NR_UE_DL_BWP_t *dl_bwp = &iterator->UE->current_DL_BWP;
     NR_UE_UL_BWP_t *ul_bwp = &iterator->UE->current_UL_BWP;
 
+
     if (sched_ctrl->available_dl_harq.head < 0) {
-      LOG_D(NR_MAC, "[UE %04x][%4d.%2d] slice %d: UE has no free DL HARQ process, skipping\n",
-            iterator->UE->rnti, frame, slot, slice->slice_id);
-      harq_failures++;
       iterator++;
       continue;
     }
@@ -1776,21 +1173,13 @@ static int pf_dl_slice(gNB_MAC_INST *mac,
     NR_beam_alloc_t beam = beam_allocation_procedure(&mac->beam_info, frame, slot, iterator->UE->UE_beam_index, slots_per_frame);
 
     if (beam.idx < 0) {
-      // no available beam
-      beam_failures++;
-      iterator++;
-      continue;
-}
-    if (remainUEs[beam.idx] == 0 || n_rb_sched[beam.idx] < min_rbSize) {
-      prb_failures++;
-      reset_beam_status(&mac->beam_info, frame, slot, iterator->UE->UE_beam_index, slots_per_frame, beam.new_beam);
       iterator++;
       continue;
     }
 
     /* MCS has been set above */
     int tda = get_dl_tda(mac, slot);
-    AssertFatal(tda >= 0,"Unable to find PDSCH time domain allocation in list\n");
+    AssertFatal(tda >= 0, "Unable to find PDSCH time domain allocation in list\n");
 
     const int coresetid = sched_ctrl->coreset->controlResourceSetId;
     NR_tda_info_t tda_info = get_dl_tda_info(dl_bwp,
@@ -1808,25 +1197,12 @@ static int pf_dl_slice(gNB_MAC_INST *mac,
     uint16_t *rballoc_mask = mac->common_channels[CC_id].vrb_map[beam.idx];
     bwp_info_t bwp_info = get_pdsch_bwp_start_size(mac, iterator->UE);
     
-    // Apply slice PRB range constraints
-    int rbStart = prb_range->start_prb - bwp_info.bwpStart; // Convert to BWP-relative
-    int rbStop = min(prb_range->end_prb - bwp_info.bwpStart, bwp_info.bwpSize - 1); // Ensure within BWP
+    int rbStart = prb_range->start_prb; // WRT BWP start
+    int rbStop = prb_range->end_prb;
+    
     int bwp_start = bwp_info.bwpStart;
     
-    // Ensure rbStart is within valid range
-    if (rbStart < 0) {
-      rbStart = 0;
-    }
-    if (rbStop < rbStart) {
-      LOG_D(NR_MAC, "[UE %04x][%4d.%2d] slice %d: PRB range [%d, %d) is invalid for BWP [%d, %d)\n",
-            rnti, frame, slot, slice->slice_id, prb_range->start_prb, prb_range->end_prb,
-            bwp_info.bwpStart, bwp_info.bwpStart + bwp_info.bwpSize);
-      reset_beam_status(&mac->beam_info, frame, slot, iterator->UE->UE_beam_index, slots_per_frame, beam.new_beam);
-      iterator++;
-      continue;
-    }
-    
-    // Freq-domain allocation - start from slice's start_prb
+    // Freq-demain allocation
     while (rbStart < rbStop && (rballoc_mask[rbStart + bwp_start] & slbitmap))
       rbStart++;
 
@@ -1836,16 +1212,14 @@ static int pf_dl_slice(gNB_MAC_INST *mac,
       max_rbSize++;
 
     if (max_rbSize < min_rbSize) {
-      LOG_D(NR_MAC,
-            "(%d.%d) Cannot schedule RNTI %04x slice %d, rbStart %d, rbSize %d, rbStop %d\n",
+      LOG_I(NR_MAC,
+            "(%d.%d) Cannot schedule RNTI %04x, rbStart %d, rbSize %d, rbStop %d\n",
             frame,
             slot,
             rnti,
-            slice->slice_id,
             rbStart,
             max_rbSize,
             rbStop);
-      prb_failures++;
       reset_beam_status(&mac->beam_info, frame, slot, iterator->UE->UE_beam_index, slots_per_frame, beam.new_beam);
       iterator++;
       continue;
@@ -1863,17 +1237,13 @@ static int pf_dl_slice(gNB_MAC_INST *mac,
                                  sched_ctrl->pdcch_cl_adjust);
     if (CCEIndex < 0) {
       sched_ctrl->dl_cce_fail++;
-      cce_failures++;
-      LOG_D(NR_MAC, "[UE %04x][%4d.%2d] slice %d: could not find free CCE for DL DCI\n", 
-            rnti, frame, slot, slice->slice_id);
+      LOG_D(NR_MAC, "[UE %04x][%4d.%2d] could not find free CCE for DL DCI\n", rnti, frame, slot);
       reset_beam_status(&mac->beam_info, frame, slot, iterator->UE->UE_beam_index, slots_per_frame, beam.new_beam);
       iterator++;
       continue;
     }
 
-    /* Find PUCCH occasion: if it fails, undo CCE allocation (undoing PUCCH
-    * allocation after CCE alloc fail would be more complex) */
-
+    /* Find PUCCH occasion */
     int alloc = -1;
     if (!get_FeedbackDisabled(iterator->UE->sc_info.downlinkHARQ_FeedbackDisabled_r17, sched_ctrl->available_dl_harq.head)) {
       int r_pucch = nr_get_pucch_resource(sched_ctrl->coreset, ul_bwp->pucch_Config, CCEIndex);
@@ -1897,7 +1267,7 @@ static int pf_dl_slice(gNB_MAC_INST *mac,
       .R = nr_get_code_rate_dl(iterator->selected_mcs, dl_bwp->mcsTableIdx),
       .Qm = nr_get_Qm_dl(iterator->selected_mcs, dl_bwp->mcsTableIdx),
       // tb_size below
-      .dl_harq_pid = -1, // Let post_process_dlsch get it from available_dl_harq list
+      .dl_harq_pid = sched_ctrl->available_dl_harq.head,
       .pucch_allocation = alloc,
       .pm_index = get_pm_index(mac, iterator->UE, dl_bwp->dci_format, l, mac->radio_config.pdsch_AntennaPorts.XP),
       .nrOfLayers = l,
@@ -1909,21 +1279,10 @@ static int pf_dl_slice(gNB_MAC_INST *mac,
 
     sched_pdsch.action = NULL;
     int srb1 = 1;
-    /* everything that's only 3 bytes is an ack. To be safe, use a bit more. */
     if (iterator->UE->await_reconfig && sched_ctrl->rlc_status[srb1].bytes_in_buffer > 10)
       sched_pdsch.action = ack_reconfig;
 
-    // Fix me: currently, the RLC does not give us the total number of PDUs
-    // awaiting. Therefore, for the time being, we put a fixed overhead of 12
-    // (for 4 PDUs) and optionally + 2 for TA. Once RLC gives the number of
-    // PDUs, we replace with 3 * numPDUs
     const int oh = 3 * 4 + (sched_ctrl->ta_apply ? 2 : 0);
-    //const int oh = 3 * sched_ctrl->dl_pdus_total + (sched_ctrl->ta_apply ? 2 : 0);
-    
-    // Use the minimum of available contiguous PRBs and slice range size
-    // max_rbSize already accounts for available contiguous PRBs within the slice range
-    uint16_t max_rbSize_slice = min(max_rbSize, (uint16_t)(rbStop - rbStart + 1));
-    
     nr_find_nb_rb(sched_pdsch.Qm,
                   sched_pdsch.R,
                   1, // no transform precoding for DL
@@ -1932,63 +1291,233 @@ static int pf_dl_slice(gNB_MAC_INST *mac,
                   sched_pdsch.dmrs_parms.N_PRB_DMRS * sched_pdsch.dmrs_parms.N_DMRS_SLOT,
                   sched_ctrl->num_total_bytes + oh,
                   min_rbSize,
-                  max_rbSize_slice,
+                  max_rbSize,
                   &sched_pdsch.tb_size,
                   &sched_pdsch.rbSize);
 
-    if (sched_pdsch.rbSize < min_rbSize) {
-      tbs_failures++;
-      LOG_D(NR_MAC, "[UE %04x][%4d.%2d] slice %d: TBS calculation resulted in rbSize %d < min_rbSize %d\n",
-            rnti, frame, slot, slice->slice_id, sched_pdsch.rbSize, min_rbSize);
-      reset_beam_status(&mac->beam_info, frame, slot, iterator->UE->UE_beam_index, slots_per_frame, beam.new_beam);
-      iterator++;
-      continue;
-    }
 
     post_process_dlsch(mac, pp_pdsch, iterator->UE, &sched_pdsch);
 
-    /* Collect allocation info for logging */
-    if (num_allocations < MAX_MOBILES_PER_GNB) {
-      const NR_tda_info_t *alloc_tda_info = &sched_pdsch.tda_info;
-      allocations[num_allocations].rnti = rnti;
-      allocations[num_allocations].start_symbol = alloc_tda_info->startSymbolIndex;
-      allocations[num_allocations].stop_symbol = alloc_tda_info->startSymbolIndex + alloc_tda_info->nrOfSymbols - 1;
-      allocations[num_allocations].start_prb = sched_pdsch.rbStart + bwp_start;
-      allocations[num_allocations].stop_prb = allocations[num_allocations].start_prb + sched_pdsch.rbSize - 1;
-      num_allocations++;
-    }
+    // Update available PRBs for slice
+    slice_available_prbs -= sched_pdsch.rbSize;
 
-    /* transmissions: directly allocate */
-    n_rb_sched[beam.idx] -= sched_pdsch.rbSize;
-
+    // Mark PRBs as allocated
     for (int rb = 0; rb < sched_pdsch.rbSize; rb++)
-      rballoc_mask[sched_pdsch.rbStart + rb + bwp_start] |= slbitmap;
+      rballoc_mask[sched_pdsch.rbStart + bwp_start + rb] |= slbitmap;
 
-    LOG_I(NR_MAC, "[%4d.%2d] Slice %d: Scheduled UE RNTI 0x%04x - PRBs [%d, %d) (%d PRBs), MCS %d, TBS %d\n",
-          frame, slot, slice->slice_id, rnti, 
-          sched_pdsch.rbStart + bwp_start, 
-          sched_pdsch.rbStart + bwp_start + sched_pdsch.rbSize - 1,
-          sched_pdsch.rbSize, iterator->selected_mcs, sched_pdsch.tb_size);
-
-    // Accumulate resource totals
-    if (total_prbs) *total_prbs += sched_pdsch.rbSize;
-    if (total_tbs) *total_tbs += sched_pdsch.tb_size;
-
-    remainUEs[beam.idx]--;
     iterator++;
   }
+}
 
-  /* Log if slice had UEs with data but none were scheduled */
-  if (numUE > 0 && num_allocations == 0) {
-    LOG_I(NR_MAC, "[%4d.%2d] Slice %d (SST %d, SD 0x%06x): %d UE(s) eligible but none scheduled - HARQ:%d Beam:%d PRB:%d CCE:%d PUCCH:%d TBS:%d\n",
-          frame, slot, slice->slice_id, slice->sst, slice->sd, numUE,
-          harq_failures, beam_failures, prb_failures, cce_failures, pucch_failures, tbs_failures);
+/*! \brief Network Slicing scheduler - 3GPP-compliant frequency-domain PRB allocation
+ * 
+ *  This function implements a network slicing scheduler that allocates PRBs to network slices
+ *  based on 3GPP-compliant frequency-domain allocation. It uses the slice PRB allocator to
+ *  determine PRB ranges for each slice, then schedules UEs within their slice's allocated range.
+ * 
+ *  \param mac MAC instance containing UE information, slice scheduler, and configuration
+ *            - Input: Provides access to slice scheduler (mac->slice_scheduler)
+ *            - Input: Contains UE lists and scheduling context
+ *  \param pp_pdsch Post-process PDSCH structure (modified in-place)
+ *                  - Output: Scheduled PDSCH entries are added to this structure
+ *                  - Contains frame and slot information for scheduling context
+ *  \param UE_list Array of UE pointers to consider for scheduling (NULL-terminated)
+ *                 - Input: List of UEs eligible for scheduling in this slot
+ *                 - Note: This parameter is currently unused but reserved for future use
+ *  \param max_num_ue Maximum number of UEs that can be scheduled per beam
+ *                    - Input: Limits the number of UEs scheduled simultaneously
+ *  \param num_beams Number of beams available for scheduling
+ *                   - Input: Determines the size of n_rb_sched array
+ *                   - Note: Each UE is pre-assigned to one beam (UE->UE_beam_index) before scheduling
+ *  \param n_rb_sched Array of available PRBs per beam (modified in-place)
+ *                    - Input: Initial number of PRBs available for each beam
+ *                    - Output: Decremented by the number of PRBs allocated to each scheduled UE
+ *                    - Array size must be at least num_beams
+ *                    - Index corresponds to beam structure index (not UE_beam_index)
+ * 
+ *  \details
+ *  The network slicing scheduler performs the following operations:
+ *  1. Checks if slice scheduler is configured (mac->slice_scheduler)
+ *  2. Updates total_prbs if it changed (using slice_sch_update_total_prbs())
+ *  3. Calculates PRB ranges for each slice using calculate_slice_prb_ranges_impl()
+ *  4. Separates SRB (control plane) scheduling from DRB (data plane) scheduling
+ *  5. For each slice with active UEs:
+ *     - Filters UEs by slice membership (based on NSSAI)
+ *     - Schedules UEs within the slice's allocated PRB range
+ *     - Uses slice-aware PF scheduler (pf_dl_slice) that respects PRB boundaries
+ *  6. Updates pp_pdsch with scheduled PDSCH entries
+ *  7. Decrements n_rb_sched[beam.idx] for each allocated UE
+ * 
+ *  \note Beam Assignment:
+ *  - Each UE is assigned to ONE beam before scheduling (UE->UE_beam_index)
+ *  - Beam assignment is based on RSRP measurements from CSI reports (beam_selection_procedures())
+ *  - During scheduling, beam_allocation_procedure() checks if the UE's assigned beam is available
+ *    for the current slot. If the beam is already allocated to another UE in that slot, scheduling
+ *    fails for that UE in that slot.
+ *  - Multiple UEs can share the same beam structure if they have the same UE_beam_index and are
+ *    scheduled in different slots (beam structure rotates per slot based on beam_duration)
+ *  - The n_rb_sched array is indexed by beam structure index (0 to num_beams-1), not UE_beam_index
+ * 
+ *  The function modifies pp_pdsch and n_rb_sched in-place and does not return a value.
+ *  If no slices are configured or no active slices have UEs, it falls back to PF scheduler.
+ * 
+ *  \note This scheduler implements 3GPP TS 23.501 and TS 38.300 compliant network slicing
+ *        with frequency-domain PRB allocation. Each slice gets a contiguous PRB range.
+ */
+ static void network_slicing_dl(gNB_MAC_INST *mac,
+  post_process_pdsch_t *pp_pdsch,
+  NR_UE_info_t **UE_list,
+  int max_num_ue,
+  int num_beams,
+  int n_rb_sched[num_beams])
+{
+  frame_t frame = pp_pdsch->frame;
+  slot_t slot = pp_pdsch->slot;
+  
+  int UEs_in_this_beam_count = 0;
+  NR_UE_info_t **UEs_in_this_beam = calloc(MAX_MOBILES_PER_GNB + 1, sizeof(NR_UE_info_t *));
+
+  for (int beam_idx = 0; beam_idx < num_beams; beam_idx++) {
+    // Reset UE count for each beam
+    UEs_in_this_beam_count = 0;
+    memset(UEs_in_this_beam, 0, sizeof(NR_UE_info_t *) * (MAX_MOBILES_PER_GNB + 1));
+
+    // Create list of UEs that belong to this beam structure index
+    // Iterate through connected UEs and find those that map to beam structure index i
+    UE_iterator(UE_list, UE) {
+      if (UE->UE_beam_index == beam_idx) {
+        UEs_in_this_beam[UEs_in_this_beam_count] = UE;
+        UEs_in_this_beam_count++;
+      }
+      if (UEs_in_this_beam_count >= max_num_ue || UEs_in_this_beam_count >= MAX_MOBILES_PER_GNB) {
+        break;
+      }
+    }
+    if (UEs_in_this_beam_count == 0)
+      continue;
+
+    // Update total PRBs for this beam
+    int total_prbs = n_rb_sched[beam_idx];
+    slice_sch_update_total_prbs(mac->slice_scheduler, total_prbs);
+
+    // Find required PRBs for each slice
+    slice_scheduler_t *slice_scheduler = mac->slice_scheduler;
+    int num_slices = slice_sch_get_num_slices(slice_scheduler);
+    for (int s = 0; s < num_slices; s++) {
+      int required_prbs = 0;
+
+      const slice_nssai_t *slice_nssai = slice_sch_get_slice_nssai(slice_scheduler, s);
+      if (slice_nssai == NULL) {
+        continue;
+      }
+      // Iterate through UEs in this beam structure index
+      UE_iterator(UEs_in_this_beam, UE) {
+        // Iterate all logical channel configs (lcid) for this UE, including SRB/DRB
+        NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
+        for (int l = 0; l < seq_arr_size(&sched_ctrl->lc_config); ++l) {
+          const nr_lc_config_t *lc = seq_arr_at(&sched_ctrl->lc_config, l);
+          if (lc->nssai.sst == slice_nssai->sst && lc->nssai.sd == slice_nssai->sd) {
+            // Skip suspended channels
+            if (lc->suspended) {
+              continue;
+            }
+            
+            // Get RLC buffer status for this LCID
+            const int lcid = lc->lcid;
+            const uint16_t rnti = UE->rnti;
+            sched_ctrl->rlc_status[lcid] = nr_mac_rlc_status_ind(rnti, frame, lcid);
+            
+            // Accumulate bytes for this slice to calculate required PRBs
+            if (sched_ctrl->rlc_status[lcid].bytes_in_buffer > 0) {
+              // Estimate bytes per PRB: conservative estimate based on QPSK modulation
+              // Calculation: 1 REG = 12 subcarriers × 14 OFDM symbols = 168 resource elements
+              // With QPSK (2 bits per RE): 168 RE × 2 bits = 336 bits = 42 bytes per REG
+              // This is a conservative estimate assuming lower MCS; actual capacity may be higher
+              const int bytes_per_prb_estimate = 42;
+              int prbs_needed = (sched_ctrl->rlc_status[lcid].bytes_in_buffer + bytes_per_prb_estimate - 1) / bytes_per_prb_estimate;
+              required_prbs += prbs_needed;
+            }
+          }
+        }
+      }
+      // Cap required PRBs at total PRBs available for this beam
+      if (required_prbs > total_prbs) {
+        required_prbs = total_prbs;
+      }      
+
+      // if (required_prbs > 0) {
+      //   // Get slice configuration to log ratios
+      //   float dedicated = 0.0f, min = 0.0f, max = 0.0f;
+      //   slice_sch_get_slice_config(slice_scheduler, slice_nssai->sst, slice_nssai->sd,
+      //                              NULL, NULL, &dedicated, &min, &max);
+      //   LOG_I(NR_MAC, "Frame %d slot %d: Slice SST 0x%02x SD 0x%06x: Required PRBs %d, Config: dedicated=%.3f min=%.3f max=%.3f\n",
+      //         frame, slot, slice_nssai->sst, slice_nssai->sd, required_prbs, dedicated, min, max);
+      // }
+      slice_sch_update_require(slice_scheduler, slice_nssai->sst, slice_nssai->sd, required_prbs);
+    }
+
+    // Run the scheduling algorithm
+    slice_sch_schedule(slice_scheduler);
+
+    // Get the allocation result
+    int num_ranges = 0;
+    const slice_prb_range_t *allocation = slice_sch_get_allocation(slice_scheduler, &num_ranges);
+    if (allocation == NULL || num_ranges == 0)
+      continue;
+
+    // LOG_I(NR_MAC, "Frame %d slot %d: Number of ranges %d\n", frame, slot, num_ranges);
+    // for (int s = 0; s < num_ranges; s++) {
+    //       LOG_I(NR_MAC,
+    //     "Frame %d slot %d: Slice SST 0x%02x SD 0x%06x: PRBs [%d, %d) (num_prbs=%d)\n",
+    //     frame,
+    //     slot,
+    //     allocation[s].slice_id.sst,
+    //     allocation[s].slice_id.sd,
+    //     allocation[s].start_prb,
+    //       allocation[s].end_prb,
+    //       allocation[s].num_prbs);
+    //   }
+
+    // Schedule UEs within the slice's allocated PRB range
+    for (int s = 0; s < num_ranges; s++) {
+      if (allocation[s].num_prbs <= 0) {
+        continue;
+      }
+      int UEs_in_this_slice_count = 0;
+      NR_UE_info_t **UEs_in_this_slice = calloc(MAX_MOBILES_PER_GNB + 1, sizeof(NR_UE_info_t *));
+      memset(UEs_in_this_slice, 0, sizeof(NR_UE_info_t *) * (MAX_MOBILES_PER_GNB + 1));
+      UE_iterator(UEs_in_this_beam, UE) {
+        for (int l = 0; l < seq_arr_size(&UE->UE_sched_ctrl.lc_config); ++l) {
+          const nr_lc_config_t *lc = seq_arr_at(&UE->UE_sched_ctrl.lc_config, l);
+          if (lc->lcid < 3 && seq_arr_size(&UE->UE_sched_ctrl.lc_config) > 3) {
+            continue;
+          }
+          // LOG_I(NR_MAC, "LC ID %d SST 0x%02x SD 0x%06x\n", lc->lcid, lc->nssai.sst, lc->nssai.sd);
+          // LOG_I(NR_MAC, "Allocation ID %d SST 0x%02x SD 0x%06x\n", s, allocation[s].slice_id.sst, allocation[s].slice_id.sd);
+          if (lc->nssai.sst == allocation[s].slice_id.sst && lc->nssai.sd == allocation[s].slice_id.sd) {
+            UEs_in_this_slice[UEs_in_this_slice_count] = UE;
+            UEs_in_this_slice_count++;
+            break;
+          }
+        }
+      }
+      if (UEs_in_this_slice_count == 0) {
+        continue;
+      }
+
+      // LOG_I(NR_MAC, "[%4d.%2d] Scheduling %d UEs in slice [%d, %d)\n", frame, slot, UEs_in_this_slice_count, allocation[s].start_prb, allocation[s].end_prb);
+
+      const slice_prb_range_t *prb_range = &allocation[s];
+      
+      pf_dl_slice(mac, pp_pdsch, UEs_in_this_slice, UEs_in_this_slice_count, prb_range);
+      
+      free(UEs_in_this_slice);
+      UEs_in_this_slice = NULL;
+    }
   }
 
-  /* Log scheduler allocations to file */
-  log_scheduler_allocations(frame, slot, allocations, num_allocations);
-  
-  return num_allocations;
+  free(UEs_in_this_beam);
+  UEs_in_this_beam = NULL;
 }
 
 static void nr_dlsch_preprocessor(gNB_MAC_INST *mac, post_process_pdsch_t *pp_pdsch)
@@ -2014,7 +1543,7 @@ static void nr_dlsch_preprocessor(gNB_MAC_INST *mac, post_process_pdsch_t *pp_pd
   /* Dispatch based on scheduler type */
   if (mac->scheduler_type == SCHE_NS) {
     // Network Slicing scheduler (3GPP-compliant frequency-domain)
-    network_slicing_dl(mac, pp_pdsch, max_sched_ues, num_beams, n_rb_sched);
+    network_slicing_dl(mac, pp_pdsch, UE_info->connected_ue_list, max_sched_ues, num_beams, n_rb_sched);
   } else {
     // Default: Proportional Fair scheduler
     pf_dl(mac, pp_pdsch, UE_info->connected_ue_list, max_sched_ues, num_beams, n_rb_sched);

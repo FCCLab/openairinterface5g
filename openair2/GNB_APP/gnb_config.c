@@ -38,6 +38,7 @@
 #include <unistd.h>
 #include "openair2/LAYER2/NR_MAC_gNB/nr_mac_gNB.h"
 #include "openair2/LAYER2/NR_MAC_gNB/gNB_scheduler_types.h"
+#include "openair2/LAYER2/NR_MAC_gNB/slice_prb_allocator/slice_prb_allocator.h"
 #include "BIT_STRING.h"
 #include "L1_nr_paramdef.h"
 #include "MACRLC_nr_paramdef.h"
@@ -136,7 +137,6 @@ static int set_slice_config(gNB_MAC_INST *mac)
   
   if (num_slices == 0) {
     LOG_I(NR_MAC, "No slices configured, network slicing scheduler will not be active\n");
-    mac->slice_info.num_slices = 0;
     return 0;
   }
   
@@ -144,33 +144,35 @@ static int set_slice_config(gNB_MAC_INST *mac)
   
   // Temporary arrays for validation
   int slice_ids[MAX_NUM_SLICES];
+  uint8_t slice_sst[MAX_NUM_SLICES];
+  uint32_t slice_sd[MAX_NUM_SLICES];
+  float slice_dedicated[MAX_NUM_SLICES];
+  float slice_min[MAX_NUM_SLICES];
+  float slice_max[MAX_NUM_SLICES];
   double total_dedicated_ratio = 0.0;
   
   // First pass: Parse and validate individual slice parameters
   for (int s = 0; s < num_slices; ++s) {
-    network_slice_t *slice = calloc(1, sizeof(network_slice_t));
-    AssertFatal(slice != NULL, "Failed to allocate memory for slice %d\n", s);
-    
-    slice->slice_id = *SliceParamList.paramarray[s][GNB_SLICE_ID_IDX].iptr;
-    slice->sst = *SliceParamList.paramarray[s][GNB_SLICE_SST_IDX].uptr;
-    slice->sd = *SliceParamList.paramarray[s][GNB_SLICE_SD_IDX].uptr;
+    slice_ids[s] = *SliceParamList.paramarray[s][GNB_SLICE_ID_IDX].iptr;
+    slice_sst[s] = *SliceParamList.paramarray[s][GNB_SLICE_SST_IDX].uptr;
+    slice_sd[s] = *SliceParamList.paramarray[s][GNB_SLICE_SD_IDX].uptr;
     
     // Convert percentage to ratio (0.0-1.0)
     double dedicated_pct = *SliceParamList.paramarray[s][GNB_SLICE_DEDICATED_PRB_RATIO_IDX].dblptr;
     double min_pct = *SliceParamList.paramarray[s][GNB_SLICE_MIN_PRB_RATIO_IDX].dblptr;
     double max_pct = *SliceParamList.paramarray[s][GNB_SLICE_MAX_PRB_RATIO_IDX].dblptr;
     
-    slice->dedicated_prb_ratio = dedicated_pct / 100.0;
-    slice->min_prb_ratio = min_pct / 100.0;
-    slice->max_prb_ratio = max_pct / 100.0;
+    slice_dedicated[s] = dedicated_pct / 100.0;
+    slice_min[s] = min_pct / 100.0;
+    slice_max[s] = max_pct / 100.0;
     
     // Validate individual slice parameters
-    AssertFatal(slice->slice_id >= 0 && slice->slice_id <= 1023,
-                "Slice %d: slice_id must be in [0, 1023], but is %d\n", s, slice->slice_id);
-    AssertFatal(slice->sst >= 0 && slice->sst <= 255,
-                "Slice %d: SST must be in [0, 255], but is %d\n", s, slice->sst);
-    AssertFatal(slice->sd <= 0xffffff,
-                "Slice %d: SD cannot be bigger than 0xffffff, but is 0x%06x\n", s, slice->sd);
+    AssertFatal(slice_ids[s] >= 0 && slice_ids[s] <= 1023,
+                "Slice %d: slice_id must be in [0, 1023], but is %d\n", s, slice_ids[s]);
+    AssertFatal(slice_sst[s] >= 0 && slice_sst[s] <= 255,
+                "Slice %d: SST must be in [0, 255], but is %d\n", s, slice_sst[s]);
+    AssertFatal(slice_sd[s] <= 0xffffff,
+                "Slice %d: SD cannot be bigger than 0xffffff, but is 0x%06x\n", s, slice_sd[s]);
     
     // Validate PRB ratios are in valid range
     AssertFatal(dedicated_pct >= 0.0 && dedicated_pct <= 100.0,
@@ -181,24 +183,17 @@ static int set_slice_config(gNB_MAC_INST *mac)
                 "Slice %d: Max PRB ratio must be in [0.0, 100.0]%%, but is %.1f%%\n", s, max_pct);
     
     // Validate ratio relationships: dedicated <= min <= max
-    AssertFatal(slice->dedicated_prb_ratio <= slice->min_prb_ratio,
+    AssertFatal(slice_dedicated[s] <= slice_min[s],
                 "Slice %d: Dedicated PRB ratio (%.1f%%) must be <= Min PRB ratio (%.1f%%)\n",
                 s, dedicated_pct, min_pct);
-    AssertFatal(slice->min_prb_ratio <= slice->max_prb_ratio,
+    AssertFatal(slice_min[s] <= slice_max[s],
                 "Slice %d: Min PRB ratio (%.1f%%) must be <= Max PRB ratio (%.1f%%)\n",
                 s, min_pct, max_pct);
     
-    slice_ids[s] = slice->slice_id;
-    total_dedicated_ratio += slice->dedicated_prb_ratio;
-    
-    slice->num_ues = 0;
-    // Initialize UE list to NULL
-    memset(slice->ue_list, 0, sizeof(slice->ue_list));
-    
-    mac->slice_info.slices[s] = slice;
+    total_dedicated_ratio += slice_dedicated[s];
     
     LOG_I(NR_MAC, "Configured slice %d: SST=%d, SD=0x%06x, Dedicated=%.1f%%, Min=%.1f%%, Max=%.1f%%\n",
-          slice->slice_id, slice->sst, slice->sd,
+          slice_ids[s], slice_sst[s], slice_sd[s],
           dedicated_pct, min_pct, max_pct);
   }
   
@@ -213,12 +208,10 @@ static int set_slice_config(gNB_MAC_INST *mac)
   
   // Check for duplicate NSSAI (SST+SD combinations)
   for (int s1 = 0; s1 < num_slices; ++s1) {
-    network_slice_t *slice1 = mac->slice_info.slices[s1];
     for (int s2 = s1 + 1; s2 < num_slices; ++s2) {
-      network_slice_t *slice2 = mac->slice_info.slices[s2];
-      AssertFatal(!(slice1->sst == slice2->sst && slice1->sd == slice2->sd),
+      AssertFatal(!(slice_sst[s1] == slice_sst[s2] && slice_sd[s1] == slice_sd[s2]),
                   "Duplicate NSSAI (SST=%d, SD=0x%06x) found in slices %d and %d\n",
-                  slice1->sst, slice1->sd, s1, s2);
+                  slice_sst[s1], slice_sd[s1], s1, s2);
     }
   }
   
@@ -231,8 +224,23 @@ static int set_slice_config(gNB_MAC_INST *mac)
           total_dedicated_ratio * 100.0);
   }
   
-  mac->slice_info.num_slices = num_slices;
-  LOG_I(NR_MAC, "Configured %d network slices (total dedicated: %.1f%%)\n", num_slices, total_dedicated_ratio * 100.0);
+  // Create or get slice scheduler (use default total_prbs, will be updated when scheduling starts)
+  const int default_total_prbs = 100; // Default value, will be updated during scheduling
+  if (mac->slice_scheduler == NULL) {
+    mac->slice_scheduler = slice_sch_create(default_total_prbs);
+    AssertFatal(mac->slice_scheduler != NULL, "Failed to create slice scheduler\n");
+  }
+  
+  // Add all slices to the scheduler
+  for (int s = 0; s < num_slices; ++s) {
+    int ret = slice_sch_add_slice(mac->slice_scheduler, slice_sst[s], slice_sd[s],
+                                   slice_dedicated[s], slice_min[s], slice_max[s],
+                                   0); // required_prbs=0 initially
+    AssertFatal(ret == 0, "Failed to add slice %d (SST=%d, SD=0x%06x) to scheduler\n",
+                slice_ids[s], slice_sst[s], slice_sd[s]);
+  }
+  
+  LOG_I(NR_MAC, "Configured %d network slices in scheduler (total dedicated: %.1f%%)\n", num_slices, total_dedicated_ratio * 100.0);
   return num_slices;
 }
 
@@ -1729,9 +1737,8 @@ void RCconfig_nr_macrlc(configmodule_interface_t *cfg)
       RC.nrmac[j]->stats_max_ue = *MacRLC_ParamList.paramarray[j][MACRLC_STATS_MAX_UE_IDX].iptr;
       RC.nrmac[j]->print_ue_stats = RC.nrmac[j]->stats_max_ue > 0;
       
-      // Initialize slice configuration
-      RC.nrmac[j]->slice_info.num_slices = 0;
-      memset(RC.nrmac[j]->slice_info.slices, 0, sizeof(RC.nrmac[j]->slice_info.slices));
+      // Initialize slice configuration (scheduler will be created in set_slice_config if slices are configured)
+      RC.nrmac[j]->slice_scheduler = NULL;
       set_slice_config(RC.nrmac[j]);
       NR_bler_options_t *dl_bler_options = &RC.nrmac[j]->dl_bler;
       dl_bler_options->upper = *(MacRLC_ParamList.paramarray[j][MACRLC_DL_BLER_TARGET_UPPER_IDX].dblptr);

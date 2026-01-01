@@ -47,6 +47,7 @@
 #include "common/utils/ds/byte_array.h"
 #include "openair2/LAYER2/nr_rlc/nr_rlc_configuration.h"
 #include "gNB_scheduler_types.h"
+#include "NR_MAC_gNB/slice_prb_allocator/slice_prb_allocator.h"
 
 #define NR_SCHED_LOCK(lock)                                        \
   do {                                                             \
@@ -836,23 +837,10 @@ typedef struct {
 
 #define UE_iterator(BaSe, VaR) for (NR_UE_info_t **VaR##pptr=BaSe, *VaR=*VaR##pptr; VaR; VaR=*(++VaR##pptr))
 
-/*! \brief Network slice configuration structure */
-typedef struct {
-  int slice_id;           /*!< Unique slice identifier */
-  uint8_t sst;            /*!< Slice/Service Type */
-  uint32_t sd;            /*!< Slice Differentiator */
-  float dedicated_prb_ratio;  /*!< Dedicated PRB ratio (0.0-1.0), non-shareable */
-  float min_prb_ratio;       /*!< Minimum PRB ratio (0.0-1.0), guaranteed */
-  float max_prb_ratio;       /*!< Maximum PRB ratio (0.0-1.0), hard limit */
-  NR_UE_info_t *ue_list[MAX_MOBILES_PER_GNB + 1];  /*!< UEs in this slice */
-  int num_ues;            /*!< Number of UEs in this slice */
-} network_slice_t;
-
-/*! \brief Network slice information container */
-typedef struct {
-  network_slice_t *slices[MAX_NUM_SLICES];  /*!< Array of slice pointers */
-  int num_slices;                           /*!< Number of configured slices */
-} network_slice_info_t;
+/* Note: Network slice information is now managed by slice_scheduler_t.
+ * Use slice_prb_allocator.h functions to access slice configurations.
+ * The old network_slice_t and network_slice_info_t structures have been removed.
+ */
 
 typedef struct {
   /// current frame
@@ -998,8 +986,9 @@ typedef struct gNB_MAC_INST_s {
   nr_pp_impl_ul pre_processor_ul;
   /// Scheduler algorithm type
   scheduler_type_t scheduler_type;
-  /// Network slice information (for SCHE_NS scheduler)
-  network_slice_info_t slice_info;
+  /// Slice PRB allocator scheduler instance (persistent, reused across scheduling cycles)
+  /// The scheduler stores slice configurations and is the single source of truth for slice information
+  slice_scheduler_t *slice_scheduler;
 
   nr_mac_config_t radio_config;
   nr_rlc_configuration_t rlc_config;
