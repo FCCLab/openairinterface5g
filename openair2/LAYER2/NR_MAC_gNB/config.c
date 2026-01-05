@@ -901,6 +901,46 @@ void nr_mac_config_scc(gNB_MAC_INST *nrmac, NR_ServingCellConfigCommon_t *scc, c
 
   seq_arr_init(&nrmac->ul_tda, sizeof(NR_tda_info_t));
   init_ul_tda_info(scc->uplinkConfigCommon->initialUplinkBWP->pusch_ConfigCommon->choice.setup->pusch_TimeDomainAllocationList, &nrmac->ul_tda);
+
+  // Configure TDD slot bitmaps
+  frame_structure_t *fs = &nrmac->frame_structure;
+  int nr_slots_period = fs->numb_slots_period;
+  int nr_dl_slots = get_dl_slots_per_period(fs);
+  int nr_ulstart_slot = get_first_ul_slot(fs, false);
+
+  for (int slot = 0; slot < n; ++slot) {
+    nrmac->dlsch_slot_bitmap[slot / 64] |= (uint64_t)((slot % nr_slots_period) < nr_dl_slots) << (slot % 64);
+    nrmac->ulsch_slot_bitmap[slot / 64] |= (uint64_t)((slot % nr_slots_period) >= nr_ulstart_slot) << (slot % 64);
+
+    LOG_D(NR_MAC,
+          "slot %d DL %d UL %d\n",
+          slot,
+          (nrmac->dlsch_slot_bitmap[slot / 64] & ((uint64_t)1 << (slot % 64))) != 0,
+          (nrmac->ulsch_slot_bitmap[slot / 64] & ((uint64_t)1 << (slot % 64))) != 0);
+  }
+
+  // Initialize preprocessors (including network slicing support)
+  if (get_softmodem_params()->phy_test) {
+    nrmac->pre_processor_dl.dl = nr_preprocessor_phytest;
+    nrmac->pre_processor_ul = nr_ul_preprocessor_phytest;
+  } else {
+    nrmac->pre_processor_dl = nr_init_fr1_dlsch_preprocessor(0);
+    nrmac->pre_processor_ul = nr_init_fr1_ulsch_preprocessor(0);
+  }
+
+  // Initialize Random Access configuration for SA mode
+  if (get_softmodem_params()->sa > 0) {
+    NR_COMMON_channels_t *cc = &nrmac->common_channels[0];
+    for (int ra_idx = 0; ra_idx < NR_NB_RA_PROC_MAX; ra_idx++) {
+      NR_RA_t *ra = &cc->ra[ra_idx];
+      ra->cfra = false;
+      ra->rnti = 0;
+      ra->preambles.num_preambles = MAX_NUM_NR_PRACH_PREAMBLES;
+      ra->preambles.preamble_list = malloc(MAX_NUM_NR_PRACH_PREAMBLES * sizeof(*ra->preambles.preamble_list));
+      for (int i = 0; i < MAX_NUM_NR_PRACH_PREAMBLES; i++)
+        ra->preambles.preamble_list[i] = i;
+    }
+  }
 }
 
 bool nr_mac_configure_other_sib(gNB_MAC_INST *nrmac, int num_cu_sib, const f1ap_sib_msg_t cu_sib[num_cu_sib])

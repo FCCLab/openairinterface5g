@@ -264,6 +264,7 @@ static arr_ue_id_t filter_ues_by_s_nssai_in_cuup(const test_info_lst_t test_info
         arr_ue_id.ue_id[i] = fill_ue_id_data[ngran_gNB_CUUP](NULL, 0, pdcp_ue_id_list[i]);
       }
       free(pdcp_ue_id_list);
+      break; // Break after first matching slice since CU-UP doesn't store slice info per UE
     }
   }
 
@@ -287,9 +288,8 @@ static arr_ue_id_t filter_ues_by_s_nssai_in_du_or_monolithic(const test_info_lst
   arr_ue_id.ue_id = calloc(MAX_MOBILES_PER_GNB, sizeof(ue_id_e2sm_t));
   assert(arr_ue_id.ue_id != NULL);
 
-  arr_ue_id.ue_info_list = calloc(MAX_MOBILES_PER_GNB, sizeof(*arr_ue_id.ue_info_list));
+  arr_ue_id.ue_info_list = calloc(MAX_MOBILES_PER_GNB, sizeof(NR_UE_info_t));
   assert(arr_ue_id.ue_info_list != NULL);
-
   const ngran_node_t node_type = get_e2_node_type();
 
   gNB_MAC_INST *mac = RC.nrmac[0];
@@ -325,7 +325,6 @@ static arr_ue_id_t filter_ues_by_s_nssai_in_du_or_monolithic(const test_info_lst
   node_stats[1].mac_stats.dl.total_prb_aggregate = mac->mac_stats.dl.total_prb_aggregate;
   node_stats[1].mac_stats.ul.total_prb_aggregate = mac->mac_stats.ul.total_prb_aggregate;
   NR_SCHED_UNLOCK(&mac->sched_lock);
-
   free(sd); // if NULL, nothing happens
 
   return arr_ue_id;

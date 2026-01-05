@@ -45,7 +45,7 @@ bool read_gtp_sm(void * data)
 
   uint64_t ue_id_list[MAX_MOBILES_PER_GNB];
   size_t num_ues = nr_pdcp_get_num_ues(ue_id_list, MAX_MOBILES_PER_GNB);
-  
+
   gtp->msg.len = num_ues;
   if(gtp->msg.len > 0){
     gtp->msg.ngut = calloc(gtp->msg.len, sizeof(gtp_ngu_t_stats_t) );
@@ -80,7 +80,7 @@ bool read_gtp_sm(void * data)
   #elif defined (NGRAN_GNB_CUUP)
   // For the moment, CU-UP doesn't store PDU session information
   printf("GTP SM not yet implemented in CU-UP\n");
-  return false;  
+  return false;
   #endif
 }
 

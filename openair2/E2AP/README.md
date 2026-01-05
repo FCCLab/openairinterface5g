@@ -15,11 +15,43 @@ This tutorial describes the steps of deployment 5G OAI RAN, with integrated E2 a
 
 [[_TOC_]]
 
-# 1. Mandatory prerequisites of FlexRIC before starting with E2 agent
+# 1. Installation
+
+## 1.1 Mandatory prerequisites of FlexRIC before starting with E2 agent
 * [GCC compiler](https://gitlab.eurecom.fr/mosaic5g/flexric#111-gcc-compiler)
 * [(opt.) configure Wireshark](https://gitlab.eurecom.fr/mosaic5g/flexric#112-opt-wireshark)
 * [Mandatory dependencies](https://gitlab.eurecom.fr/mosaic5g/flexric#121-mandatory-dependencies)
 
+- A *recent* CMake (at least v3.15). 
+
+  On Ubuntu, you might want to use [this PPA](https://apt.kitware.com/) to install an up-to-date version.
+
+- SWIG (at least  v.4.1). 
+
+  We use SWIG as an interface generator to enable the multi-language feature (i.e., C/C++ and Python) for the xApps. Please, check your SWIG version (i.e, `swig
+  -version`) and install it from scratch if necessary as described here: https://swig.org/svn.html or via the code below: 
+  
+  ```bash
+  git clone https://github.com/swig/swig.git
+  cd swig
+  git checkout release-4.1 
+  ./autogen.sh
+  ./configure --prefix=/usr/
+  make -j8
+  make install
+  ```
+
+- Flatbuffer encoding(optional). 
+  
+  We also provide a flatbuffers encoding/decoding scheme as alternative to ASN.1. In case that you want to use it  follow the
+  instructions at https://github.com/dvidelabs/flatcc and provide the path for the lib and include when selecting it at `ccmake ..` from the build directory 
+
+## 1.2 Download the required dependencies. 
+
+Below an example of how to install it in ubuntu
+```bash
+sudo apt install libsctp-dev python3.8 cmake-curses-gui libpcre2-dev python-dev
+```
 
 # 2. Deployment
 
@@ -44,6 +76,7 @@ git clone https://gitlab.eurecom.fr/oai/openairinterface5g
 
 ### 2.1.2 Build OAI with E2 Agent
 
+<<<<<<< HEAD
 #### Using build_oai script
 ```bash
 cd openairinterface5g/cmake_targets/
@@ -52,6 +85,8 @@ cd openairinterface5g/cmake_targets/
 ./build_oai --gNB --nrUE --build-e2 --cmake-opt -DE2AP_VERSION=E2AP_VX --cmake-opt -DKPM_VERSION=KPM_VY --ninja
 ```
 where `X`=`1`,`2`,`3`, and `Y`=`2_03`,`3_00`.
+
+Note: By default, OAI will build the E2 Agent with E2AP v2 and KPM v2. If you want a different version, you can use the `--cmake-opt` flags as shown above, or edit the variable E2AP\_VERSION and KPM\_VERSION at OAI's CMakeLists.txt file.
 
  * `-I` option is to install pre-requisites, you only need it the first time you build the softmodem or when some oai dependencies have changed.
  * `-w` option is to select the radio head support you want to include in your build. Radio head support is provided via a shared library, which is called the "oai device" The build script creates a soft link from `liboai_device.so` to the true device which will be used at run-time (here the USRP one, `liboai_usrpdevif.so`). The RF simulator is implemented as a specific device replacing RF hardware, it can be specifically built using `-w SIMU` option, but is also built during any softmodem build.
@@ -70,14 +105,29 @@ ninja nr-softmodem nr-cuup nr-uesoftmodem params_libconfig rfsimulator
 where `X`=`1`,`2`,`3`, and `Y`=`2_03`,`3_00`.
 
 
+If the openair2/E2AP/flexric folder is empty, try manually the following commands:
+```bash
+git submodule init
+git submodule update
+```
+
 ## 2.2 FlexRIC
 Important to note: OAI RAN and FlexRIC must be compiled with the same E2AP and E2SM-KPM versions.
+
+By default, FlexRIC will build the nearRT-RIC with E2AP v2 and KPM v2. If you want a different version, edit the variable E2AP\_VERSION and KPM\_VERSION at FlexRIC's CMakeLists.txt file. Note that OAI's and FlexRIC's E2AP\_VERSION and KPM\_VERSION need to match due to O-RAN incompatibilities among versions.
 
 ### 2.2.1 Case 1: OAI RAN and FlexRIC on the same machine
 Instead of cloning the new FlexRIC repository, feel free to use FlexRIC submodule as a nearRT-RIC + xApp framework, apart from the E2 agent side. In order to achieve this, please follow the next steps:
 ```bash
 cd openairinterface5g/openair2/E2AP/flexric
 git submodule init && git submodule update  # only if OAI RAN wasn't previously compiled with --build-e2 or -DE2_AGENT options
+```
+
+Alternatively, you can clone the FlexRIC repository separately:
+```bash
+git clone https://gitlab.eurecom.fr/mosaic5g/flexric flexric
+cd flexric/
+git checkout 07e8f8f198b72a0c9b39cc6ed6d0dbce6af133f8
 ```
 and continue as described in the [build FlexRIC section](https://gitlab.eurecom.fr/mosaic5g/flexric#22-build-flexric).
 
@@ -89,6 +139,7 @@ To build FlexRIC on the other machine, follow the complete [FlexRIC installation
 # 3. Service Models available in OAI RAN
 
 ## 3.1 O-RAN
+
 For a deeper understanding, we recommend that users of FlexRIC familiarize themselves with O-RAN WG3 specifications available at the [O-RAN specifications page](https://orandownloadsweb.azurewebsites.net/specifications).
 
 The following specifications are recommended:
@@ -98,10 +149,39 @@ The following specifications are recommended:
 * `O-RAN.WG3.E2SM-RC-v01.03` - E2SM-RC Service Model description
 
 ### 3.1.1 E2SM-KPM
-As mentioned in section [2.1 OAI RAN](#21-oai-ran), we support KPM `v2.03/v3.00` which all use ASN.1 encoding.
+
+As mentioned in section [2.1.2 Build OAI with E2 Agent](#212-build-oai-with-e2-agent), we support KPM v2.03/v3.00. Uses ASN.1 encoding.
 
 Per O-RAN specifications, 5G measurements supported by KPM are specified in 3GPP TS 28.552.
 
+From 3GPP TS 28.552, we support the following list:
+  * "DRB.PdcpSduVolumeDL"
+  * "DRB.PdcpSduVolumeUL"
+  * "DRB.RlcSduDelayDl"
+  * "DRB.UEThpDl"
+  * "DRB.UEThpUl"
+  * "RRU.PrbTotDl"
+  * "RRU.PrbTotUl"
+
+From O-RAN.WG3.E2SM-KPM-version specification, we implemented:
+  * REPORT Service Style 4 ("Common condition-based, UE-level" - section 7.4.5) - fetch above measurements per each UE that matches common criteria (e.g. S-NSSAI).
+
+### 3.1.2 E2SM-RC
+
+We support RC v1.03. Uses ASN.1 encoding.
+
+From ORAN.WG3.E2SM-RC-v01.03 specification, we implemented:
+  * REPORT Service Style 4 ("UE Information" - section 7.4.5) - aperiodic subscription for "UE RRC State Change"
+  * CONTROL Service Style 1 ("Radio Bearer Control" - section 7.6.2) - "QoS flow mapping configuration" (e.g creating a new DRB)
+
+## 3.2 Custom Service Models
+
+In addition, we support custom Service Models, such are MAC, RLC, PDCP, and GTP. Use plain encoding.
+>>>>>>> 796669faad (Merge network slicing implementation)
+
+Per O-RAN specifications, 5G measurements supported by KPM are specified in 3GPP TS 28.552.
+
+<<<<<<< HEAD
 From 3GPP TS 28.552, we support the following list:
   * `DRB.PdcpSduVolumeDL`
   * `DRB.PdcpSduVolumeUL`
@@ -110,6 +190,11 @@ From 3GPP TS 28.552, we support the following list:
   * `DRB.UEThpUl`
   * `RRU.PrbTotDl`
   * `RRU.PrbTotUl`
+=======
+# 4. Start the process
+
+At this point, we assume the 5G Core Network is already running in backgroud. For more information, please take a look at 
+>>>>>>> 796669faad (Merge network slicing implementation)
 
 From `O-RAN.WG3.E2SM-KPM-version` specification, we implemented:
   * REPORT Service Style 4 ("Common condition-based, UE-level" - section 7.4.5) - fetch above measurements per each UE based on the common S-NSSAI `(1, 0xffffff)` condition
@@ -148,6 +233,7 @@ e2_agent = {
   sm_dir = "/usr/local/lib/flexric/";
 }
 ```
+* start E2 Node agents
 
 * start the E2 nodes
 
@@ -164,32 +250,31 @@ e2_agent = {
   * start the gNB-mono
     ```bash
     cd <path-to>/build
-    sudo ./nr-softmodem -O <path-to>/targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band78.fr1.106PRB.usrpb210.conf --gNBs.[0].min_rxtxtime 6 --rfsim
+    sudo ./nr-softmodem -O <path-to>/targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band78.fr1.106PRB.usrpb210.conf --gNBs.[0].min_rxtxtime 6 --rfsim --sa -E
     ```
 
   * if CU/DU split is used, start the gNB as follows
     ```bash
     cd <path-to>/build
-    sudo ./nr-softmodem -O <path-to>/targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb-du.sa.band78.106prb.rfsim.pci0.conf --rfsim
-    sudo ./nr-softmodem -O <path-to>/targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb-cu.sa.f1.conf
+    sudo ./nr-softmodem -O <path-to>/targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb-du.sa.band78.106prb.rfsim.pci0.conf --rfsim --sa -E
+    sudo ./nr-softmodem -O <path-to>/targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb-cu.sa.f1.conf --sa
     ```
 
   * if CU-CP/CU-UP/DU split is used, start the gNB as follows
     ```bash
     cd <path-to>/build
-    sudo ./nr-softmodem -O <path-to>/targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb-du.sa.band78.106prb.rfsim.pci0.conf --rfsim
-    ./nr-softmodem -O <path-to>/ci-scripts/conf_files/gnb-cucp.sa.f1.conf --gNBs.[0].plmn_list.[0].mcc 001 --gNBs.[0].plmn_list.[0].mnc 01 --gNBs.[0].local_s_address "127.0.0.3" --gNBs.[0].amf_ip_address.[0].ipv4 "192.168.70.132" --gNBs.[0].E1_INTERFACE.[0].ipv4_cucp "127.0.0.3" --gNBs.[0].NETWORK_INTERFACES.GNB_IPV4_ADDRESS_FOR_NG_AMF "192.168.70.129" --e2_agent.near_ric_ip_addr "127.0.0.1" --e2_agent.sm_dir "/usr/local/lib/flexric/"
-    sudo ./nr-cuup -O <path-to>/ci-scripts/conf_files/gnb-cuup.sa.f1.conf --gNBs.[0].plmn_list.[0].mcc 001 --gNBs.[0].plmn_list.[0].mnc 01 --gNBs.[0].local_s_address "127.0.0.6" --gNBs.[0].E1_INTERFACE.[0].ipv4_cucp "127.0.0.3" --gNBs.[0].E1_INTERFACE.[0].ipv4_cuup "127.0.0.6" --gNBs.[0].NETWORK_INTERFACES.GNB_IPV4_ADDRESS_FOR_NG_AMF "192.168.70.129" --gNBs.[0].NETWORK_INTERFACES.GNB_IPV4_ADDRESS_FOR_NGU "192.168.70.129" --e2_agent.near_ric_ip_addr "127.0.0.1" --e2_agent.sm_dir "/usr/local/lib/flexric/"  --rfsim 
-
+    sudo ./nr-softmodem -O <path-to>/targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb-du.sa.band78.106prb.rfsim.pci0.conf --rfsim --sa -E
+    ./nr-softmodem -O <path-to>/ci-scripts/conf_files/gnb-cucp.sa.f1.conf --gNBs.[0].plmn_list.[0].mcc 001 --gNBs.[0].plmn_list.[0].mnc 01 --gNBs.[0].local_s_address "127.0.0.3" --gNBs.[0].amf_ip_address.[0].ipv4 "192.168.70.132" --gNBs.[0].E1_INTERFACE.[0].ipv4_cucp "127.0.0.3" --gNBs.[0].NETWORK_INTERFACES.GNB_IPV4_ADDRESS_FOR_NG_AMF "192.168.70.129" --e2_agent.near_ric_ip_addr "127.0.0.1" --e2_agent.sm_dir "/usr/local/lib/flexric/" --sa
+    sudo ./nr-cuup -O <path-to>/ci-scripts/conf_files/gnb-cuup.sa.f1.conf --gNBs.[0].plmn_list.[0].mcc 001 --gNBs.[0].plmn_list.[0].mnc 01 --gNBs.[0].local_s_address "127.0.0.6" --gNBs.[0].E1_INTERFACE.[0].ipv4_cucp "127.0.0.3" --gNBs.[0].E1_INTERFACE.[0].ipv4_cuup "127.0.0.6" --gNBs.[0].NETWORK_INTERFACES.GNB_IPV4_ADDRESS_FOR_NG_AMF "192.168.70.129" --gNBs.[0].NETWORK_INTERFACES.GNB_IPV4_ADDRESS_FOR_NGU "192.168.70.129" --e2_agent.near_ric_ip_addr "127.0.0.1" --e2_agent.sm_dir "/usr/local/lib/flexric/" --rfsim --sa
     ```
 
 * start the nrUE
   ```bash
   cd <path-to>/build
   # for gNB-mono
-  sudo ./nr-uesoftmodem -r 106 --numerology 1 --band 78 -C 3619200000 --rfsim --uicc0.imsi 001010000000001 --rfsimulator.serveraddr 127.0.0.1
+  sudo ./nr-uesoftmodem -r 106 --numerology 1 --band 78 -C 3619200000 --rfsim --sa --uicc0.imsi 001010000000001 --rfsimulator.serveraddr 127.0.0.1
   # for CU/DU and CU-CP/CU-UP/DU split
-  sudo ./nr-uesoftmodem -r 106 --numerology 1 --band 78 -C 3450720000 --rfsim --uicc0.imsi 001010000000001 --rfsimulator.serveraddr 127.0.0.1
+  sudo ./nr-uesoftmodem -r 106 --numerology 1 --band 78 -C 3450720000 --rfsim --sa --uicc0.imsi 001010000000001 --rfsimulator.serveraddr 127.0.0.1
   ```
   Note: [multi-UE rfsim deployment tutorial](../../doc/NR_SA_Tutorial_OAI_multi_UE.md?ref_type=heads#run-multiple-ues-in-rfsimulator)
 
@@ -238,7 +323,6 @@ e2_agent = {
       ```bash
       XAPP_DURATION=30 python3 build/examples/xApp/python3/xapp_mac_rlc_pdcp_gtp_moni.py # only supported by the gNB-mono
       ```
-
 The latency that you observe in your monitor xApp is the latency from the E2 Agent to the nearRT-RIC and xApp. 
 Therefore, FlexRIC is well suited for use cases with ultra low-latency requirements.
 Additionally, all the data received in the `xapp_gtp_mac_rlc_pdcp_moni` xApp is also written to `/tmp/xapp_db_` in case that offline data processing is wanted (e.g., Machine Learning/Artificial Intelligence applications). You can browse the data using e.g., `sqlitebrowser`.

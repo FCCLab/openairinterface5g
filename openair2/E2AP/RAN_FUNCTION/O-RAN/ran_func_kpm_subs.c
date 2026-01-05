@@ -34,7 +34,6 @@ e2_node_level_stats_t cp_node_level_stats(const e2_node_level_stats_t *src)
 
   return dst;
 }
-
 /* measurements that need to store values from previous reporting period have a limitation
    when it comes to multiple subscriptions to the same UEs; ric_req_id is unique per subscription */
 typedef struct uldlcounter {
@@ -219,7 +218,6 @@ void init_kpm_subs_data(void)
   hcreate(ht_len);
 
   ENTRY kv_pair;
-
   for (size_t i = 0; i < ht_len; i++) {
     kv_pair.key = lst_measure[i].key;
     kv_pair.data = &lst_measure[i];

@@ -263,7 +263,7 @@ nr_preprocessor_phytest()], multiple users [nr_dlsch_preprocessor()].
   2)  Checks the quantity of waiting data in RLC
   3)  Either set up resource allocation directly (e.g., for a single UE,
       phytest), or call into a function to perform actual resource allocation.
-      Currently, this is done using pf_dl() which implements a basic
+      Currently, this is done using nr_pf_dl() which implements a basic
       proportional fair scheduler:
       * for every UE, check for retransmission and allocate as necessary
       * Calculate the PF coefficient and put eligible UEs into a list

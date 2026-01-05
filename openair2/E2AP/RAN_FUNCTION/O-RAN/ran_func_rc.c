@@ -23,6 +23,7 @@
 #include "ran_func_rc_subs.h"
 #include "ran_func_rc_extern.h"
 #include "ran_e2sm_ue_id.h"
+#include "rc_ctrl_service_style_2.h"
 #include "../../flexric/src/sm/rc_sm/ie/ir/lst_ran_param.h"
 #include "../../flexric/src/sm/rc_sm/ie/ir/ran_param_list.h"
 #include "../../flexric/src/agent/e2_agent_api.h"
@@ -373,7 +374,7 @@ static void fill_rc_control(ran_func_def_ctrl_t* ctrl)
   lst->ran_param[1].ran_param_name = cp_str_to_ba(ran_param_qos_flow_mapping_ind);
   lst->ran_param[1].ran_param_def = NULL;
 
-  // Sequence of Associated RAN 
+  // Sequence of Associated RAN
   // Parameters for Control Outcome
   // [0- 255]
   ctrl_style->sz_ran_param_ctrl_out = 0;
@@ -399,7 +400,6 @@ e2sm_rc_func_def_t fill_rc_ran_def_gnb(void)
   // Mandatory
   // 9.3.2
   def.name = fill_rc_ran_func_name();
-
   // RAN Function Definition for EVENT TRIGGER
   // Optional
   // 9.2.2.2
@@ -442,7 +442,6 @@ static e2sm_rc_func_def_t fill_rc_ran_def_cu(void)
   // Mandatory
   // 9.3.2
   def.name = fill_rc_ran_func_name();
-
   // RAN Function Definition for EVENT TRIGGER
   // Optional
   // 9.2.2.2
@@ -597,7 +596,7 @@ static seq_ran_param_t fill_rrc_state_change_seq_ran(const rrc_state_e2sm_rc_e r
   seq_ran_param.ran_param_val.flag_false = calloc(1, sizeof(ran_parameter_value_t));
   assert(seq_ran_param.ran_param_val.flag_false != NULL && "Memory exhausted");
   seq_ran_param.ran_param_val.flag_false->type = INTEGER_RAN_PARAMETER_VALUE;
-  seq_ran_param.ran_param_val.flag_false->int_ran = rrc_state;  
+  seq_ran_param.ran_param_val.flag_false->int_ran = rrc_state;
 
   return seq_ran_param;
 }
@@ -888,7 +887,6 @@ sm_ag_if_ans_t write_subs_rc_sm(void const* src)
   return ans;
 }
 
-
 sm_ag_if_ans_t write_ctrl_rc_sm(void const* data)
 {
   assert(data != NULL);
@@ -898,7 +896,9 @@ sm_ag_if_ans_t write_ctrl_rc_sm(void const* data)
 
   assert(ctrl->hdr.format == FORMAT_1_E2SM_RC_CTRL_HDR && "Indication Header Format received not valid");
   assert(ctrl->msg.format == FORMAT_1_E2SM_RC_CTRL_MSG && "Indication Message Format received not valid");
-  assert(ctrl->hdr.frmt_1.ctrl_act_id == 2 && "Currently only QoS flow mapping configuration supported");
+  
+  if (ctrl->hdr.frmt_1.ctrl_act_id == 2) {
+    // QoS flow mapping configuration
 
   printf("QoS flow mapping configuration\n");
 
@@ -932,7 +932,29 @@ sm_ag_if_ans_t write_ctrl_rc_sm(void const* data)
   int64_t dir = lrp->ran_param_struct.ran_param_struct[1].ran_param_val.flag_false->int_ran;
   assert(dir == 0 || dir == 1);
 
-  printf("qfi = %ld, dir %ld \n", qfi, dir);
+    printf("qfi = %ld, dir %ld \n", qfi, dir);
+#ifdef NGRAN_GNB_DU
+  } else if (ctrl->hdr.frmt_1.ric_style_type == 2 && ctrl->hdr.frmt_1.ctrl_act_id == Slice_level_PRB_quotal_7_6_3_1) {
+    /// ADD/MOD SLICE ///
+    e2sm_rc_ctrl_msg_frmt_1_t const* msg = &ctrl->msg.frmt_1;
+    assert(msg->sz_ran_param == 1 && "not support msg->sz_ran_param != 1");
+    seq_ran_param_t* RRM_Policy_Ratio_List = &msg->ran_param[0];
+    assert(RRM_Policy_Ratio_List->ran_param_id == RRM_Policy_Ratio_List_8_4_3_6 && "wrong RRM_Policy_Ratio_List id");
+    assert(RRM_Policy_Ratio_List->ran_param_val.type == LIST_RAN_PARAMETER_VAL_TYPE && "wrong RRM_Policy_Ratio_List type");
+    if (RRM_Policy_Ratio_List->ran_param_val.lst) {
+      size_t slices_len = RRM_Policy_Ratio_List->ran_param_val.lst->sz_lst_ran_param;
+      const int mod_id = 0;
+      bool rc = add_mod_rc_slice(mod_id, slices_len, RRM_Policy_Ratio_List->ran_param_val.lst);
+      if (!rc)
+        LOG_E(NR_MAC, "failed add/mod slices\n");
+    } else {
+      LOG_I(NR_MAC, "RRM_Policy_Ratio_List->ran_param_val.lst is NULL\n");
+    }
+#endif
+  } else {
+    assert(0!=0 && "unknown ric_style_type and ctrl_act_id\n");
+  }
+
 
 
   sm_ag_if_ans_t ans = {.type = CTRL_OUTCOME_SM_AG_IF_ANS_V0};

@@ -324,8 +324,13 @@ int nr_write_ce_dlsch_pdu(module_id_t module_idP,
 static uint32_t update_dlsch_buffer(frame_t frame, slot_t slot, NR_UE_info_t *UE)
 {
   NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
-  sched_ctrl->num_total_bytes = 0;
-  sched_ctrl->dl_pdus_total = 0;
+  
+  /* Initialize slice-based buffer tracking for network slicing support */
+  /* For non-slicing mode, use slice 0 as default */
+  sched_ctrl->last_sched_slice = 0;
+  sched_ctrl->sliceInfo[sched_ctrl->last_sched_slice].num_total_bytes = 0;
+  sched_ctrl->sliceInfo[sched_ctrl->last_sched_slice].dl_pdus_total = 0;
+  reset_nr_list(&sched_ctrl->sliceInfo[sched_ctrl->last_sched_slice].lcid);
 
   /* loop over all activated logical channels */
   for (int i = 0; i < seq_arr_size(&sched_ctrl->lc_config); ++i) {
@@ -343,19 +348,26 @@ static uint32_t update_dlsch_buffer(frame_t frame, slot_t slot, NR_UE_info_t *UE
     if (sched_ctrl->rlc_status[lcid].bytes_in_buffer == 0)
       continue;
 
-    sched_ctrl->dl_pdus_total += sched_ctrl->rlc_status[lcid].pdus_in_buffer;
-    sched_ctrl->num_total_bytes += sched_ctrl->rlc_status[lcid].bytes_in_buffer;
+    /* Accumulate buffer statistics in slice-based structure */
+    sched_ctrl->sliceInfo[sched_ctrl->last_sched_slice].dl_pdus_total += sched_ctrl->rlc_status[lcid].pdus_in_buffer;
+    sched_ctrl->sliceInfo[sched_ctrl->last_sched_slice].num_total_bytes += sched_ctrl->rlc_status[lcid].bytes_in_buffer;
+    add_nr_list(&sched_ctrl->sliceInfo[sched_ctrl->last_sched_slice].lcid, lcid);
     LOG_D(MAC,
-          "%4d.%2d UE %04x LCID %d status: %d bytes, total buffer %d bytes %d PDUs\n",
+          "[%4d.%2d] %s%d->DLSCH, RLC status for UE %04x: %d bytes in buffer, total DL buffer size = %d bytes, %d total "
+          "PDU bytes, %s TA command\n",
           frame,
           slot,
-          UE->rnti,
+          lcid < 4 ? "DCCH" : "DTCH",
           lcid,
+          UE->rnti,
           sched_ctrl->rlc_status[lcid].bytes_in_buffer,
-          sched_ctrl->num_total_bytes,
-          sched_ctrl->dl_pdus_total);
+          sched_ctrl->sliceInfo[sched_ctrl->last_sched_slice].num_total_bytes,
+          sched_ctrl->sliceInfo[sched_ctrl->last_sched_slice].dl_pdus_total,
+          sched_ctrl->ta_apply ? "send" : "do not send");
   }
-  return sched_ctrl->num_total_bytes;
+  
+  /* Return total bytes for backward compatibility */
+  return sched_ctrl->sliceInfo[sched_ctrl->last_sched_slice].num_total_bytes;
 }
 
 void finish_nr_dl_harq(NR_UE_sched_ctrl_t *sched_ctrl, int harq_pid)
@@ -625,25 +637,46 @@ static int comparator(const void *p, const void *q)
   return 0;
 }
 
-static void pf_dl(gNB_MAC_INST *mac,
-                  post_process_pdsch_t *pp_pdsch,
-                  NR_UE_info_t **UE_list,
-                  int max_num_ue,
-                  int num_beams,
-                  int n_rb_sched[num_beams])
+static void *nr_pf_dl_setup(void)
 {
-  frame_t frame = pp_pdsch->frame;
-  slot_t slot = pp_pdsch->slot;
+  void *data = malloc(MAX_MOBILES_PER_GNB * sizeof(float));
+  AssertFatal(data, "%s(): could not allocate data\n", __func__);
+  for (int i = 0; i < MAX_MOBILES_PER_GNB; i++)
+    ((float *)data)[i] = 0.0f;
+  return data;
+}
 
-  NR_ServingCellConfigCommon_t *scc=mac->common_channels[0].ServingCellConfigCommon;
+static void nr_pf_dl_unset(void **data)
+{
+  DevAssert(data);
+  if (*data)
+    free(*data);
+  *data = NULL;
+}
+
+static int nr_pf_dl(module_id_t module_id,
+                     frame_t frame,
+                     sub_frame_t slot,
+                     NR_UE_info_t **UE_list,
+                     int max_num_ue,
+                     int n_rb_sched,
+                     uint16_t *rballoc_mask,
+                     void *data)
+{
+  gNB_MAC_INST *mac = RC.nrmac[module_id];
+  NR_ServingCellConfigCommon_t *scc = mac->common_channels[0].ServingCellConfigCommon;
   // UEs that could be scheduled
   UEsched_t UE_sched[MAX_MOBILES_PER_GNB + 1] = {0};
+  int num_beams = mac->beam_info.beam_allocation ? mac->beam_info.beams_per_period : 1;
   int remainUEs[num_beams];
   for (int i = 0; i < num_beams; i++)
     remainUEs[i] = max_num_ue;
   int numUE = 0;
   int CC_id = 0;
   int slots_per_frame = mac->frame_structure.numb_slots_frame;
+  int n_rb_sched_array[num_beams];
+  for (int i = 0; i < num_beams; i++)
+    n_rb_sched_array[i] = n_rb_sched;
 
   /* Loop UE_info->list to check retransmission */
   UE_iterator(UE_list, UE) {
@@ -680,8 +713,11 @@ static void pf_dl(gNB_MAC_INST *mac,
       NR_beam_alloc_t beam = beam_allocation_procedure(&mac->beam_info, frame, slot, UE->UE_beam_index, slots_per_frame);
       bool sch_ret = beam.idx >= 0;
       /* Allocate retransmission */
-      if (sch_ret)
-        sch_ret = allocate_dl_retransmission(mac, pp_pdsch, &n_rb_sched[beam.idx], UE, beam.idx, harq_pid);
+      if (sch_ret) {
+        // Create minimal post_process_pdsch_t for retransmission
+        post_process_pdsch_t pp_pdsch_retx = { frame, slot, NULL, NULL };
+        sch_ret = allocate_dl_retransmission(mac, &pp_pdsch_retx, &n_rb_sched_array[beam.idx], UE, beam.idx, harq_pid);
+      }
       if (!sch_ret) {
         LOG_D(NR_MAC, "[UE %04x][%4d.%2d] DL retransmission could not be allocated\n", UE->rnti, frame, slot);
         reset_beam_status(&mac->beam_info, frame, slot, UE->UE_beam_index, slots_per_frame, beam.new_beam);
@@ -702,10 +738,10 @@ static void pf_dl(gNB_MAC_INST *mac,
         continue;
       }
 
-      update_dlsch_buffer(pp_pdsch->frame, pp_pdsch->slot, UE);
+      update_dlsch_buffer(frame, slot, UE);
 
       /* Check DL buffer and skip this UE if no bytes and no TA necessary */
-      if (sched_ctrl->num_total_bytes == 0 && sched_ctrl->ta_apply == false)
+      if (sched_ctrl->sliceInfo[sched_ctrl->last_sched_slice].num_total_bytes == 0 && sched_ctrl->ta_apply == false)
         continue;
 
       /* Calculate coeff */
@@ -777,7 +813,7 @@ static void pf_dl(gNB_MAC_INST *mac,
       iterator++;
       continue;
     }
-    if (remainUEs[beam.idx] == 0 || n_rb_sched[beam.idx] < min_rbSize) {
+    if (remainUEs[beam.idx] == 0 || n_rb_sched_array[beam.idx] < min_rbSize) {
       reset_beam_status(&mac->beam_info, frame, slot, iterator->UE->UE_beam_index, slots_per_frame, beam.new_beam);
       iterator++;
       continue;
@@ -800,18 +836,18 @@ static void pf_dl(gNB_MAC_INST *mac,
 
     const uint16_t slbitmap = SL_to_bitmap(tda_info.startSymbolIndex, tda_info.nrOfSymbols);
 
-    uint16_t *rballoc_mask = mac->common_channels[CC_id].vrb_map[beam.idx];
+    uint16_t *rballoc_mask_beam = mac->common_channels[CC_id].vrb_map[beam.idx];
     bwp_info_t bwp_info = get_pdsch_bwp_start_size(mac, iterator->UE);
     int rbStart = 0; // WRT BWP start
     int rbStop = bwp_info.bwpSize - 1;
     int bwp_start = bwp_info.bwpStart;
-    // Freq-demain allocation
-    while (rbStart < rbStop && (rballoc_mask[rbStart + bwp_start] & slbitmap))
+    // Freq-domain allocation
+    while (rbStart < rbStop && (rballoc_mask_beam[rbStart + bwp_start] & slbitmap))
       rbStart++;
 
     uint16_t max_rbSize = 1;
 
-    while (rbStart + max_rbSize <= rbStop && !(rballoc_mask[rbStart + max_rbSize + bwp_start] & slbitmap))
+    while (rbStart + max_rbSize <= rbStop && !(rballoc_mask_beam[rbStart + max_rbSize + bwp_start] & slbitmap))
       max_rbSize++;
 
     if (max_rbSize < min_rbSize) {
@@ -900,24 +936,42 @@ static void pf_dl(gNB_MAC_INST *mac,
                   sched_pdsch.nrOfLayers,
                   tda_info.nrOfSymbols,
                   sched_pdsch.dmrs_parms.N_PRB_DMRS * sched_pdsch.dmrs_parms.N_DMRS_SLOT,
-                  sched_ctrl->num_total_bytes + oh,
+                  sched_ctrl->sliceInfo[sched_ctrl->last_sched_slice].num_total_bytes + oh,
                   min_rbSize,
                   max_rbSize,
                   &sched_pdsch.tb_size,
                   &sched_pdsch.rbSize);
 
-    post_process_dlsch(mac, pp_pdsch, iterator->UE, &sched_pdsch);
+    // Create post_process_pdsch_t for post_process_dlsch call
+    post_process_pdsch_t pp_pdsch = { frame, slot, NULL, NULL };
+    post_process_dlsch(mac, &pp_pdsch, iterator->UE, &sched_pdsch);
 
     /* transmissions: directly allocate */
-    n_rb_sched[beam.idx] -= sched_pdsch.rbSize;
+    n_rb_sched_array[beam.idx] -= sched_pdsch.rbSize;
 
     for (int rb = bwp_start; rb < sched_pdsch.rbSize; rb++)
-      rballoc_mask[rb + sched_pdsch.rbStart] |= slbitmap;
+      rballoc_mask_beam[rb + sched_pdsch.rbStart] |= slbitmap;
 
     remainUEs[beam.idx]--;
     iterator++;
   }
+  
+  // Return the minimum remaining RBs across all beams
+  int min_rb_remaining = n_rb_sched;
+  for (int i = 0; i < num_beams; i++) {
+    if (n_rb_sched_array[i] < min_rb_remaining)
+      min_rb_remaining = n_rb_sched_array[i];
+  }
+  return min_rb_remaining;
 }
+
+nr_dl_sched_algo_t nr_proportional_fair_wbcqi_dl = {
+  .name  = "nr_proportional_fair_wbcqi_dl",
+  .setup = nr_pf_dl_setup,
+  .unset = nr_pf_dl_unset,
+  .run   = nr_pf_dl,
+  .data  = NULL
+};
 
 static void nr_dlsch_preprocessor(gNB_MAC_INST *mac, post_process_pdsch_t *pp_pdsch)
 {
@@ -940,12 +994,37 @@ static void nr_dlsch_preprocessor(gNB_MAC_INST *mac, post_process_pdsch_t *pp_pd
   max_sched_ues = min(max_sched_ues, MAX_DCI_CORESET);
 
   /* proportional fair scheduling algorithm */
-  pf_dl(mac, pp_pdsch, UE_info->connected_ue_list, max_sched_ues, num_beams, n_rb_sched);
+  // Use new algorithm interface if available
+  if (mac->pre_processor_dl.dl_algo.run) {
+    // New interface: use algorithm structure
+    uint16_t *rballoc_mask = mac->common_channels[0].vrb_map[0]; // Use first beam's mask
+    mac->pre_processor_dl.dl_algo.run(mac->Mod_id,
+                                      pp_pdsch->frame,
+                                      pp_pdsch->slot,
+                                      UE_info->connected_ue_list,
+                                      max_sched_ues,
+                                      n_rb_sched[0],
+                                      rballoc_mask,
+                                      mac->pre_processor_dl.dl_algo.data);
+  } else {
+    // Fallback: should not happen if properly initialized
+    LOG_E(NR_MAC, "Algorithm not initialized in pre_processor_dl\n");
+  }
 }
 
 nr_pp_impl_dl nr_init_dlsch_preprocessor(int CC_id)
 {
   return nr_dlsch_preprocessor;
+}
+
+nr_pp_impl_param_dl_t nr_init_fr1_dlsch_preprocessor(int CC_id) {
+  /* during initialization: no mutex needed */
+  nr_pp_impl_param_dl_t impl;
+  memset(&impl, 0, sizeof(impl));
+  impl.dl = nr_fr1_dlsch_preprocessor;
+  impl.dl_algo = nr_proportional_fair_wbcqi_dl;
+  impl.dl_algo.data = impl.dl_algo.setup();
+  return impl;
 }
 
 nfapi_nr_dl_tti_pdsch_pdu_rel15_t *prepare_pdsch_pdu(nfapi_nr_dl_tti_request_pdu_t *dl_tti_pdsch_pdu,
@@ -1267,17 +1346,17 @@ void post_process_dlsch(gNB_MAC_INST *nr_mac, post_process_pdsch_t *pdsch, NR_UE
     start_meas(&nr_mac->rlc_data_req);
     int sdus = 0;
 
-    if (sched_ctrl->num_total_bytes > 0) {
-      /* loop over all activated logical channels */
-      for (int i = 0; i < seq_arr_size(&sched_ctrl->lc_config); ++i) {
-        const nr_lc_config_t *c = seq_arr_at(&sched_ctrl->lc_config, i);
-        const int lcid = c->lcid;
+    if (sched_ctrl->sliceInfo[sched_ctrl->last_sched_slice].num_total_bytes > 0) {
+      /* loop over all activated logical channels in this slice */
+      NR_List_Iterator(&sched_ctrl->sliceInfo[sched_ctrl->last_sched_slice].lcid, lcidP)
+      {
+        const int lcid = *lcidP;
 
         if (sched_ctrl->rlc_status[lcid].bytes_in_buffer == 0)
-          continue; // no data for this LC        tbs_size_t len = 0;
+          continue; // no data for this LC
 
-        int lcid_bytes=0;
-        while (bufEnd-buf > sizeof(NR_MAC_SUBHEADER_LONG) + 1 ) {
+        int lcid_bytes = 0;
+        while (bufEnd - buf > sizeof(NR_MAC_SUBHEADER_LONG) + 1) {
           // we do not know how much data we will get from RLC, i.e., whether it
           // will be longer than 256B or not. Therefore, reserve space for long header, then
           // fetch data, then fill real length
@@ -1285,7 +1364,7 @@ void post_process_dlsch(gNB_MAC_INST *nr_mac, post_process_pdsch_t *pdsch, NR_UE
           /* limit requested number of bytes to what preprocessor specified, or
            * such that TBS is full */
           const rlc_buffer_occupancy_t ndata = min(sched_ctrl->rlc_status[lcid].bytes_in_buffer,
-                                                   bufEnd-buf-sizeof(NR_MAC_SUBHEADER_LONG));
+                                                   bufEnd - buf - sizeof(NR_MAC_SUBHEADER_LONG));
           tbs_size_t len = nr_mac_rlc_data_req(module_id,
                                                rnti,
                                                true,

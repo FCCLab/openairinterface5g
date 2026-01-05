@@ -837,7 +837,7 @@ int main(int argc, char **argv)
   nr_mac_add_test_ue(RC.nrmac[0], rnti, secondaryCellGroup);
   // reset preprocessor to the one of DLSIM after it has been set during
   // nr_mac_config_scc()
-  gNB_mac->pre_processor_dl = nr_dlsim_preprocessor;
+  gNB_mac->pre_processor_dl.dl = nr_dlsim_preprocessor;
   phy_init_nr_gNB(gNB);
   N_RB_DL = gNB->frame_parms.N_RB_DL;
   NR_UE_info_t *UE_info = RC.nrmac[0]->UE_info.connected_ue_list[0];

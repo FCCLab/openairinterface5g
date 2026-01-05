@@ -49,6 +49,7 @@
 #define NR_NB_SC_PER_RB 12
 #define NR_MAX_NUM_LCID 32
 #define NR_MAX_NUM_QFI 64
+#define NR_MAX_NUM_SLICES 10
 #define RNTI_NAMES /* see 38.321  Table 7.1-2  RNTI usage */      \
   R(TYPE_C_RNTI_) /* Cell RNTI */                                  \
   R(TYPE_CS_RNTI_) /* Configured Scheduling RNTI */                \
