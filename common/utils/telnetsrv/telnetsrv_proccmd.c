@@ -57,6 +57,10 @@
 #include "common/config/config_userapi.h"
 #include "openair1/PHY/phy_extern.h"
 #include "telnetsrv_proccmd.h"
+#include "openair2/LAYER2/NR_MAC_gNB/nr_mac_gNB.h"
+#include "openair2/LAYER2/NR_MAC_gNB/mac_proto.h"
+#include "openair2/LAYER2/NR_MAC_gNB/slicing/nr_slicing.h"
+#include "openair2/F1AP/f1ap_ids.h"
 
 void decode_procstat(char *record, int debug, telnet_printfunc_t prnt, webdatadef_t *tdata)
 {
@@ -427,6 +431,113 @@ int proccmd_show(char *buf, int debug, telnet_printfunc_t prnt)
        prnt("\n               module  debug dumpfile\n");
        int i = 0;
        FOREACH_FLAG(FLAG_PRINT2_DEBUG_DUMP);
+   }
+   if (strcasestr(buf,"ues") != NULL) {
+       // Show connected UEs for gNB
+       if (RC.nrmac != NULL && RC.nrmac[0] != NULL) {
+           gNB_MAC_INST *mac = RC.nrmac[0];
+           NR_SCHED_LOCK(&mac->sched_lock);
+           NR_UEs_t *UE_info = &mac->UE_info;
+           
+           UE_iterator(UE_info->connected_ue_list, UE) {
+               if (UE != NULL) {
+                   NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
+                   NR_mac_stats_t *stats = &UE->mac_stats;
+                   const int avg_rsrp = stats->num_rsrp_meas > 0 ? stats->cumul_rsrp / stats->num_rsrp_meas : 0;
+                   
+                   // UE header with RNTI
+                   prnt("UE 0x%04x:\n", UE->rnti);
+                   
+                   // CU-UE-ID, in-sync, PH, PCMAX, RSRP
+                   prnt("  UE RNTI %04x CU-UE-ID ", UE->rnti);
+                   if (du_exists_f1_ue_data(UE->rnti)) {
+                       f1_ue_data_t ued = du_get_f1_ue_data(UE->rnti);
+                       prnt("%d", ued.secondary_ue);
+                   } else {
+                       prnt("(none)");
+                   }
+                   
+                   bool in_sync = !sched_ctrl->ul_failure;
+                   prnt(" %s PH %d dB PCMAX %d dBm", 
+                        in_sync ? "in-sync" : "out-of-sync",
+                        sched_ctrl->ph,
+                        sched_ctrl->pcmax);
+                   
+                   if (stats->num_rsrp_meas) {
+                       prnt(", average RSRP %d (%d meas)", avg_rsrp, stats->num_rsrp_meas);
+                   }
+                   prnt("\n");
+                   
+                   // DLSCH statistics
+                   prnt("  UE %04x: dlsch_rounds ", UE->rnti);
+                   prnt("%"PRIu64, stats->dl.rounds[0]);
+                   for (int i = 1; i < mac->dl_bler.harq_round_max; i++) {
+                       prnt("/%"PRIu64, stats->dl.rounds[i]);
+                   }
+                   prnt(", dlsch_errors %"PRIu64", pucch0_DTX %d, BLER %.5f MCS (%d) %d CCE fail %d\n",
+                        stats->dl.errors,
+                        stats->pucch0_DTX,
+                        sched_ctrl->dl_bler_stats.bler,
+                        UE->current_DL_BWP.mcsTableIdx,
+                        sched_ctrl->dl_bler_stats.mcs,
+                        sched_ctrl->dl_cce_fail);
+                   
+                   // ULSCH statistics
+                   prnt("  UE %04x: ulsch_rounds ", UE->rnti);
+                   prnt("%"PRIu64, stats->ul.rounds[0]);
+                   for (int i = 1; i < mac->ul_bler.harq_round_max; i++) {
+                       prnt("/%"PRIu64, stats->ul.rounds[i]);
+                   }
+                   prnt(", ulsch_errors %"PRIu64", ulsch_DTX %d, BLER %.5f MCS (%d) %d (Qm %d deltaMCS %d dB) NPRB %d  SNR %d.%d dB CCE fail %d\n",
+                        stats->ul.errors,
+                        stats->ulsch_DTX,
+                        sched_ctrl->ul_bler_stats.bler,
+                        UE->current_UL_BWP.mcs_table,
+                        sched_ctrl->ul_bler_stats.mcs,
+                        nr_get_Qm_ul(sched_ctrl->ul_bler_stats.mcs, UE->current_UL_BWP.mcs_table),
+                        UE->mac_stats.deltaMCS,
+                        UE->mac_stats.NPRB,
+                        sched_ctrl->pusch_snrx10 / 10,
+                        sched_ctrl->pusch_snrx10 % 10,
+                        sched_ctrl->ul_cce_fail);
+                   
+                   // MAC TX/RX bytes
+                   prnt("  UE %04x: MAC:    TX %14"PRIu64" RX %14"PRIu64" bytes\n",
+                        UE->rnti, stats->dl.total_bytes, stats->ul.total_bytes);
+                   
+                   // Per-LCID TX/RX bytes
+                   for (int i = 0; i < seq_arr_size(&sched_ctrl->lc_config); i++) {
+                       const nr_lc_config_t *c = seq_arr_at(&sched_ctrl->lc_config, i);
+                       prnt("  UE %04x: LCID %d: TX %14"PRIu64" RX %14"PRIu64" bytes\n",
+                            UE->rnti,
+                            c->lcid,
+                            stats->dl.lc_bytes[c->lcid],
+                            stats->ul.lc_bytes[c->lcid]);
+                   }
+                   
+                   // Get NSSAI from logical channels (DRBs) - these come from PDU resource setup request
+                   for (int i = 0; i < seq_arr_size(&sched_ctrl->lc_config); i++) {
+                      const nr_lc_config_t *c = seq_arr_at(&sched_ctrl->lc_config, i);
+                      const uint8_t sst = c->nssai.sst;
+                      const uint32_t sd = c->nssai.sd;
+                        
+                      prnt("  UE %04x: LCID %2d | Slice %2d | SST: %d | SD: 0x%06x | DL bytes: %-10d | DL PDUs: %-6d\n",
+                           UE->rnti,
+                           c->lcid,
+                           i,
+                           sst,
+                           sd,
+                           sched_ctrl->sliceInfo[i].num_total_bytes,
+                           sched_ctrl->sliceInfo[i].dl_pdus_total);
+                   }
+                   prnt("\n");
+               }
+           }
+           
+           NR_SCHED_UNLOCK(&mac->sched_lock);
+       } else {
+           prnt("gNB MAC not available\n");
+       }
    }
    if (strcasestr(buf,"config") != NULL) {
        prnt("Command line arguments:\n");
