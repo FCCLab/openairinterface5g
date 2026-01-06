@@ -3819,7 +3819,8 @@ bool prepare_initial_ul_rrc_message(gNB_MAC_INST *mac, NR_UE_info_t *UE)
   nr_pp_impl_param_dl_t *dl = &mac->pre_processor_dl;
   if (dl->slices) {
     nssai_t *default_nssai = &dl->slices->s[0]->nssai;
-    UE->UE_sched_ctrl.dl_lc_nssai[lcid] = *default_nssai;
+    nr_lc_config_t lc_cfg = {.lcid = lcid, .nssai = *default_nssai, .suspended = false, .priority = 0};
+    nr_mac_add_lcid(&UE->UE_sched_ctrl, &lc_cfg);
     LOG_I(NR_MAC, "Setting NSSAI sst: %d, sd: %d for SRB: %ld\n", default_nssai->sst, default_nssai->sd, lcid);
 
     dl->add_UE(dl->slices, UE);

@@ -897,10 +897,10 @@ typedef struct {
   void *data;
 } nr_dl_sched_algo_t;
 
-typedef void (*nr_pp_impl_dl)(module_id_t mod_id,
+typedef void (*nr_pp_impl_dl_slice)(module_id_t mod_id,
                               frame_t frame,
                               sub_frame_t slot);
-typedef bool (*nr_pp_impl_ul)(module_id_t mod_id,
+typedef bool (*nr_pp_impl_ul_slice)(module_id_t mod_id,
                               frame_t frame,
                               sub_frame_t slot);
 
@@ -940,6 +940,9 @@ typedef struct {
   void (*destroy)(struct nr_slice_info_s **s);
 
   struct nr_slice_info_s *slices;
+  
+  /// Current post_process_pdsch_t structure for scheduler algorithms
+  post_process_pdsch_t *current_pp_pdsch;
 } nr_pp_impl_param_dl_t;
 
 typedef struct f1_config_t {

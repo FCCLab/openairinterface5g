@@ -219,7 +219,22 @@ In addition, we support custom Service Models for L2/L3. Please find the KPIs fo
 
 All use plain encoding, i.e., no ASN.1, but write the binary data into network messages.
 
-There exist two additional custom Service Models, SLICE and TC (traffic control), but they are not supported in OAI RAN. They can only be tested with [E2 agent emulators](https://gitlab.eurecom.fr/mosaic5g/flexric#4-deployment) within FlexRIC framework.
+### 3.2.1 E2SM-SLICE
+
+We support a custom Slice Service Model for dynamic network slice management. Uses plain encoding.
+
+From the Slice SM specification, we implemented:
+  * CONTROL Service - All three control message types:
+    * `SLICE_CTRL_SM_V0_ADD` - Add or modify slice configuration
+    * `SLICE_CTRL_SM_V0_DEL` - Delete slices
+    * `SLICE_CTRL_SM_V0_UE_SLICE_ASSOC` - Associate UEs with slices
+  * Integration with MAC layer NVS slicing algorithm
+  * Support for resource-based (NVS_RES) and rate-based (NVS_RATE) slices
+  * Automatic UE association based on NSSAI matching
+
+For detailed documentation, see the [Network Slicing documentation](../../../docs-oai-ran/Architecture/Network_Slicing_Overview.md).
+
+There exists an additional custom Service Model, TC (traffic control), but it is not supported in OAI RAN. It can only be tested with [E2 agent emulators](https://gitlab.eurecom.fr/mosaic5g/flexric#4-deployment) within FlexRIC framework.
 
 # 4. Start the process
 At this point, we assume the 5G Core Network is already running in the background. For more information, please follow the [5GCN tutorial](../../doc/NR_SA_Tutorial_OAI_CN5G.md).

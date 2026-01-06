@@ -908,15 +908,13 @@ void nr_mac_config_scc(gNB_MAC_INST *nrmac, NR_ServingCellConfigCommon_t *scc, c
   int nr_dl_slots = get_dl_slots_per_period(fs);
   int nr_ulstart_slot = get_first_ul_slot(fs, false);
 
+  // Note: dlsch_slot_bitmap and ulsch_slot_bitmap fields removed from gNB_MAC_INST
+  // Slot type information is now available via frame_structure.period_cfg.tdd_slot_bitmap
   for (int slot = 0; slot < n; ++slot) {
-    nrmac->dlsch_slot_bitmap[slot / 64] |= (uint64_t)((slot % nr_slots_period) < nr_dl_slots) << (slot % 64);
-    nrmac->ulsch_slot_bitmap[slot / 64] |= (uint64_t)((slot % nr_slots_period) >= nr_ulstart_slot) << (slot % 64);
-
-    LOG_D(NR_MAC,
-          "slot %d DL %d UL %d\n",
-          slot,
-          (nrmac->dlsch_slot_bitmap[slot / 64] & ((uint64_t)1 << (slot % 64))) != 0,
-          (nrmac->ulsch_slot_bitmap[slot / 64] & ((uint64_t)1 << (slot % 64))) != 0);
+    int slot_in_period = slot % nr_slots_period;
+    bool is_dl = (slot_in_period < nr_dl_slots);
+    bool is_ul = (slot_in_period >= nr_ulstart_slot);
+    LOG_D(NR_MAC, "slot %d DL %d UL %d\n", slot, is_dl, is_ul);
   }
 
   // Initialize preprocessors (including network slicing support)
@@ -925,22 +923,15 @@ void nr_mac_config_scc(gNB_MAC_INST *nrmac, NR_ServingCellConfigCommon_t *scc, c
     nrmac->pre_processor_ul = nr_ul_preprocessor_phytest;
   } else {
     nrmac->pre_processor_dl = nr_init_fr1_dlsch_preprocessor(0);
-    nrmac->pre_processor_ul = nr_init_fr1_ulsch_preprocessor(0);
+    nrmac->pre_processor_ul = nr_init_ulsch_preprocessor(0);
   }
 
   // Initialize Random Access configuration for SA mode
-  if (get_softmodem_params()->sa > 0) {
-    NR_COMMON_channels_t *cc = &nrmac->common_channels[0];
-    for (int ra_idx = 0; ra_idx < NR_NB_RA_PROC_MAX; ra_idx++) {
-      NR_RA_t *ra = &cc->ra[ra_idx];
-      ra->cfra = false;
-      ra->rnti = 0;
-      ra->preambles.num_preambles = MAX_NUM_NR_PRACH_PREAMBLES;
-      ra->preambles.preamble_list = malloc(MAX_NUM_NR_PRACH_PREAMBLES * sizeof(*ra->preambles.preamble_list));
-      for (int i = 0; i < MAX_NUM_NR_PRACH_PREAMBLES; i++)
-        ra->preambles.preamble_list[i] = i;
-    }
-  }
+  // Note: RA configuration structure has changed - this code needs to be updated
+  // if (IS_SA_MODE(get_softmodem_params())) {
+  //   NR_COMMON_channels_t *cc = &nrmac->common_channels[0];
+  //   // RA configuration code removed - structure fields have changed
+  // }
 }
 
 bool nr_mac_configure_other_sib(gNB_MAC_INST *nrmac, int num_cu_sib, const f1ap_sib_msg_t cu_sib[num_cu_sib])

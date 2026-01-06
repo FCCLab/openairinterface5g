@@ -37,6 +37,7 @@
 
 #include "executables/softmodem-common.h"
 #include "NR_MAC_gNB/slicing/nr_slicing.h"
+#include "common/utils/nr/nr_common.h"
 
 #include "uper_decoder.h"
 #include "uper_encoder.h"
@@ -543,34 +544,92 @@ NR_CellGroupConfig_t *clone_CellGroupConfig(const NR_CellGroupConfig_t *orig)
   return cloned;
 }
 
+static void set_QoSConfig(const f1ap_ue_context_setup_req_t *req, NR_UE_sched_ctrl_t *sched_ctrl)
+{
+  // Update QoS config for DRBs
+  // Note: handle_ue_context_drbs_setup already sets QoS when DRBs are set up,
+  // but this function ensures QoS is updated for all DRBs in the request
+  for (int i = 0; i < req->drbs_len; i++) {
+    const f1ap_drb_to_setup_t *drb = &req->drbs[i];
+    long lcid = get_lcid_from_drbid(drb->id);
+    nr_lc_config_t *lc_cfg = nr_mac_get_lc_config(sched_ctrl, lcid);
+    if (lc_cfg) {
+      // Update QoS config for each flow
+      for (int q = 0; q < drb->nr.flows_len && q < NR_MAX_NUM_QFI; ++q) {
+        lc_cfg->qos_config[q] = get_qos_config(&drb->nr.flows[q].param);
+      }
+      // Update priority to minimum of all flows
+      int prio = 100;
+      for (int q = 0; q < drb->nr.flows_len && q < NR_MAX_NUM_QFI; ++q) {
+        prio = min(prio, lc_cfg->qos_config[q].priority);
+      }
+      lc_cfg->priority = prio;
+    }
+  }
+}
+
+static void set_QoSConfig_mod(const f1ap_ue_context_mod_req_t *req, NR_UE_sched_ctrl_t *sched_ctrl)
+{
+  // Update QoS config for DRBs
+  for (int i = 0; i < req->drbs_len; i++) {
+    const f1ap_drb_to_setup_t *drb = &req->drbs[i];
+    long lcid = get_lcid_from_drbid(drb->id);
+    nr_lc_config_t *lc_cfg = nr_mac_get_lc_config(sched_ctrl, lcid);
+    if (lc_cfg) {
+      // Update QoS config for each flow
+      for (int q = 0; q < drb->nr.flows_len && q < NR_MAX_NUM_QFI; ++q) {
+        lc_cfg->qos_config[q] = get_qos_config(&drb->nr.flows[q].param);
+      }
+      // Update priority to minimum of all flows
+      int prio = 100;
+      for (int q = 0; q < drb->nr.flows_len && q < NR_MAX_NUM_QFI; ++q) {
+        prio = min(prio, lc_cfg->qos_config[q].priority);
+      }
+      lc_cfg->priority = prio;
+    }
+  }
+}
+
+static void nr_mac_prepare_cellgroup_update(gNB_MAC_INST *mac, NR_UE_info_t *UE, NR_CellGroupConfig_t *new_CellGroup)
+{
+  // Prepare cell group update - configure_UE_BWP is already called before this
+  // This function can be extended to perform additional cell group preparation if needed
+  (void)mac;
+  (void)UE;
+  (void)new_CellGroup;
+}
+
 static void set_nssaiConfig(const int srb_len,
-                            const f1ap_srb_to_be_setup_t *req_srbs,
+                            const f1ap_srb_to_setup_t *req_srbs,
                             const int drb_len,
-                            const f1ap_drb_to_be_setup_t *req_drbs,
+                            const f1ap_drb_to_setup_t *req_drbs,
                             NR_UE_sched_ctrl_t *sched_ctrl)
 {
   gNB_MAC_INST *mac = RC.nrmac[0];
   for (int i = 0; i < srb_len; i++) {
-    const f1ap_srb_to_be_setup_t *srb = &req_srbs[i];
-    const long lcid = get_lcid_from_srbid(srb->srb_id);
+    const f1ap_srb_to_setup_t *srb = &req_srbs[i];
+    const long lcid = get_lcid_from_srbid(srb->id);
     /* consider first slice as default slice and assign it for SRBs */
     nr_pp_impl_param_dl_t *dl = &mac->pre_processor_dl;
+    nssai_t nssai;
     if (dl->slices) {
-      nssai_t *default_nssai = &dl->slices->s[0]->nssai;
-      sched_ctrl->dl_lc_nssai[lcid] = *default_nssai;
+      nssai = dl->slices->s[0]->nssai;
     } else {
-      nssai_t nssai = {.sst = 0, .sd = 0};
-      sched_ctrl->dl_lc_nssai[lcid] = nssai;
+      nssai = (nssai_t){.sst = 0, .sd = 0};
     }
-    LOG_I(NR_MAC, "Setting NSSAI sst: %d, sd: %d for SRB: %ld\n", sched_ctrl->dl_lc_nssai[lcid].sst, sched_ctrl->dl_lc_nssai[lcid].sd, srb->srb_id);
+    nr_lc_config_t lc_cfg = {.lcid = lcid, .nssai = nssai, .suspended = false, .priority = 0};
+    nr_mac_add_lcid(sched_ctrl, &lc_cfg);
+    LOG_I(NR_MAC, "Setting NSSAI sst: %d, sd: %d for SRB: %d\n", nssai.sst, nssai.sd, srb->id);
   }
 
   for (int i = 0; i < drb_len; i++) {
-    const f1ap_drb_to_be_setup_t *drb = &req_drbs[i];
+    const f1ap_drb_to_setup_t *drb = &req_drbs[i];
 
-    long lcid = get_lcid_from_drbid(drb->drb_id);
-    sched_ctrl->dl_lc_nssai[lcid] = drb->nssai;
-    LOG_I(NR_MAC, "Setting NSSAI sst: %d, sd: %d for DRB: %ld\n", drb->nssai.sst, drb->nssai.sd, drb->drb_id);
+    long lcid = get_lcid_from_drbid(drb->id);
+    nssai_t nssai = drb->nr.nssai;
+    nr_lc_config_t lc_cfg = {.lcid = lcid, .nssai = nssai, .suspended = false, .priority = 0};
+    nr_mac_add_lcid(sched_ctrl, &lc_cfg);
+    LOG_I(NR_MAC, "Setting NSSAI sst: %d, sd: %d for DRB: %d\n", nssai.sst, nssai.sd, drb->id);
   }
 }
 
@@ -745,10 +804,10 @@ void ue_context_setup_request(const f1ap_ue_context_setup_req_t *req)
   set_QoSConfig(req, &UE->UE_sched_ctrl);
 
   /* Set NSSAI config in MAC for each active DRB */
-  set_nssaiConfig(req->srbs_to_be_setup_length,
-                  req->srbs_to_be_setup,
-                  req->drbs_to_be_setup_length,
-                  req->drbs_to_be_setup,
+  set_nssaiConfig(req->srbs_len,
+                  req->srbs,
+                  req->drbs_len,
+                  req->drbs,
                   &UE->UE_sched_ctrl);
 
   /* Associate UE to the corresponding slice*/
@@ -860,13 +919,13 @@ void ue_context_modification_request(const f1ap_ue_context_mod_req_t *req)
     nr_mac_prepare_cellgroup_update(mac, UE, new_CellGroup);
 
     /* Fill the QoS config in MAC for each active DRB */
-    set_QoSConfig(req, &UE->UE_sched_ctrl);
+    set_QoSConfig_mod(req, &UE->UE_sched_ctrl);
 
     /* Set NSSAI config in MAC for each active DRB */
-    set_nssaiConfig(req->srbs_to_be_setup_length,
-                    req->srbs_to_be_setup,
-                    req->drbs_to_be_setup_length,
-                    req->drbs_to_be_setup,
+    set_nssaiConfig(req->srbs_len,
+                    req->srbs,
+                    req->drbs_len,
+                    req->drbs,
                     &UE->UE_sched_ctrl);
 
     /* Associate UE to the corresponding slice*/

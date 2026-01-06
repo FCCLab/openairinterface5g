@@ -35,11 +35,11 @@
 #include "common/utils/LOG/log.h"
 #include "common/utils/nr/nr_common.h"
 
-#include "NR_MAC_COMMON/nr_mac_extern.h"
 #include "NR_MAC_COMMON/nr_mac.h"
 #include "openair2/LAYER2/NR_MAC_gNB/nr_mac_gNB.h"
 #include "openair2/LAYER2/NR_MAC_gNB/mac_proto.h"
 #include "openair2/LAYER2/RLC/rlc.h"
+#include "openair2/LAYER2/nr_rlc/nr_rlc_oai_api.h"
 
 #include "nr_slicing.h"
 #include "nr_slicing_internal.h"
@@ -96,9 +96,10 @@ void nr_slicing_add_UE(nr_slice_info_t *si, NR_UE_info_t *new_ue)
   reset_nr_list(&new_ue->dl_id);
   for (int i = 0; i < si->num; ++i) {
     reset_nr_list(&new_ue->UE_sched_ctrl.sliceInfo[i].lcid);
-    for (int l = 0; l < sched_ctrl->dl_lc_num; ++l) {
-      lcid = sched_ctrl->dl_lc_ids[l];
-      if (nssai_matches(sched_ctrl->dl_lc_nssai[lcid], si->s[i]->nssai.sst, &si->s[i]->nssai.sd)) {
+    for (size_t l = 0; l < seq_arr_size(&sched_ctrl->lc_config); ++l) {
+      const nr_lc_config_t *lc = seq_arr_at(&sched_ctrl->lc_config, l);
+      lcid = lc->lcid;
+      if (nssai_matches(lc->nssai, si->s[i]->nssai.sst, &si->s[i]->nssai.sd)) {
 
         add_nr_list(&new_ue->UE_sched_ctrl.sliceInfo[i].lcid, lcid);
         LOG_D(NR_MAC, "add lcid %ld to slice idx %d\n", lcid, i);
@@ -108,6 +109,7 @@ void nr_slicing_add_UE(nr_slice_info_t *si, NR_UE_info_t *new_ue)
           LOG_D(NR_MAC, "add dl id %d to new UE rnti %x\n", si->s[i]->id, new_ue->rnti);
         }
 
+        NR_UE_info_t *UE = NULL;
         UE_iterator(si->s[i]->UE_list, UE) {
           if (UE->rnti == new_ue->rnti)
             break;
@@ -126,7 +128,7 @@ void nr_slicing_add_UE(nr_slice_info_t *si, NR_UE_info_t *new_ue)
         }
       } else {
         LOG_D(NR_MAC, "cannot find matched slice (lcid %ld <sst %d sd %d>, slice idx %d <sst %d sd %d>), do nothing for UE rnti 0x%04x\n",
-              lcid, sched_ctrl->dl_lc_nssai[lcid].sst, sched_ctrl->dl_lc_nssai[lcid].sd, i, si->s[i]->nssai.sst, si->s[i]->nssai.sd, new_ue->rnti);
+              lcid, lc->nssai.sst, lc->nssai.sd, i, si->s[i]->nssai.sst, si->s[i]->nssai.sd, new_ue->rnti);
       }
     }
   }
@@ -382,13 +384,7 @@ static void nr_store_dlsch_buffer(module_id_t module_id, frame_t frame, sub_fram
         const int lcid = *lcidP;
         const uint16_t rnti = UE->rnti;
         LOG_D(NR_MAC, "In %s: UE %x: LCID %d\n", __FUNCTION__, rnti, lcid);
-        if (lcid == DL_SCH_LCID_DTCH && sched_ctrl->rrc_processing_timer > 0) {
-          continue;
-        }
-        start_meas(&RC.nrmac[module_id]->rlc_status_ind);
-        sched_ctrl->rlc_status[lcid] =
-            mac_rlc_status_ind(module_id, rnti, module_id, frame, slot, ENB_FLAG_YES, MBMS_FLAG_NO, lcid, 0, 0);
-        stop_meas(&RC.nrmac[module_id]->rlc_status_ind);
+        sched_ctrl->rlc_status[lcid] = nr_mac_rlc_status_ind(rnti, frame, lcid);
 
         if (sched_ctrl->rlc_status[lcid].bytes_in_buffer == 0)
           continue;
@@ -420,7 +416,7 @@ void nvs_nr_dl(module_id_t mod_id,
 {
   gNB_MAC_INST *nrmac = RC.nrmac[mod_id];
   NR_UEs_t *UE_info = &nrmac->UE_info;
-  if (UE_info->list[0] == NULL) /* no UEs at all -> don't bother */
+  if (UE_info->connected_ue_list[0] == NULL) /* no UEs at all -> don't bother */
     return;
 
   /* check if we are supposed to schedule something */
@@ -428,10 +424,10 @@ void nvs_nr_dl(module_id_t mod_id,
   const int CC_id = 0;
   /* Get bwpSize and TDAfrom the first UE */
   /* This is temporary and it assumes all UEs have the same BWP and TDA*/
-  NR_UE_info_t *first_UE=UE_info->list[0];
+  NR_UE_info_t *first_UE=UE_info->connected_ue_list[0];
   NR_UE_sched_ctrl_t *sched_ctrl = &first_UE->UE_sched_ctrl;
   NR_UE_DL_BWP_t *current_BWP = &first_UE->current_DL_BWP;
-  const int tda = get_dl_tda(RC.nrmac[mod_id], scc, slot);
+  const int tda = get_dl_tda(RC.nrmac[mod_id], slot);
   int startSymbolIndex, nrOfSymbols;
   const int coresetid = sched_ctrl->coreset->controlResourceSetId;
   const struct NR_PDSCH_TimeDomainResourceAllocationList *tdaList = get_dl_tdalist(current_BWP, coresetid, sched_ctrl->search_space->searchSpaceType->present, TYPE_C_RNTI_);
@@ -443,7 +439,7 @@ void nvs_nr_dl(module_id_t mod_id,
   const uint16_t BWPStart = current_BWP->BWPStart;
 
   const uint16_t slbitmap = SL_to_bitmap(startSymbolIndex, nrOfSymbols);
-  uint16_t *vrb_map = RC.nrmac[mod_id]->common_channels[CC_id].vrb_map;
+  uint16_t *vrb_map = RC.nrmac[mod_id]->common_channels[CC_id].vrb_map[0]; // Use first beam's map
   uint16_t rballoc_mask[bwpSize];
   int n_rb_sched = 0;
 
@@ -592,7 +588,7 @@ nr_pp_impl_param_dl_t nvs_nr_dl_init(module_id_t mod_id)
   nvs.get_UE_idx = nr_slicing_get_UE_idx;
   nvs.addmod_slice = addmod_nvs_nr_slice_dl;
   nvs.remove_slice = remove_nvs_nr_slice_dl;
-  nvs.dl = nvs_nr_dl;
+  nvs.dl = NULL; // nvs_nr_dl is called separately, not as a post-processor
   // current DL algo becomes default scheduler
   nvs.dl_algo = *algo;
   nvs.destroy = nvs_nr_destroy;

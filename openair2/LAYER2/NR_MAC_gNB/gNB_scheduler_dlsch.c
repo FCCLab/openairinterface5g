@@ -943,8 +943,14 @@ static int nr_pf_dl(module_id_t module_id,
                   &sched_pdsch.rbSize);
 
     // Create post_process_pdsch_t for post_process_dlsch call
-    post_process_pdsch_t pp_pdsch = { frame, slot, NULL, NULL };
-    post_process_dlsch(mac, &pp_pdsch, iterator->UE, &sched_pdsch);
+    // Use the current pp_pdsch from preprocessor if available
+    post_process_pdsch_t *pp_pdsch = mac->pre_processor_dl.current_pp_pdsch;
+    if (!pp_pdsch || !pp_pdsch->dl_req) {
+      LOG_E(NR_MAC, "[%d.%d] ERROR: current_pp_pdsch is NULL or dl_req is NULL, cannot call post_process_dlsch\n", frame, slot);
+      iterator++;
+      continue;
+    }
+    post_process_dlsch(mac, pp_pdsch, iterator->UE, &sched_pdsch);
 
     /* transmissions: directly allocate */
     n_rb_sched_array[beam.idx] -= sched_pdsch.rbSize;
@@ -993,6 +999,9 @@ static void nr_dlsch_preprocessor(gNB_MAC_INST *mac, post_process_pdsch_t *pp_pd
   // FAPI cannot handle more than MAX_DCI_CORESET DCIs
   max_sched_ues = min(max_sched_ues, MAX_DCI_CORESET);
 
+  /* Store current pp_pdsch for scheduler algorithms to access */
+  mac->pre_processor_dl.current_pp_pdsch = pp_pdsch;
+
   /* proportional fair scheduling algorithm */
   // Use new algorithm interface if available
   if (mac->pre_processor_dl.dl_algo.run) {
@@ -1010,6 +1019,9 @@ static void nr_dlsch_preprocessor(gNB_MAC_INST *mac, post_process_pdsch_t *pp_pd
     // Fallback: should not happen if properly initialized
     LOG_E(NR_MAC, "Algorithm not initialized in pre_processor_dl\n");
   }
+  
+  /* Clear the stored pointer after use */
+  mac->pre_processor_dl.current_pp_pdsch = NULL;
 }
 
 nr_pp_impl_dl nr_init_dlsch_preprocessor(int CC_id)
@@ -1021,7 +1033,7 @@ nr_pp_impl_param_dl_t nr_init_fr1_dlsch_preprocessor(int CC_id) {
   /* during initialization: no mutex needed */
   nr_pp_impl_param_dl_t impl;
   memset(&impl, 0, sizeof(impl));
-  impl.dl = nr_fr1_dlsch_preprocessor;
+  impl.dl = nr_dlsch_preprocessor;
   impl.dl_algo = nr_proportional_fair_wbcqi_dl;
   impl.dl_algo.data = impl.dl_algo.setup();
   return impl;
@@ -1499,5 +1511,6 @@ void nr_schedule_ue_spec(module_id_t module_id,
   post_process_pdsch_t pdsch = { frame, slot, dl_req, TX_req };
 
   /* PREPROCESSOR */
-  gNB_mac->pre_processor_dl(gNB_mac, &pdsch);
+  if (gNB_mac->pre_processor_dl.dl)
+    gNB_mac->pre_processor_dl.dl(gNB_mac, &pdsch);
 }

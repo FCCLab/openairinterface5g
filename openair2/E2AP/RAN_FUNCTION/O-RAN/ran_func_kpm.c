@@ -267,7 +267,7 @@ static arr_ue_id_t filter_ues_by_s_nssai_in_cuup(const test_info_lst_t test_info
       break; // Break after first matching slice since CU-UP doesn't store slice info per UE
     }
   }
-
+  
   free(sd); // if NULL, nothing happens
 
   return arr_ue_id;

@@ -72,7 +72,7 @@ bool add_mod_rc_slice(int mod_id, size_t slices_len, ran_param_list_t* lst)
   // use NVS algorithm by default
   int new_algo = NVS_SLICING;
 
-  pthread_mutex_lock(&nrmac->UE_info.mutex);
+  NR_SCHED_LOCK(&nrmac->sched_lock);
   if (current_algo != new_algo) {
     set_new_dl_slice_algo(mod_id, new_algo);
     current_algo = new_algo;
@@ -189,7 +189,7 @@ bool add_mod_rc_slice(int mod_id, size_t slices_len, ran_param_list_t* lst)
     const int rc = add_mod_dl_slice(mod_id, current_algo, i+1, RC_nssai, label_nssai, params);
     free(label_nssai);
     if (rc < 0) {
-      pthread_mutex_unlock(&nrmac->UE_info.mutex);
+      NR_SCHED_UNLOCK(&nrmac->sched_lock);
       LOG_E(NR_MAC, "error code %d while updating slices\n", rc);
       return false;
     }
@@ -199,26 +199,26 @@ bool add_mod_rc_slice(int mod_id, size_t slices_len, ran_param_list_t* lst)
     if (nrmac->pre_processor_dl.algorithm <= 0)
       LOG_E(NR_MAC, "current slice algo is NONE, no UE can be associated\n");
 
-    if (nrmac->UE_info.list[0] == NULL)
+    if (nrmac->UE_info.connected_ue_list[0] == NULL)
       LOG_E(NR_MAC, "no UE connected\n");
 
 
     nr_pp_impl_param_dl_t *dl = &RC.nrmac[mod_id]->pre_processor_dl;
     NR_UEs_t *UE_info = &RC.nrmac[mod_id]->UE_info;
-    UE_iterator(UE_info->list, UE) {
+    UE_iterator(UE_info->connected_ue_list, UE) {
       rnti_t rnti = UE->rnti;
       NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
-      long lcid = 0;
-      for (int l = 0; l < sched_ctrl->dl_lc_num; ++l) {
-        lcid = sched_ctrl->dl_lc_ids[l];
-        LOG_D(NR_MAC, "l %d, lcid %ld, sst %d, sd %d\n", l, lcid, sched_ctrl->dl_lc_nssai[lcid].sst, sched_ctrl->dl_lc_nssai[lcid].sd);
-        if (nssai_matches(sched_ctrl->dl_lc_nssai[lcid], RC_nssai.sst, &RC_nssai.sd)) {
+      for (size_t l = 0; l < seq_arr_size(&sched_ctrl->lc_config); ++l) {
+        const nr_lc_config_t *lc = seq_arr_at(&sched_ctrl->lc_config, l);
+        long lcid = lc->lcid;
+        LOG_D(NR_MAC, "l %zu, lcid %ld, sst %d, sd %d\n", l, lcid, lc->nssai.sst, lc->nssai.sd);
+        if (nssai_matches(lc->nssai, RC_nssai.sst, &RC_nssai.sd)) {
           rrc_gNB_ue_context_t* rrc_ue_context_list = rrc_gNB_get_ue_context_by_rnti_any_du(RC.nrrrc[mod_id], rnti);
-          uint16_t UE_mcc = rrc_ue_context_list->ue_context.ue_guami.mcc;
-          uint16_t UE_mnc = rrc_ue_context_list->ue_context.ue_guami.mnc;
+          uint16_t UE_mcc = rrc_ue_context_list->ue_context.ue_guami.plmn.mcc;
+          uint16_t UE_mnc = rrc_ue_context_list->ue_context.ue_guami.plmn.mnc;
 
-          uint8_t UE_sst = sched_ctrl->dl_lc_nssai[lcid].sst;
-          uint32_t UE_sd = sched_ctrl->dl_lc_nssai[lcid].sd;
+          uint8_t UE_sst = lc->nssai.sst;
+          uint32_t UE_sd = lc->nssai.sd;
           LOG_D(NR_MAC, "UE: mcc %d mnc %d, sst %d sd %d, RC: mcc %d mnc %d, sst %d sd %d\n",
                 UE_mcc, UE_mnc, UE_sst, UE_sd, RC_mcc, RC_mnc, RC_nssai.sst, RC_nssai.sd);
 
@@ -234,7 +234,7 @@ bool add_mod_rc_slice(int mod_id, size_t slices_len, ran_param_list_t* lst)
 
   }
 
-  pthread_mutex_unlock(&nrmac->UE_info.mutex);
+  NR_SCHED_UNLOCK(&nrmac->sched_lock);
   LOG_D(NR_MAC, "All slices add/mod successfully!\n");
   return true;
 }
