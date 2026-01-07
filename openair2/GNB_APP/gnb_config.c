@@ -49,6 +49,7 @@
 #include "asn_internal.h"
 #include "NR_MAC_gNB/nr_mac_gNB.h"
 #include "NR_MAC_gNB/mac_proto.h"
+#include "NR_MAC_gNB/gNB_scheduler_types.h"
 #include "common/5g_platform_types.h"
 #include "common/config/config_paramdesc.h"
 #include "common/config/config_userapi.h"
@@ -1539,6 +1540,18 @@ void RCconfig_nr_macrlc(configmodule_interface_t *cfg)
     for (j = 0; j < RC.nb_nr_macrlc_inst; j++) {
       RC.nb_nr_mac_CC[j] = *(MacRLC_ParamList.paramarray[j][MACRLC_CC_IDX].iptr);
       RC.nrmac[j]->pusch_target_snrx10 = *(MacRLC_ParamList.paramarray[j][MACRLC_PUSCHTARGETSNRX10_IDX].iptr);
+      
+      // Set scheduler_type from MACRLC configuration if specified
+      if (config_isparamset(MacRLC_ParamList.paramarray[j], MACRLC_SCHEDULER_TYPE_IDX)) {
+        uint32_t scheduler_type = *MacRLC_ParamList.paramarray[j][MACRLC_SCHEDULER_TYPE_IDX].uptr;
+        if (scheduler_type <= SCHE_NS) {
+          RC.nrmac[j]->scheduler_type = (scheduler_type_t)scheduler_type;
+          LOG_I(NR_MAC, "MAC instance %d: Scheduler type set to %d from configuration\n", j, scheduler_type);
+        } else {
+          LOG_W(NR_MAC, "MAC instance %d: Invalid scheduler_type %d in configuration, using default SCHE_PF\n", j, scheduler_type);
+        }
+      }
+
       RC.nrmac[j]->pusch_rssi_threshold = *(MacRLC_ParamList.paramarray[j][MACRLC_PUSCH_RSSI_THRES_IDX].iptr);
       RC.nrmac[j]->pucch_rssi_threshold = *(MacRLC_ParamList.paramarray[j][MACRLC_PUCCH_RSSI_THRES_IDX].iptr);
       RC.nrmac[j]->pucch_target_snrx10 = *(MacRLC_ParamList.paramarray[j][MACRLC_PUCCHTARGETSNRX10_IDX].iptr);

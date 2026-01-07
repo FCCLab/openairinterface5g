@@ -80,6 +80,7 @@
 #define CONFIG_STRING_MACRLC_PUSCH_RSSI_THRESHOLD          "pusch_RSSI_Threshold"
 #define CONFIG_STRING_MACRLC_PUCCH_RSSI_THRESHOLD          "pucch_RSSI_Threshold"
 #define CONFIG_STRING_MACRLC_STATS_MAX_UE                  "stats_max_ue"
+#define CONFIG_STRING_MACRLC_SCHEDULER_TYPE                "scheduler_type"
 
 #define HLP_MACRLC_UL_PRBBLACK "SNR threshold to decide whether a PRB will be blacklisted or not"
 #define HLP_MACRLC_DL_BLER_UP "Upper threshold of BLER to decrease DL MCS"
@@ -152,6 +153,7 @@
   {CONFIG_STRING_MACRLC_PUCCH_RSSI_THRESHOLD,        HLP_MACRLC_PUCCH_RSSI_THRESHOLD, \
                                                                                0, .iptr=NULL,   .defintval=0,               TYPE_INT,     0}, \
   {CONFIG_STRING_MACRLC_STATS_MAX_UE,                HLP_MACRLC_STATS_MAX_UE,  0, .iptr=NULL,   .defintval=8,               TYPE_INT,     0}, \
+  {CONFIG_STRING_MACRLC_SCHEDULER_TYPE,              NULL,                     0, .uptr=NULL,   .defuintval=0,                TYPE_UINT,    0}, \
 }
 // clang-format off
 
@@ -198,6 +200,7 @@
 #define MACRLC_PUSCH_RSSI_THRES_IDX                            40
 #define MACRLC_PUCCH_RSSI_THRES_IDX                            41
 #define MACRLC_STATS_MAX_UE_IDX                                42
+#define MACRLC_SCHEDULER_TYPE_IDX                              43
 
 #define MACRLCPARAMS_CHECK { \
   { .s5 = { NULL } }, \
@@ -242,6 +245,7 @@
   { .s5 = { NULL } }, \
   { .s2 =  { config_check_intrange, {-1280, 0}} }, /* PUSCH RSSI threshold range */ \
   { .s2 =  { config_check_intrange, {-1280, 0}} }, /* PUCCH RSSI threshold range */ \
+  { .s5 = { NULL } }, \
   { .s5 = { NULL } }, \
 }
 

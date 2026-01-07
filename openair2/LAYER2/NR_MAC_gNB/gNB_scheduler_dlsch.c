@@ -29,12 +29,14 @@
 
  */
 
+#include <stdio.h>
 #include "common/utils/nr/nr_common.h"
 /*MAC*/
 #include "NR_MAC_COMMON/nr_mac.h"
 #include "NR_MAC_gNB/nr_mac_gNB.h"
 #include "LAYER2/NR_MAC_gNB/mac_proto.h"
 #include "openair2/LAYER2/nr_rlc/nr_rlc_oai_api.h"
+#include "NR_MAC_gNB/gNB_scheduler_types.h"
 
 /*TAG*/
 #include "NR_TAG-Id.h"
@@ -614,6 +616,14 @@ typedef struct UEsched_s {
   int selected_mcs;
 } UEsched_t;
 
+typedef struct {
+  rnti_t rnti;
+  uint8_t start_symbol;
+  uint8_t stop_symbol;
+  uint16_t start_prb;
+  uint16_t stop_prb;
+} scheduler_allocation_t;
+
 static int comparator(const void *p, const void *q)
 {
   const UEsched_t *pp = p;
@@ -623,6 +633,35 @@ static int comparator(const void *p, const void *q)
   else if (pp->coef > qq->coef)
     return -1;
   return 0;
+}
+
+static void log_scheduler_allocations(frame_t frame, slot_t slot, scheduler_allocation_t *allocations, int num_allocations)
+{
+  static FILE *log_file = NULL;
+  
+  if (num_allocations == 0)
+    return;
+
+  if (log_file == NULL) {
+    log_file = fopen("scheduler_allocations.log", "a");
+    if (log_file == NULL) {
+      LOG_W(NR_MAC, "Failed to open scheduler_allocations.log for writing\n");
+      return;
+    }
+  }
+
+  fprintf(log_file, "---\n%d.%d:\n", frame, slot);
+  
+  for (int i = 0; i < num_allocations; i++) {
+    fprintf(log_file, "RNTI 0x%04x: %d, %d, %d, %d\n",
+            allocations[i].rnti,
+            allocations[i].start_symbol,
+            allocations[i].stop_symbol,
+            allocations[i].start_prb,
+            allocations[i].stop_prb);
+  }
+
+  fflush(log_file);
 }
 
 static void pf_dl(gNB_MAC_INST *mac,
@@ -644,6 +683,10 @@ static void pf_dl(gNB_MAC_INST *mac,
   int numUE = 0;
   int CC_id = 0;
   int slots_per_frame = mac->frame_structure.numb_slots_frame;
+  
+  // Array to collect scheduler allocations for logging
+  scheduler_allocation_t allocations[MAX_MOBILES_PER_GNB];
+  int num_allocations = 0;
 
   /* Loop UE_info->list to check retransmission */
   UE_iterator(UE_list, UE) {
@@ -686,6 +729,19 @@ static void pf_dl(gNB_MAC_INST *mac,
         LOG_D(NR_MAC, "[UE %04x][%4d.%2d] DL retransmission could not be allocated\n", UE->rnti, frame, slot);
         reset_beam_status(&mac->beam_info, frame, slot, UE->UE_beam_index, slots_per_frame, beam.new_beam);
         continue;
+      }
+      /* Collect allocation info for retransmission */
+      if (num_allocations < MAX_MOBILES_PER_GNB) {
+        NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
+        NR_UE_harq_t *harq = &sched_ctrl->harq_processes[harq_pid];
+        bwp_info_t bwp_info = get_pdsch_bwp_start_size(mac, UE);
+        const NR_tda_info_t *tda_info = &harq->sched_pdsch.tda_info;
+        allocations[num_allocations].rnti = UE->rnti;
+        allocations[num_allocations].start_symbol = tda_info->startSymbolIndex;
+        allocations[num_allocations].stop_symbol = tda_info->startSymbolIndex + tda_info->nrOfSymbols - 1;
+        allocations[num_allocations].start_prb = harq->sched_pdsch.rbStart + bwp_info.bwpStart;
+        allocations[num_allocations].stop_prb = allocations[num_allocations].start_prb + harq->sched_pdsch.rbSize - 1;
+        num_allocations++;
       }
       /* reduce max_num_ue once we are sure UE can be allocated, i.e., has CCE */
       remainUEs[beam.idx]--;
@@ -908,6 +964,17 @@ static void pf_dl(gNB_MAC_INST *mac,
 
     post_process_dlsch(mac, pp_pdsch, iterator->UE, &sched_pdsch);
 
+    /* Collect allocation info for new transmission */
+    if (num_allocations < MAX_MOBILES_PER_GNB) {
+      const NR_tda_info_t *alloc_tda_info = &sched_pdsch.tda_info;
+      allocations[num_allocations].rnti = rnti;
+      allocations[num_allocations].start_symbol = alloc_tda_info->startSymbolIndex;
+      allocations[num_allocations].stop_symbol = alloc_tda_info->startSymbolIndex + alloc_tda_info->nrOfSymbols - 1;
+      allocations[num_allocations].start_prb = sched_pdsch.rbStart + bwp_start;
+      allocations[num_allocations].stop_prb = allocations[num_allocations].start_prb + sched_pdsch.rbSize - 1;
+      num_allocations++;
+    }
+
     /* transmissions: directly allocate */
     n_rb_sched[beam.idx] -= sched_pdsch.rbSize;
 
@@ -917,6 +984,9 @@ static void pf_dl(gNB_MAC_INST *mac,
     remainUEs[beam.idx]--;
     iterator++;
   }
+
+  /* Log scheduler allocations to file */
+  log_scheduler_allocations(frame, slot, allocations, num_allocations);
 }
 
 static void nr_dlsch_preprocessor(gNB_MAC_INST *mac, post_process_pdsch_t *pp_pdsch)
@@ -939,8 +1009,18 @@ static void nr_dlsch_preprocessor(gNB_MAC_INST *mac, post_process_pdsch_t *pp_pd
   // FAPI cannot handle more than MAX_DCI_CORESET DCIs
   max_sched_ues = min(max_sched_ues, MAX_DCI_CORESET);
 
-  /* proportional fair scheduling algorithm */
-  pf_dl(mac, pp_pdsch, UE_info->connected_ue_list, max_sched_ues, num_beams, n_rb_sched);
+  /* Dispatch based on scheduler type */
+  if (mac->scheduler_type == SCHE_NS) {
+    // Network Slicing scheduler (3GPP-compliant frequency-domain)
+    // TODO: Implement network_slicing_dl() function
+    // For now, fall back to Proportional Fair
+    LOG_D(NR_MAC, "[%4d.%2d] Network Slicing scheduler not yet implemented, using Proportional Fair\n",
+          pp_pdsch->frame, pp_pdsch->slot);
+    pf_dl(mac, pp_pdsch, UE_info->connected_ue_list, max_sched_ues, num_beams, n_rb_sched);
+  } else {
+    // Default: Proportional Fair scheduler
+    pf_dl(mac, pp_pdsch, UE_info->connected_ue_list, max_sched_ues, num_beams, n_rb_sched);
+  }
 }
 
 nr_pp_impl_dl nr_init_dlsch_preprocessor(int CC_id)

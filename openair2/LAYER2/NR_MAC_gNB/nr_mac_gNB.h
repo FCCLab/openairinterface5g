@@ -46,6 +46,7 @@
 #include "common/utils/nr/nr_common.h"
 #include "common/utils/ds/byte_array.h"
 #include "openair2/LAYER2/nr_rlc/nr_rlc_configuration.h"
+#include "gNB_scheduler_types.h"
 
 #define NR_SCHED_LOCK(lock)                                        \
   do {                                                             \
@@ -977,6 +978,8 @@ typedef struct gNB_MAC_INST_s {
   nr_pp_impl_dl pre_processor_dl;
   /// UL preprocessor for differentiated scheduling
   nr_pp_impl_ul pre_processor_ul;
+  /// Scheduler algorithm type
+  scheduler_type_t scheduler_type;
 
   nr_mac_config_t radio_config;
   nr_rlc_configuration_t rlc_config;

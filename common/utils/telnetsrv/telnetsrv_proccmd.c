@@ -57,6 +57,8 @@
 #include "common/config/config_userapi.h"
 #include "openair1/PHY/phy_extern.h"
 #include "telnetsrv_proccmd.h"
+#include "openair2/LAYER2/NR_MAC_gNB/nr_mac_gNB.h"
+#include "openair2/LAYER2/NR_MAC_gNB/gNB_scheduler_types.h"
 
 void decode_procstat(char *record, int debug, telnet_printfunc_t prnt, webdatadef_t *tdata)
 {
@@ -461,6 +463,47 @@ int proccmd_show(char *buf, int debug, telnet_printfunc_t prnt)
        }
        for(int i=0; i<RC.nb_macrlc_inst; i++) {
            prnt("    lte macrlc %i:  %02i CC(s)\n",i,((RC.nb_mac_CC == NULL)?0:RC.nb_mac_CC[i]));
+       }
+   }
+   if (strcasestr(buf,"sche") != NULL) {
+       // Display scheduler information
+       if (RC.nb_nr_macrlc_inst > 0 && RC.nrmac != NULL && RC.nrmac[0] != NULL) {
+           gNB_MAC_INST *mac = RC.nrmac[0];
+           const char *scheduler_name = (mac->scheduler_type == SCHE_NS) ? "Network Slicing (SCHE_NS)" : "Proportional Fair (SCHE_PF)";
+           
+           prnt("\n=== Scheduler Information ===\n\n");               
+           
+           prnt("- MAC Module ID: %d\n", mac->Mod_id);
+           prnt("  Scheduler Type: %s (%d)\n", scheduler_name, mac->scheduler_type);
+           
+           // Display pre-processor information (function pointer)
+           if (mac->pre_processor_dl != NULL) {
+               prnt("  DL Pre-processor: Active\n");
+           } else {
+               prnt("  DL Pre-processor: Not initialized\n");
+           }
+           
+           if (mac->pre_processor_ul != NULL) {
+               prnt("  UL Pre-processor: Active\n");
+           } else {
+               prnt("  UL Pre-processor: Not initialized\n");
+           }
+           
+           // Display frame/slot information
+           prnt("  Current Frame: %d\n", mac->frame);
+           
+           // Display BWP information if available
+           if (mac->common_channels[0].ServingCellConfigCommon != NULL) {
+               NR_ServingCellConfigCommon_t *scc = mac->common_channels[0].ServingCellConfigCommon;
+               if (scc->downlinkConfigCommon && scc->downlinkConfigCommon->frequencyInfoDL) {
+                   int bw = scc->downlinkConfigCommon->frequencyInfoDL->scs_SpecificCarrierList.list.array[0]->carrierBandwidth;
+                   prnt("  Carrier Bandwidth: %d PRBs\n", bw);
+               }
+           }
+           
+           prnt("=============================\n");
+       } else {
+           prnt("gNB MAC instance not available\n");
        }
    }
    return 0;

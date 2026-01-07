@@ -47,6 +47,7 @@
 #include "NR_MAC_gNB/mac_proto.h"
 #include "NR_MAC_gNB/mac_rrc_ul.h"
 #include "NR_MAC_gNB/nr_mac_gNB.h"
+#include "NR_MAC_gNB/gNB_scheduler_types.h"
 #include "NR_PHY_INTERFACE/NR_IF_Module.h"
 #include "NR_RLC-BearerConfig.h"
 #include "NR_RadioBearerConfig.h"
@@ -319,6 +320,9 @@ void mac_top_init_gNB(ngran_node_t node_type,
       pthread_mutex_init(&RC.nrmac[i]->sched_lock, NULL);
 
       uid_linear_allocator_init(&RC.nrmac[i]->UE_info.uid_allocator);
+
+      // Initialize scheduler type (default to Proportional Fair)
+      RC.nrmac[i]->scheduler_type = SCHE_PF;
 
       if (get_softmodem_params()->phy_test) {
         RC.nrmac[i]->pre_processor_dl = nr_preprocessor_phytest;
