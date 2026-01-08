@@ -836,6 +836,24 @@ typedef struct {
 
 #define UE_iterator(BaSe, VaR) for (NR_UE_info_t **VaR##pptr=BaSe, *VaR=*VaR##pptr; VaR; VaR=*(++VaR##pptr))
 
+/*! \brief Network slice configuration structure */
+typedef struct {
+  int slice_id;           /*!< Unique slice identifier */
+  uint8_t sst;            /*!< Slice/Service Type */
+  uint32_t sd;            /*!< Slice Differentiator */
+  float dedicated_prb_ratio;  /*!< Dedicated PRB ratio (0.0-1.0), non-shareable */
+  float min_prb_ratio;       /*!< Minimum PRB ratio (0.0-1.0), guaranteed */
+  float max_prb_ratio;       /*!< Maximum PRB ratio (0.0-1.0), hard limit */
+  NR_UE_info_t *ue_list[MAX_MOBILES_PER_GNB + 1];  /*!< UEs in this slice */
+  int num_ues;            /*!< Number of UEs in this slice */
+} network_slice_t;
+
+/*! \brief Network slice information container */
+typedef struct {
+  network_slice_t *slices[MAX_NUM_SLICES];  /*!< Array of slice pointers */
+  int num_slices;                           /*!< Number of configured slices */
+} network_slice_info_t;
+
 typedef struct {
   /// current frame
   frame_t frame;
@@ -980,6 +998,8 @@ typedef struct gNB_MAC_INST_s {
   nr_pp_impl_ul pre_processor_ul;
   /// Scheduler algorithm type
   scheduler_type_t scheduler_type;
+  /// Network slice information (for SCHE_NS scheduler)
+  network_slice_info_t slice_info;
 
   nr_mac_config_t radio_config;
   nr_rlc_configuration_t rlc_config;

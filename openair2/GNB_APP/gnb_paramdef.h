@@ -468,6 +468,48 @@ typedef enum {
   { .s2 = { config_check_intrange, SLICE_DIFFERENTIATOR_TYPE_OKRANGE } }, \
 }
 
+/* Network Slice configuration */
+
+#define GNB_CONFIG_STRING_SLICES_LIST                   "Slices"
+
+#define GNB_CONFIG_STRING_SLICE_ID                       "slice_id"
+#define GNB_CONFIG_STRING_SLICE_SST                      "sst"
+#define GNB_CONFIG_STRING_SLICE_SD                       "sd"
+#define GNB_CONFIG_STRING_SLICE_DEDICATED_PRB_RATIO      "dedicated_prb_ratio"
+#define GNB_CONFIG_STRING_SLICE_MIN_PRB_RATIO            "min_prb_ratio"
+#define GNB_CONFIG_STRING_SLICE_MAX_PRB_RATIO            "max_prb_ratio"
+
+#define GNB_SLICE_ID_IDX                 0
+#define GNB_SLICE_SST_IDX               1
+#define GNB_SLICE_SD_IDX                2
+#define GNB_SLICE_DEDICATED_PRB_RATIO_IDX 3
+#define GNB_SLICE_MIN_PRB_RATIO_IDX     4
+#define GNB_SLICE_MAX_PRB_RATIO_IDX     5
+
+#define GNBSLICEPARAMS_DESC {                                                                  \
+/*   optname                               helpstr                 paramflags XXXptr     def val              type    numelt */ \
+  {GNB_CONFIG_STRING_SLICE_ID,            "slice identifier",             0, .iptr=NULL, .defintval=0,         TYPE_INT, 0},    \
+  {GNB_CONFIG_STRING_SLICE_SST,           "slice service type",           0, .uptr=NULL, .defuintval=1,        TYPE_UINT, 0},    \
+  {GNB_CONFIG_STRING_SLICE_SD,             "slice differentiator",         0, .uptr=NULL, .defuintval=0xffffff, TYPE_UINT, 0},   \
+  {GNB_CONFIG_STRING_SLICE_DEDICATED_PRB_RATIO, "dedicated PRB ratio (%)", 0, .dblptr=NULL, .defdblval=0.0,    TYPE_DOUBLE, 0}, \
+  {GNB_CONFIG_STRING_SLICE_MIN_PRB_RATIO, "minimum PRB ratio (%)",        0, .dblptr=NULL, .defdblval=0.0,    TYPE_DOUBLE, 0}, \
+  {GNB_CONFIG_STRING_SLICE_MAX_PRB_RATIO, "maximum PRB ratio (%)",       0, .dblptr=NULL, .defdblval=100.0, TYPE_DOUBLE, 0}, \
+}
+
+#define SLICE_ID_OKRANGE                 {0, 1023}
+#define SLICE_SST_OKRANGE                 {0, 255}
+#define SLICE_SD_OKRANGE                  {0, 0xffffff}
+#define SLICE_PRB_RATIO_OKRANGE           {0.0, 100.0}
+
+#define SLICEPARAMS_CHECK {                                           \
+  { .s2 = { config_check_intrange, SLICE_ID_OKRANGE } },                \
+  { .s2 = { config_check_intrange, SLICE_SST_OKRANGE } },                \
+  { .s2 = { config_check_intrange, SLICE_SD_OKRANGE } },                \
+  { .s5 = { NULL } }, /* dedicated_prb_ratio - no validation, checked in code */ \
+  { .s5 = { NULL } }, /* min_prb_ratio - no validation, checked in code */ \
+  { .s5 = { NULL } }, /* max_prb_ratio - no validation, checked in code */ \
+}
+
 /* AMF configuration parameters section name */
 #define GNB_CONFIG_STRING_AMF_IP_ADDRESS                "amf_ip_address"
 
