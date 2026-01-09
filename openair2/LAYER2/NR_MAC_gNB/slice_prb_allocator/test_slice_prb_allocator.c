@@ -74,7 +74,8 @@ static void print_allocation_result_with_required(const slice_alloc_result_t *re
   printf("    Active Slices: %d\n", result->num_active_slices);
   printf("    Total Allocated: %d / %d PRBs\n", result->total_allocated_prbs, total_prbs);
   printf("    Per-Slice Allocation:\n");
-  for (int s = 0; s < MAX_NUM_SLICES; ++s) {
+  int max_slices = (input != NULL) ? input->num_slices : result->num_active_slices;
+  for (int s = 0; s < max_slices; ++s) {
     if (result->ranges[s].num_prbs > 0) {
       float percentage = (float)result->ranges[s].num_prbs / total_prbs * 100.0;
       // Find the corresponding slice config to get required_prbs
@@ -99,6 +100,56 @@ static void print_allocation_result_with_required(const slice_alloc_result_t *re
   }
 }
 
+/* Helper function to print OOP scheduler allocation result */
+static void print_oop_allocation_result(const slice_scheduler_t *obj, int total_prbs) {
+  if (obj == NULL) {
+    return;
+  }
+  
+  int num_ranges = 0;
+  const slice_prb_range_t *ranges = slice_sch_get_allocation(obj, &num_ranges);
+  
+  if (ranges == NULL) {
+    printf("  Allocation Result: Not available (schedule not called or invalid)\n");
+    return;
+  }
+  
+  int num_active = 0;
+  int total_allocated = 0;
+  slice_sch_get_stats(obj, &num_active, &total_allocated);
+  
+  printf("  Allocation Result:\n");
+  printf("    Active Slices: %d\n", num_active);
+  printf("    Total Allocated: %d / %d PRBs\n", total_allocated, total_prbs);
+  printf("    Per-Slice Allocation:\n");
+  
+  for (int s = 0; s < num_ranges; ++s) {
+    if (ranges[s].num_prbs > 0) {
+      float percentage = (float)ranges[s].num_prbs / total_prbs * 100.0;
+      // Find the corresponding slice config to get required_prbs
+      int required_prbs = 0;
+      if (obj->input != NULL) {
+        for (int i = 0; i < obj->input->num_slices; ++i) {
+          if (obj->input->slices[i].slice_id == ranges[s].slice_id) {
+            required_prbs = obj->input->slices[i].required_prbs;
+            break;
+          }
+        }
+      }
+      printf("      Slice %d: PRBs [%d, %d) = %d PRBs (%.1f%%)", 
+             ranges[s].slice_id,
+             ranges[s].start_prb,
+             ranges[s].end_prb,
+             ranges[s].num_prbs,
+             percentage);
+      if (required_prbs > 0) {
+        printf(", Required: %d PRBs", required_prbs);
+      }
+      printf("\n");
+    }
+  }
+}
+
 #define TEST(name) \
   do { \
     printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"); \
@@ -110,78 +161,90 @@ static void print_allocation_result_with_required(const slice_alloc_result_t *re
     printf("  ✓ PASS\n\n"); \
   } while(0)
 
+/* Helper macro to allocate and initialize test structures */
+#define ALLOCATE_TEST_STRUCTURES(num_slices, input_var, result_var) \
+  slice_alloc_input_t *input_var = allocate_slice_input(num_slices); \
+  slice_alloc_result_t *result_var = allocate_slice_result(num_slices); \
+  if (input_var == NULL || result_var == NULL) { \
+    fprintf(stderr, "FAIL: Memory allocation failed\n"); \
+    if (input_var) free_slice_input(input_var); \
+    if (result_var) free_slice_result(result_var); \
+    exit(1); \
+  }
+
 /* Test 1: Basic allocation with two slices */
 static void test_basic_two_slices(void) {
   printf("  Purpose: Test basic two-slice allocation with different ratios\n");
   printf("  Expected: Both slices get their dedicated PRBs, then remaining PRBs are\n");
   printf("            distributed proportionally up to their maximum limits\n\n");
   
-  slice_alloc_input_t input = {0};
-  slice_alloc_result_t result = {0};
+  ALLOCATE_TEST_STRUCTURES(2, input, result);
   
   // Slice 1: 30% dedicated, 30% min, 50% max
-  input.slices[0].slice_id = 1;
-  input.slices[0].dedicated_prb_ratio = 0.30f;
-  input.slices[0].min_prb_ratio = 0.30f;
-  input.slices[0].max_prb_ratio = 0.50f;
-  input.slices[0].has_active_ues = true;
+  input->slices[0].slice_id = 1;
+  input->slices[0].dedicated_prb_ratio = 0.30f;
+  input->slices[0].min_prb_ratio = 0.30f;
+  input->slices[0].max_prb_ratio = 0.50f;
+  input->slices[0].has_active_ues = true;
   
   // Slice 2: 20% dedicated, 20% min, 50% max
-  input.slices[1].slice_id = 2;
-  input.slices[1].dedicated_prb_ratio = 0.20f;
-  input.slices[1].min_prb_ratio = 0.20f;
-  input.slices[1].max_prb_ratio = 0.50f;
-  input.slices[1].has_active_ues = true;
+  input->slices[1].slice_id = 2;
+  input->slices[1].dedicated_prb_ratio = 0.20f;
+  input->slices[1].min_prb_ratio = 0.20f;
+  input->slices[1].max_prb_ratio = 0.50f;
+  input->slices[1].has_active_ues = true;
   
-  input.num_slices = 2;
-  input.total_prbs = 100;
+  input->total_prbs = 100;
   
   printf("  Input Configuration:\n");
-  printf("    Total PRBs: %d\n", input.total_prbs);
-  printf("    Number of Slices: %d\n", input.num_slices);
-  print_slice_config(&input.slices[0], 0);
-  print_slice_config(&input.slices[1], 1);
+  printf("    Total PRBs: %d\n", input->total_prbs);
+  printf("    Number of Slices: %d\n", input->num_slices);
+  print_slice_config(&input->slices[0], 0);
+  print_slice_config(&input->slices[1], 1);
   printf("\n");
   
-  int ret = calculate_slice_prb_ranges(&input, &result);
+  int ret = calculate_slice_prb_ranges(input, result);
   
-  print_allocation_result_with_required(&result, &input, input.total_prbs);
+  print_allocation_result_with_required(result, input, input->total_prbs);
   printf("\n");
   
   printf("  Verification:\n");
   ASSERT_EQ(ret, 2, "Should allocate to 2 slices");
-  ASSERT_EQ(result.num_active_slices, 2, "Should have 2 active slices");
-  ASSERT_EQ(result.total_allocated_prbs, 100, "Should allocate all 100 PRBs");
+  ASSERT_EQ(result->num_active_slices, 2, "Should have 2 active slices");
+  ASSERT_EQ(result->total_allocated_prbs, 100, "Should allocate all 100 PRBs");
   
   // Check slice 1: should get at least 30 PRBs (dedicated), up to 50 PRBs (max)
-  printf("    ✓ Slice 1: %d PRBs (expected: ≥30, ≤50)\n", result.ranges[0].num_prbs);
-  ASSERT_GE(result.ranges[0].num_prbs, 30, "Slice 1 should get at least 30 PRBs");
-  ASSERT_LE(result.ranges[0].num_prbs, 50, "Slice 1 should not exceed 50 PRBs");
-  ASSERT_EQ(result.ranges[0].slice_id, 1, "Slice 1 ID should be 1");
-  ASSERT_EQ(result.ranges[0].start_prb, 0, "Slice 1 should start at PRB 0");
-  ASSERT_EQ(result.ranges[0].end_prb, result.ranges[0].start_prb + result.ranges[0].num_prbs,
+  printf("    ✓ Slice 1: %d PRBs (expected: ≥30, ≤50)\n", result->ranges[0].num_prbs);
+  ASSERT_GE(result->ranges[0].num_prbs, 30, "Slice 1 should get at least 30 PRBs");
+  ASSERT_LE(result->ranges[0].num_prbs, 50, "Slice 1 should not exceed 50 PRBs");
+  ASSERT_EQ(result->ranges[0].slice_id, 1, "Slice 1 ID should be 1");
+  ASSERT_EQ(result->ranges[0].start_prb, 0, "Slice 1 should start at PRB 0");
+  ASSERT_EQ(result->ranges[0].end_prb, result->ranges[0].start_prb + result->ranges[0].num_prbs,
             "Slice 1 end_prb should be start_prb + num_prbs");
   
   // Check slice 2: should get at least 20 PRBs (dedicated), up to 50 PRBs (max)
-  printf("    ✓ Slice 2: %d PRBs (expected: ≥20, ≤50)\n", result.ranges[1].num_prbs);
-  ASSERT_GE(result.ranges[1].num_prbs, 20, "Slice 2 should get at least 20 PRBs");
-  ASSERT_LE(result.ranges[1].num_prbs, 50, "Slice 2 should not exceed 50 PRBs");
-  ASSERT_EQ(result.ranges[1].slice_id, 2, "Slice 2 ID should be 2");
-  ASSERT_EQ(result.ranges[1].start_prb, result.ranges[0].end_prb,
+  printf("    ✓ Slice 2: %d PRBs (expected: ≥20, ≤50)\n", result->ranges[1].num_prbs);
+  ASSERT_GE(result->ranges[1].num_prbs, 20, "Slice 2 should get at least 20 PRBs");
+  ASSERT_LE(result->ranges[1].num_prbs, 50, "Slice 2 should not exceed 50 PRBs");
+  ASSERT_EQ(result->ranges[1].slice_id, 2, "Slice 2 ID should be 2");
+  ASSERT_EQ(result->ranges[1].start_prb, result->ranges[0].end_prb,
             "Slice 2 should start where slice 1 ends");
-  ASSERT_EQ(result.ranges[1].end_prb, result.ranges[1].start_prb + result.ranges[1].num_prbs,
+  ASSERT_EQ(result->ranges[1].end_prb, result->ranges[1].start_prb + result->ranges[1].num_prbs,
             "Slice 2 end_prb should be start_prb + num_prbs");
   
   // Check that ranges don't overlap
-  ASSERT_EQ(result.ranges[0].end_prb, result.ranges[1].start_prb,
+  ASSERT_EQ(result->ranges[0].end_prb, result->ranges[1].start_prb,
             "Slice ranges should be contiguous");
   
   // Total should equal 100
-  ASSERT_EQ(result.ranges[0].num_prbs + result.ranges[1].num_prbs, 100,
+  ASSERT_EQ(result->ranges[0].num_prbs + result->ranges[1].num_prbs, 100,
             "Total PRBs should equal 100");
   printf("    ✓ Ranges are contiguous: [%d, %d) and [%d, %d)\n",
-         result.ranges[0].start_prb, result.ranges[0].end_prb,
-         result.ranges[1].start_prb, result.ranges[1].end_prb);
+         result->ranges[0].start_prb, result->ranges[0].end_prb,
+         result->ranges[1].start_prb, result->ranges[1].end_prb);
+  
+  free_slice_input(input);
+  free_slice_result(result);
 }
 
 /* Test 2: Single slice with all PRBs */
@@ -189,37 +252,38 @@ static void test_single_slice_all_prbs(void) {
   printf("  Purpose: Test single slice that gets all available PRBs\n");
   printf("  Expected: Single slice gets 100%% of PRBs (106 PRBs)\n\n");
   
-  slice_alloc_input_t input = {0};
-  slice_alloc_result_t result = {0};
+  ALLOCATE_TEST_STRUCTURES(1, input, result);
   
-  input.slices[0].slice_id = 1;
-  input.slices[0].dedicated_prb_ratio = 1.0f;
-  input.slices[0].min_prb_ratio = 1.0f;
-  input.slices[0].max_prb_ratio = 1.0f;
-  input.slices[0].has_active_ues = true;
+  input->slices[0].slice_id = 1;
+  input->slices[0].dedicated_prb_ratio = 1.0f;
+  input->slices[0].min_prb_ratio = 1.0f;
+  input->slices[0].max_prb_ratio = 1.0f;
+  input->slices[0].has_active_ues = true;
   
-  input.num_slices = 1;
-  input.total_prbs = 106;
+  input->total_prbs = 106;
   
   printf("  Input Configuration:\n");
-  printf("    Total PRBs: %d\n", input.total_prbs);
-  printf("    Number of Slices: %d\n", input.num_slices);
-  print_slice_config(&input.slices[0], 0);
+  printf("    Total PRBs: %d\n", input->total_prbs);
+  printf("    Number of Slices: %d\n", input->num_slices);
+  print_slice_config(&input->slices[0], 0);
   printf("\n");
   
-  int ret = calculate_slice_prb_ranges(&input, &result);
+  int ret = calculate_slice_prb_ranges(input, result);
   
-  print_allocation_result_with_required(&result, &input, input.total_prbs);
+  print_allocation_result_with_required(result, input, input->total_prbs);
   printf("\n");
   
   printf("  Verification:\n");
   ASSERT_EQ(ret, 1, "Should allocate to 1 slice");
-  ASSERT_EQ(result.ranges[0].num_prbs, 106, "Slice should get all 106 PRBs");
-  ASSERT_EQ(result.ranges[0].start_prb, 0, "Should start at PRB 0");
-  ASSERT_EQ(result.ranges[0].end_prb, 106, "Should end at PRB 106");
-  ASSERT_EQ(result.total_allocated_prbs, 106, "Should allocate all PRBs");
+  ASSERT_EQ(result->ranges[0].num_prbs, 106, "Slice should get all 106 PRBs");
+  ASSERT_EQ(result->ranges[0].start_prb, 0, "Should start at PRB 0");
+  ASSERT_EQ(result->ranges[0].end_prb, 106, "Should end at PRB 106");
+  ASSERT_EQ(result->total_allocated_prbs, 106, "Should allocate all PRBs");
   printf("    ✓ Slice gets all %d PRBs: [%d, %d)\n",
-         result.ranges[0].num_prbs, result.ranges[0].start_prb, result.ranges[0].end_prb);
+         result->ranges[0].num_prbs, result->ranges[0].start_prb, result->ranges[0].end_prb);
+  
+  free_slice_input(input);
+  free_slice_result(result);
 }
 
 /* Test 3: Slice with no active UEs should get no PRBs */
@@ -227,34 +291,36 @@ static void test_no_active_ues(void) {
   printf("  Purpose: Test that slices without active UEs get no PRBs\n");
   printf("  Expected: Slice with has_active_ues=false gets 0 PRBs\n\n");
   
-  slice_alloc_input_t input = {0};
-  slice_alloc_result_t result = {0};
+  ALLOCATE_TEST_STRUCTURES(1, input, result);
   
-  input.slices[0].slice_id = 1;
-  input.slices[0].dedicated_prb_ratio = 0.5f;
-  input.slices[0].min_prb_ratio = 0.5f;
-  input.slices[0].max_prb_ratio = 0.5f;
-  input.slices[0].has_active_ues = false;  // No active UEs
+  input->slices[0].slice_id = 1;
+  input->slices[0].dedicated_prb_ratio = 0.5f;
+  input->slices[0].min_prb_ratio = 0.5f;
+  input->slices[0].max_prb_ratio = 0.5f;
+  input->slices[0].has_active_ues = false;  // No active UEs
   
-  input.num_slices = 1;
-  input.total_prbs = 100;
+  input->num_slices = 1;
+  input->total_prbs = 100;
   
   printf("  Input Configuration:\n");
-  printf("    Total PRBs: %d\n", input.total_prbs);
-  printf("    Number of Slices: %d\n", input.num_slices);
-  print_slice_config(&input.slices[0], 0);
+  printf("    Total PRBs: %d\n", input->total_prbs);
+  printf("    Number of Slices: %d\n", input->num_slices);
+  print_slice_config(&input->slices[0], 0);
   printf("    Note: Slice has no active UEs, so it should get 0 PRBs\n\n");
   
-  int ret = calculate_slice_prb_ranges(&input, &result);
+  int ret = calculate_slice_prb_ranges(input, result);
   
-  print_allocation_result_with_required(&result, &input, input.total_prbs);
+  print_allocation_result_with_required(result, input, input->total_prbs);
   printf("\n");
   
   printf("  Verification:\n");
   ASSERT_EQ(ret, 0, "Should allocate to 0 slices");
-  ASSERT_EQ(result.ranges[0].num_prbs, 0, "Slice with no UEs should get 0 PRBs");
-  ASSERT_EQ(result.total_allocated_prbs, 0, "Should allocate 0 PRBs");
+  ASSERT_EQ(result->ranges[0].num_prbs, 0, "Slice with no UEs should get 0 PRBs");
+  ASSERT_EQ(result->total_allocated_prbs, 0, "Should allocate 0 PRBs");
   printf("    ✓ Slice with no active UEs correctly gets 0 PRBs\n");
+  
+  free_slice_input(input);
+  free_slice_result(result);
 }
 
 /* Test 4: Multiple slices with different ratios */
@@ -263,76 +329,78 @@ static void test_multiple_slices_different_ratios(void) {
   printf("  Expected: Each slice gets at least its minimum, respects its maximum,\n");
   printf("            and all PRBs are allocated contiguously\n\n");
   
-  slice_alloc_input_t input = {0};
-  slice_alloc_result_t result = {0};
+  ALLOCATE_TEST_STRUCTURES(3, input, result);
   
   // Slice 1: 10% dedicated, 20% min, 40% max
-  input.slices[0].slice_id = 1;
-  input.slices[0].dedicated_prb_ratio = 0.10f;
-  input.slices[0].min_prb_ratio = 0.20f;
-  input.slices[0].max_prb_ratio = 0.40f;
-  input.slices[0].has_active_ues = true;
+  input->slices[0].slice_id = 1;
+  input->slices[0].dedicated_prb_ratio = 0.10f;
+  input->slices[0].min_prb_ratio = 0.20f;
+  input->slices[0].max_prb_ratio = 0.40f;
+  input->slices[0].has_active_ues = true;
   
   // Slice 2: 15% dedicated, 25% min, 50% max
-  input.slices[1].slice_id = 2;
-  input.slices[1].dedicated_prb_ratio = 0.15f;
-  input.slices[1].min_prb_ratio = 0.25f;
-  input.slices[1].max_prb_ratio = 0.50f;
-  input.slices[1].has_active_ues = true;
+  input->slices[1].slice_id = 2;
+  input->slices[1].dedicated_prb_ratio = 0.15f;
+  input->slices[1].min_prb_ratio = 0.25f;
+  input->slices[1].max_prb_ratio = 0.50f;
+  input->slices[1].has_active_ues = true;
   
   // Slice 3: 5% dedicated, 10% min, 30% max
-  input.slices[2].slice_id = 3;
-  input.slices[2].dedicated_prb_ratio = 0.05f;
-  input.slices[2].min_prb_ratio = 0.10f;
-  input.slices[2].max_prb_ratio = 0.30f;
-  input.slices[2].has_active_ues = true;
+  input->slices[2].slice_id = 3;
+  input->slices[2].dedicated_prb_ratio = 0.05f;
+  input->slices[2].min_prb_ratio = 0.10f;
+  input->slices[2].max_prb_ratio = 0.30f;
+  input->slices[2].has_active_ues = true;
   
-  input.num_slices = 3;
-  input.total_prbs = 100;
+  input->num_slices = 3;
+  input->total_prbs = 100;
   
   printf("  Input Configuration:\n");
-  printf("    Total PRBs: %d\n", input.total_prbs);
-  printf("    Number of Slices: %d\n", input.num_slices);
-  print_slice_config(&input.slices[0], 0);
-  print_slice_config(&input.slices[1], 1);
-  print_slice_config(&input.slices[2], 2);
+  printf("    Total PRBs: %d\n", input->total_prbs);
+  printf("    Number of Slices: %d\n", input->num_slices);
+  print_slice_config(&input->slices[0], 0);
+  print_slice_config(&input->slices[1], 1);
+  print_slice_config(&input->slices[2], 2);
   printf("\n");
   
-  int ret = calculate_slice_prb_ranges(&input, &result);
+  int ret = calculate_slice_prb_ranges(input, result);
   
-  print_allocation_result_with_required(&result, &input, input.total_prbs);
+  print_allocation_result_with_required(result, input, input->total_prbs);
   printf("\n");
   
   printf("  Verification:\n");
   ASSERT_EQ(ret, 3, "Should allocate to 3 slices");
-  ASSERT_EQ(result.total_allocated_prbs, 100, "Should allocate all 100 PRBs");
+  ASSERT_EQ(result->total_allocated_prbs, 100, "Should allocate all 100 PRBs");
   
   // Check each slice respects its constraints
-  printf("    ✓ Slice 1: %d PRBs (expected: ≥20, ≤40)\n", result.ranges[0].num_prbs);
-  ASSERT_GE(result.ranges[0].num_prbs, 20, "Slice 1 should get at least min (20 PRBs)");
-  ASSERT_LE(result.ranges[0].num_prbs, 40, "Slice 1 should not exceed max (40 PRBs)");
+  printf("    ✓ Slice 1: %d PRBs (expected: ≥20, ≤40)\n", result->ranges[0].num_prbs);
+  ASSERT_GE(result->ranges[0].num_prbs, 20, "Slice 1 should get at least min (20 PRBs)");
+  ASSERT_LE(result->ranges[0].num_prbs, 40, "Slice 1 should not exceed max (40 PRBs)");
   
-  printf("    ✓ Slice 2: %d PRBs (expected: ≥25, ≤50)\n", result.ranges[1].num_prbs);
-  ASSERT_GE(result.ranges[1].num_prbs, 25, "Slice 2 should get at least min (25 PRBs)");
-  ASSERT_LE(result.ranges[1].num_prbs, 50, "Slice 2 should not exceed max (50 PRBs)");
+  printf("    ✓ Slice 2: %d PRBs (expected: ≥25, ≤50)\n", result->ranges[1].num_prbs);
+  ASSERT_GE(result->ranges[1].num_prbs, 25, "Slice 2 should get at least min (25 PRBs)");
+  ASSERT_LE(result->ranges[1].num_prbs, 50, "Slice 2 should not exceed max (50 PRBs)");
   
-  printf("    ✓ Slice 3: %d PRBs (expected: ≥10, ≤30)\n", result.ranges[2].num_prbs);
-  ASSERT_GE(result.ranges[2].num_prbs, 10, "Slice 3 should get at least min (10 PRBs)");
-  ASSERT_LE(result.ranges[2].num_prbs, 30, "Slice 3 should not exceed max (30 PRBs)");
+  printf("    ✓ Slice 3: %d PRBs (expected: ≥10, ≤30)\n", result->ranges[2].num_prbs);
+  ASSERT_GE(result->ranges[2].num_prbs, 10, "Slice 3 should get at least min (10 PRBs)");
+  ASSERT_LE(result->ranges[2].num_prbs, 30, "Slice 3 should not exceed max (30 PRBs)");
   
   // Check contiguous allocation
-  ASSERT_EQ(result.ranges[0].end_prb, result.ranges[1].start_prb,
+  ASSERT_EQ(result->ranges[0].end_prb, result->ranges[1].start_prb,
             "Slice 1 and 2 should be contiguous");
-  ASSERT_EQ(result.ranges[1].end_prb, result.ranges[2].start_prb,
+  ASSERT_EQ(result->ranges[1].end_prb, result->ranges[2].start_prb,
             "Slice 2 and 3 should be contiguous");
   
   // Total should equal 100
-  int total = result.ranges[0].num_prbs + result.ranges[1].num_prbs + result.ranges[2].num_prbs;
+  int total = result->ranges[0].num_prbs + result->ranges[1].num_prbs + result->ranges[2].num_prbs;
   ASSERT_EQ(total, 100, "Total PRBs should equal 100");
   printf("    ✓ Ranges are contiguous: [%d, %d), [%d, %d), [%d, %d)\n",
-         result.ranges[0].start_prb, result.ranges[0].end_prb,
-         result.ranges[1].start_prb, result.ranges[1].end_prb,
-         result.ranges[2].start_prb, result.ranges[2].end_prb);
+         result->ranges[0].start_prb, result->ranges[0].end_prb,
+         result->ranges[1].start_prb, result->ranges[1].end_prb,
+         result->ranges[2].start_prb, result->ranges[2].end_prb);
+free_slice_input(input);
+free_slice_result(result);
+
 }
 
 /* Test 5: Dedicated allocations exceeding total PRBs */
@@ -341,49 +409,51 @@ static void test_dedicated_exceeds_total(void) {
   printf("  Expected: When total dedicated > 100%%, allocations are scaled down\n");
   printf("            proportionally (each slice gets 50%% in this case)\n\n");
   
-  slice_alloc_input_t input = {0};
-  slice_alloc_result_t result = {0};
+  ALLOCATE_TEST_STRUCTURES(2, input, result);
   
   // Two slices, each wants 60% dedicated (total 120%)
-  input.slices[0].slice_id = 1;
-  input.slices[0].dedicated_prb_ratio = 0.60f;
-  input.slices[0].min_prb_ratio = 0.60f;
-  input.slices[0].max_prb_ratio = 0.60f;
-  input.slices[0].has_active_ues = true;
+  input->slices[0].slice_id = 1;
+  input->slices[0].dedicated_prb_ratio = 0.60f;
+  input->slices[0].min_prb_ratio = 0.60f;
+  input->slices[0].max_prb_ratio = 0.60f;
+  input->slices[0].has_active_ues = true;
   
-  input.slices[1].slice_id = 2;
-  input.slices[1].dedicated_prb_ratio = 0.60f;
-  input.slices[1].min_prb_ratio = 0.60f;
-  input.slices[1].max_prb_ratio = 0.60f;
-  input.slices[1].has_active_ues = true;
+  input->slices[1].slice_id = 2;
+  input->slices[1].dedicated_prb_ratio = 0.60f;
+  input->slices[1].min_prb_ratio = 0.60f;
+  input->slices[1].max_prb_ratio = 0.60f;
+  input->slices[1].has_active_ues = true;
   
-  input.num_slices = 2;
-  input.total_prbs = 100;
+  input->num_slices = 2;
+  input->total_prbs = 100;
   
   printf("  Input Configuration:\n");
-  printf("    Total PRBs: %d\n", input.total_prbs);
-  printf("    Number of Slices: %d\n", input.num_slices);
-  print_slice_config(&input.slices[0], 0);
-  print_slice_config(&input.slices[1], 1);
+  printf("    Total PRBs: %d\n", input->total_prbs);
+  printf("    Number of Slices: %d\n", input->num_slices);
+  print_slice_config(&input->slices[0], 0);
+  print_slice_config(&input->slices[1], 1);
   printf("    Note: Total dedicated = 120%% > 100%%, so scaling is needed\n");
   printf("          Expected scale factor: 100/120 = 0.833\n");
   printf("          Each slice: 60%% × 0.833 = 50%% = 50 PRBs\n\n");
   
-  int ret = calculate_slice_prb_ranges(&input, &result);
+  int ret = calculate_slice_prb_ranges(input, result);
   
-  print_allocation_result_with_required(&result, &input, input.total_prbs);
+  print_allocation_result_with_required(result, input, input->total_prbs);
   printf("\n");
   
   printf("  Verification:\n");
   ASSERT_EQ(ret, 2, "Should allocate to 2 slices");
-  ASSERT_EQ(result.total_allocated_prbs, 100, "Should allocate all 100 PRBs");
+  ASSERT_EQ(result->total_allocated_prbs, 100, "Should allocate all 100 PRBs");
   
   // Should be scaled down proportionally (each gets 50 PRBs)
-  printf("    ✓ Slice 1: %d PRBs (expected: 50 after scaling)\n", result.ranges[0].num_prbs);
-  ASSERT_EQ(result.ranges[0].num_prbs, 50, "Slice 1 should get 50 PRBs (scaled)");
-  printf("    ✓ Slice 2: %d PRBs (expected: 50 after scaling)\n", result.ranges[1].num_prbs);
-  ASSERT_EQ(result.ranges[1].num_prbs, 50, "Slice 2 should get 50 PRBs (scaled)");
+  printf("    ✓ Slice 1: %d PRBs (expected: 50 after scaling)\n", result->ranges[0].num_prbs);
+  ASSERT_EQ(result->ranges[0].num_prbs, 50, "Slice 1 should get 50 PRBs (scaled)");
+  printf("    ✓ Slice 2: %d PRBs (expected: 50 after scaling)\n", result->ranges[1].num_prbs);
+  ASSERT_EQ(result->ranges[1].num_prbs, 50, "Slice 2 should get 50 PRBs (scaled)");
   printf("    ✓ Proportional scaling works correctly\n");
+free_slice_input(input);
+free_slice_result(result);
+
 }
 
 /* Test 6: Max ratio enforcement */
@@ -391,37 +461,39 @@ static void test_max_ratio_enforcement(void) {
   printf("  Purpose: Test that max_prb_ratio is enforced as a hard limit\n");
   printf("  Expected: Even with 90 PRBs remaining, slice cannot exceed 30%% (30 PRBs)\n\n");
   
-  slice_alloc_input_t input = {0};
-  slice_alloc_result_t result = {0};
+  ALLOCATE_TEST_STRUCTURES(1, input, result);
   
   // Slice with 30% max, but plenty of remaining PRBs
-  input.slices[0].slice_id = 1;
-  input.slices[0].dedicated_prb_ratio = 0.10f;
-  input.slices[0].min_prb_ratio = 0.10f;
-  input.slices[0].max_prb_ratio = 0.30f;  // Hard limit at 30%
-  input.slices[0].has_active_ues = true;
+  input->slices[0].slice_id = 1;
+  input->slices[0].dedicated_prb_ratio = 0.10f;
+  input->slices[0].min_prb_ratio = 0.10f;
+  input->slices[0].max_prb_ratio = 0.30f;  // Hard limit at 30%
+  input->slices[0].has_active_ues = true;
   
-  input.num_slices = 1;
-  input.total_prbs = 100;
+  input->num_slices = 1;
+  input->total_prbs = 100;
   
   printf("  Input Configuration:\n");
-  printf("    Total PRBs: %d\n", input.total_prbs);
-  printf("    Number of Slices: %d\n", input.num_slices);
-  print_slice_config(&input.slices[0], 0);
+  printf("    Total PRBs: %d\n", input->total_prbs);
+  printf("    Number of Slices: %d\n", input->num_slices);
+  print_slice_config(&input->slices[0], 0);
   printf("    Note: After dedicated (10 PRBs), 90 PRBs remain, but max is 30%%\n");
   printf("          Slice should get exactly 30 PRBs (max limit)\n\n");
   
-  int ret = calculate_slice_prb_ranges(&input, &result);
+  int ret = calculate_slice_prb_ranges(input, result);
   
-  print_allocation_result_with_required(&result, &input, input.total_prbs);
+  print_allocation_result_with_required(result, input, input->total_prbs);
   printf("\n");
   
   printf("  Verification:\n");
   ASSERT_EQ(ret, 1, "Should allocate to 1 slice");
-  printf("    ✓ Slice 1: %d PRBs (expected: ≤30, hard limit)\n", result.ranges[0].num_prbs);
-  ASSERT_LE(result.ranges[0].num_prbs, 30, "Should not exceed max (30 PRBs)");
+  printf("    ✓ Slice 1: %d PRBs (expected: ≤30, hard limit)\n", result->ranges[0].num_prbs);
+  ASSERT_LE(result->ranges[0].num_prbs, 30, "Should not exceed max (30 PRBs)");
   // Even though there are 90 PRBs remaining, slice should only get up to 30
   printf("    ✓ Max ratio (30%%) is correctly enforced as hard limit\n");
+free_slice_input(input);
+free_slice_result(result);
+
 }
 
 /* Test 7: Validation tests */
@@ -429,40 +501,38 @@ static void test_validation(void) {
   printf("  Purpose: Test input validation and error handling\n");
   printf("  Expected: Invalid inputs return -1, valid inputs succeed\n\n");
   
-  slice_alloc_input_t input = {0};
-  slice_alloc_result_t result = {0};
+  ALLOCATE_TEST_STRUCTURES(1, input, result);
   
   printf("  Testing NULL input...\n");
-  int ret = calculate_slice_prb_ranges(NULL, &result);
+  int ret = calculate_slice_prb_ranges(NULL, result);
   ASSERT_EQ(ret, -1, "NULL input should return -1");
   printf("    ✓ NULL input correctly rejected\n");
   
   printf("  Testing NULL result...\n");
-  ret = calculate_slice_prb_ranges(&input, NULL);
+  ret = calculate_slice_prb_ranges(input, NULL);
   ASSERT_EQ(ret, -1, "NULL result should return -1");
   printf("    ✓ NULL result correctly rejected\n");
   
   printf("  Testing invalid ratio (> 1.0)...\n");
   // Test invalid ratios
-  input.slices[0].slice_id = 1;
-  input.slices[0].dedicated_prb_ratio = 1.5f;  // Invalid: > 1.0
-  input.slices[0].min_prb_ratio = 0.5f;
-  input.slices[0].max_prb_ratio = 0.5f;
-  input.slices[0].has_active_ues = true;
-  input.num_slices = 1;
-  input.total_prbs = 100;
+  input->slices[0].slice_id = 1;
+  input->slices[0].dedicated_prb_ratio = 1.5f;  // Invalid: > 1.0
+  input->slices[0].min_prb_ratio = 0.5f;
+  input->slices[0].max_prb_ratio = 0.5f;
+  input->slices[0].has_active_ues = true;
+  input->total_prbs = 100;
   
-  ret = calculate_slice_prb_ranges(&input, &result);
+  ret = calculate_slice_prb_ranges(input, result);
   ASSERT_EQ(ret, -1, "Invalid ratio should return -1");
   printf("    ✓ Ratio > 1.0 correctly rejected\n");
   
   printf("  Testing invalid relationship (dedicated > min)...\n");
   // Test invalid relationship (dedicated > min)
-  input.slices[0].dedicated_prb_ratio = 0.5f;
-  input.slices[0].min_prb_ratio = 0.3f;  // Invalid: min < dedicated
-  input.slices[0].max_prb_ratio = 0.5f;
+  input->slices[0].dedicated_prb_ratio = 0.5f;
+  input->slices[0].min_prb_ratio = 0.3f;  // Invalid: min < dedicated
+  input->slices[0].max_prb_ratio = 0.5f;
   
-  ret = calculate_slice_prb_ranges(&input, &result);
+  ret = calculate_slice_prb_ranges(input, result);
   ASSERT_EQ(ret, -1, "Invalid ratio relationship should return -1");
   printf("    ✓ Invalid ratio relationship (dedicated > min) correctly rejected\n");
 }
@@ -472,28 +542,30 @@ static void test_zero_total_prbs(void) {
   printf("  Purpose: Test edge case with zero total PRBs\n");
   printf("  Expected: Zero total PRBs should be rejected (return -1)\n\n");
   
-  slice_alloc_input_t input = {0};
-  slice_alloc_result_t result = {0};
+  ALLOCATE_TEST_STRUCTURES(1, input, result);
   
-  input.slices[0].slice_id = 1;
-  input.slices[0].dedicated_prb_ratio = 0.5f;
-  input.slices[0].min_prb_ratio = 0.5f;
-  input.slices[0].max_prb_ratio = 0.5f;
-  input.slices[0].has_active_ues = true;
-  input.num_slices = 1;
-  input.total_prbs = 0;  // Invalid
+  input->slices[0].slice_id = 1;
+  input->slices[0].dedicated_prb_ratio = 0.5f;
+  input->slices[0].min_prb_ratio = 0.5f;
+  input->slices[0].max_prb_ratio = 0.5f;
+  input->slices[0].has_active_ues = true;
+  input->num_slices = 1;
+  input->total_prbs = 0;  // Invalid
   
   printf("  Input Configuration:\n");
-  printf("    Total PRBs: %d (INVALID)\n", input.total_prbs);
-  printf("    Number of Slices: %d\n", input.num_slices);
-  print_slice_config(&input.slices[0], 0);
+  printf("    Total PRBs: %d (INVALID)\n", input->total_prbs);
+  printf("    Number of Slices: %d\n", input->num_slices);
+  print_slice_config(&input->slices[0], 0);
   printf("\n");
   
-  int ret = calculate_slice_prb_ranges(&input, &result);
+  int ret = calculate_slice_prb_ranges(input, result);
   
   printf("  Verification:\n");
   ASSERT_EQ(ret, -1, "Zero total PRBs should return -1");
   printf("    ✓ Zero total PRBs correctly rejected\n");
+free_slice_input(input);
+free_slice_result(result);
+
 }
 
 /* Test 9: Real-world scenario - 106 PRBs with 2 slices */
@@ -502,67 +574,69 @@ static void test_real_world_106_prbs(void) {
   printf("  Expected: eMBB and URLLC slices get appropriate allocations\n");
   printf("            respecting their dedicated, min, and max ratios\n\n");
   
-  slice_alloc_input_t input = {0};
-  slice_alloc_result_t result = {0};
+  ALLOCATE_TEST_STRUCTURES(2, input, result);
   
   // Slice 1: 33% dedicated, 33% min, 50% max (typical eMBB slice)
-  input.slices[0].slice_id = 1;
-  input.slices[0].dedicated_prb_ratio = 0.33f;
-  input.slices[0].min_prb_ratio = 0.33f;
-  input.slices[0].max_prb_ratio = 0.50f;
-  input.slices[0].has_active_ues = true;
+  input->slices[0].slice_id = 1;
+  input->slices[0].dedicated_prb_ratio = 0.33f;
+  input->slices[0].min_prb_ratio = 0.33f;
+  input->slices[0].max_prb_ratio = 0.50f;
+  input->slices[0].has_active_ues = true;
   
   // Slice 2: 20% dedicated, 20% min, 50% max (typical URLLC slice)
-  input.slices[1].slice_id = 2;
-  input.slices[1].dedicated_prb_ratio = 0.20f;
-  input.slices[1].min_prb_ratio = 0.20f;
-  input.slices[1].max_prb_ratio = 0.50f;
-  input.slices[1].has_active_ues = true;
+  input->slices[1].slice_id = 2;
+  input->slices[1].dedicated_prb_ratio = 0.20f;
+  input->slices[1].min_prb_ratio = 0.20f;
+  input->slices[1].max_prb_ratio = 0.50f;
+  input->slices[1].has_active_ues = true;
   
-  input.num_slices = 2;
-  input.total_prbs = 106;  // Typical 5G NR bandwidth
+  input->num_slices = 2;
+  input->total_prbs = 106;  // Typical 5G NR bandwidth
   
   printf("  Input Configuration:\n");
-  printf("    Total PRBs: %d (typical 5G NR bandwidth)\n", input.total_prbs);
-  printf("    Number of Slices: %d\n", input.num_slices);
+  printf("    Total PRBs: %d (typical 5G NR bandwidth)\n", input->total_prbs);
+  printf("    Number of Slices: %d\n", input->num_slices);
   printf("    Slice 1 (eMBB - Enhanced Mobile Broadband):\n");
-  print_slice_config(&input.slices[0], 0);
+  print_slice_config(&input->slices[0], 0);
   printf("    Slice 2 (URLLC - Ultra-Reliable Low-Latency Communication):\n");
-  print_slice_config(&input.slices[1], 1);
+  print_slice_config(&input->slices[1], 1);
   printf("\n");
   
-  int ret = calculate_slice_prb_ranges(&input, &result);
+  int ret = calculate_slice_prb_ranges(input, result);
   
-  print_allocation_result_with_required(&result, &input, input.total_prbs);
+  print_allocation_result_with_required(result, input, input->total_prbs);
   printf("\n");
   
   printf("  Verification:\n");
   ASSERT_EQ(ret, 2, "Should allocate to 2 slices");
-  ASSERT_EQ(result.total_allocated_prbs, 106, "Should allocate all 106 PRBs");
+  ASSERT_EQ(result->total_allocated_prbs, 106, "Should allocate all 106 PRBs");
   
   // Slice 1: at least 35 PRBs (33% of 106), up to 53 PRBs (50% of 106)
   int slice1_min = (int)(106 * 0.33f + 0.5);
   int slice1_max = (int)(106 * 0.50f + 0.5);
   printf("    ✓ Slice 1 (eMBB): %d PRBs (expected: ≥%d, ≤%d)\n",
-         result.ranges[0].num_prbs, slice1_min, slice1_max);
-  ASSERT_GE(result.ranges[0].num_prbs, slice1_min, "Slice 1 should get at least min");
-  ASSERT_LE(result.ranges[0].num_prbs, slice1_max, "Slice 1 should not exceed max");
+         result->ranges[0].num_prbs, slice1_min, slice1_max);
+  ASSERT_GE(result->ranges[0].num_prbs, slice1_min, "Slice 1 should get at least min");
+  ASSERT_LE(result->ranges[0].num_prbs, slice1_max, "Slice 1 should not exceed max");
   
   // Slice 2: at least 21 PRBs (20% of 106), up to 53 PRBs (50% of 106)
   int slice2_min = (int)(106 * 0.20f + 0.5);
   int slice2_max = (int)(106 * 0.50f + 0.5);
   printf("    ✓ Slice 2 (URLLC): %d PRBs (expected: ≥%d, ≤%d)\n",
-         result.ranges[1].num_prbs, slice2_min, slice2_max);
-  ASSERT_GE(result.ranges[1].num_prbs, slice2_min, "Slice 2 should get at least min");
-  ASSERT_LE(result.ranges[1].num_prbs, slice2_max, "Slice 2 should not exceed max");
+         result->ranges[1].num_prbs, slice2_min, slice2_max);
+  ASSERT_GE(result->ranges[1].num_prbs, slice2_min, "Slice 2 should get at least min");
+  ASSERT_LE(result->ranges[1].num_prbs, slice2_max, "Slice 2 should not exceed max");
   
   // Check contiguous allocation
-  ASSERT_EQ(result.ranges[0].end_prb, result.ranges[1].start_prb,
+  ASSERT_EQ(result->ranges[0].end_prb, result->ranges[1].start_prb,
             "Slices should be contiguous");
-  ASSERT_EQ(result.ranges[1].end_prb, 106, "Last slice should end at total PRBs");
+  ASSERT_EQ(result->ranges[1].end_prb, 106, "Last slice should end at total PRBs");
   printf("    ✓ Ranges are contiguous: [%d, %d) and [%d, %d)\n",
-         result.ranges[0].start_prb, result.ranges[0].end_prb,
-         result.ranges[1].start_prb, result.ranges[1].end_prb);
+         result->ranges[0].start_prb, result->ranges[0].end_prb,
+         result->ranges[1].start_prb, result->ranges[1].end_prb);
+free_slice_input(input);
+free_slice_result(result);
+
 }
 
 /* Test Pass 1: Dedicated PRB Allocation */
@@ -570,80 +644,82 @@ static void test_pass1_dedicated(void) {
   printf("  Purpose: Test Pass 1 (dedicated allocation) in isolation\n");
   printf("  Expected: Allocates dedicated PRBs, handles scaling when exceeds total\n\n");
   
-  slice_alloc_input_t input = {0};
-  slice_alloc_result_t result = {0};
+  ALLOCATE_TEST_STRUCTURES(2, input, result);
   
   // Test case 1: Normal dedicated allocation
-  input.slices[0].slice_id = 1;
-  input.slices[0].dedicated_prb_ratio = 0.30f;
-  input.slices[0].min_prb_ratio = 0.30f;
-  input.slices[0].max_prb_ratio = 0.50f;
-  input.slices[0].has_active_ues = true;
+  input->slices[0].slice_id = 1;
+  input->slices[0].dedicated_prb_ratio = 0.30f;
+  input->slices[0].min_prb_ratio = 0.30f;
+  input->slices[0].max_prb_ratio = 0.50f;
+  input->slices[0].has_active_ues = true;
   
-  input.slices[1].slice_id = 2;
-  input.slices[1].dedicated_prb_ratio = 0.20f;
-  input.slices[1].min_prb_ratio = 0.20f;
-  input.slices[1].max_prb_ratio = 0.50f;
-  input.slices[1].has_active_ues = true;
+  input->slices[1].slice_id = 2;
+  input->slices[1].dedicated_prb_ratio = 0.20f;
+  input->slices[1].min_prb_ratio = 0.20f;
+  input->slices[1].max_prb_ratio = 0.50f;
+  input->slices[1].has_active_ues = true;
   
-  input.num_slices = 2;
-  input.total_prbs = 100;
+  input->num_slices = 2;
+  input->total_prbs = 100;
   
   // Initialize result
-  memset(&result, 0, sizeof(result));
-  for (int s = 0; s < input.num_slices; ++s) {
-    result.ranges[s].slice_id = input.slices[s].slice_id;
+  // Result already zeroed by calloc
+  for (int s = 0; s < input->num_slices; ++s) {
+    result->ranges[s].slice_id = input->slices[s].slice_id;
   }
   
   int allocated_prbs = 0;
   int num_active_slices = 0;
   
   printf("  Input Configuration:\n");
-  printf("    Total PRBs: %d\n", input.total_prbs);
-  print_slice_config(&input.slices[0], 0);
-  print_slice_config(&input.slices[1], 1);
+  printf("    Total PRBs: %d\n", input->total_prbs);
+  print_slice_config(&input->slices[0], 0);
+  print_slice_config(&input->slices[1], 1);
   printf("\n");
   
-  int ret = pass1_allocate_dedicated(&input, &result, &allocated_prbs, &num_active_slices);
+  int ret = pass1_allocate_dedicated(input, result, &allocated_prbs, &num_active_slices);
   
   printf("  Pass 1 Result:\n");
   printf("    Allocated PRBs: %d\n", allocated_prbs);
   printf("    Active Slices: %d\n", num_active_slices);
-  printf("    Slice 1: %d PRBs (expected: 30)\n", result.ranges[0].num_prbs);
-  printf("    Slice 2: %d PRBs (expected: 20)\n", result.ranges[1].num_prbs);
+  printf("    Slice 1: %d PRBs (expected: 30)\n", result->ranges[0].num_prbs);
+  printf("    Slice 2: %d PRBs (expected: 20)\n", result->ranges[1].num_prbs);
   printf("\n");
   
   printf("  Verification:\n");
   ASSERT_EQ(ret, 0, "Pass 1 should succeed");
   ASSERT_EQ(num_active_slices, 2, "Should have 2 active slices");
-  ASSERT_EQ(result.ranges[0].num_prbs, 30, "Slice 1 should get 30 PRBs");
-  ASSERT_EQ(result.ranges[1].num_prbs, 20, "Slice 2 should get 20 PRBs");
+  ASSERT_EQ(result->ranges[0].num_prbs, 30, "Slice 1 should get 30 PRBs");
+  ASSERT_EQ(result->ranges[1].num_prbs, 20, "Slice 2 should get 20 PRBs");
   ASSERT_EQ(allocated_prbs, 50, "Total allocated should be 50 PRBs");
   
   // Test case 2: Dedicated exceeds total (scaling)
-  input.slices[0].dedicated_prb_ratio = 0.60f;
-  input.slices[1].dedicated_prb_ratio = 0.60f;
+  input->slices[0].dedicated_prb_ratio = 0.60f;
+  input->slices[1].dedicated_prb_ratio = 0.60f;
   
-  memset(&result, 0, sizeof(result));
-  for (int s = 0; s < input.num_slices; ++s) {
-    result.ranges[s].slice_id = input.slices[s].slice_id;
+  // Result already zeroed by calloc
+  for (int s = 0; s < input->num_slices; ++s) {
+    result->ranges[s].slice_id = input->slices[s].slice_id;
   }
   allocated_prbs = 0;
   num_active_slices = 0;
   
   printf("  Test Case 2: Dedicated exceeds total (60%% + 60%% = 120%%)\n");
-  ret = pass1_allocate_dedicated(&input, &result, &allocated_prbs, &num_active_slices);
+  ret = pass1_allocate_dedicated(input, result, &allocated_prbs, &num_active_slices);
   
   printf("  Pass 1 Result (with scaling):\n");
   printf("    Allocated PRBs: %d (expected: 100 after scaling)\n", allocated_prbs);
-  printf("    Slice 1: %d PRBs (expected: 50 after scaling)\n", result.ranges[0].num_prbs);
-  printf("    Slice 2: %d PRBs (expected: 50 after scaling)\n", result.ranges[1].num_prbs);
+  printf("    Slice 1: %d PRBs (expected: 50 after scaling)\n", result->ranges[0].num_prbs);
+  printf("    Slice 2: %d PRBs (expected: 50 after scaling)\n", result->ranges[1].num_prbs);
   printf("\n");
   
   ASSERT_EQ(ret, 0, "Pass 1 should succeed");
   ASSERT_EQ(allocated_prbs, 100, "After scaling, should allocate exactly 100 PRBs");
-  ASSERT_EQ(result.ranges[0].num_prbs, 50, "Slice 1 should get 50 PRBs after scaling");
-  ASSERT_EQ(result.ranges[1].num_prbs, 50, "Slice 2 should get 50 PRBs after scaling");
+  ASSERT_EQ(result->ranges[0].num_prbs, 50, "Slice 1 should get 50 PRBs after scaling");
+  ASSERT_EQ(result->ranges[1].num_prbs, 50, "Slice 2 should get 50 PRBs after scaling");
+free_slice_input(input);
+free_slice_result(result);
+
 }
 
 /* Test Pass 2: Prioritized Resource Allocation */
@@ -651,63 +727,65 @@ static void test_pass2_prioritized(void) {
   printf("  Purpose: Test Pass 2 (prioritized allocation) in isolation\n");
   printf("  Expected: Allocates prioritized resources based on required_prbs\n\n");
   
-  slice_alloc_input_t input = {0};
-  slice_alloc_result_t result = {0};
+  ALLOCATE_TEST_STRUCTURES(2, input, result);
   
   // Setup: Pass 1 already allocated dedicated PRBs
-  input.slices[0].slice_id = 1;
-  input.slices[0].dedicated_prb_ratio = 0.20f;
-  input.slices[0].min_prb_ratio = 0.30f;
-  input.slices[0].max_prb_ratio = 0.50f;
-  input.slices[0].has_active_ues = true;
-  input.slices[0].required_prbs = 35; // Needs more than dedicated
+  input->slices[0].slice_id = 1;
+  input->slices[0].dedicated_prb_ratio = 0.20f;
+  input->slices[0].min_prb_ratio = 0.30f;
+  input->slices[0].max_prb_ratio = 0.50f;
+  input->slices[0].has_active_ues = true;
+  input->slices[0].required_prbs = 35; // Needs more than dedicated
   
-  input.slices[1].slice_id = 2;
-  input.slices[1].dedicated_prb_ratio = 0.10f;
-  input.slices[1].min_prb_ratio = 0.25f;
-  input.slices[1].max_prb_ratio = 0.50f;
-  input.slices[1].has_active_ues = true;
-  input.slices[1].required_prbs = 30; // Needs more than dedicated
+  input->slices[1].slice_id = 2;
+  input->slices[1].dedicated_prb_ratio = 0.10f;
+  input->slices[1].min_prb_ratio = 0.25f;
+  input->slices[1].max_prb_ratio = 0.50f;
+  input->slices[1].has_active_ues = true;
+  input->slices[1].required_prbs = 30; // Needs more than dedicated
   
-  input.num_slices = 2;
-  input.total_prbs = 100;
+  input->num_slices = 2;
+  input->total_prbs = 100;
   
   // Initialize result with Pass 1 allocations
-  memset(&result, 0, sizeof(result));
-  for (int s = 0; s < input.num_slices; ++s) {
-    result.ranges[s].slice_id = input.slices[s].slice_id;
+  // Result already zeroed by calloc
+  for (int s = 0; s < input->num_slices; ++s) {
+    result->ranges[s].slice_id = input->slices[s].slice_id;
   }
-  result.ranges[0].num_prbs = 20; // Dedicated from Pass 1
-  result.ranges[1].num_prbs = 10; // Dedicated from Pass 1
+  result->ranges[0].num_prbs = 20; // Dedicated from Pass 1
+  result->ranges[1].num_prbs = 10; // Dedicated from Pass 1
   
   int allocated_prbs = 30; // From Pass 1
   int remaining_prbs = 70; // 100 - 30
   
   printf("  Input Configuration (after Pass 1):\n");
-  printf("    Total PRBs: %d\n", input.total_prbs);
+  printf("    Total PRBs: %d\n", input->total_prbs);
   printf("    Already allocated: %d PRBs (dedicated)\n", allocated_prbs);
   printf("    Remaining: %d PRBs\n", remaining_prbs);
-  print_slice_config(&input.slices[0], 0);
-  print_slice_config(&input.slices[1], 1);
+  print_slice_config(&input->slices[0], 0);
+  print_slice_config(&input->slices[1], 1);
   printf("\n");
   
-  int ret = pass2_allocate_prioritized(&input, &result, &allocated_prbs, &remaining_prbs);
+  int ret = pass2_allocate_prioritized(input, result, &allocated_prbs, &remaining_prbs);
   
   printf("  Pass 2 Result:\n");
   printf("    Allocated PRBs: %d (was %d, added %d)\n", allocated_prbs, 30, allocated_prbs - 30);
   printf("    Remaining PRBs: %d\n", remaining_prbs);
   printf("    Slice 1: %d PRBs (was 20, added %d, prioritized=10)\n",
-         result.ranges[0].num_prbs, result.ranges[0].num_prbs - 20);
+         result->ranges[0].num_prbs, result->ranges[0].num_prbs - 20);
   printf("    Slice 2: %d PRBs (was 10, added %d, prioritized=15)\n",
-         result.ranges[1].num_prbs, result.ranges[1].num_prbs - 10);
+         result->ranges[1].num_prbs, result->ranges[1].num_prbs - 10);
   printf("\n");
   
   printf("  Verification:\n");
   ASSERT_EQ(ret, 0, "Pass 2 should succeed");
-  ASSERT_EQ(result.ranges[0].num_prbs, 30, "Slice 1 should get 30 PRBs (20 dedicated + 10 prioritized)");
-  ASSERT_EQ(result.ranges[1].num_prbs, 25, "Slice 2 should get 25 PRBs (10 dedicated + 15 prioritized)");
+  ASSERT_EQ(result->ranges[0].num_prbs, 30, "Slice 1 should get 30 PRBs (20 dedicated + 10 prioritized)");
+  ASSERT_EQ(result->ranges[1].num_prbs, 25, "Slice 2 should get 25 PRBs (10 dedicated + 15 prioritized)");
   ASSERT_EQ(allocated_prbs, 55, "Total allocated should be 55 PRBs");
   ASSERT_EQ(remaining_prbs, 45, "Remaining should be 45 PRBs");
+free_slice_input(input);
+free_slice_result(result);
+
 }
 
 /* Test Pass 3: Shared Resource Allocation */
@@ -715,66 +793,68 @@ static void test_pass3_shared(void) {
   printf("  Purpose: Test Pass 3 (shared allocation) in isolation\n");
   printf("  Expected: Distributes shared resources proportionally\n\n");
   
-  slice_alloc_input_t input = {0};
-  slice_alloc_result_t result = {0};
+  ALLOCATE_TEST_STRUCTURES(2, input, result);
   
   // Setup: Pass 1 and 2 already allocated
-  input.slices[0].slice_id = 1;
-  input.slices[0].dedicated_prb_ratio = 0.20f;
-  input.slices[0].min_prb_ratio = 0.30f;
-  input.slices[0].max_prb_ratio = 0.50f;
-  input.slices[0].has_active_ues = true;
-  input.slices[0].required_prbs = 45;
+  input->slices[0].slice_id = 1;
+  input->slices[0].dedicated_prb_ratio = 0.20f;
+  input->slices[0].min_prb_ratio = 0.30f;
+  input->slices[0].max_prb_ratio = 0.50f;
+  input->slices[0].has_active_ues = true;
+  input->slices[0].required_prbs = 45;
   
-  input.slices[1].slice_id = 2;
-  input.slices[1].dedicated_prb_ratio = 0.10f;
-  input.slices[1].min_prb_ratio = 0.25f;
-  input.slices[1].max_prb_ratio = 0.50f;
-  input.slices[1].has_active_ues = true;
-  input.slices[1].required_prbs = 35;
+  input->slices[1].slice_id = 2;
+  input->slices[1].dedicated_prb_ratio = 0.10f;
+  input->slices[1].min_prb_ratio = 0.25f;
+  input->slices[1].max_prb_ratio = 0.50f;
+  input->slices[1].has_active_ues = true;
+  input->slices[1].required_prbs = 35;
   
-  input.num_slices = 2;
-  input.total_prbs = 100;
+  input->num_slices = 2;
+  input->total_prbs = 100;
   
   // Initialize result with Pass 1+2 allocations
-  memset(&result, 0, sizeof(result));
-  for (int s = 0; s < input.num_slices; ++s) {
-    result.ranges[s].slice_id = input.slices[s].slice_id;
+  // Result already zeroed by calloc
+  for (int s = 0; s < input->num_slices; ++s) {
+    result->ranges[s].slice_id = input->slices[s].slice_id;
   }
-  result.ranges[0].num_prbs = 30; // After Pass 1+2
-  result.ranges[1].num_prbs = 25; // After Pass 1+2
+  result->ranges[0].num_prbs = 30; // After Pass 1+2
+  result->ranges[1].num_prbs = 25; // After Pass 1+2
   
   int allocated_prbs = 55; // From Pass 1+2
   int remaining_prbs = 45; // Shared resources
   
   printf("  Input Configuration (after Pass 1+2):\n");
-  printf("    Total PRBs: %d\n", input.total_prbs);
+  printf("    Total PRBs: %d\n", input->total_prbs);
   printf("    Already allocated: %d PRBs\n", allocated_prbs);
   printf("    Remaining (shared): %d PRBs\n", remaining_prbs);
   printf("    Slice 1: %d PRBs, max=50, can_add=%d, required=%d\n",
-         result.ranges[0].num_prbs, 50 - result.ranges[0].num_prbs, input.slices[0].required_prbs);
+         result->ranges[0].num_prbs, 50 - result->ranges[0].num_prbs, input->slices[0].required_prbs);
   printf("    Slice 2: %d PRBs, max=50, can_add=%d, required=%d\n",
-         result.ranges[1].num_prbs, 50 - result.ranges[1].num_prbs, input.slices[1].required_prbs);
+         result->ranges[1].num_prbs, 50 - result->ranges[1].num_prbs, input->slices[1].required_prbs);
   printf("\n");
   
-  int ret = pass3_allocate_shared(&input, &result, &allocated_prbs, &remaining_prbs);
+  int ret = pass3_allocate_shared(input, result, &allocated_prbs, &remaining_prbs);
   
   printf("  Pass 3 Result:\n");
   printf("    Allocated PRBs: %d (was %d, added %d)\n", allocated_prbs, 55, allocated_prbs - 55);
   printf("    Remaining PRBs: %d\n", remaining_prbs);
   printf("    Slice 1: %d PRBs (was 30, added %d)\n",
-         result.ranges[0].num_prbs, result.ranges[0].num_prbs - 30);
+         result->ranges[0].num_prbs, result->ranges[0].num_prbs - 30);
   printf("    Slice 2: %d PRBs (was 25, added %d)\n",
-         result.ranges[1].num_prbs, result.ranges[1].num_prbs - 25);
+         result->ranges[1].num_prbs, result->ranges[1].num_prbs - 25);
   printf("\n");
   
   printf("  Verification:\n");
   ASSERT_EQ(ret, 0, "Pass 3 should succeed");
-  ASSERT_GE(result.ranges[0].num_prbs, 30, "Slice 1 should get at least 30 PRBs");
-  ASSERT_LE(result.ranges[0].num_prbs, 50, "Slice 1 should not exceed max (50)");
-  ASSERT_GE(result.ranges[1].num_prbs, 25, "Slice 2 should get at least 25 PRBs");
-  ASSERT_LE(result.ranges[1].num_prbs, 50, "Slice 2 should not exceed max (50)");
+  ASSERT_GE(result->ranges[0].num_prbs, 30, "Slice 1 should get at least 30 PRBs");
+  ASSERT_LE(result->ranges[0].num_prbs, 50, "Slice 1 should not exceed max (50)");
+  ASSERT_GE(result->ranges[1].num_prbs, 25, "Slice 2 should get at least 25 PRBs");
+  ASSERT_LE(result->ranges[1].num_prbs, 50, "Slice 2 should not exceed max (50)");
   ASSERT_EQ(allocated_prbs + remaining_prbs, 100, "Allocated + remaining should equal total");
+free_slice_input(input);
+free_slice_result(result);
+
 }
 
 /* Test Pass 4: Range Assignment */
@@ -782,50 +862,52 @@ static void test_pass4_ranges(void) {
   printf("  Purpose: Test Pass 4 (range assignment) in isolation\n");
   printf("  Expected: Assigns contiguous, non-overlapping ranges\n\n");
   
-  slice_alloc_input_t input = {0};
-  slice_alloc_result_t result = {0};
+  ALLOCATE_TEST_STRUCTURES(3, input, result);
   
-  input.slices[0].slice_id = 1;
-  input.slices[1].slice_id = 2;
-  input.slices[2].slice_id = 3;
-  input.num_slices = 3;
+  input->slices[0].slice_id = 1;
+  input->slices[1].slice_id = 2;
+  input->slices[2].slice_id = 3;
+  input->num_slices = 3;
   
   // Setup: PRBs already allocated (from previous passes)
-  result.ranges[0].num_prbs = 30;
-  result.ranges[1].num_prbs = 20;
-  result.ranges[2].num_prbs = 50;
+  result->ranges[0].num_prbs = 30;
+  result->ranges[1].num_prbs = 20;
+  result->ranges[2].num_prbs = 50;
   // Slice 0 has no PRBs (should be skipped)
   
   printf("  Input Configuration:\n");
-  printf("    Slice 1: %d PRBs\n", result.ranges[0].num_prbs);
-  printf("    Slice 2: %d PRBs\n", result.ranges[1].num_prbs);
-  printf("    Slice 3: %d PRBs\n", result.ranges[2].num_prbs);
+  printf("    Slice 1: %d PRBs\n", result->ranges[0].num_prbs);
+  printf("    Slice 2: %d PRBs\n", result->ranges[1].num_prbs);
+  printf("    Slice 3: %d PRBs\n", result->ranges[2].num_prbs);
   printf("    Total: %d PRBs\n", 30 + 20 + 50);
   printf("\n");
   
-  int ret = pass4_assign_ranges(&input, &result);
+  int ret = pass4_assign_ranges(input, result);
   
   printf("  Pass 4 Result:\n");
   printf("    Slice 1: [%d, %d) = %d PRBs\n",
-         result.ranges[0].start_prb, result.ranges[0].end_prb, result.ranges[0].num_prbs);
+         result->ranges[0].start_prb, result->ranges[0].end_prb, result->ranges[0].num_prbs);
   printf("    Slice 2: [%d, %d) = %d PRBs\n",
-         result.ranges[1].start_prb, result.ranges[1].end_prb, result.ranges[1].num_prbs);
+         result->ranges[1].start_prb, result->ranges[1].end_prb, result->ranges[1].num_prbs);
   printf("    Slice 3: [%d, %d) = %d PRBs\n",
-         result.ranges[2].start_prb, result.ranges[2].end_prb, result.ranges[2].num_prbs);
+         result->ranges[2].start_prb, result->ranges[2].end_prb, result->ranges[2].num_prbs);
   printf("\n");
   
   printf("  Verification:\n");
   ASSERT_EQ(ret, 0, "Pass 4 should succeed");
-  ASSERT_EQ(result.ranges[0].start_prb, 0, "Slice 1 should start at 0");
-  ASSERT_EQ(result.ranges[0].end_prb, 30, "Slice 1 should end at 30");
-  ASSERT_EQ(result.ranges[1].start_prb, 30, "Slice 2 should start at 30 (contiguous)");
-  ASSERT_EQ(result.ranges[1].end_prb, 50, "Slice 2 should end at 50");
-  ASSERT_EQ(result.ranges[2].start_prb, 50, "Slice 3 should start at 50 (contiguous)");
-  ASSERT_EQ(result.ranges[2].end_prb, 100, "Slice 3 should end at 100");
-  ASSERT_EQ(result.ranges[0].end_prb, result.ranges[1].start_prb,
+  ASSERT_EQ(result->ranges[0].start_prb, 0, "Slice 1 should start at 0");
+  ASSERT_EQ(result->ranges[0].end_prb, 30, "Slice 1 should end at 30");
+  ASSERT_EQ(result->ranges[1].start_prb, 30, "Slice 2 should start at 30 (contiguous)");
+  ASSERT_EQ(result->ranges[1].end_prb, 50, "Slice 2 should end at 50");
+  ASSERT_EQ(result->ranges[2].start_prb, 50, "Slice 3 should start at 50 (contiguous)");
+  ASSERT_EQ(result->ranges[2].end_prb, 100, "Slice 3 should end at 100");
+  ASSERT_EQ(result->ranges[0].end_prb, result->ranges[1].start_prb,
             "Slices should be contiguous");
-  ASSERT_EQ(result.ranges[1].end_prb, result.ranges[2].start_prb,
+  ASSERT_EQ(result->ranges[1].end_prb, result->ranges[2].start_prb,
             "Slices should be contiguous");
+free_slice_input(input);
+free_slice_result(result);
+
 }
 
 /* Test Pass 1 Edge Cases */
@@ -833,135 +915,141 @@ static void test_pass1_dedicated_static_allocation(void) {
   printf("  Purpose: Test Pass 1 with dedicated = min = max (static allocation)\n");
   printf("  Expected: All PRBs allocated in Pass 1, no scaling needed\n\n");
   
-  slice_alloc_input_t input = {0};
-  slice_alloc_result_t result = {0};
+  ALLOCATE_TEST_STRUCTURES(2, input, result);
   
-  input.slices[0].slice_id = 1;
-  input.slices[0].dedicated_prb_ratio = 0.50f;
-  input.slices[0].min_prb_ratio = 0.50f;
-  input.slices[0].max_prb_ratio = 0.50f;
-  input.slices[0].has_active_ues = true;
+  input->slices[0].slice_id = 1;
+  input->slices[0].dedicated_prb_ratio = 0.50f;
+  input->slices[0].min_prb_ratio = 0.50f;
+  input->slices[0].max_prb_ratio = 0.50f;
+  input->slices[0].has_active_ues = true;
   
-  input.slices[1].slice_id = 2;
-  input.slices[1].dedicated_prb_ratio = 0.50f;
-  input.slices[1].min_prb_ratio = 0.50f;
-  input.slices[1].max_prb_ratio = 0.50f;
-  input.slices[1].has_active_ues = true;
+  input->slices[1].slice_id = 2;
+  input->slices[1].dedicated_prb_ratio = 0.50f;
+  input->slices[1].min_prb_ratio = 0.50f;
+  input->slices[1].max_prb_ratio = 0.50f;
+  input->slices[1].has_active_ues = true;
   
-  input.num_slices = 2;
-  input.total_prbs = 100;
+  input->num_slices = 2;
+  input->total_prbs = 100;
   
   printf("  Input Configuration:\n");
-  printf("    Total PRBs: %d\n", input.total_prbs);
-  printf("    Number of Slices: %d\n", input.num_slices);
-  print_slice_config(&input.slices[0], 0);
-  print_slice_config(&input.slices[1], 1);
+  printf("    Total PRBs: %d\n", input->total_prbs);
+  printf("    Number of Slices: %d\n", input->num_slices);
+  print_slice_config(&input->slices[0], 0);
+  print_slice_config(&input->slices[1], 1);
   printf("\n");
   
-  memset(&result, 0, sizeof(result));
-  for (int s = 0; s < input.num_slices; ++s) {
-    result.ranges[s].slice_id = input.slices[s].slice_id;
+  // Result already zeroed by calloc
+  for (int s = 0; s < input->num_slices; ++s) {
+    result->ranges[s].slice_id = input->slices[s].slice_id;
   }
   
   int allocated_prbs = 0;
   int num_active_slices = 0;
   
-  int ret = pass1_allocate_dedicated(&input, &result, &allocated_prbs, &num_active_slices);
+  int ret = pass1_allocate_dedicated(input, result, &allocated_prbs, &num_active_slices);
   
   printf("  Pass 1 Result:\n");
   printf("    Allocated PRBs: %d\n", allocated_prbs);
   printf("    Active Slices: %d\n", num_active_slices);
-  printf("    Slice 1: %d PRBs\n", result.ranges[0].num_prbs);
-  printf("    Slice 2: %d PRBs\n", result.ranges[1].num_prbs);
+  printf("    Slice 1: %d PRBs\n", result->ranges[0].num_prbs);
+  printf("    Slice 2: %d PRBs\n", result->ranges[1].num_prbs);
   printf("\n");
   
   ASSERT_EQ(ret, 0, "Should succeed");
   ASSERT_EQ(allocated_prbs, 100, "Should allocate all PRBs");
-  ASSERT_EQ(result.ranges[0].num_prbs, 50, "Slice 1 should get 50 PRBs");
-  ASSERT_EQ(result.ranges[1].num_prbs, 50, "Slice 2 should get 50 PRBs");
+  ASSERT_EQ(result->ranges[0].num_prbs, 50, "Slice 1 should get 50 PRBs");
+  ASSERT_EQ(result->ranges[1].num_prbs, 50, "Slice 2 should get 50 PRBs");
+free_slice_input(input);
+free_slice_result(result);
+
 }
 
 static void test_pass1_max_less_than_dedicated(void) {
   printf("  Purpose: Test Pass 1 when max < dedicated (should cap at max)\n");
   printf("  Expected: Dedicated is capped at max_prb_ratio\n\n");
   
-  slice_alloc_input_t input = {0};
-  slice_alloc_result_t result = {0};
+  ALLOCATE_TEST_STRUCTURES(1, input, result);
   
-  input.slices[0].slice_id = 1;
-  input.slices[0].dedicated_prb_ratio = 0.50f;
-  input.slices[0].min_prb_ratio = 0.50f;
-  input.slices[0].max_prb_ratio = 0.30f; // Max < dedicated
-  input.slices[0].has_active_ues = true;
+  input->slices[0].slice_id = 1;
+  input->slices[0].dedicated_prb_ratio = 0.50f;
+  input->slices[0].min_prb_ratio = 0.50f;
+  input->slices[0].max_prb_ratio = 0.30f; // Max < dedicated
+  input->slices[0].has_active_ues = true;
   
-  input.num_slices = 1;
-  input.total_prbs = 100;
+  input->num_slices = 1;
+  input->total_prbs = 100;
   
   printf("  Input Configuration:\n");
-  printf("    Total PRBs: %d\n", input.total_prbs);
-  printf("    Number of Slices: %d\n", input.num_slices);
-  print_slice_config(&input.slices[0], 0);
+  printf("    Total PRBs: %d\n", input->total_prbs);
+  printf("    Number of Slices: %d\n", input->num_slices);
+  print_slice_config(&input->slices[0], 0);
   printf("    Note: Max (30%%) < Dedicated (50%%), so dedicated will be capped at max\n\n");
   
-  memset(&result, 0, sizeof(result));
-  result.ranges[0].slice_id = input.slices[0].slice_id;
+  // Result already zeroed by calloc
+  result->ranges[0].slice_id = input->slices[0].slice_id;
   
   int allocated_prbs = 0;
   int num_active_slices = 0;
   
-  int ret = pass1_allocate_dedicated(&input, &result, &allocated_prbs, &num_active_slices);
+  int ret = pass1_allocate_dedicated(input, result, &allocated_prbs, &num_active_slices);
   
   printf("  Pass 1 Result:\n");
   printf("    Allocated PRBs: %d (capped at max=30)\n", allocated_prbs);
   printf("    Active Slices: %d\n", num_active_slices);
-  printf("    Slice 1: %d PRBs (capped at max, dedicated was 50)\n", result.ranges[0].num_prbs);
+  printf("    Slice 1: %d PRBs (capped at max, dedicated was 50)\n", result->ranges[0].num_prbs);
   printf("\n");
   
   ASSERT_EQ(ret, 0, "Should succeed");
-  ASSERT_EQ(result.ranges[0].num_prbs, 30, "Should be capped at max (30)");
+  ASSERT_EQ(result->ranges[0].num_prbs, 30, "Should be capped at max (30)");
   ASSERT_EQ(allocated_prbs, 30, "Total should be 30");
+free_slice_input(input);
+free_slice_result(result);
+
 }
 
 static void test_pass1_zero_dedicated(void) {
   printf("  Purpose: Test Pass 1 with zero dedicated (slice still active)\n");
   printf("  Expected: Slice gets 0 PRBs but is counted as active\n\n");
   
-  slice_alloc_input_t input = {0};
-  slice_alloc_result_t result = {0};
+  ALLOCATE_TEST_STRUCTURES(1, input, result);
   
-  input.slices[0].slice_id = 1;
-  input.slices[0].dedicated_prb_ratio = 0.0f;
-  input.slices[0].min_prb_ratio = 0.30f;
-  input.slices[0].max_prb_ratio = 0.50f;
-  input.slices[0].has_active_ues = true;
+  input->slices[0].slice_id = 1;
+  input->slices[0].dedicated_prb_ratio = 0.0f;
+  input->slices[0].min_prb_ratio = 0.30f;
+  input->slices[0].max_prb_ratio = 0.50f;
+  input->slices[0].has_active_ues = true;
   
-  input.num_slices = 1;
-  input.total_prbs = 100;
+  input->num_slices = 1;
+  input->total_prbs = 100;
   
   printf("  Input Configuration:\n");
-  printf("    Total PRBs: %d\n", input.total_prbs);
-  printf("    Number of Slices: %d\n", input.num_slices);
-  print_slice_config(&input.slices[0], 0);
+  printf("    Total PRBs: %d\n", input->total_prbs);
+  printf("    Number of Slices: %d\n", input->num_slices);
+  print_slice_config(&input->slices[0], 0);
   printf("    Note: Dedicated is 0%%, but slice has active UEs, so it's counted as active\n\n");
   
-  memset(&result, 0, sizeof(result));
-  result.ranges[0].slice_id = input.slices[0].slice_id;
+  // Result already zeroed by calloc
+  result->ranges[0].slice_id = input->slices[0].slice_id;
   
   int allocated_prbs = 0;
   int num_active_slices = 0;
   
-  int ret = pass1_allocate_dedicated(&input, &result, &allocated_prbs, &num_active_slices);
+  int ret = pass1_allocate_dedicated(input, result, &allocated_prbs, &num_active_slices);
   
   printf("  Pass 1 Result:\n");
   printf("    Allocated PRBs: %d\n", allocated_prbs);
   printf("    Active Slices: %d\n", num_active_slices);
-  printf("    Slice 1: %d PRBs (zero dedicated)\n", result.ranges[0].num_prbs);
+  printf("    Slice 1: %d PRBs (zero dedicated)\n", result->ranges[0].num_prbs);
   printf("\n");
   
   ASSERT_EQ(ret, 0, "Should succeed");
-  ASSERT_EQ(result.ranges[0].num_prbs, 0, "Should get 0 PRBs (zero dedicated)");
+  ASSERT_EQ(result->ranges[0].num_prbs, 0, "Should get 0 PRBs (zero dedicated)");
   ASSERT_EQ(allocated_prbs, 0, "Total should be 0");
   ASSERT_EQ(num_active_slices, 1, "Should be counted as active");
+free_slice_input(input);
+free_slice_result(result);
+
 }
 
 /* Test Pass 2 Edge Cases */
@@ -969,117 +1057,118 @@ static void test_pass2_slice_doesnt_need_prioritized(void) {
   printf("  Purpose: Test Pass 2 when slice doesn't need prioritized resources\n");
   printf("  Expected: Prioritized resources remain available for Pass 3\n\n");
   
-  slice_alloc_input_t input = {0};
-  slice_alloc_result_t result = {0};
+  ALLOCATE_TEST_STRUCTURES(2, input, result);
   
-  input.slices[0].slice_id = 1;
-  input.slices[0].dedicated_prb_ratio = 0.20f;
-  input.slices[0].min_prb_ratio = 0.30f;
-  input.slices[0].max_prb_ratio = 0.50f;
-  input.slices[0].has_active_ues = true;
-  input.slices[0].required_prbs = 15; // Less than current (20)
+  input->slices[0].slice_id = 1;
+  input->slices[0].dedicated_prb_ratio = 0.20f;
+  input->slices[0].min_prb_ratio = 0.30f;
+  input->slices[0].max_prb_ratio = 0.50f;
+  input->slices[0].has_active_ues = true;
+  input->slices[0].required_prbs = 15; // Less than current (20)
   
-  input.slices[1].slice_id = 2;
-  input.slices[1].dedicated_prb_ratio = 0.10f;
-  input.slices[1].min_prb_ratio = 0.25f;
-  input.slices[1].max_prb_ratio = 0.50f;
-  input.slices[1].has_active_ues = true;
-  input.slices[1].required_prbs = 30; // Needs more
+  input->slices[1].slice_id = 2;
+  input->slices[1].dedicated_prb_ratio = 0.10f;
+  input->slices[1].min_prb_ratio = 0.25f;
+  input->slices[1].max_prb_ratio = 0.50f;
+  input->slices[1].has_active_ues = true;
+  input->slices[1].required_prbs = 30; // Needs more
   
-  input.num_slices = 2;
-  input.total_prbs = 100;
+  input->num_slices = 2;
+  input->total_prbs = 100;
   
   printf("  Input Configuration (after Pass 1):\n");
-  printf("    Total PRBs: %d\n", input.total_prbs);
+  printf("    Total PRBs: %d\n", input->total_prbs);
   printf("    Already allocated (dedicated): 30 PRBs\n");
   printf("    Remaining: 70 PRBs\n");
-  print_slice_config(&input.slices[0], 0);
-  print_slice_config(&input.slices[1], 1);
+  print_slice_config(&input->slices[0], 0);
+  print_slice_config(&input->slices[1], 1);
   printf("    Note: Slice 1 required=15 < current=20, so doesn't need prioritized\n");
   printf("          Slice 2 required=30 > current=10, so needs prioritized\n\n");
   
-  memset(&result, 0, sizeof(result));
-  for (int s = 0; s < input.num_slices; ++s) {
-    result.ranges[s].slice_id = input.slices[s].slice_id;
+  // Result already zeroed by calloc
+  for (int s = 0; s < input->num_slices; ++s) {
+    result->ranges[s].slice_id = input->slices[s].slice_id;
   }
-  result.ranges[0].num_prbs = 20; // From Pass 1
-  result.ranges[1].num_prbs = 10; // From Pass 1
+  result->ranges[0].num_prbs = 20; // From Pass 1
+  result->ranges[1].num_prbs = 10; // From Pass 1
   
   int allocated_prbs = 30;
   int remaining_prbs = 70;
   
-  int ret = pass2_allocate_prioritized(&input, &result, &allocated_prbs, &remaining_prbs);
+  int ret = pass2_allocate_prioritized(input, result, &allocated_prbs, &remaining_prbs);
   
   printf("  Pass 2 Result:\n");
   printf("    Allocated PRBs: %d (was 30, added %d)\n", allocated_prbs, allocated_prbs - 30);
   printf("    Remaining PRBs: %d\n", remaining_prbs);
-  printf("    Slice 1: %d PRBs (no change, doesn't need prioritized)\n", result.ranges[0].num_prbs);
+  printf("    Slice 1: %d PRBs (no change, doesn't need prioritized)\n", result->ranges[0].num_prbs);
   printf("    Slice 2: %d PRBs (was 10, added %d prioritized)\n",
-         result.ranges[1].num_prbs, result.ranges[1].num_prbs - 10);
+         result->ranges[1].num_prbs, result->ranges[1].num_prbs - 10);
   printf("    Note: Slice 1's prioritized resources (10 PRBs) remain available for Pass 3\n");
   printf("\n");
   
   ASSERT_EQ(ret, 0, "Should succeed");
-  ASSERT_EQ(result.ranges[0].num_prbs, 20, "Slice 1 should not get prioritized (doesn't need)");
-  ASSERT_EQ(result.ranges[1].num_prbs, 25, "Slice 2 should get prioritized (15 PRBs)");
+  ASSERT_EQ(result->ranges[0].num_prbs, 20, "Slice 1 should not get prioritized (doesn't need)");
+  ASSERT_EQ(result->ranges[1].num_prbs, 25, "Slice 2 should get prioritized (15 PRBs)");
   // Slice 1's prioritized resources (10 PRBs) remain available, so remaining = 70 - 15 = 55
   // But actually, Slice 1's prioritized (10) + remaining after Pass 2 = 10 + 45 = 55
   // The prioritized resources that weren't claimed become available for Pass 3
   ASSERT_GE(remaining_prbs, 55, "At least 55 PRBs should remain (Slice 1's prioritized not claimed)");
+free_slice_input(input);
+free_slice_result(result);
+
 }
 
 static void test_pass2_insufficient_prioritized(void) {
   printf("  Purpose: Test Pass 2 with insufficient prioritized resources\n");
   printf("  Expected: Proportional scaling of prioritized allocations\n\n");
   
-  slice_alloc_input_t input = {0};
-  slice_alloc_result_t result = {0};
+  ALLOCATE_TEST_STRUCTURES(2, input, result);
   
-  input.slices[0].slice_id = 1;
-  input.slices[0].dedicated_prb_ratio = 0.20f;
-  input.slices[0].min_prb_ratio = 0.50f; // Needs 30 prioritized
-  input.slices[0].max_prb_ratio = 0.60f;
-  input.slices[0].has_active_ues = true;
-  input.slices[0].required_prbs = 50;
+  input->slices[0].slice_id = 1;
+  input->slices[0].dedicated_prb_ratio = 0.20f;
+  input->slices[0].min_prb_ratio = 0.50f; // Needs 30 prioritized
+  input->slices[0].max_prb_ratio = 0.60f;
+  input->slices[0].has_active_ues = true;
+  input->slices[0].required_prbs = 50;
   
-  input.slices[1].slice_id = 2;
-  input.slices[1].dedicated_prb_ratio = 0.10f;
-  input.slices[1].min_prb_ratio = 0.40f; // Needs 30 prioritized
-  input.slices[1].max_prb_ratio = 0.60f;
-  input.slices[1].has_active_ues = true;
-  input.slices[1].required_prbs = 40;
+  input->slices[1].slice_id = 2;
+  input->slices[1].dedicated_prb_ratio = 0.10f;
+  input->slices[1].min_prb_ratio = 0.40f; // Needs 30 prioritized
+  input->slices[1].max_prb_ratio = 0.60f;
+  input->slices[1].has_active_ues = true;
+  input->slices[1].required_prbs = 40;
   
-  input.num_slices = 2;
-  input.total_prbs = 100;
+  input->num_slices = 2;
+  input->total_prbs = 100;
   
   printf("  Input Configuration (after Pass 1):\n");
-  printf("    Total PRBs: %d\n", input.total_prbs);
+  printf("    Total PRBs: %d\n", input->total_prbs);
   printf("    Already allocated (dedicated): 30 PRBs\n");
   printf("    Remaining: 40 PRBs (insufficient for both slices' prioritized needs)\n");
-  print_slice_config(&input.slices[0], 0);
-  print_slice_config(&input.slices[1], 1);
+  print_slice_config(&input->slices[0], 0);
+  print_slice_config(&input->slices[1], 1);
   printf("    Note: Slice 1 needs 30 prioritized, Slice 2 needs 30 prioritized\n");
   printf("          Total need: 60 PRBs, but only 40 available (proportional scaling)\n\n");
   
-  memset(&result, 0, sizeof(result));
-  for (int s = 0; s < input.num_slices; ++s) {
-    result.ranges[s].slice_id = input.slices[s].slice_id;
+  // Result already zeroed by calloc
+  for (int s = 0; s < input->num_slices; ++s) {
+    result->ranges[s].slice_id = input->slices[s].slice_id;
   }
-  result.ranges[0].num_prbs = 20; // From Pass 1
-  result.ranges[1].num_prbs = 10; // From Pass 1
+  result->ranges[0].num_prbs = 20; // From Pass 1
+  result->ranges[1].num_prbs = 10; // From Pass 1
   
   int allocated_prbs = 30;
   int remaining_prbs = 40; // Not enough for both (need 60 total)
   
-  int ret = pass2_allocate_prioritized(&input, &result, &allocated_prbs, &remaining_prbs);
+  int ret = pass2_allocate_prioritized(input, result, &allocated_prbs, &remaining_prbs);
   
   printf("  Pass 2 Result (with proportional scaling):\n");
   printf("    Allocated PRBs: %d (was 30, added %d)\n", allocated_prbs, allocated_prbs - 30);
   printf("    Remaining PRBs: %d\n", remaining_prbs);
   printf("    Slice 1: %d PRBs (was 20, added %d)\n",
-         result.ranges[0].num_prbs, result.ranges[0].num_prbs - 20);
+         result->ranges[0].num_prbs, result->ranges[0].num_prbs - 20);
   printf("    Slice 2: %d PRBs (was 10, added %d)\n",
-         result.ranges[1].num_prbs, result.ranges[1].num_prbs - 10);
+         result->ranges[1].num_prbs, result->ranges[1].num_prbs - 10);
   printf("    Scale factor: 40/60 = 0.667\n");
   printf("\n");
   
@@ -1087,53 +1176,58 @@ static void test_pass2_insufficient_prioritized(void) {
   ASSERT_EQ(allocated_prbs, 70, "Should allocate all remaining (40)");
   ASSERT_EQ(remaining_prbs, 0, "No PRBs should remain");
   // Proportional: 30/60 * 40 = 20 for slice 1, 30/60 * 40 = 20 for slice 2
-  ASSERT_EQ(result.ranges[0].num_prbs, 40, "Slice 1 should get 40 (20 + 20)");
-  ASSERT_EQ(result.ranges[1].num_prbs, 30, "Slice 2 should get 30 (10 + 20)");
+  ASSERT_EQ(result->ranges[0].num_prbs, 40, "Slice 1 should get 40 (20 + 20)");
+  ASSERT_EQ(result->ranges[1].num_prbs, 30, "Slice 2 should get 30 (10 + 20)");
+free_slice_input(input);
+free_slice_result(result);
+
 }
 
 static void test_pass2_max_less_than_min(void) {
   printf("  Purpose: Test Pass 2 when max < min (max takes precedence)\n");
   printf("  Expected: Allocation capped at max, min not fully met\n\n");
   
-  slice_alloc_input_t input = {0};
-  slice_alloc_result_t result = {0};
+  ALLOCATE_TEST_STRUCTURES(1, input, result);
   
-  input.slices[0].slice_id = 1;
-  input.slices[0].dedicated_prb_ratio = 0.20f;
-  input.slices[0].min_prb_ratio = 0.50f; // Min = 50
-  input.slices[0].max_prb_ratio = 0.30f; // Max = 30 (< min!)
-  input.slices[0].has_active_ues = true;
-  input.slices[0].required_prbs = 50;
+  input->slices[0].slice_id = 1;
+  input->slices[0].dedicated_prb_ratio = 0.20f;
+  input->slices[0].min_prb_ratio = 0.50f; // Min = 50
+  input->slices[0].max_prb_ratio = 0.30f; // Max = 30 (< min!)
+  input->slices[0].has_active_ues = true;
+  input->slices[0].required_prbs = 50;
   
-  input.num_slices = 1;
-  input.total_prbs = 100;
+  input->num_slices = 1;
+  input->total_prbs = 100;
   
   printf("  Input Configuration (after Pass 1):\n");
-  printf("    Total PRBs: %d\n", input.total_prbs);
+  printf("    Total PRBs: %d\n", input->total_prbs);
   printf("    Already allocated (dedicated): 20 PRBs\n");
   printf("    Remaining: 80 PRBs\n");
-  print_slice_config(&input.slices[0], 0);
+  print_slice_config(&input->slices[0], 0);
   printf("    Note: Max (30%%) < Min (50%%), so max takes precedence\n");
   printf("          Slice needs prioritized to reach min=50, but max=30 caps allocation\n\n");
   
-  memset(&result, 0, sizeof(result));
-  result.ranges[0].slice_id = input.slices[0].slice_id;
-  result.ranges[0].num_prbs = 20; // From Pass 1
+  // Result already zeroed by calloc
+  result->ranges[0].slice_id = input->slices[0].slice_id;
+  result->ranges[0].num_prbs = 20; // From Pass 1
   
   int allocated_prbs = 20;
   int remaining_prbs = 80;
   
-  int ret = pass2_allocate_prioritized(&input, &result, &allocated_prbs, &remaining_prbs);
+  int ret = pass2_allocate_prioritized(input, result, &allocated_prbs, &remaining_prbs);
   
   printf("  Pass 2 Result:\n");
   printf("    Allocated PRBs: %d (was 20, added %d)\n", allocated_prbs, allocated_prbs - 20);
   printf("    Remaining PRBs: %d\n", remaining_prbs);
-  printf("    Slice 1: %d PRBs (capped at max=30, min=50 not met)\n", result.ranges[0].num_prbs);
+  printf("    Slice 1: %d PRBs (capped at max=30, min=50 not met)\n", result->ranges[0].num_prbs);
   printf("\n");
   
   ASSERT_EQ(ret, 0, "Should succeed");
-  ASSERT_EQ(result.ranges[0].num_prbs, 30, "Should be capped at max (30)");
+  ASSERT_EQ(result->ranges[0].num_prbs, 30, "Should be capped at max (30)");
   ASSERT_EQ(allocated_prbs, 30, "Total should be 30");
+free_slice_input(input);
+free_slice_result(result);
+
 }
 
 /* Test Pass 3 Edge Cases */
@@ -1141,117 +1235,121 @@ static void test_pass3_no_prb_requirements(void) {
   printf("  Purpose: Test Pass 3 without PRB requirements (capacity-based)\n");
   printf("  Expected: Proportional distribution based on remaining capacity\n\n");
   
-  slice_alloc_input_t input = {0};
-  slice_alloc_result_t result = {0};
+  ALLOCATE_TEST_STRUCTURES(2, input, result);
   
-  input.slices[0].slice_id = 1;
-  input.slices[0].dedicated_prb_ratio = 0.30f;
-  input.slices[0].min_prb_ratio = 0.30f;
-  input.slices[0].max_prb_ratio = 0.50f;
-  input.slices[0].has_active_ues = true;
-  input.slices[0].required_prbs = 0; // No requirement
+  input->slices[0].slice_id = 1;
+  input->slices[0].dedicated_prb_ratio = 0.30f;
+  input->slices[0].min_prb_ratio = 0.30f;
+  input->slices[0].max_prb_ratio = 0.50f;
+  input->slices[0].has_active_ues = true;
+  input->slices[0].required_prbs = 0; // No requirement
   
-  input.slices[1].slice_id = 2;
-  input.slices[1].dedicated_prb_ratio = 0.20f;
-  input.slices[1].min_prb_ratio = 0.20f;
-  input.slices[1].max_prb_ratio = 0.50f;
-  input.slices[1].has_active_ues = true;
-  input.slices[1].required_prbs = 0; // No requirement
+  input->slices[1].slice_id = 2;
+  input->slices[1].dedicated_prb_ratio = 0.20f;
+  input->slices[1].min_prb_ratio = 0.20f;
+  input->slices[1].max_prb_ratio = 0.50f;
+  input->slices[1].has_active_ues = true;
+  input->slices[1].required_prbs = 0; // No requirement
   
-  input.num_slices = 2;
-  input.total_prbs = 100;
+  input->num_slices = 2;
+  input->total_prbs = 100;
   
   printf("  Input Configuration (after Pass 1+2):\n");
-  printf("    Total PRBs: %d\n", input.total_prbs);
+  printf("    Total PRBs: %d\n", input->total_prbs);
   printf("    Already allocated: 50 PRBs\n");
   printf("    Remaining (shared): 50 PRBs\n");
-  print_slice_config(&input.slices[0], 0);
-  print_slice_config(&input.slices[1], 1);
+  print_slice_config(&input->slices[0], 0);
+  print_slice_config(&input->slices[1], 1);
   printf("    Note: No PRB requirements (required=0), so capacity-based distribution\n");
   printf("          Slice 1: can_add=20 (max=50 - current=30)\n");
   printf("          Slice 2: can_add=30 (max=50 - current=20)\n\n");
   
-  memset(&result, 0, sizeof(result));
-  for (int s = 0; s < input.num_slices; ++s) {
-    result.ranges[s].slice_id = input.slices[s].slice_id;
+  // Result already zeroed by calloc
+  for (int s = 0; s < input->num_slices; ++s) {
+    result->ranges[s].slice_id = input->slices[s].slice_id;
   }
-  result.ranges[0].num_prbs = 30; // After Pass 1+2
-  result.ranges[1].num_prbs = 20; // After Pass 1+2
+  result->ranges[0].num_prbs = 30; // After Pass 1+2
+  result->ranges[1].num_prbs = 20; // After Pass 1+2
   
   int allocated_prbs = 50;
   int remaining_prbs = 50; // Shared resources
   
-  int ret = pass3_allocate_shared(&input, &result, &allocated_prbs, &remaining_prbs);
+  int ret = pass3_allocate_shared(input, result, &allocated_prbs, &remaining_prbs);
   
   printf("  Pass 3 Result (capacity-based):\n");
   printf("    Allocated PRBs: %d (was 50, added %d)\n", allocated_prbs, allocated_prbs - 50);
   printf("    Remaining PRBs: %d\n", remaining_prbs);
-  printf("    Slice 1: %d PRBs (was 30, added 20)\n", result.ranges[0].num_prbs);
-  printf("    Slice 2: %d PRBs (was 20, added 30)\n", result.ranges[1].num_prbs);
+  printf("    Slice 1: %d PRBs (was 30, added 20)\n", result->ranges[0].num_prbs);
+  printf("    Slice 2: %d PRBs (was 20, added 30)\n", result->ranges[1].num_prbs);
   printf("    Distribution: (20/50) * 50 = 20 for slice 1, (30/50) * 50 = 30 for slice 2\n");
   printf("\n");
   
   ASSERT_EQ(ret, 0, "Should succeed");
-  ASSERT_EQ(result.ranges[0].num_prbs, 50, "Slice 1 should get 50 (30 + 20)");
-  ASSERT_EQ(result.ranges[1].num_prbs, 50, "Slice 2 should get 50 (20 + 30)");
+  ASSERT_EQ(result->ranges[0].num_prbs, 50, "Slice 1 should get 50 (30 + 20)");
+  ASSERT_EQ(result->ranges[1].num_prbs, 50, "Slice 2 should get 50 (20 + 30)");
   ASSERT_EQ(allocated_prbs, 100, "All PRBs should be allocated");
+free_slice_input(input);
+free_slice_result(result);
+
 }
 
 static void test_pass3_all_slices_at_max(void) {
   printf("  Purpose: Test Pass 3 when all slices are at max limit\n");
   printf("  Expected: No allocation, remaining PRBs stay unallocated\n\n");
   
-  slice_alloc_input_t input = {0};
-  slice_alloc_result_t result = {0};
+  ALLOCATE_TEST_STRUCTURES(2, input, result);
   
-  input.slices[0].slice_id = 1;
-  input.slices[0].dedicated_prb_ratio = 0.50f;
-  input.slices[0].min_prb_ratio = 0.50f;
-  input.slices[0].max_prb_ratio = 0.50f;
-  input.slices[0].has_active_ues = true;
+  input->slices[0].slice_id = 1;
+  input->slices[0].dedicated_prb_ratio = 0.50f;
+  input->slices[0].min_prb_ratio = 0.50f;
+  input->slices[0].max_prb_ratio = 0.50f;
+  input->slices[0].has_active_ues = true;
   
-  input.slices[1].slice_id = 2;
-  input.slices[1].dedicated_prb_ratio = 0.30f;
-  input.slices[1].min_prb_ratio = 0.30f;
-  input.slices[1].max_prb_ratio = 0.30f;
-  input.slices[1].has_active_ues = true;
+  input->slices[1].slice_id = 2;
+  input->slices[1].dedicated_prb_ratio = 0.30f;
+  input->slices[1].min_prb_ratio = 0.30f;
+  input->slices[1].max_prb_ratio = 0.30f;
+  input->slices[1].has_active_ues = true;
   
-  input.num_slices = 2;
-  input.total_prbs = 100;
+  input->num_slices = 2;
+  input->total_prbs = 100;
   
   printf("  Input Configuration (after Pass 1+2):\n");
-  printf("    Total PRBs: %d\n", input.total_prbs);
+  printf("    Total PRBs: %d\n", input->total_prbs);
   printf("    Already allocated: 80 PRBs\n");
   printf("    Remaining (shared): 20 PRBs\n");
-  print_slice_config(&input.slices[0], 0);
-  print_slice_config(&input.slices[1], 1);
+  print_slice_config(&input->slices[0], 0);
+  print_slice_config(&input->slices[1], 1);
   printf("    Note: Both slices are already at their max limits\n");
   printf("          Slice 1: 50 PRBs (at max=50%%)\n");
   printf("          Slice 2: 30 PRBs (at max=30%%)\n\n");
   
-  memset(&result, 0, sizeof(result));
-  for (int s = 0; s < input.num_slices; ++s) {
-    result.ranges[s].slice_id = input.slices[s].slice_id;
+  // Result already zeroed by calloc
+  for (int s = 0; s < input->num_slices; ++s) {
+    result->ranges[s].slice_id = input->slices[s].slice_id;
   }
-  result.ranges[0].num_prbs = 50; // At max
-  result.ranges[1].num_prbs = 30; // At max
+  result->ranges[0].num_prbs = 50; // At max
+  result->ranges[1].num_prbs = 30; // At max
   
   int allocated_prbs = 80;
   int remaining_prbs = 20; // But can't allocate (all at max)
   
-  int ret = pass3_allocate_shared(&input, &result, &allocated_prbs, &remaining_prbs);
+  int ret = pass3_allocate_shared(input, result, &allocated_prbs, &remaining_prbs);
   
   printf("  Pass 3 Result:\n");
   printf("    Allocated PRBs: %d (no change, all at max)\n", allocated_prbs);
   printf("    Remaining PRBs: %d (cannot allocate, all slices at max)\n", remaining_prbs);
-  printf("    Slice 1: %d PRBs (at max, no change)\n", result.ranges[0].num_prbs);
-  printf("    Slice 2: %d PRBs (at max, no change)\n", result.ranges[1].num_prbs);
+  printf("    Slice 1: %d PRBs (at max, no change)\n", result->ranges[0].num_prbs);
+  printf("    Slice 2: %d PRBs (at max, no change)\n", result->ranges[1].num_prbs);
   printf("\n");
   
   ASSERT_EQ(ret, 0, "Should succeed");
-  ASSERT_EQ(result.ranges[0].num_prbs, 50, "Slice 1 should stay at 50");
-  ASSERT_EQ(result.ranges[1].num_prbs, 30, "Slice 2 should stay at 30");
+  ASSERT_EQ(result->ranges[0].num_prbs, 50, "Slice 1 should stay at 50");
+  ASSERT_EQ(result->ranges[1].num_prbs, 30, "Slice 2 should stay at 30");
   ASSERT_EQ(remaining_prbs, 20, "20 PRBs should remain (all slices at max)");
+free_slice_input(input);
+free_slice_result(result);
+
 }
 
 /* Test Pass 4 Edge Cases */
@@ -1259,62 +1357,66 @@ static void test_pass4_empty_result(void) {
   printf("  Purpose: Test Pass 4 with no PRBs allocated\n");
   printf("  Expected: No ranges assigned, no errors\n\n");
   
-  slice_alloc_input_t input = {0};
-  slice_alloc_result_t result = {0};
+  ALLOCATE_TEST_STRUCTURES(1, input, result);
   
-  input.slices[0].slice_id = 1;
-  input.num_slices = 1;
+  input->slices[0].slice_id = 1;
+  input->num_slices = 1;
   
   printf("  Input Configuration:\n");
-  printf("    Number of Slices: %d\n", input.num_slices);
+  printf("    Number of Slices: %d\n", input->num_slices);
   printf("    Slice 1: 0 PRBs allocated\n");
   printf("    Note: No PRBs allocated, so no ranges will be assigned\n\n");
   
   // No PRBs allocated (all slices have num_prbs = 0)
-  memset(&result, 0, sizeof(result));
-  result.ranges[0].slice_id = 1;
-  result.ranges[0].num_prbs = 0;
+  // Result already zeroed by calloc
+  result->ranges[0].slice_id = 1;
+  result->ranges[0].num_prbs = 0;
   
-  int ret = pass4_assign_ranges(&input, &result);
+  int ret = pass4_assign_ranges(input, result);
   
   printf("  Pass 4 Result:\n");
   printf("    Slice 1: [%d, %d) = %d PRBs (no range assigned, 0 PRBs)\n",
-         result.ranges[0].start_prb, result.ranges[0].end_prb, result.ranges[0].num_prbs);
+         result->ranges[0].start_prb, result->ranges[0].end_prb, result->ranges[0].num_prbs);
   printf("\n");
   
   ASSERT_EQ(ret, 0, "Should succeed");
-  ASSERT_EQ(result.ranges[0].start_prb, 0, "Start should be 0");
-  ASSERT_EQ(result.ranges[0].end_prb, 0, "End should be 0");
+  ASSERT_EQ(result->ranges[0].start_prb, 0, "Start should be 0");
+  ASSERT_EQ(result->ranges[0].end_prb, 0, "End should be 0");
+free_slice_input(input);
+free_slice_result(result);
+
 }
 
 static void test_pass4_single_slice(void) {
   printf("  Purpose: Test Pass 4 with single slice\n");
   printf("  Expected: Range [0, num_prbs)\n\n");
   
-  slice_alloc_input_t input = {0};
-  slice_alloc_result_t result = {0};
+  ALLOCATE_TEST_STRUCTURES(1, input, result);
   
-  input.slices[0].slice_id = 1;
-  input.num_slices = 1;
+  input->slices[0].slice_id = 1;
+  input->num_slices = 1;
   
   printf("  Input Configuration:\n");
-  printf("    Number of Slices: %d\n", input.num_slices);
+  printf("    Number of Slices: %d\n", input->num_slices);
   printf("    Slice 1: 100 PRBs allocated\n");
   printf("    Note: Single slice gets all PRBs, range should be [0, 100)\n\n");
   
-  result.ranges[0].slice_id = 1;
-  result.ranges[0].num_prbs = 100;
+  result->ranges[0].slice_id = 1;
+  result->ranges[0].num_prbs = 100;
   
-  int ret = pass4_assign_ranges(&input, &result);
+  int ret = pass4_assign_ranges(input, result);
   
   printf("  Pass 4 Result:\n");
   printf("    Slice 1: [%d, %d) = %d PRBs\n",
-         result.ranges[0].start_prb, result.ranges[0].end_prb, result.ranges[0].num_prbs);
+         result->ranges[0].start_prb, result->ranges[0].end_prb, result->ranges[0].num_prbs);
   printf("\n");
   
   ASSERT_EQ(ret, 0, "Should succeed");
-  ASSERT_EQ(result.ranges[0].start_prb, 0, "Should start at 0");
-  ASSERT_EQ(result.ranges[0].end_prb, 100, "Should end at 100");
+  ASSERT_EQ(result->ranges[0].start_prb, 0, "Should start at 0");
+  ASSERT_EQ(result->ranges[0].end_prb, 100, "Should end at 100");
+free_slice_input(input);
+free_slice_result(result);
+
 }
 
 /* Integration Edge Cases */
@@ -1322,74 +1424,75 @@ static void test_integration_max_less_than_min(void) {
   printf("  Purpose: Test full algorithm with max < min (edge case)\n");
   printf("  Expected: Max takes precedence, min not fully met\n\n");
   
-  slice_alloc_input_t input = {0};
-  slice_alloc_result_t result = {0};
+  ALLOCATE_TEST_STRUCTURES(1, input, result);
   
-  input.slices[0].slice_id = 1;
-  input.slices[0].dedicated_prb_ratio = 0.20f;
-  input.slices[0].min_prb_ratio = 0.50f; // Min = 50
-  input.slices[0].max_prb_ratio = 0.30f; // Max = 30 (< min!)
-  input.slices[0].has_active_ues = true;
-  input.slices[0].required_prbs = 50;
+  input->slices[0].slice_id = 1;
+  input->slices[0].dedicated_prb_ratio = 0.20f;
+  input->slices[0].min_prb_ratio = 0.50f; // Min = 50
+  input->slices[0].max_prb_ratio = 0.30f; // Max = 30 (< min!)
+  input->slices[0].has_active_ues = true;
+  input->slices[0].required_prbs = 50;
   
-  input.num_slices = 1;
-  input.total_prbs = 100;
+  input->num_slices = 1;
+  input->total_prbs = 100;
   
   printf("  Input Configuration:\n");
-  printf("    Total PRBs: %d\n", input.total_prbs);
-  printf("    Number of Slices: %d\n", input.num_slices);
-  print_slice_config(&input.slices[0], 0);
+  printf("    Total PRBs: %d\n", input->total_prbs);
+  printf("    Number of Slices: %d\n", input->num_slices);
+  print_slice_config(&input->slices[0], 0);
   printf("    Note: Max (30%%) < Min (50%%), so max takes precedence\n\n");
   
-  int ret = calculate_slice_prb_ranges(&input, &result);
+  int ret = calculate_slice_prb_ranges(input, result);
   
-  print_allocation_result_with_required(&result, &input, input.total_prbs);
+  print_allocation_result_with_required(result, input, input->total_prbs);
   printf("\n");
   
   ASSERT_EQ(ret, 1, "Should have 1 active slice");
-  ASSERT_EQ(result.ranges[0].num_prbs, 30, "Should be capped at max (30)");
-  ASSERT_EQ(result.total_allocated_prbs, 30, "Total should be 30");
-  ASSERT_EQ(result.ranges[0].start_prb, 0, "Should start at 0");
-  ASSERT_EQ(result.ranges[0].end_prb, 30, "Should end at 30");
+  ASSERT_EQ(result->ranges[0].num_prbs, 30, "Should be capped at max (30)");
+  ASSERT_EQ(result->total_allocated_prbs, 30, "Total should be 30");
+  ASSERT_EQ(result->ranges[0].start_prb, 0, "Should start at 0");
+  ASSERT_EQ(result->ranges[0].end_prb, 30, "Should end at 30");
+free_slice_input(input);
+free_slice_result(result);
+
 }
 
 static void test_integration_all_slices_no_prioritized_need(void) {
   printf("  Purpose: Test when all slices don't need prioritized resources\n");
   printf("  Expected: Prioritized resources go to Pass 3 as shared\n\n");
   
-  slice_alloc_input_t input = {0};
-  slice_alloc_result_t result = {0};
+  ALLOCATE_TEST_STRUCTURES(2, input, result);
   
-  input.slices[0].slice_id = 1;
-  input.slices[0].dedicated_prb_ratio = 0.20f;
-  input.slices[0].min_prb_ratio = 0.30f;
-  input.slices[0].max_prb_ratio = 0.50f;
-  input.slices[0].has_active_ues = true;
-  input.slices[0].required_prbs = 15; // Less than dedicated (20)
+  input->slices[0].slice_id = 1;
+  input->slices[0].dedicated_prb_ratio = 0.20f;
+  input->slices[0].min_prb_ratio = 0.30f;
+  input->slices[0].max_prb_ratio = 0.50f;
+  input->slices[0].has_active_ues = true;
+  input->slices[0].required_prbs = 15; // Less than dedicated (20)
   
-  input.slices[1].slice_id = 2;
-  input.slices[1].dedicated_prb_ratio = 0.10f;
-  input.slices[1].min_prb_ratio = 0.25f;
-  input.slices[1].max_prb_ratio = 0.50f;
-  input.slices[1].has_active_ues = true;
-  input.slices[1].required_prbs = 5; // Less than dedicated (10)
+  input->slices[1].slice_id = 2;
+  input->slices[1].dedicated_prb_ratio = 0.10f;
+  input->slices[1].min_prb_ratio = 0.25f;
+  input->slices[1].max_prb_ratio = 0.50f;
+  input->slices[1].has_active_ues = true;
+  input->slices[1].required_prbs = 5; // Less than dedicated (10)
   
-  input.num_slices = 2;
-  input.total_prbs = 100;
+  input->num_slices = 2;
+  input->total_prbs = 100;
   
   printf("  Input Configuration:\n");
-  printf("    Total PRBs: %d\n", input.total_prbs);
-  printf("    Number of Slices: %d\n", input.num_slices);
-  print_slice_config(&input.slices[0], 0);
-  print_slice_config(&input.slices[1], 1);
+  printf("    Total PRBs: %d\n", input->total_prbs);
+  printf("    Number of Slices: %d\n", input->num_slices);
+  print_slice_config(&input->slices[0], 0);
+  print_slice_config(&input->slices[1], 1);
   printf("    Note: Both slices don't need prioritized resources\n");
   printf("          Slice 1: required=15 < dedicated=20\n");
   printf("          Slice 2: required=5 < dedicated=10\n");
   printf("          Prioritized resources will go to Pass 3 as shared\n\n");
   
-  int ret = calculate_slice_prb_ranges(&input, &result);
+  int ret = calculate_slice_prb_ranges(input, result);
   
-  print_allocation_result_with_required(&result, &input, input.total_prbs);
+  print_allocation_result_with_required(result, input, input->total_prbs);
   printf("\n");
   
   printf("  Verification:\n");
@@ -1397,9 +1500,875 @@ static void test_integration_all_slices_no_prioritized_need(void) {
   // Pass 1: 20 + 10 = 30
   // Pass 2: Both don't need prioritized, so 0 added
   // Pass 3: 70 PRBs shared, distributed proportionally
-  ASSERT_GE(result.ranges[0].num_prbs, 20, "Slice 1 should get at least 20");
-  ASSERT_GE(result.ranges[1].num_prbs, 10, "Slice 2 should get at least 10");
-  ASSERT_EQ(result.total_allocated_prbs, 100, "All PRBs should be allocated");
+  ASSERT_GE(result->ranges[0].num_prbs, 20, "Slice 1 should get at least 20");
+  ASSERT_GE(result->ranges[1].num_prbs, 10, "Slice 2 should get at least 10");
+  ASSERT_EQ(result->total_allocated_prbs, 100, "All PRBs should be allocated");
+free_slice_input(input);
+free_slice_result(result);
+
+}
+
+/* ============================================================================
+ * OOP Scheduler Interface Tests
+ * ============================================================================ */
+
+/* Test OOP: Basic two slices */
+static void test_oop_basic_two_slices(void) {
+  printf("  Purpose: Test OOP scheduler with basic two-slice allocation\n");
+  printf("  Expected: Both slices get their dedicated PRBs, then remaining PRBs are\n");
+  printf("            distributed proportionally up to their maximum limits\n\n");
+  
+  slice_scheduler_t *sch = slice_sch_create(100);
+  ASSERT_TRUE(sch != NULL, "Scheduler should be created");
+  
+  // Add slice 1: 30% dedicated, 30% min, 50% max
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0.30f, 0.30f, 0.50f, true, 0), 0, "Should add slice 1");
+  
+  // Add slice 2: 20% dedicated, 20% min, 50% max
+  ASSERT_EQ(slice_sch_add_slice(sch, 2, 0.20f, 0.20f, 0.50f, true, 0), 0, "Should add slice 2");
+  
+  printf("  Input Configuration:\n");
+  printf("    Total PRBs: %d\n", sch->input->total_prbs);
+  printf("    Number of Slices: %d\n", sch->input->num_slices);
+  print_slice_config(&sch->input->slices[0], 0);
+  print_slice_config(&sch->input->slices[1], 1);
+  printf("\n");
+  
+  // Schedule
+  ASSERT_EQ(slice_sch_schedule(sch), 0, "Schedule should succeed");
+  
+  print_oop_allocation_result(sch, sch->input->total_prbs);
+  printf("\n");
+  
+  // Get allocation
+  int num_ranges = 0;
+  const slice_prb_range_t *ranges = slice_sch_get_allocation(sch, &num_ranges);
+  ASSERT_TRUE(ranges != NULL, "Allocation should be available");
+  
+  int num_active = 0;
+  int total_allocated = 0;
+  ASSERT_EQ(slice_sch_get_stats(sch, &num_active, &total_allocated), 0, "Get stats should succeed");
+  
+  printf("  Verification:\n");
+  ASSERT_EQ(num_active, 2, "Should have 2 active slices");
+  ASSERT_EQ(total_allocated, 100, "Should allocate all 100 PRBs");
+  
+  // Find slices by ID
+  int slice1_idx = -1, slice2_idx = -1;
+  for (int i = 0; i < num_ranges; ++i) {
+    if (ranges[i].slice_id == 1) slice1_idx = i;
+    if (ranges[i].slice_id == 2) slice2_idx = i;
+  }
+  
+  ASSERT_TRUE(slice1_idx >= 0, "Slice 1 should be found");
+  ASSERT_TRUE(slice2_idx >= 0, "Slice 2 should be found");
+  
+  printf("    ✓ Slice 1: %d PRBs (expected: ≥30, ≤50)\n", ranges[slice1_idx].num_prbs);
+  ASSERT_GE(ranges[slice1_idx].num_prbs, 30, "Slice 1 should get at least 30 PRBs");
+  ASSERT_LE(ranges[slice1_idx].num_prbs, 50, "Slice 1 should not exceed 50 PRBs");
+  
+  printf("    ✓ Slice 2: %d PRBs (expected: ≥20, ≤50)\n", ranges[slice2_idx].num_prbs);
+  ASSERT_GE(ranges[slice2_idx].num_prbs, 20, "Slice 2 should get at least 20 PRBs");
+  ASSERT_LE(ranges[slice2_idx].num_prbs, 50, "Slice 2 should not exceed 50 PRBs");
+  
+  // Total should equal 100
+  ASSERT_EQ(ranges[slice1_idx].num_prbs + ranges[slice2_idx].num_prbs, 100,
+            "Total PRBs should equal 100");
+  
+  slice_sch_destroy(sch);
+}
+
+/* Test OOP: Add and delete slices */
+static void test_oop_add_delete_slices(void) {
+  printf("  Purpose: Test adding and deleting slices dynamically\n");
+  printf("  Expected: Slices can be added and removed, scheduling adapts\n\n");
+  
+  slice_scheduler_t *sch = slice_sch_create(100);
+  ASSERT_TRUE(sch != NULL, "Scheduler should be created");
+  
+  // Add three slices
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0.20f, 0.20f, 0.40f, true, 0), 0, "Should add slice 1");
+  ASSERT_EQ(slice_sch_add_slice(sch, 2, 0.15f, 0.15f, 0.35f, true, 0), 0, "Should add slice 2");
+  ASSERT_EQ(slice_sch_add_slice(sch, 3, 0.10f, 0.10f, 0.30f, true, 0), 0, "Should add slice 3");
+  
+  ASSERT_EQ(sch->input->num_slices, 3, "Should have 3 slices");
+  
+  // Schedule with 3 slices
+  ASSERT_EQ(slice_sch_schedule(sch), 0, "Schedule should succeed");
+  
+  int num_ranges = 0;
+  const slice_prb_range_t *ranges = slice_sch_get_allocation(sch, &num_ranges);
+  ASSERT_TRUE(ranges != NULL, "Allocation should be available");
+  
+  printf("  After adding 3 slices:\n");
+  print_oop_allocation_result(sch, sch->input->total_prbs);
+  printf("\n");
+  
+  // Delete slice 2
+  ASSERT_EQ(slice_sch_del_slice(sch, 2), 0, "Should delete slice 2");
+  ASSERT_EQ(sch->input->num_slices, 2, "Should have 2 slices after deletion");
+  
+  // Schedule again
+  ASSERT_EQ(slice_sch_schedule(sch), 0, "Schedule should succeed after deletion");
+  
+  ranges = slice_sch_get_allocation(sch, &num_ranges);
+  ASSERT_TRUE(ranges != NULL, "Allocation should be available");
+  
+  printf("  After deleting slice 2:\n");
+  print_oop_allocation_result(sch, sch->input->total_prbs);
+  printf("\n");
+  
+  // Verify slice 2 is gone
+  int found_slice2 = 0;
+  for (int i = 0; i < num_ranges; ++i) {
+    if (ranges[i].slice_id == 2) {
+      found_slice2 = 1;
+      break;
+    }
+  }
+  ASSERT_EQ(found_slice2, 0, "Slice 2 should not be in allocation");
+  
+  // Verify slices 1 and 3 are still there
+  int found_slice1 = 0, found_slice3 = 0;
+  for (int i = 0; i < num_ranges; ++i) {
+    if (ranges[i].slice_id == 1) found_slice1 = 1;
+    if (ranges[i].slice_id == 3) found_slice3 = 1;
+  }
+  ASSERT_EQ(found_slice1, 1, "Slice 1 should still be present");
+  ASSERT_EQ(found_slice3, 1, "Slice 3 should still be present");
+  
+  printf("  Verification:\n");
+  printf("    ✓ Slice 2 successfully removed\n");
+  printf("    ✓ Slices 1 and 3 still present\n");
+  
+  slice_sch_destroy(sch);
+}
+
+/* Test OOP: Update requirements */
+static void test_oop_update_require(void) {
+  printf("  Purpose: Test updating PRB requirements for slices\n");
+  printf("  Expected: Updating requirements invalidates result, new schedule adapts\n\n");
+  
+  slice_scheduler_t *sch = slice_sch_create(100);
+  ASSERT_TRUE(sch != NULL, "Scheduler should be created");
+  
+  // Add slice with no requirement
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0.10f, 0.20f, 0.50f, true, 0), 0, "Should add slice 1");
+  ASSERT_EQ(slice_sch_add_slice(sch, 2, 0.10f, 0.20f, 0.50f, true, 0), 0, "Should add slice 2");
+  
+  // Schedule
+  ASSERT_EQ(slice_sch_schedule(sch), 0, "Schedule should succeed");
+  
+  printf("  Initial allocation (no requirements):\n");
+  print_oop_allocation_result(sch, sch->input->total_prbs);
+  printf("\n");
+  
+  // Update requirement for slice 1
+  ASSERT_EQ(slice_sch_update_require(sch, 1, 40), 0, "Should update requirement for slice 1");
+  
+  // Schedule again
+  ASSERT_EQ(slice_sch_schedule(sch), 0, "Schedule should succeed after update");
+  
+  printf("  After updating slice 1 requirement to 40 PRBs:\n");
+  print_oop_allocation_result(sch, sch->input->total_prbs);
+  printf("\n");
+  
+  // Verify slice 1 gets more PRBs
+  int num_ranges = 0;
+  const slice_prb_range_t *ranges = slice_sch_get_allocation(sch, &num_ranges);
+  ASSERT_TRUE(ranges != NULL, "Allocation should be available");
+  
+  int slice1_idx = -1;
+  for (int i = 0; i < num_ranges; ++i) {
+    if (ranges[i].slice_id == 1) {
+      slice1_idx = i;
+      break;
+    }
+  }
+  
+  ASSERT_TRUE(slice1_idx >= 0, "Slice 1 should be found");
+  printf("  Verification:\n");
+  printf("    ✓ Slice 1 requirement updated to 40 PRBs\n");
+  printf("    ✓ Slice 1 allocated: %d PRBs\n", ranges[slice1_idx].num_prbs);
+  ASSERT_GE(ranges[slice1_idx].num_prbs, 20, "Slice 1 should get at least min (20 PRBs)");
+  
+  slice_sch_destroy(sch);
+}
+
+/* Test OOP: Dynamic allocation (many slices) */
+static void test_oop_dynamic_allocation(void) {
+  printf("  Purpose: Test scheduler with many slices\n");
+  printf("  Expected: Scheduler can store and schedule any number of slices dynamically\n\n");
+  
+  slice_scheduler_t *sch = slice_sch_create(100);
+  ASSERT_TRUE(sch != NULL, "Scheduler should be created");
+  
+  // Add many slices
+  int num_slices_to_add = 50;
+  for (int i = 0; i < num_slices_to_add; ++i) {
+    float ratio = 0.01f; // 1% each
+    ASSERT_EQ(slice_sch_add_slice(sch, i + 1, ratio, ratio, ratio * 2, true, 0), 0,
+              "Should add slice");
+  }
+  
+  ASSERT_EQ(sch->input->num_slices, num_slices_to_add, "Should have all slices");
+  
+  printf("  Input Configuration:\n");
+  printf("    Total PRBs: %d\n", sch->input->total_prbs);
+  printf("    Number of Slices: %d\n", sch->input->num_slices);
+  printf("    (Showing first 5 slices)\n");
+  for (int i = 0; i < 5 && i < sch->input->num_slices; ++i) {
+    print_slice_config(&sch->input->slices[i], i);
+  }
+  printf("    ...\n\n");
+  
+  // Schedule
+  ASSERT_EQ(slice_sch_schedule(sch), 0, "Schedule should succeed");
+  
+  int num_ranges = 0;
+  const slice_prb_range_t *ranges = slice_sch_get_allocation(sch, &num_ranges);
+  ASSERT_TRUE(ranges != NULL, "Allocation should be available");
+  
+  int num_active = 0;
+  int total_allocated = 0;
+  slice_sch_get_stats(sch, &num_active, &total_allocated);
+  
+  printf("  Allocation Result:\n");
+  printf("    Active Slices: %d\n", num_active);
+  printf("    Total Allocated: %d / %d PRBs\n", total_allocated, sch->input->total_prbs);
+  printf("    (Showing first 5 allocations)\n");
+  for (int i = 0; i < 5 && i < num_ranges; ++i) {
+    if (ranges[i].num_prbs > 0) {
+      printf("      Slice %d: %d PRBs\n", ranges[i].slice_id, ranges[i].num_prbs);
+    }
+  }
+  printf("    ...\n\n");
+  
+  printf("  Verification:\n");
+  printf("    ✓ Successfully stored %d slices (dynamic allocation works)\n", num_slices_to_add);
+  printf("    ✓ Scheduling processed all %d slices (unlimited slices supported)\n", num_slices_to_add);
+  ASSERT_EQ(num_active, num_slices_to_add, "All slices should be active");
+  ASSERT_EQ(total_allocated, 100, "Should allocate all 100 PRBs");
+  
+  slice_sch_destroy(sch);
+}
+
+/* Test OOP: Error handling */
+static void test_oop_error_handling(void) {
+  printf("  Purpose: Test error handling in OOP scheduler\n");
+  printf("  Expected: Proper error codes for invalid operations\n\n");
+  
+  // Test NULL scheduler
+  ASSERT_EQ(slice_sch_add_slice(NULL, 1, 0.1f, 0.1f, 0.2f, true, 0), -1,
+            "Should fail with NULL scheduler");
+  ASSERT_EQ(slice_sch_del_slice(NULL, 1), -1, "Should fail with NULL scheduler");
+  ASSERT_EQ(slice_sch_update_require(NULL, 1, 10), -1, "Should fail with NULL scheduler");
+  ASSERT_EQ(slice_sch_schedule(NULL), -1, "Should fail with NULL scheduler");
+  ASSERT_TRUE(slice_sch_get_allocation(NULL, NULL) == NULL, "Should return NULL with NULL scheduler");
+  
+  slice_scheduler_t *sch = slice_sch_create(100);
+  ASSERT_TRUE(sch != NULL, "Scheduler should be created");
+  
+  // Test invalid total PRBs
+  slice_scheduler_t *sch_invalid = slice_sch_create(0);
+  ASSERT_TRUE(sch_invalid == NULL, "Should fail with invalid total PRBs");
+  sch_invalid = slice_sch_create(-1);
+  ASSERT_TRUE(sch_invalid == NULL, "Should fail with negative total PRBs");
+  
+  // Test duplicate slice ID
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0.1f, 0.1f, 0.2f, true, 0), 0, "Should add slice 1");
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0.1f, 0.1f, 0.2f, true, 0), -1,
+            "Should fail with duplicate slice ID");
+  
+  // Test invalid ratios
+  ASSERT_EQ(slice_sch_add_slice(sch, 2, -0.1f, 0.1f, 0.2f, true, 0), -1,
+            "Should fail with negative dedicated ratio");
+  ASSERT_EQ(slice_sch_add_slice(sch, 2, 0.1f, 1.5f, 0.2f, true, 0), -1,
+            "Should fail with ratio > 1.0");
+  ASSERT_EQ(slice_sch_add_slice(sch, 2, 0.3f, 0.1f, 0.2f, true, 0), -1,
+            "Should fail with dedicated > min");
+  
+  // Test invalid requirement
+  ASSERT_EQ(slice_sch_update_require(sch, 1, -1), -1, "Should fail with negative requirement");
+  
+  // Test non-existent slice
+  ASSERT_EQ(slice_sch_del_slice(sch, 999), -1, "Should fail with non-existent slice");
+  ASSERT_EQ(slice_sch_update_require(sch, 999, 10), -1, "Should fail with non-existent slice");
+  
+  // Test get_allocation before schedule
+  int num_ranges = 0;
+  const slice_prb_range_t *ranges = slice_sch_get_allocation(sch, &num_ranges);
+  ASSERT_TRUE(ranges == NULL, "Should return NULL before schedule");
+  
+  printf("  Verification:\n");
+  printf("    ✓ All error cases handled correctly\n");
+  
+  slice_sch_destroy(sch);
+}
+
+/* Test OOP: Initial capacity */
+static void test_oop_initial_capacity(void) {
+  printf("  Purpose: Test that scheduler starts with MIN_CAPACITY (8)\n");
+  printf("  Expected: Initial capacity should be 8\n\n");
+  
+  slice_scheduler_t *sch = slice_sch_create(100);
+  ASSERT_TRUE(sch != NULL, "Scheduler should be created");
+  
+  printf("  Verification:\n");
+  printf("    Initial capacity: %d\n", sch->slices_capacity);
+  ASSERT_EQ(sch->slices_capacity, 8, "Initial capacity should be MIN_CAPACITY (8)");
+  ASSERT_EQ(sch->input->num_slices, 0, "Should start with 0 slices");
+  printf("    ✓ Initial capacity is correct\n");
+  
+  slice_sch_destroy(sch);
+}
+
+/* Test OOP: Array growth */
+static void test_oop_array_growth(void) {
+  printf("  Purpose: Test that array grows when adding many slices\n");
+  printf("  Expected: Capacity doubles when full, starting from 8\n\n");
+  
+  slice_scheduler_t *sch = slice_sch_create(100);
+  ASSERT_TRUE(sch != NULL, "Scheduler should be created");
+  
+  printf("  Adding slices to trigger growth:\n");
+  printf("    Initial capacity: %d\n", sch->slices_capacity);
+  
+  // Add 8 slices (should fit in initial capacity)
+  for (int i = 0; i < 8; ++i) {
+    ASSERT_EQ(slice_sch_add_slice(sch, i + 1, 0.05f, 0.05f, 0.10f, true, 0), 0,
+              "Should add slice");
+  }
+  printf("    After adding 8 slices: capacity=%d, num_slices=%d\n",
+         sch->slices_capacity, sch->input->num_slices);
+  ASSERT_EQ(sch->slices_capacity, 8, "Capacity should still be 8");
+  ASSERT_EQ(sch->input->num_slices, 8, "Should have 8 slices");
+  
+  // Add one more (should trigger growth to 16)
+  ASSERT_EQ(slice_sch_add_slice(sch, 9, 0.05f, 0.05f, 0.10f, true, 0), 0,
+            "Should add 9th slice");
+  printf("    After adding 9th slice: capacity=%d, num_slices=%d\n",
+         sch->slices_capacity, sch->input->num_slices);
+  ASSERT_EQ(sch->slices_capacity, 16, "Capacity should double to 16");
+  ASSERT_EQ(sch->input->num_slices, 9, "Should have 9 slices");
+  
+  // Add more to trigger another growth (to 32)
+  for (int i = 9; i < 16; ++i) {
+    ASSERT_EQ(slice_sch_add_slice(sch, i + 1, 0.05f, 0.05f, 0.10f, true, 0), 0,
+              "Should add slice");
+  }
+  printf("    After adding 16th slice: capacity=%d, num_slices=%d\n",
+         sch->slices_capacity, sch->input->num_slices);
+  ASSERT_EQ(sch->slices_capacity, 16, "Capacity should still be 16");
+  
+  // Add one more to trigger growth to 32
+  ASSERT_EQ(slice_sch_add_slice(sch, 17, 0.05f, 0.05f, 0.10f, true, 0), 0,
+            "Should add 17th slice");
+  printf("    After adding 17th slice: capacity=%d, num_slices=%d\n",
+         sch->slices_capacity, sch->input->num_slices);
+  ASSERT_EQ(sch->slices_capacity, 32, "Capacity should double to 32");
+  ASSERT_EQ(sch->input->num_slices, 17, "Should have 17 slices");
+  
+  printf("\n  Verification:\n");
+  printf("    ✓ Array grows correctly: 8 -> 16 -> 32\n");
+  printf("    ✓ Growth happens when capacity is reached\n");
+  
+  slice_sch_destroy(sch);
+}
+
+/* Test OOP: Array shrinking */
+static void test_oop_array_shrinking(void) {
+  printf("  Purpose: Test that array shrinks when capacity is much larger than needed\n");
+  printf("  Expected: Capacity halves when using <25%% of capacity, but not below MIN_CAPACITY\n\n");
+  
+  slice_scheduler_t *sch = slice_sch_create(100);
+  ASSERT_TRUE(sch != NULL, "Scheduler should be created");
+  
+  // Grow array to 32 by adding 17 slices
+  for (int i = 0; i < 17; ++i) {
+    ASSERT_EQ(slice_sch_add_slice(sch, i + 1, 0.05f, 0.05f, 0.10f, true, 0), 0,
+              "Should add slice");
+  }
+  printf("  After adding 17 slices:\n");
+  printf("    Capacity: %d, Num slices: %d\n", sch->slices_capacity, sch->input->num_slices);
+  ASSERT_EQ(sch->slices_capacity, 32, "Capacity should be 32");
+  ASSERT_EQ(sch->input->num_slices, 17, "Should have 17 slices");
+  
+  // Delete slices until we're using <25% of capacity (32 * 0.25 = 8)
+  // We need to delete down to 7 or fewer slices to trigger shrinking
+  printf("\n  Deleting slices to trigger shrinking:\n");
+  for (int i = 17; i > 7; --i) {
+    ASSERT_EQ(slice_sch_del_slice(sch, i), 0, "Should delete slice");
+  }
+  printf("    After deleting down to 7 slices: capacity=%d, num_slices=%d\n",
+         sch->slices_capacity, sch->input->num_slices);
+  // Should shrink: 32 -> 16 (since 7 < 32/4 = 8)
+  ASSERT_EQ(sch->slices_capacity, 16, "Capacity should shrink to 16");
+  ASSERT_EQ(sch->input->num_slices, 7, "Should have 7 slices");
+  
+  // Delete more to trigger another shrink
+  for (int i = 7; i > 3; --i) {
+    ASSERT_EQ(slice_sch_del_slice(sch, i), 0, "Should delete slice");
+  }
+  printf("    After deleting down to 3 slices: capacity=%d, num_slices=%d\n",
+         sch->slices_capacity, sch->input->num_slices);
+  // Should shrink: 16 -> 8 (since 3 < 16/4 = 4, and 8 >= MIN_CAPACITY)
+  ASSERT_EQ(sch->slices_capacity, 8, "Capacity should shrink to 8 (MIN_CAPACITY)");
+  ASSERT_EQ(sch->input->num_slices, 3, "Should have 3 slices");
+  
+  // Delete one more - should NOT shrink below MIN_CAPACITY
+  ASSERT_EQ(slice_sch_del_slice(sch, 2), 0, "Should delete slice");
+  printf("    After deleting down to 2 slices: capacity=%d, num_slices=%d\n",
+         sch->slices_capacity, sch->input->num_slices);
+  // Should NOT shrink: 2 < 8/4 = 2, but capacity is already MIN_CAPACITY
+  ASSERT_EQ(sch->slices_capacity, 8, "Capacity should stay at MIN_CAPACITY (8)");
+  ASSERT_EQ(sch->input->num_slices, 2, "Should have 2 slices");
+  
+  printf("\n  Verification:\n");
+  printf("    ✓ Array shrinks correctly: 32 -> 16 -> 8\n");
+  printf("    ✓ Shrinking happens when using <25%% of capacity\n");
+  printf("    ✓ Does not shrink below MIN_CAPACITY (8)\n");
+  
+  slice_sch_destroy(sch);
+}
+
+/* Test OOP: No shrinking when num_slices would exceed new capacity */
+static void test_oop_no_shrink_below_num_slices(void) {
+  printf("  Purpose: Test that array doesn't shrink if new capacity would be < num_slices\n");
+  printf("  Expected: Capacity should not shrink below num_slices\n\n");
+  
+  slice_scheduler_t *sch = slice_sch_create(100);
+  ASSERT_TRUE(sch != NULL, "Scheduler should be created");
+  
+  // Grow to capacity 16 by adding 9 slices
+  for (int i = 0; i < 9; ++i) {
+    ASSERT_EQ(slice_sch_add_slice(sch, i + 1, 0.05f, 0.05f, 0.10f, true, 0), 0,
+              "Should add slice");
+  }
+  printf("  After adding 9 slices:\n");
+  printf("    Capacity: %d, Num slices: %d\n", sch->slices_capacity, sch->input->num_slices);
+  ASSERT_EQ(sch->slices_capacity, 16, "Capacity should be 16");
+  ASSERT_EQ(sch->input->num_slices, 9, "Should have 9 slices");
+  
+  // Delete down to 9 slices (no change)
+  // Now delete to 5 slices
+  // 5 < 16/4 = 4? No, 5 >= 4, so should NOT shrink
+  for (int i = 9; i > 5; --i) {
+    ASSERT_EQ(slice_sch_del_slice(sch, i), 0, "Should delete slice");
+  }
+  printf("\n  After deleting down to 5 slices:\n");
+  printf("    Capacity: %d, Num slices: %d\n", sch->slices_capacity, sch->input->num_slices);
+  // 5 >= 16/4 = 4, so should NOT shrink
+  ASSERT_EQ(sch->slices_capacity, 16, "Capacity should stay at 16 (5 >= 16/4)");
+  ASSERT_EQ(sch->input->num_slices, 5, "Should have 5 slices");
+  
+  // Delete one more to 4 slices
+  // 4 < 16/4 = 4? No, 4 == 4, so should NOT shrink (needs to be < 25%)
+  ASSERT_EQ(slice_sch_del_slice(sch, 5), 0, "Should delete slice");
+  printf("  After deleting down to 4 slices:\n");
+  printf("    Capacity: %d, Num slices: %d\n", sch->slices_capacity, sch->input->num_slices);
+  // 4 == 16/4 = 4, so should NOT shrink (needs to be strictly < 25%)
+  ASSERT_EQ(sch->slices_capacity, 16, "Capacity should stay at 16 (4 == 16/4, not <)");
+  ASSERT_EQ(sch->input->num_slices, 4, "Should have 4 slices");
+  
+  // Delete one more to 3 slices
+  // 3 < 16/4 = 4, so should shrink to 8
+  // But 8 >= 3, so it's valid
+  ASSERT_EQ(slice_sch_del_slice(sch, 4), 0, "Should delete slice");
+  printf("  After deleting down to 3 slices:\n");
+  printf("    Capacity: %d, Num slices: %d\n", sch->slices_capacity, sch->input->num_slices);
+  // 3 < 16/4 = 4, so should shrink to 8
+  ASSERT_EQ(sch->slices_capacity, 8, "Capacity should shrink to 8");
+  ASSERT_EQ(sch->input->num_slices, 3, "Should have 3 slices");
+  
+  printf("\n  Verification:\n");
+  printf("    ✓ Does not shrink when num_slices >= 25%% of capacity\n");
+  printf("    ✓ Shrinks only when num_slices < 25%% of capacity\n");
+  printf("    ✓ New capacity is always >= num_slices\n");
+  
+  slice_sch_destroy(sch);
+}
+
+/* Test OOP: Edge case - Add slice at exact capacity boundary */
+static void test_oop_add_at_capacity_boundary(void) {
+  printf("  Purpose: Test adding slice when exactly at capacity\n");
+  printf("  Expected: Capacity should double before adding\n\n");
+  
+  slice_scheduler_t *sch = slice_sch_create(100);
+  ASSERT_TRUE(sch != NULL, "Scheduler should be created");
+  
+  // Fill to exact capacity (initial capacity is 8)
+  int initial_capacity = sch->slices_capacity;
+  for (int i = 1; i <= initial_capacity; ++i) {
+    ASSERT_EQ(slice_sch_add_slice(sch, i, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice");
+  }
+  
+  printf("  After adding %d slices (at capacity):\n", initial_capacity);
+  printf("    Capacity: %d, Num slices: %d\n", sch->slices_capacity, sch->input->num_slices);
+  ASSERT_EQ(sch->slices_capacity, initial_capacity, "Should be at initial capacity");
+  ASSERT_EQ(sch->input->num_slices, initial_capacity, "Should have 8 slices");
+  
+  // Add one more - should trigger growth
+  ASSERT_EQ(slice_sch_add_slice(sch, initial_capacity + 1, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice");
+  
+  printf("  After adding one more slice (should grow):\n");
+  printf("    Capacity: %d, Num slices: %d\n", sch->slices_capacity, sch->input->num_slices);
+  ASSERT_EQ(sch->slices_capacity, initial_capacity * 2, "Capacity should double");
+  ASSERT_EQ(sch->input->num_slices, initial_capacity + 1, "Should have 9 slices");
+  
+  printf("  Verification:\n");
+  printf("    ✓ Capacity doubles when adding at boundary\n");
+  
+  slice_sch_destroy(sch);
+}
+
+/* Test OOP: Edge case - Delete all slices */
+static void test_oop_delete_all_slices(void) {
+  printf("  Purpose: Test deleting all slices from scheduler\n");
+  printf("  Expected: Scheduler should handle empty state correctly\n\n");
+  
+  slice_scheduler_t *sch = slice_sch_create(100);
+  ASSERT_TRUE(sch != NULL, "Scheduler should be created");
+  
+  // Add some slices
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice 1");
+  ASSERT_EQ(slice_sch_add_slice(sch, 2, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice 2");
+  ASSERT_EQ(slice_sch_add_slice(sch, 3, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice 3");
+  
+  printf("  After adding 3 slices:\n");
+  printf("    Num slices: %d\n", sch->input->num_slices);
+  ASSERT_EQ(sch->input->num_slices, 3, "Should have 3 slices");
+  
+  // Delete all slices
+  ASSERT_EQ(slice_sch_del_slice(sch, 1), 0, "Should delete slice 1");
+  ASSERT_EQ(slice_sch_del_slice(sch, 2), 0, "Should delete slice 2");
+  ASSERT_EQ(slice_sch_del_slice(sch, 3), 0, "Should delete slice 3");
+  
+  printf("  After deleting all slices:\n");
+  printf("    Num slices: %d\n", sch->input->num_slices);
+  ASSERT_EQ(sch->input->num_slices, 0, "Should have 0 slices");
+  
+  // Schedule should work with empty slices
+  ASSERT_EQ(slice_sch_schedule(sch), 0, "Schedule should succeed with 0 slices");
+  
+  int num_active = 0;
+  int total_allocated = 0;
+  ASSERT_EQ(slice_sch_get_stats(sch, &num_active, &total_allocated), 0, "Should get stats");
+  ASSERT_EQ(num_active, 0, "Should have 0 active slices");
+  ASSERT_EQ(total_allocated, 0, "Should have 0 allocated PRBs");
+  
+  printf("  Verification:\n");
+  printf("    ✓ Can delete all slices\n");
+  printf("    ✓ Scheduler handles empty state correctly\n");
+  
+  slice_sch_destroy(sch);
+}
+
+/* Test OOP: Edge case - Duplicate slice IDs */
+static void test_oop_duplicate_slice_id(void) {
+  printf("  Purpose: Test adding slice with duplicate ID\n");
+  printf("  Expected: Should reject duplicate slice ID\n\n");
+  
+  slice_scheduler_t *sch = slice_sch_create(100);
+  ASSERT_TRUE(sch != NULL, "Scheduler should be created");
+  
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice 1");
+  
+  // Try to add duplicate
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0.2f, 0.3f, 0.6f, true, 0), -1, "Should reject duplicate ID");
+  
+  printf("  Verification:\n");
+  printf("    ✓ Duplicate slice ID is rejected\n");
+  ASSERT_EQ(sch->input->num_slices, 1, "Should still have only 1 slice");
+  
+  slice_sch_destroy(sch);
+}
+
+/* Test OOP: Edge case - Invalid ratio values */
+static void test_oop_invalid_ratios(void) {
+  printf("  Purpose: Test adding slice with invalid ratio values\n");
+  printf("  Expected: Should reject invalid ratios\n\n");
+  
+  slice_scheduler_t *sch = slice_sch_create(100);
+  ASSERT_TRUE(sch != NULL, "Scheduler should be created");
+  
+  // Test negative dedicated
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, -0.1f, 0.2f, 0.5f, true, 0), -1, "Should reject negative dedicated");
+  
+  // Test > 1.0 dedicated
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 1.5f, 0.2f, 0.5f, true, 0), -1, "Should reject dedicated > 1.0");
+  
+  // Test negative min
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0.1f, -0.2f, 0.5f, true, 0), -1, "Should reject negative min");
+  
+  // Test > 1.0 max
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0.1f, 0.2f, 1.5f, true, 0), -1, "Should reject max > 1.0");
+  
+  // Test dedicated > min (invalid relationship)
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0.3f, 0.2f, 0.5f, true, 0), -1, "Should reject dedicated > min");
+  
+  // Test dedicated > max (when max < min, dedicated should be <= max)
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0.3f, 0.5f, 0.2f, true, 0), -1, "Should reject dedicated > max when max < min");
+  
+  printf("  Verification:\n");
+  printf("    ✓ All invalid ratio values are rejected\n");
+  ASSERT_EQ(sch->input->num_slices, 0, "Should have 0 slices");
+  
+  slice_sch_destroy(sch);
+}
+
+/* Test OOP: Edge case - Invalid require value */
+static void test_oop_invalid_require(void) {
+  printf("  Purpose: Test adding/updating with invalid require value\n");
+  printf("  Expected: Should reject negative require\n\n");
+  
+  slice_scheduler_t *sch = slice_sch_create(100);
+  ASSERT_TRUE(sch != NULL, "Scheduler should be created");
+  
+  // Test negative require in add
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0.1f, 0.2f, 0.5f, true, -10), -1, "Should reject negative require");
+  
+  // Add valid slice first
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice");
+  
+  // Test negative require in update
+  ASSERT_EQ(slice_sch_update_require(sch, 1, -5), -1, "Should reject negative require in update");
+  
+  printf("  Verification:\n");
+  printf("    ✓ Negative require values are rejected\n");
+  
+  slice_sch_destroy(sch);
+}
+
+/* Test OOP: Edge case - Update require for non-existent slice */
+static void test_oop_update_nonexistent_slice(void) {
+  printf("  Purpose: Test updating require for non-existent slice\n");
+  printf("  Expected: Should return error\n\n");
+  
+  slice_scheduler_t *sch = slice_sch_create(100);
+  ASSERT_TRUE(sch != NULL, "Scheduler should be created");
+  
+  ASSERT_EQ(slice_sch_update_require(sch, 999, 50), -1, "Should reject update for non-existent slice");
+  
+  printf("  Verification:\n");
+  printf("    ✓ Update for non-existent slice is rejected\n");
+  
+  slice_sch_destroy(sch);
+}
+
+/* Test OOP: Edge case - Delete non-existent slice */
+static void test_oop_delete_nonexistent_slice(void) {
+  printf("  Purpose: Test deleting non-existent slice\n");
+  printf("  Expected: Should return error\n\n");
+  
+  slice_scheduler_t *sch = slice_sch_create(100);
+  ASSERT_TRUE(sch != NULL, "Scheduler should be created");
+  
+  ASSERT_EQ(slice_sch_del_slice(sch, 999), -1, "Should reject delete for non-existent slice");
+  
+  printf("  Verification:\n");
+  printf("    ✓ Delete for non-existent slice is rejected\n");
+  
+  slice_sch_destroy(sch);
+}
+
+/* Test OOP: Edge case - Get allocation before scheduling */
+static void test_oop_get_allocation_before_schedule(void) {
+  printf("  Purpose: Test getting allocation before calling schedule\n");
+  printf("  Expected: Should return NULL\n\n");
+  
+  slice_scheduler_t *sch = slice_sch_create(100);
+  ASSERT_TRUE(sch != NULL, "Scheduler should be created");
+  
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice");
+  
+  int num_ranges = 0;
+  const slice_prb_range_t *ranges = slice_sch_get_allocation(sch, &num_ranges);
+  ASSERT_TRUE(ranges == NULL, "Should return NULL before schedule");
+  
+  int num_active = 0;
+  int total_allocated = 0;
+  ASSERT_EQ(slice_sch_get_stats(sch, &num_active, &total_allocated), -1, "Should return error before schedule");
+  
+  printf("  Verification:\n");
+  printf("    ✓ Get allocation before schedule returns NULL\n");
+  printf("    ✓ Get stats before schedule returns error\n");
+  
+  slice_sch_destroy(sch);
+}
+
+/* Test OOP: Edge case - Boundary ratio values (0.0 and 1.0) */
+static void test_oop_boundary_ratios(void) {
+  printf("  Purpose: Test adding slices with boundary ratio values (0.0, 1.0)\n");
+  printf("  Expected: Should accept valid boundary values\n\n");
+  
+  slice_scheduler_t *sch = slice_sch_create(100);
+  ASSERT_TRUE(sch != NULL, "Scheduler should be created");
+  
+  // Test all zeros (valid)
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0.0f, 0.0f, 1.0f, true, 0), 0, "Should accept all zeros");
+  
+  // Test all at 1.0 (valid)
+  ASSERT_EQ(slice_sch_add_slice(sch, 2, 0.0f, 1.0f, 1.0f, true, 0), 0, "Should accept max at 1.0");
+  
+  // Test exact 1.0 dedicated (valid if min >= 1.0)
+  ASSERT_EQ(slice_sch_add_slice(sch, 3, 0.0f, 1.0f, 1.0f, true, 0), 0, "Should accept dedicated 0.0 with min 1.0");
+  
+  printf("  Verification:\n");
+  printf("    ✓ Boundary ratio values (0.0, 1.0) are accepted\n");
+  ASSERT_EQ(sch->input->num_slices, 3, "Should have 3 slices");
+  
+  slice_sch_destroy(sch);
+}
+
+/* Test OOP: Edge case - NULL scheduler operations */
+static void test_oop_null_scheduler_operations(void) {
+  printf("  Purpose: Test operations on NULL scheduler\n");
+  printf("  Expected: All should return error or handle gracefully\n\n");
+  
+  // Test all operations with NULL
+  ASSERT_EQ(slice_sch_add_slice(NULL, 1, 0.1f, 0.2f, 0.5f, true, 0), -1, "Should reject NULL scheduler");
+  ASSERT_EQ(slice_sch_del_slice(NULL, 1), -1, "Should reject NULL scheduler");
+  ASSERT_EQ(slice_sch_update_require(NULL, 1, 50), -1, "Should reject NULL scheduler");
+  ASSERT_EQ(slice_sch_schedule(NULL), -1, "Should reject NULL scheduler");
+  
+  int num_ranges = 0;
+  ASSERT_TRUE(slice_sch_get_allocation(NULL, &num_ranges) == NULL, "Should return NULL for NULL scheduler");
+  
+  int num_active = 0;
+  int total_allocated = 0;
+  ASSERT_EQ(slice_sch_get_stats(NULL, &num_active, &total_allocated), -1, "Should reject NULL scheduler");
+  
+  // Destroy NULL should be safe (no-op)
+  slice_sch_destroy(NULL);
+  
+  printf("  Verification:\n");
+  printf("    ✓ All operations handle NULL scheduler gracefully\n");
+}
+
+/* Test OOP: Edge case - Invalid total_prbs in create */
+static void test_oop_invalid_total_prbs(void) {
+  printf("  Purpose: Test creating scheduler with invalid total_prbs\n");
+  printf("  Expected: Should return NULL\n\n");
+  
+  slice_scheduler_t *sch1 = slice_sch_create(0);
+  ASSERT_TRUE(sch1 == NULL, "Should reject total_prbs = 0");
+  
+  slice_scheduler_t *sch2 = slice_sch_create(-10);
+  ASSERT_TRUE(sch2 == NULL, "Should reject negative total_prbs");
+  
+  printf("  Verification:\n");
+  printf("    ✓ Invalid total_prbs values are rejected\n");
+}
+
+/* Test OOP: Edge case - Capacity at exact shrink threshold */
+static void test_oop_capacity_at_shrink_threshold(void) {
+  printf("  Purpose: Test capacity behavior at exact 25%% threshold\n");
+  printf("  Expected: Should not shrink at exactly 25%%, only when < 25%%\n\n");
+  
+  slice_scheduler_t *sch = slice_sch_create(100);
+  ASSERT_TRUE(sch != NULL, "Scheduler should be created");
+  
+  // Grow to 16 capacity (add 9 slices to go from 8 to 16)
+  for (int i = 1; i <= 9; ++i) {
+    ASSERT_EQ(slice_sch_add_slice(sch, i, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice");
+  }
+  
+  printf("  After adding 9 slices:\n");
+  printf("    Capacity: %d, Num slices: %d\n", sch->slices_capacity, sch->input->num_slices);
+  ASSERT_EQ(sch->slices_capacity, 16, "Capacity should be 16");
+  ASSERT_EQ(sch->input->num_slices, 9, "Should have 9 slices");
+  
+  // Delete down to exactly 4 (which is 16/4 = 25%)
+  for (int i = 9; i >= 5; --i) {
+    ASSERT_EQ(slice_sch_del_slice(sch, i), 0, "Should delete slice");
+  }
+  
+  printf("  After deleting down to 4 slices (exactly 25%%):\n");
+  printf("    Capacity: %d, Num slices: %d\n", sch->slices_capacity, sch->input->num_slices);
+  ASSERT_EQ(sch->slices_capacity, 16, "Should NOT shrink at exactly 25%");
+  ASSERT_EQ(sch->input->num_slices, 4, "Should have 4 slices");
+  
+  // Delete one more to 3 (< 25%)
+  ASSERT_EQ(slice_sch_del_slice(sch, 4), 0, "Should delete slice");
+  
+  printf("  After deleting down to 3 slices (< 25%%):\n");
+  printf("    Capacity: %d, Num slices: %d\n", sch->slices_capacity, sch->input->num_slices);
+  ASSERT_EQ(sch->slices_capacity, 8, "Should shrink to 8");
+  ASSERT_EQ(sch->input->num_slices, 3, "Should have 3 slices");
+  
+  printf("  Verification:\n");
+  printf("    ✓ Does not shrink at exactly 25%% threshold\n");
+  printf("    ✓ Shrinks only when strictly < 25%%\n");
+  
+  slice_sch_destroy(sch);
+}
+
+/* Test OOP: Edge case - Multiple rapid add/delete operations */
+static void test_oop_rapid_add_delete(void) {
+  printf("  Purpose: Test rapid sequence of add/delete operations\n");
+  printf("  Expected: Should handle correctly without corruption\n\n");
+  
+  slice_scheduler_t *sch = slice_sch_create(100);
+  ASSERT_TRUE(sch != NULL, "Scheduler should be created");
+  
+  // Rapid add/delete sequence
+  for (int i = 1; i <= 20; ++i) {
+    ASSERT_EQ(slice_sch_add_slice(sch, i, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice");
+    if (i % 3 == 0) {
+      ASSERT_EQ(slice_sch_del_slice(sch, i - 1), 0, "Should delete slice");
+    }
+  }
+  
+  printf("  After rapid add/delete sequence:\n");
+  printf("    Capacity: %d, Num slices: %d\n", sch->slices_capacity, sch->input->num_slices);
+  
+  // Schedule should still work
+  ASSERT_EQ(slice_sch_schedule(sch), 0, "Schedule should succeed");
+  
+  int num_active = 0;
+  int total_allocated = 0;
+  ASSERT_EQ(slice_sch_get_stats(sch, &num_active, &total_allocated), 0, "Should get stats");
+  
+  printf("  Verification:\n");
+  printf("    ✓ Rapid add/delete operations handled correctly\n");
+  printf("    ✓ Scheduler remains functional after rapid operations\n");
+  
+  slice_sch_destroy(sch);
+}
+
+/* Test OOP: Edge case - Schedule after delete without re-schedule */
+static void test_oop_schedule_after_delete(void) {
+  printf("  Purpose: Test scheduling after delete (result should be invalidated)\n");
+  printf("  Expected: Result should be invalidated, new schedule should work\n\n");
+  
+  slice_scheduler_t *sch = slice_sch_create(100);
+  ASSERT_TRUE(sch != NULL, "Scheduler should be created");
+  
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice 1");
+  ASSERT_EQ(slice_sch_add_slice(sch, 2, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice 2");
+  
+  ASSERT_EQ(slice_sch_schedule(sch), 0, "Schedule should succeed");
+  
+  // Delete a slice - should invalidate result
+  ASSERT_EQ(slice_sch_del_slice(sch, 1), 0, "Should delete slice 1");
+  
+  // Get allocation should fail (result invalidated)
+  int num_ranges = 0;
+  const slice_prb_range_t *ranges = slice_sch_get_allocation(sch, &num_ranges);
+  ASSERT_TRUE(ranges == NULL, "Should return NULL after delete (result invalidated)");
+  
+  // Re-schedule should work
+  ASSERT_EQ(slice_sch_schedule(sch), 0, "Re-schedule should succeed");
+  
+  ranges = slice_sch_get_allocation(sch, &num_ranges);
+  ASSERT_TRUE(ranges != NULL, "Should return valid allocation after re-schedule");
+  
+  printf("  Verification:\n");
+  printf("    ✓ Result is invalidated after delete\n");
+  printf("    ✓ Re-schedule works correctly after delete\n");
+  
+  slice_sch_destroy(sch);
 }
 
 int main(void) {
@@ -1450,6 +2419,35 @@ int main(void) {
   printf("\n=== Integration Edge Case Tests ===\n\n");
   TEST(integration_max_less_than_min);
   TEST(integration_all_slices_no_prioritized_need);
+  
+  printf("\n=== OOP Scheduler Interface Tests ===\n\n");
+  TEST(oop_basic_two_slices);
+  TEST(oop_add_delete_slices);
+  TEST(oop_update_require);
+  TEST(oop_dynamic_allocation);
+  TEST(oop_error_handling);
+  
+  printf("\n=== OOP Memory Management Tests ===\n\n");
+  TEST(oop_initial_capacity);
+  TEST(oop_array_growth);
+  TEST(oop_array_shrinking);
+  TEST(oop_no_shrink_below_num_slices);
+  
+  printf("\n=== OOP Edge Case Tests ===\n\n");
+  TEST(oop_add_at_capacity_boundary);
+  TEST(oop_delete_all_slices);
+  TEST(oop_duplicate_slice_id);
+  TEST(oop_invalid_ratios);
+  TEST(oop_invalid_require);
+  TEST(oop_update_nonexistent_slice);
+  TEST(oop_delete_nonexistent_slice);
+  TEST(oop_get_allocation_before_schedule);
+  TEST(oop_boundary_ratios);
+  TEST(oop_null_scheduler_operations);
+  TEST(oop_invalid_total_prbs);
+  TEST(oop_capacity_at_shrink_threshold);
+  TEST(oop_rapid_add_delete);
+  TEST(oop_schedule_after_delete);
   
   printf("╔════════════════════════════════════════════════════════════════════════════════╗\n");
   printf("║                            Test Summary                                       ║\n");

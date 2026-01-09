@@ -3,18 +3,14 @@
  * \brief Implementation of Network Slice PRB Range Allocation Algorithm
  */
 
-// Include platform constants FIRST to get MAX_NUM_SLICES definition
-// This ensures the structure size matches when compiled in OAI
-// When compiled standalone, this include will fail, but slice_prb_allocator.h will define MAX_NUM_SLICES=32
-// The include path should work when compiled as part of OAI
-#include "common/platform_constants.h"
-
-// Now include the header - it will use MAX_NUM_SLICES from platform_constants.h if available
 #include "slice_prb_allocator.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+
+/*! \brief Minimum capacity for dynamic slice arrays */
+#define MIN_CAPACITY 8
 
 /*! \brief Helper: Get minimum of two integers */
 static inline int min_int(int a, int b) {
@@ -26,12 +22,63 @@ static inline int max_int(int a, int b) {
   return (a > b) ? a : b;
 }
 
+slice_alloc_input_t* allocate_slice_input(int num_slices) {
+  if (num_slices < 0) {
+    return NULL;
+  }
+  size_t size = sizeof(slice_alloc_input_t) + num_slices * sizeof(slice_config_t);
+  slice_alloc_input_t *input = (slice_alloc_input_t*)calloc(1, size);
+  if (input != NULL) {
+    input->num_slices = num_slices;
+  }
+  return input;
+}
+
+slice_alloc_result_t* allocate_slice_result(int num_slices) {
+  if (num_slices < 0) {
+    return NULL;
+  }
+  size_t size = sizeof(slice_alloc_result_t) + num_slices * sizeof(slice_prb_range_t);
+  slice_alloc_result_t *result = (slice_alloc_result_t*)calloc(1, size);
+  return result;
+}
+
+void free_slice_input(slice_alloc_input_t *input) {
+  if (input != NULL) {
+    free(input);
+  }
+}
+
+void free_slice_result(slice_alloc_result_t *result) {
+  if (result != NULL) {
+    free(result);
+  }
+}
+
+/*! \brief Helper: Find slice index by slice_id */
+static int find_slice_index(const slice_scheduler_t *obj, int slice_id) {
+  if (obj == NULL || obj->input == NULL) {
+    return -1;
+  }
+  for (int i = 0; i < obj->input->num_slices; ++i) {
+    if (obj->input->slices[i].slice_id == slice_id) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+
+/* ============================================================================
+ * Legacy Functions (kept for backward compatibility)
+ * ============================================================================ */
+
 bool validate_slice_config(const slice_alloc_input_t *input) {
   if (input == NULL) {
     return false;
   }
   
-  if (input->num_slices < 0 || input->num_slices > MAX_NUM_SLICES) {
+  if (input->num_slices < 0) {
     return false;
   }
   
@@ -423,8 +470,9 @@ int calculate_slice_prb_ranges(const slice_alloc_input_t *input, slice_alloc_res
     return -1;
   }
   
-  // Initialize result
-  memset(result, 0, sizeof(slice_alloc_result_t));
+  // Initialize result fields (but not the flexible array - it's already zeroed by caller)
+  result->num_active_slices = 0;
+  result->total_allocated_prbs = 0;
   
   if (input->num_slices == 0) {
     return 0;
@@ -473,8 +521,12 @@ int calculate_slice_prb_ranges(const slice_alloc_input_t *input, slice_alloc_res
   return num_active_slices;
 }
 
-void print_slice_allocation(const slice_alloc_result_t *result) {
+void print_slice_allocation(const slice_alloc_result_t *result, int num_slices) {
   if (result == NULL) {
+    return;
+  }
+  
+  if (num_slices < 0) {
     return;
   }
   
@@ -482,7 +534,8 @@ void print_slice_allocation(const slice_alloc_result_t *result) {
   printf("Total Allocated PRBs: %d\n", result->total_allocated_prbs);
   printf("Active Slices: %d\n\n", result->num_active_slices);
   
-  for (int s = 0; s < MAX_NUM_SLICES; ++s) {
+  // Iterate through all slices and print those with allocated PRBs
+  for (int s = 0; s < num_slices; ++s) {
     if (result->ranges[s].num_prbs > 0) {
       printf("Slice %d: PRBs [%d, %d) (%d PRBs)\n",
              result->ranges[s].slice_id,
@@ -492,4 +545,261 @@ void print_slice_allocation(const slice_alloc_result_t *result) {
     }
   }
   printf("\n");
+}
+
+/* ============================================================================
+ * OOP-like Scheduler Interface Implementation
+ * ============================================================================ */
+
+slice_scheduler_t* slice_sch_create(int total_prbs) {
+  if (total_prbs <= 0) {
+    return NULL;
+  }
+  
+  slice_scheduler_t *obj = (slice_scheduler_t*)calloc(1, sizeof(slice_scheduler_t));
+  if (obj == NULL) {
+    return NULL;
+  }
+  
+  obj->slices_capacity = MIN_CAPACITY; // Initial capacity
+  obj->result_valid = false;
+  
+  // Allocate input structure
+  obj->input = allocate_slice_input(obj->slices_capacity);
+  if (obj->input == NULL) {
+    free(obj);
+    return NULL;
+  }
+  obj->input->num_slices = 0;
+  obj->input->total_prbs = total_prbs;
+  
+  // Allocate result structure
+  obj->result = allocate_slice_result(obj->slices_capacity);
+  if (obj->result == NULL) {
+    free_slice_input(obj->input);
+    free(obj);
+    return NULL;
+  }
+  
+  return obj;
+}
+
+void slice_sch_destroy(slice_scheduler_t *obj) {
+  if (obj != NULL) {
+    if (obj->input != NULL) {
+      free_slice_input(obj->input);
+    }
+    if (obj->result != NULL) {
+      free_slice_result(obj->result);
+    }
+    free(obj);
+  }
+}
+
+int slice_sch_add_slice(slice_scheduler_t *obj, int slice_id, float dedicated,
+                        float min, float max, bool has, int require) {
+  if (obj == NULL || obj->input == NULL) {
+    return -1;
+  }
+  
+  // Check if slice already exists
+  if (find_slice_index(obj, slice_id) >= 0) {
+    return -1; // Slice already exists
+  }
+  
+  // Reallocate if needed
+  if (obj->input->num_slices >= obj->slices_capacity) {
+    int new_capacity = obj->slices_capacity * 2;
+    
+    // Reallocate input structure (preserves num_slices, total_prbs, and existing slices)
+    size_t input_size = sizeof(slice_alloc_input_t) + new_capacity * sizeof(slice_config_t);
+    slice_alloc_input_t *new_input = (slice_alloc_input_t*)realloc(obj->input, input_size);
+    if (new_input == NULL) {
+      return -1; // Allocation failed
+    }
+    
+    // Reallocate result structure
+    size_t result_size = sizeof(slice_alloc_result_t) + new_capacity * sizeof(slice_prb_range_t);
+    slice_alloc_result_t *new_result = (slice_alloc_result_t*)realloc(obj->result, result_size);
+    if (new_result == NULL) {
+      // If result realloc fails, try to restore input to original size
+      // (though this might also fail, but we try)
+      size_t old_input_size = sizeof(slice_alloc_input_t) + obj->slices_capacity * sizeof(slice_config_t);
+      slice_alloc_input_t *old_input = (slice_alloc_input_t*)realloc(new_input, old_input_size);
+      if (old_input != NULL) {
+        obj->input = old_input;
+      }
+      return -1; // Allocation failed
+    }
+    
+    // Both reallocs succeeded, update pointers and capacity
+    obj->input = new_input;
+    obj->result = new_result;
+    obj->slices_capacity = new_capacity;
+  }
+  
+  // Validate ratios
+  if (dedicated < 0.0 || dedicated > 1.0 ||
+      min < 0.0 || min > 1.0 ||
+      max < 0.0 || max > 1.0) {
+    return -1;
+  }
+  
+  // Validate ratio relationships
+  if (min <= max) {
+    if (dedicated > min) {
+      return -1;
+    }
+  } else {
+    if (dedicated > max) {
+      return -1;
+    }
+  }
+  
+  // Validate require
+  if (require < 0) {
+    return -1;
+  }
+  
+  // Add the slice
+  slice_config_t *slice = &obj->input->slices[obj->input->num_slices];
+  slice->slice_id = slice_id;
+  slice->dedicated_prb_ratio = dedicated;
+  slice->min_prb_ratio = min;
+  slice->max_prb_ratio = max;
+  slice->has_active_ues = has;
+  slice->required_prbs = require;
+  
+  obj->input->num_slices++;
+  obj->result_valid = false; // Invalidate result
+  
+  return 0;
+}
+
+int slice_sch_del_slice(slice_scheduler_t *obj, int slice_id) {
+  if (obj == NULL || obj->input == NULL) {
+    return -1;
+  }
+  
+  int idx = find_slice_index(obj, slice_id);
+  if (idx < 0) {
+    return -1; // Slice not found
+  }
+  
+  // Shift remaining slices to fill the gap
+  for (int i = idx; i < obj->input->num_slices - 1; ++i) {
+    obj->input->slices[i] = obj->input->slices[i + 1];
+  }
+  
+  obj->input->num_slices--;
+  obj->result_valid = false; // Invalidate result
+  
+  // Shrink array if capacity is much larger than needed
+  // Shrink when using less than 25% of capacity, but keep minimum capacity
+  if (obj->slices_capacity > MIN_CAPACITY && obj->input->num_slices < obj->slices_capacity / 4) {
+    int new_capacity = obj->slices_capacity / 2;
+    // Ensure new capacity is at least MIN_CAPACITY and at least num_slices
+    if (new_capacity < MIN_CAPACITY) {
+      new_capacity = MIN_CAPACITY;
+    }
+    if (new_capacity < obj->input->num_slices) {
+      new_capacity = obj->input->num_slices;
+    }
+    
+    // Reallocate input structure (preserves num_slices, total_prbs, and existing slices)
+    size_t input_size = sizeof(slice_alloc_input_t) + new_capacity * sizeof(slice_config_t);
+    slice_alloc_input_t *new_input = (slice_alloc_input_t*)realloc(obj->input, input_size);
+    if (new_input != NULL) {
+      // Reallocate result structure
+      size_t result_size = sizeof(slice_alloc_result_t) + new_capacity * sizeof(slice_prb_range_t);
+      slice_alloc_result_t *new_result = (slice_alloc_result_t*)realloc(obj->result, result_size);
+      if (new_result != NULL) {
+        // Both reallocs succeeded, update pointers and capacity
+        obj->input = new_input;
+        obj->result = new_result;
+        obj->slices_capacity = new_capacity;
+      }
+      // If result realloc fails, keep input at new size (input realloc already succeeded)
+      // This is acceptable since we're shrinking and the result will be recalculated on next schedule
+    }
+    // If realloc fails, continue with existing capacity (not a critical error)
+  }
+  
+  return 0;
+}
+
+int slice_sch_update_require(slice_scheduler_t *obj, int slice_id, int require) {
+  if (obj == NULL || obj->input == NULL) {
+    return -1;
+  }
+  
+  if (require < 0) {
+    return -1;
+  }
+  
+  int idx = find_slice_index(obj, slice_id);
+  if (idx < 0) {
+    return -1; // Slice not found
+  }
+  
+  obj->input->slices[idx].required_prbs = require;
+  obj->result_valid = false; // Invalidate result
+  
+  return 0;
+}
+
+int slice_sch_schedule(slice_scheduler_t *obj) {
+  if (obj == NULL || obj->input == NULL || obj->result == NULL) {
+    return -1;
+  }
+  
+  if (obj->input->num_slices == 0) {
+    obj->result->num_active_slices = 0;
+    obj->result->total_allocated_prbs = 0;
+    obj->result_valid = true;
+    return 0;
+  }
+  
+  // Validate configuration
+  if (!validate_slice_config(obj->input)) {
+    return -1;
+  }
+  
+  // Use functional implementation directly on obj->input and obj->result
+  int ret = calculate_slice_prb_ranges(obj->input, obj->result);
+  if (ret < 0) {
+    return -1;
+  }
+  
+  obj->result_valid = true;
+  
+  return 0;
+}
+
+const slice_prb_range_t* slice_sch_get_allocation(const slice_scheduler_t *obj, int *num_ranges) {
+  if (obj == NULL || num_ranges == NULL || obj->result == NULL) {
+    return NULL;
+  }
+  
+  if (!obj->result_valid) {
+    return NULL; // Result not valid, need to call schedule first
+  }
+  
+  *num_ranges = obj->result->num_active_slices;
+  return obj->result->ranges;
+}
+
+int slice_sch_get_stats(const slice_scheduler_t *obj, int *num_active_slices, int *total_allocated_prbs) {
+  if (obj == NULL || num_active_slices == NULL || total_allocated_prbs == NULL || obj->result == NULL) {
+    return -1;
+  }
+  
+  if (!obj->result_valid) {
+    return -1; // Result not valid, need to call schedule first
+  }
+  
+  *num_active_slices = obj->result->num_active_slices;
+  *total_allocated_prbs = obj->result->total_allocated_prbs;
+  
+  return 0;
 }
