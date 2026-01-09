@@ -10,6 +10,7 @@
  */
 
 #include "slice_prb_allocator.h"
+#include "slice_prb_allocator_internal.h"  // Tests need access to functional implementation
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
