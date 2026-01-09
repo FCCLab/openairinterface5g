@@ -352,8 +352,9 @@ If Σ(dedicated_i) > total_prbs:
 **Important Semantics**: 
 - **Dedicated** (`dedicated_prb_ratio`): Always reserved, non-shareable (allocated in Pass 1)
 - **Prioritized** (`min_prb_ratio - dedicated_prb_ratio`): Shareable but prioritized
-  - If slice needs it (`required_prbs > current_allocation`): Slice gets priority
-  - If slice doesn't need it: Resources can be used by other slices
+  - **Common Rule**: Pass 2 allocates up to `min(required_prbs, min_prb_ratio)` (within the prioritized portion)
+  - If `required_prbs < min_prb_ratio`: Allocate up to `required_prbs` in Pass 2, remaining prioritized resources (`min_prb_ratio - required_prbs`) are available for Pass 3
+  - If `required_prbs ≥ min_prb_ratio`: Allocate up to `min_prb_ratio` in Pass 2
 
 **Example**: If a slice has `dedicated_prb_ratio = 0.20` and `min_prb_ratio = 0.30`:
 - 20% is dedicated (always reserved, Pass 1)
@@ -362,16 +363,18 @@ If Σ(dedicated_i) > total_prbs:
 **Steps**:
 1. Calculate `remaining_prbs = total_prbs - allocated_prbs`
 
-2. **Calculate Prioritized Resource Needs** (based on `required_prbs`):
+2. **Calculate Prioritized Resource Needs** (common rule: allocate up to `min(required_prbs, min_prb_ratio)`):
    - For each active slice:
      - `min_prbs = total_prbs × min_prb_ratio` (total minimum target)
+     - `dedicated_prbs = total_prbs × dedicated_prb_ratio` (already allocated in Pass 1)
      - `prioritized_prbs = min_prbs - dedicated_prbs` (prioritized but shareable portion)
+     - **Common Rule**: `target_prbs = min(required_prbs, min_prbs)` (if `required_prbs = 0`, then `target_prbs = 0`)
      - **Check if slice needs prioritized resources**:
-       - If `required_prbs > current_allocation` (slice needs more PRBs):
-         - `prioritized_needed = min(prioritized_prbs, required_prbs - current_allocation)`
+       - If `target_prbs > current_allocation` and `prioritized_prbs > 0`:
+         - `prioritized_needed = min(prioritized_prbs, target_prbs - current_allocation)`
          - Add to `total_prioritized_needed`
-       - If `required_prbs ≤ current_allocation` (slice doesn't need more):
-         - Slice doesn't claim prioritized resources (they remain shareable)
+       - If `target_prbs ≤ current_allocation` (slice doesn't need more):
+         - Slice doesn't claim prioritized resources (they remain shareable for Pass 3)
 
 3. **Allocate Prioritized Resources**:
    - If `total_prioritized_needed > 0`:
@@ -379,80 +382,107 @@ If Σ(dedicated_i) > total_prbs:
      - For each slice that needs prioritized resources:
        - Calculate `additional = prioritized_needed × scale`
        - **Critical Check**: Ensure `current + additional ≤ max_prbs` (respect max limit)
-       - If adding `additional` would exceed `max_prbs`, cap at `max_prbs - current`
+       - **Critical Check**: Ensure `current + additional ≤ target_prbs` (where `target_prbs = min(required_prbs, min_prbs)`)
+       - If adding `additional` would exceed limits, cap appropriately
        - Allocate `additional` PRBs (capped if needed)
        - Update `allocated_prbs` and `remaining_prbs`
-   - **Note**: If a slice doesn't need prioritized resources (`required_prbs ≤ current_allocation`), those resources remain available for Pass 3
+   - **Note**: If a slice doesn't need prioritized resources (`target_prbs ≤ current_allocation`), those resources remain available for Pass 3
+   - **Note**: If `required_prbs < min_prb_ratio`, the remaining prioritized resources (`min_prb_ratio - required_prbs`) are available for Pass 3
 
-**Example 1: Slices Need Prioritized Resources**:
+**Example 1: Common Rule - Allocate up to min(required_prbs, min_prb_ratio)**:
 ```
 After Pass 1:
 Slice 1: 20 PRBs (dedicated), min = 30 PRBs, max = 50 PRBs, required = 35 PRBs
 Slice 2: 10 PRBs (dedicated), min = 25 PRBs, max = 50 PRBs, required = 30 PRBs
 Remaining: 70 PRBs
 
-Prioritized resources (min - dedicated):
-Slice 1: 30 - 20 = 10 PRBs prioritized
-Slice 2: 25 - 10 = 15 PRBs prioritized
+Common Rule: target = min(required_prbs, min_prb_ratio)
+Slice 1: target = min(35, 30) = 30 PRBs, current = 20, needs 10 PRBs
+Slice 2: target = min(30, 25) = 25 PRBs, current = 10, needs 15 PRBs
 
-Prioritized needs (based on required_prbs):
-Slice 1: required = 35, current = 20, needs 15 PRBs (but prioritized = 10, so needs 10)
-Slice 2: required = 30, current = 10, needs 20 PRBs (but prioritized = 15, so needs 15)
+Prioritized resources (min - dedicated):
+Slice 1: 30 - 20 = 10 PRBs prioritized → needs 10 (within prioritized portion)
+Slice 2: 25 - 10 = 15 PRBs prioritized → needs 15 (within prioritized portion)
 Total prioritized needed: 25 PRBs
 
 Available: 70 PRBs > 25 PRBs needed
 Scale = 1.0
 
-Slice 1: 20 + 10 = 30 PRBs (gets prioritized resources)
-Slice 2: 10 + 15 = 25 PRBs (gets prioritized resources)
+Slice 1: 20 + 10 = 30 PRBs (reaches target = 30, remaining 5 needed in Pass 3)
+Slice 2: 10 + 15 = 25 PRBs (reaches target = 25, remaining 5 needed in Pass 3)
 Remaining: 70 - 25 = 45 PRBs (available for Pass 3)
 ```
 
-**Example 2: Slice Doesn't Need Prioritized Resources (Shareable)**:
+**Example 2: Common Rule - required_prbs < min_prb_ratio**:
 ```
 After Pass 1:
 Slice 1: 20 PRBs (dedicated), min = 30 PRBs, max = 50 PRBs, required = 15 PRBs
 Slice 2: 10 PRBs (dedicated), min = 25 PRBs, max = 50 PRBs, required = 30 PRBs
 Remaining: 70 PRBs
 
-Prioritized resources:
-Slice 1: 30 - 20 = 10 PRBs prioritized
-Slice 2: 25 - 10 = 15 PRBs prioritized
+Common Rule: target = min(required_prbs, min_prb_ratio)
+Slice 1: target = min(15, 30) = 15 PRBs, current = 20, doesn't need more (target ≤ current)
+Slice 2: target = min(30, 25) = 25 PRBs, current = 10, needs 15 PRBs
 
-Prioritized needs (based on required_prbs):
-Slice 1: required = 15, current = 20, doesn't need more (prioritized resources remain shareable)
-Slice 2: required = 30, current = 10, needs 20 PRBs (but prioritized = 15, so needs 15)
+Prioritized resources (min - dedicated):
+Slice 1: 30 - 20 = 10 PRBs prioritized → not needed (target ≤ current), available for Pass 3
+Slice 2: 25 - 10 = 15 PRBs prioritized → needs 15 (within prioritized portion)
 Total prioritized needed: 15 PRBs (only slice 2 needs it)
 
 Available: 70 PRBs > 15 PRBs needed
 Scale = 1.0
 
-Slice 1: 20 PRBs (no change, doesn't need prioritized resources)
-Slice 2: 10 + 15 = 25 PRBs (gets prioritized resources)
-Remaining: 70 - 15 = 55 PRBs (slice 1's prioritized resources are now shareable)
+Slice 1: 20 PRBs (no change, target = 15 already met)
+Slice 2: 10 + 15 = 25 PRBs (reaches target = 25, remaining 5 needed in Pass 3)
+Remaining: 70 - 15 = 55 PRBs (slice 1's prioritized 10 PRBs + 45 PRBs available for Pass 3)
 ```
 
-**Example 3: Insufficient Prioritized Resources (Proportional Allocation)**:
+**Example 3: Common Rule - required_prbs = 0 (no allocation in Pass 2)**:
+```
+After Pass 1:
+Slice 0: 0 PRBs (dedicated), min = 0 PRBs, max = 95 PRBs, required = 4 PRBs
+Slice 1: 10 PRBs (dedicated), min = 10 PRBs, max = 95 PRBs, required = 0 PRBs
+Slice 2: 29 PRBs (dedicated), min = 67 PRBs, max = 95 PRBs, required = 0 PRBs
+Remaining: 26 PRBs
+
+Common Rule: target = min(required_prbs, min_prb_ratio)
+Slice 0: target = min(4, 0) = 0 PRBs (no allocation in Pass 2, handled in Pass 3)
+Slice 1: target = min(0, 10) = 0 PRBs (no allocation in Pass 2, prioritized resources available for Pass 3)
+Slice 2: target = min(0, 67) = 0 PRBs (no allocation in Pass 2, prioritized resources available for Pass 3)
+
+Total prioritized needed: 0 PRBs (all slices have required_prbs = 0 or min = 0)
+
+Available for Pass 2: 26 PRBs, but nothing to allocate
+Remaining after Pass 2: 26 PRBs
+
+Pass 3: Slice 0 will get PRBs based on required_prbs = 4
+```
+
+**Example 4: Common Rule - required_prbs > min_prb_ratio**:
 ```
 After Pass 1:
 Slice 1: 20 PRBs (dedicated), min = 30 PRBs, max = 50 PRBs, required = 40 PRBs
 Slice 2: 10 PRBs (dedicated), min = 25 PRBs, max = 50 PRBs, required = 35 PRBs
 Remaining: 70 PRBs
 
-Prioritized needs:
-Slice 1: needs 20 PRBs (40 - 20), prioritized = 10, so needs 10
-Slice 2: needs 25 PRBs (35 - 10), prioritized = 15, so needs 15
+Common Rule: target = min(required_prbs, min_prb_ratio)
+Slice 1: target = min(40, 30) = 30 PRBs, current = 20, needs 10 PRBs
+Slice 2: target = min(35, 25) = 25 PRBs, current = 10, needs 15 PRBs
+
+Prioritized resources (min - dedicated):
+Slice 1: 30 - 20 = 10 PRBs prioritized → needs 10 (within prioritized portion)
+Slice 2: 25 - 10 = 15 PRBs prioritized → needs 15 (within prioritized portion)
 Total prioritized needed: 25 PRBs
 
 Available: 70 PRBs > 25 PRBs needed
 Scale = 1.0
 
-Slice 1: 20 + 10 = 30 PRBs
-Slice 2: 10 + 15 = 25 PRBs
-Remaining: 70 - 25 = 45 PRBs
+Slice 1: 20 + 10 = 30 PRBs (reaches target = 30, remaining 10 needed in Pass 3)
+Slice 2: 10 + 15 = 25 PRBs (reaches target = 25, remaining 10 needed in Pass 3)
+Remaining: 70 - 25 = 45 PRBs (available for Pass 3)
 ```
 
-**Example 4: Max Limit Constraint**:
+**Example 5: Max Limit Constraint**:
 ```
 After Pass 1:
 Slice 1: 20 PRBs (dedicated), min = 30 PRBs, max = 25 PRBs, required = 35 PRBs
@@ -471,6 +501,13 @@ Slice 1: 20 + 5 = 25 PRBs (capped at max, can't meet required)
 Slice 2: 10 + 15 = 25 PRBs (gets prioritized resources)
 Remaining: 70 - 20 = 50 PRBs
 ```
+
+**Key Rules for Pass 2**:
+- **Common Rule**: Allocate up to `min(required_prbs, min_prb_ratio)` (within the prioritized portion)
+  - Calculate `target_prbs = min(required_prbs, min_prb_ratio)` (if `required_prbs = 0`, then `target_prbs = 0`)
+  - Allocate up to `target_prbs` in Pass 2
+  - If `required_prbs < min_prb_ratio`: Remaining prioritized resources (`min_prb_ratio - required_prbs`) are available for Pass 3
+- Never exceed `max_prb_ratio` in any pass
 
 **Key Points**:
 - Prioritized resources are only allocated if `required_prbs > current_allocation`

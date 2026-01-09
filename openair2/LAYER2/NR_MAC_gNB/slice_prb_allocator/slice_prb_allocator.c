@@ -186,35 +186,30 @@ int pass2_allocate_prioritized(const slice_alloc_input_t *input, slice_alloc_res
   int total_prbs = input->total_prbs;
   int total_prioritized_needed = 0;
   
-  // Calculate total prioritized resources needed (based on required_prbs)
+  // Calculate total prioritized resources needed (common rule: allocate up to min(required_prbs, min_prb_ratio))
   for (int s = 0; s < input->num_slices; ++s) {
     const slice_config_t *slice = &input->slices[s];
     int min_prbs = (int)(total_prbs * slice->min_prb_ratio + 0.5);
     int dedicated_prbs = (int)(total_prbs * slice->dedicated_prb_ratio + 0.5);
     int prioritized_prbs = min_prbs - dedicated_prbs; // Prioritized but shareable portion
     
-    // Check if slice needs prioritized resources based on required_prbs
-    if (prioritized_prbs > 0 && slice->required_prbs > 0) {
-      // Slice needs more PRBs than currently allocated
-      if (slice->required_prbs > result->ranges[s].num_prbs) {
-        int prioritized_needed = slice->required_prbs - result->ranges[s].num_prbs;
-        // Don't exceed the prioritized portion (min - dedicated)
-        if (prioritized_needed > prioritized_prbs) {
-          prioritized_needed = prioritized_prbs;
-        }
-        if (prioritized_needed > 0) {
-          total_prioritized_needed += prioritized_needed;
-        }
+    // Common rule: target = min(required_prbs, min_prb_ratio)
+    // If required_prbs = 0, target = 0 (no allocation in Pass 2)
+    int target_prbs = (slice->required_prbs > 0) ? 
+                       ((slice->required_prbs < min_prbs) ? slice->required_prbs : min_prbs) : 0;
+    
+    if (target_prbs > result->ranges[s].num_prbs && prioritized_prbs > 0) {
+      int prioritized_needed = target_prbs - result->ranges[s].num_prbs;
+      // Don't exceed the prioritized portion (min - dedicated)
+      if (prioritized_needed > prioritized_prbs) {
+        prioritized_needed = prioritized_prbs;
       }
-      // If required_prbs <= current_allocation, slice doesn't need prioritized resources
-      // (they remain shareable for other slices)
-    } else if (prioritized_prbs > 0 && slice->required_prbs == 0) {
-      // No required_prbs specified, use traditional min guarantee logic
-      int min_needed = min_prbs - result->ranges[s].num_prbs;
-      if (min_needed > 0) {
-        total_prioritized_needed += min_needed;
+      if (prioritized_needed > 0) {
+        total_prioritized_needed += prioritized_needed;
       }
     }
+    // If target_prbs <= current_allocation, slice doesn't need prioritized resources
+    // (they remain shareable for other slices)
   }
   
   // Allocate prioritized resources to slices that need them
@@ -231,22 +226,18 @@ int pass2_allocate_prioritized(const slice_alloc_input_t *input, slice_alloc_res
       int prioritized_prbs = min_prbs - dedicated_prbs;
       int max_prbs = (int)(total_prbs * slice->max_prb_ratio + 0.5);
       
-      int prioritized_needed = 0;
+      // Common rule: target = min(required_prbs, min_prb_ratio)
+      // If required_prbs = 0, target = 0 (no allocation in Pass 2)
+      int target_prbs = (slice->required_prbs > 0) ? 
+                         ((slice->required_prbs < min_prbs) ? slice->required_prbs : min_prbs) : 0;
       
-      // Determine how much prioritized resources this slice needs
-      if (prioritized_prbs > 0 && slice->required_prbs > 0) {
-        // Slice needs more PRBs based on required_prbs
-        if (slice->required_prbs > result->ranges[s].num_prbs) {
-          prioritized_needed = slice->required_prbs - result->ranges[s].num_prbs;
-          // Don't exceed the prioritized portion
-          if (prioritized_needed > prioritized_prbs) {
-            prioritized_needed = prioritized_prbs;
-          }
+      int prioritized_needed = 0;
+      if (target_prbs > result->ranges[s].num_prbs && prioritized_prbs > 0) {
+        prioritized_needed = target_prbs - result->ranges[s].num_prbs;
+        // Don't exceed the prioritized portion (min - dedicated)
+        if (prioritized_needed > prioritized_prbs) {
+          prioritized_needed = prioritized_prbs;
         }
-        // If required_prbs <= current_allocation, prioritized_needed = 0 (slice doesn't need it)
-      } else if (prioritized_prbs > 0 && slice->required_prbs == 0) {
-        // No required_prbs specified, use traditional min guarantee
-        prioritized_needed = min_prbs - result->ranges[s].num_prbs;
       }
       
       if (prioritized_needed > 0) {
@@ -254,6 +245,10 @@ int pass2_allocate_prioritized(const slice_alloc_input_t *input, slice_alloc_res
         // Ensure we don't exceed max_prb_ratio
         if (result->ranges[s].num_prbs + additional > max_prbs) {
           additional = max_prbs - result->ranges[s].num_prbs;
+        }
+        // Ensure we don't exceed target_prbs (min(required_prbs, min_prb_ratio))
+        if (result->ranges[s].num_prbs + additional > target_prbs) {
+          additional = target_prbs - result->ranges[s].num_prbs;
         }
         if (additional > 0) {
           result->ranges[s].num_prbs += additional;
@@ -541,16 +536,14 @@ void print_slice_allocation(const slice_alloc_result_t *result, int num_slices) 
   printf("=== Slice PRB Allocation Result ===\n");
   printf("Total Allocated PRBs: %d\n", result->total_allocated_prbs);
   
-  // Iterate through all slices and print those with allocated PRBs
+  // Iterate through all slices and print all of them (including those with 0 PRBs)
   for (int s = 0; s < num_slices; ++s) {
-    if (result->ranges[s].num_prbs > 0) {
-      printf("Slice (SST=%d, SD=%u): PRBs [%d, %d) (%d PRBs)\n",
-             result->ranges[s].slice_id.sst,
-             result->ranges[s].slice_id.sd,
-             result->ranges[s].start_prb,
-             result->ranges[s].end_prb,
-             result->ranges[s].num_prbs);
-    }
+    printf("Slice (SST=%d, SD=%u): PRBs [%d, %d) (%d PRBs)\n",
+           result->ranges[s].slice_id.sst,
+           result->ranges[s].slice_id.sd,
+           result->ranges[s].start_prb,
+           result->ranges[s].end_prb,
+           result->ranges[s].num_prbs);
   }
   printf("\n");
 }
