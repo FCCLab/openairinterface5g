@@ -79,10 +79,9 @@ static void print_allocation_result_with_required(const slice_alloc_result_t *re
                                                    const slice_alloc_input_t *input, 
                                                    int total_prbs) {
   printf("  Allocation Result:\n");
-  printf("    Active Slices: %d\n", result->num_active_slices);
   printf("    Total Allocated: %d / %d PRBs\n", result->total_allocated_prbs, total_prbs);
   printf("    Per-Slice Allocation:\n");
-  int max_slices = (input != NULL) ? input->num_slices : result->num_active_slices;
+  int max_slices = (input != NULL) ? input->num_slices : input->num_slices;
   for (int s = 0; s < max_slices; ++s) {
     if (result->ranges[s].num_prbs > 0) {
       float percentage = (float)result->ranges[s].num_prbs / total_prbs * 100.0;
@@ -218,7 +217,6 @@ static void test_basic_two_slices(void) {
   
   printf("  Verification:\n");
   ASSERT_EQ(ret, 2, "Should allocate to 2 slices");
-  ASSERT_EQ(result->num_active_slices, 2, "Should have 2 active slices");
   ASSERT_EQ(result->total_allocated_prbs, 100, "Should allocate all 100 PRBs");
   
   // Check slice 1: should get at least 30 PRBs (dedicated), up to 50 PRBs (max)
@@ -322,7 +320,7 @@ static void test_no_active_ues(void) {
   printf("\n");
   
   printf("  Verification:\n");
-  ASSERT_EQ(ret, 0, "Should allocate to 0 slices");
+  ASSERT_EQ(ret, 1, "Should return 1 slice");
   ASSERT_EQ(result->ranges[0].num_prbs, 0, "Slice with zero ratios should get 0 PRBs");
   ASSERT_EQ(result->total_allocated_prbs, 0, "Should allocate 0 PRBs");
   printf("    ✓ Slice with zero ratios correctly gets 0 PRBs\n");
@@ -665,7 +663,6 @@ static void test_pass1_dedicated(void) {
   }
   
   int allocated_prbs = 0;
-  int num_active_slices = 0;
   
   printf("  Input Configuration:\n");
   printf("    Total PRBs: %d\n", input->total_prbs);
@@ -673,18 +670,16 @@ static void test_pass1_dedicated(void) {
   print_slice_config(&input->slices[1], 1);
   printf("\n");
   
-  int ret = pass1_allocate_dedicated(input, result, &allocated_prbs, &num_active_slices);
+  int ret = pass1_allocate_dedicated(input, result, &allocated_prbs);
   
   printf("  Pass 1 Result:\n");
   printf("    Allocated PRBs: %d\n", allocated_prbs);
-  printf("    Active Slices: %d\n", num_active_slices);
   printf("    Slice 1: %d PRBs (expected: 30)\n", result->ranges[0].num_prbs);
   printf("    Slice 2: %d PRBs (expected: 20)\n", result->ranges[1].num_prbs);
   printf("\n");
   
   printf("  Verification:\n");
   ASSERT_EQ(ret, 0, "Pass 1 should succeed");
-  ASSERT_EQ(num_active_slices, 2, "Should have 2 active slices");
   ASSERT_EQ(result->ranges[0].num_prbs, 30, "Slice 1 should get 30 PRBs");
   ASSERT_EQ(result->ranges[1].num_prbs, 20, "Slice 2 should get 20 PRBs");
   ASSERT_EQ(allocated_prbs, 50, "Total allocated should be 50 PRBs");
@@ -698,10 +693,9 @@ static void test_pass1_dedicated(void) {
     result->ranges[s].slice_id = input->slices[s].slice_id;
   }
   allocated_prbs = 0;
-  num_active_slices = 0;
   
   printf("  Test Case 2: Dedicated exceeds total (60%% + 60%% = 120%%)\n");
-  ret = pass1_allocate_dedicated(input, result, &allocated_prbs, &num_active_slices);
+  ret = pass1_allocate_dedicated(input, result, &allocated_prbs);
   
   printf("  Pass 1 Result (with scaling):\n");
   printf("    Allocated PRBs: %d (expected: 100 after scaling)\n", allocated_prbs);
@@ -935,13 +929,11 @@ static void test_pass1_dedicated_static_allocation(void) {
   }
   
   int allocated_prbs = 0;
-  int num_active_slices = 0;
   
-  int ret = pass1_allocate_dedicated(input, result, &allocated_prbs, &num_active_slices);
+  int ret = pass1_allocate_dedicated(input, result, &allocated_prbs);
   
   printf("  Pass 1 Result:\n");
   printf("    Allocated PRBs: %d\n", allocated_prbs);
-  printf("    Active Slices: %d\n", num_active_slices);
   printf("    Slice 1: %d PRBs\n", result->ranges[0].num_prbs);
   printf("    Slice 2: %d PRBs\n", result->ranges[1].num_prbs);
   printf("\n");
@@ -979,13 +971,11 @@ static void test_pass1_max_less_than_dedicated(void) {
   result->ranges[0].slice_id = input->slices[0].slice_id;
   
   int allocated_prbs = 0;
-  int num_active_slices = 0;
   
-  int ret = pass1_allocate_dedicated(input, result, &allocated_prbs, &num_active_slices);
+  int ret = pass1_allocate_dedicated(input, result, &allocated_prbs);
   
   printf("  Pass 1 Result:\n");
   printf("    Allocated PRBs: %d (capped at max=30)\n", allocated_prbs);
-  printf("    Active Slices: %d\n", num_active_slices);
   printf("    Slice 1: %d PRBs (capped at max, dedicated was 50)\n", result->ranges[0].num_prbs);
   printf("\n");
   
@@ -1021,20 +1011,17 @@ static void test_pass1_zero_dedicated(void) {
   result->ranges[0].slice_id = input->slices[0].slice_id;
   
   int allocated_prbs = 0;
-  int num_active_slices = 0;
   
-  int ret = pass1_allocate_dedicated(input, result, &allocated_prbs, &num_active_slices);
+  int ret = pass1_allocate_dedicated(input, result, &allocated_prbs);
   
   printf("  Pass 1 Result:\n");
   printf("    Allocated PRBs: %d\n", allocated_prbs);
-  printf("    Active Slices: %d\n", num_active_slices);
   printf("    Slice 1: %d PRBs (zero dedicated)\n", result->ranges[0].num_prbs);
   printf("\n");
   
   ASSERT_EQ(ret, 0, "Should succeed");
   ASSERT_EQ(result->ranges[0].num_prbs, 0, "Should get 0 PRBs (zero dedicated)");
   ASSERT_EQ(allocated_prbs, 0, "Total should be 0");
-  ASSERT_EQ(num_active_slices, 1, "Should be counted as active");
 free_slice_input(input);
 free_slice_result(result);
 
@@ -3321,7 +3308,7 @@ static void test_frame_756_slot_5_scenario(void) {
   printf("\n");
   
   printf("  Verification:\n");
-  ASSERT_EQ(ret, 5, "Should have 5 ranges (including slice with 0 PRBs)");
+  ASSERT_EQ(ret, 6, "Should return 6 slices");
   ASSERT_EQ(result->total_allocated_prbs, 95, "Should allocate all 95 PRBs");
   
   // Find each slice in the result

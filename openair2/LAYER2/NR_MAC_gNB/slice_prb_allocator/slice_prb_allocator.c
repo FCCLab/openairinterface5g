@@ -127,16 +127,16 @@ bool validate_slice_config(const slice_alloc_input_t *input) {
 }
 
 int pass1_allocate_dedicated(const slice_alloc_input_t *input, slice_alloc_result_t *result,
-                              int *allocated_prbs, int *num_active_slices) {
-  if (input == NULL || result == NULL || allocated_prbs == NULL || num_active_slices == NULL) {
+                              int *allocated_prbs) {
+  if (input == NULL || result == NULL || allocated_prbs == NULL) {
     return -1;
   }
   
   *allocated_prbs = 0;
-  *num_active_slices = 0;
   int total_prbs = input->total_prbs;
   
   // Allocate dedicated PRBs (non-shareable) to all slices
+  
   for (int s = 0; s < input->num_slices; ++s) {
     const slice_config_t *slice = &input->slices[s];
     
@@ -156,7 +156,6 @@ int pass1_allocate_dedicated(const slice_alloc_input_t *input, slice_alloc_resul
     
     result->ranges[s].num_prbs = dedicated_prbs;
     *allocated_prbs += dedicated_prbs;
-    (*num_active_slices)++;
   }
   
   // If dedicated allocations exceed total, scale them down proportionally
@@ -455,12 +454,17 @@ int pass4_assign_ranges(const slice_alloc_input_t *input, slice_alloc_result_t *
   }
   
   // Assign PRB ranges (contiguous allocation)
+  // Include all slices, even those with 0 PRBs, so they appear in the result
   int current_prb = 0;
   for (int s = 0; s < input->num_slices; ++s) {
     if (result->ranges[s].num_prbs > 0) {
       result->ranges[s].start_prb = current_prb;
       result->ranges[s].end_prb = current_prb + result->ranges[s].num_prbs;
       current_prb = result->ranges[s].end_prb;
+    } else {
+      // Assign [0, 0) range for slices with 0 PRBs so they appear in the result
+      result->ranges[s].start_prb = 0;
+      result->ranges[s].end_prb = 0;
     }
   }
   
@@ -477,14 +481,12 @@ int calculate_slice_prb_ranges(const slice_alloc_input_t *input, slice_alloc_res
   }
   
   // Initialize result fields (but not the flexible array - it's already zeroed by caller)
-  result->num_active_slices = 0;
   result->total_allocated_prbs = 0;
   
   if (input->num_slices == 0) {
     return 0;
   }
   
-  int num_active_slices = 0;
   int allocated_prbs = 0;
   int total_prbs = input->total_prbs;
   
@@ -497,7 +499,7 @@ int calculate_slice_prb_ranges(const slice_alloc_input_t *input, slice_alloc_res
   }
   
   // Pass 1: Allocate dedicated PRBs
-  if (pass1_allocate_dedicated(input, result, &allocated_prbs, &num_active_slices) != 0) {
+  if (pass1_allocate_dedicated(input, result, &allocated_prbs) != 0) {
     return -1;
   }
   
@@ -521,18 +523,10 @@ int calculate_slice_prb_ranges(const slice_alloc_input_t *input, slice_alloc_res
     return -1;
   }
   
-  // Recalculate num_active_slices based on slices that actually got PRBs
-  num_active_slices = 0;
-  for (int s = 0; s < input->num_slices; ++s) {
-    if (result->ranges[s].num_prbs > 0) {
-      num_active_slices++;
-    }
-  }
-  
-  result->num_active_slices = num_active_slices;
   result->total_allocated_prbs = allocated_prbs;
   
-  return num_active_slices;
+  // Return number of slices
+  return input->num_slices;
 }
 
 void print_slice_allocation(const slice_alloc_result_t *result, int num_slices) {
@@ -546,7 +540,6 @@ void print_slice_allocation(const slice_alloc_result_t *result, int num_slices) 
   
   printf("=== Slice PRB Allocation Result ===\n");
   printf("Total Allocated PRBs: %d\n", result->total_allocated_prbs);
-  printf("Active Slices: %d\n\n", result->num_active_slices);
   
   // Iterate through all slices and print those with allocated PRBs
   for (int s = 0; s < num_slices; ++s) {
@@ -862,7 +855,6 @@ int slice_sch_schedule(slice_scheduler_t *obj) {
   }
   
   if (obj->input->num_slices == 0) {
-    obj->result->num_active_slices = 0;
     obj->result->total_allocated_prbs = 0;
     obj->result_valid = true;
     return 0;
@@ -931,7 +923,7 @@ const slice_prb_range_t* slice_sch_get_allocation(const slice_scheduler_t *obj, 
     return NULL; // Result not valid, need to call schedule first
   }
   
-  *num_ranges = obj->result->num_active_slices;
+  *num_ranges = obj->input->num_slices;
   return obj->result->ranges;
 }
 
@@ -944,7 +936,7 @@ int slice_sch_get_stats(const slice_scheduler_t *obj, int *num_active_slices, in
     return -1; // Result not valid, need to call schedule first
   }
   
-  *num_active_slices = obj->result->num_active_slices;
+  *num_active_slices = obj->input->num_slices;
   *total_allocated_prbs = obj->result->total_allocated_prbs;
   
   return 0;

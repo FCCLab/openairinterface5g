@@ -174,7 +174,7 @@ const slice_prb_range_t* slice_sch_get_allocation(const slice_scheduler_t *obj, 
 
 /*! \brief Get allocation statistics
  *  \param obj Scheduler object
- *  \param num_active_slices Output: Number of active slices
+ *  \param num_active_slices Output: Number of slices (all slices are considered active)
  *  \param total_allocated_prbs Output: Total allocated PRBs
  *  \return 0 on success, -1 on error
  */

@@ -35,7 +35,6 @@ struct slice_alloc_input {
 
 /*! \brief Output result of PRB allocation */
 struct slice_alloc_result {
-  int num_active_slices;                   /*!< Number of slices with allocated PRBs */
   int total_allocated_prbs;                /*!< Total PRBs allocated (should equal total_prbs) */
   slice_prb_range_t ranges[];              /*!< Flexible array member: PRB ranges for each slice */
 };
@@ -104,11 +103,10 @@ void print_slice_allocation(const slice_alloc_result_t *result, int num_slices);
  *  \param input Input parameters
  *  \param result Result structure (will be updated with dedicated allocations)
  *  \param allocated_prbs Output: Total PRBs allocated after this pass
- *  \param num_active_slices Output: Number of slices with active UEs
  *  \return 0 on success, -1 on error
  */
 int pass1_allocate_dedicated(const slice_alloc_input_t *input, slice_alloc_result_t *result,
-                              int *allocated_prbs, int *num_active_slices);
+                              int *allocated_prbs);
 
 /*! \brief Pass 2: Allocate prioritized resources (min - dedicated) based on required_prbs
  *  \param input Input parameters
