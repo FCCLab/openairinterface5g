@@ -65,7 +65,7 @@ static int tests_passed = 0;
 
 /* Helper function to print slice configuration */
 static void print_slice_config(const slice_config_t *slice, int idx) {
-  printf("    Slice %d (ID %d):\n", idx, slice->slice_id);
+  printf("    Slice %d (SST=%d, SD=%u):\n", idx, slice->slice_id.sst, slice->slice_id.sd);
   printf("      Dedicated: %.1f%%, Min: %.1f%%, Max: %.1f%%, Active UEs: %s, Required PRBs: %d",
          slice->dedicated_prb_ratio * 100.0,
          slice->min_prb_ratio * 100.0,
@@ -90,13 +90,14 @@ static void print_allocation_result_with_required(const slice_alloc_result_t *re
       // Find the corresponding slice config to get required_prbs
       int required_prbs = 0;
       for (int i = 0; i < input->num_slices; ++i) {
-        if (input->slices[i].slice_id == result->ranges[s].slice_id) {
+        if (slice_id_eq(&result->ranges[s].slice_id, &input->slices[i].slice_id)) {
           required_prbs = input->slices[i].required_prbs;
           break;
         }
       }
-      printf("      Slice %d: PRBs [%d, %d) = %d PRBs (%.1f%%)", 
-             result->ranges[s].slice_id,
+      printf("      Slice (SST=%d, SD=%u): PRBs [%d, %d) = %d PRBs (%.1f%%)", 
+             result->ranges[s].slice_id.sst,
+             result->ranges[s].slice_id.sd,
              result->ranges[s].start_prb,
              result->ranges[s].end_prb,
              result->ranges[s].num_prbs,
@@ -139,14 +140,15 @@ static void print_oop_allocation_result(const slice_scheduler_t *obj, int total_
       int required_prbs = 0;
       if (obj->input != NULL) {
         for (int i = 0; i < obj->input->num_slices; ++i) {
-          if (obj->input->slices[i].slice_id == ranges[s].slice_id) {
+          if (slice_id_eq(&ranges[s].slice_id, &obj->input->slices[i].slice_id)) {
             required_prbs = obj->input->slices[i].required_prbs;
             break;
           }
         }
       }
-      printf("      Slice %d: PRBs [%d, %d) = %d PRBs (%.1f%%)", 
-             ranges[s].slice_id,
+      printf("      Slice (SST=%d, SD=%u): PRBs [%d, %d) = %d PRBs (%.1f%%)", 
+             ranges[s].slice_id.sst,
+             ranges[s].slice_id.sd,
              ranges[s].start_prb,
              ranges[s].end_prb,
              ranges[s].num_prbs,
@@ -190,14 +192,14 @@ static void test_basic_two_slices(void) {
   ALLOCATE_TEST_STRUCTURES(2, input, result);
   
   // Slice 1: 30% dedicated, 30% min, 50% max
-  input->slices[0].slice_id = 1;
+  input->slices[0].slice_id = slice_id_from_int(1);
   input->slices[0].dedicated_prb_ratio = 0.30f;
   input->slices[0].min_prb_ratio = 0.30f;
   input->slices[0].max_prb_ratio = 0.50f;
   input->slices[0].has_active_ues = true;
   
   // Slice 2: 20% dedicated, 20% min, 50% max
-  input->slices[1].slice_id = 2;
+  input->slices[1].slice_id = slice_id_from_int(2);
   input->slices[1].dedicated_prb_ratio = 0.20f;
   input->slices[1].min_prb_ratio = 0.20f;
   input->slices[1].max_prb_ratio = 0.50f;
@@ -226,7 +228,8 @@ static void test_basic_two_slices(void) {
   printf("    ✓ Slice 1: %d PRBs (expected: ≥30, ≤50)\n", result->ranges[0].num_prbs);
   ASSERT_GE(result->ranges[0].num_prbs, 30, "Slice 1 should get at least 30 PRBs");
   ASSERT_LE(result->ranges[0].num_prbs, 50, "Slice 1 should not exceed 50 PRBs");
-  ASSERT_EQ(result->ranges[0].slice_id, 1, "Slice 1 ID should be 1");
+  ASSERT_EQ(result->ranges[0].slice_id.sst, 1, "Slice 1 SST should be 1");
+  ASSERT_EQ(result->ranges[0].slice_id.sd, 0, "Slice 1 SD should be 0");
   ASSERT_EQ(result->ranges[0].start_prb, 0, "Slice 1 should start at PRB 0");
   ASSERT_EQ(result->ranges[0].end_prb, result->ranges[0].start_prb + result->ranges[0].num_prbs,
             "Slice 1 end_prb should be start_prb + num_prbs");
@@ -235,7 +238,8 @@ static void test_basic_two_slices(void) {
   printf("    ✓ Slice 2: %d PRBs (expected: ≥20, ≤50)\n", result->ranges[1].num_prbs);
   ASSERT_GE(result->ranges[1].num_prbs, 20, "Slice 2 should get at least 20 PRBs");
   ASSERT_LE(result->ranges[1].num_prbs, 50, "Slice 2 should not exceed 50 PRBs");
-  ASSERT_EQ(result->ranges[1].slice_id, 2, "Slice 2 ID should be 2");
+  ASSERT_EQ(result->ranges[1].slice_id.sst, 2, "Slice 2 SST should be 2");
+  ASSERT_EQ(result->ranges[1].slice_id.sd, 0, "Slice 2 SD should be 0");
   ASSERT_EQ(result->ranges[1].start_prb, result->ranges[0].end_prb,
             "Slice 2 should start where slice 1 ends");
   ASSERT_EQ(result->ranges[1].end_prb, result->ranges[1].start_prb + result->ranges[1].num_prbs,
@@ -263,7 +267,7 @@ static void test_single_slice_all_prbs(void) {
   
   ALLOCATE_TEST_STRUCTURES(1, input, result);
   
-  input->slices[0].slice_id = 1;
+  input->slices[0].slice_id = slice_id_from_int(1);
   input->slices[0].dedicated_prb_ratio = 1.0f;
   input->slices[0].min_prb_ratio = 1.0f;
   input->slices[0].max_prb_ratio = 1.0f;
@@ -302,7 +306,7 @@ static void test_no_active_ues(void) {
   
   ALLOCATE_TEST_STRUCTURES(1, input, result);
   
-  input->slices[0].slice_id = 1;
+  input->slices[0].slice_id = slice_id_from_int(1);
   input->slices[0].dedicated_prb_ratio = 0.5f;
   input->slices[0].min_prb_ratio = 0.5f;
   input->slices[0].max_prb_ratio = 0.5f;
@@ -341,21 +345,21 @@ static void test_multiple_slices_different_ratios(void) {
   ALLOCATE_TEST_STRUCTURES(3, input, result);
   
   // Slice 1: 10% dedicated, 20% min, 40% max
-  input->slices[0].slice_id = 1;
+  input->slices[0].slice_id = slice_id_from_int(1);
   input->slices[0].dedicated_prb_ratio = 0.10f;
   input->slices[0].min_prb_ratio = 0.20f;
   input->slices[0].max_prb_ratio = 0.40f;
   input->slices[0].has_active_ues = true;
   
   // Slice 2: 15% dedicated, 25% min, 50% max
-  input->slices[1].slice_id = 2;
+  input->slices[1].slice_id = slice_id_from_int(2);
   input->slices[1].dedicated_prb_ratio = 0.15f;
   input->slices[1].min_prb_ratio = 0.25f;
   input->slices[1].max_prb_ratio = 0.50f;
   input->slices[1].has_active_ues = true;
   
   // Slice 3: 5% dedicated, 10% min, 30% max
-  input->slices[2].slice_id = 3;
+  input->slices[2].slice_id = slice_id_from_int(3);
   input->slices[2].dedicated_prb_ratio = 0.05f;
   input->slices[2].min_prb_ratio = 0.10f;
   input->slices[2].max_prb_ratio = 0.30f;
@@ -421,13 +425,13 @@ static void test_dedicated_exceeds_total(void) {
   ALLOCATE_TEST_STRUCTURES(2, input, result);
   
   // Two slices, each wants 60% dedicated (total 120%)
-  input->slices[0].slice_id = 1;
+  input->slices[0].slice_id = slice_id_from_int(1);
   input->slices[0].dedicated_prb_ratio = 0.60f;
   input->slices[0].min_prb_ratio = 0.60f;
   input->slices[0].max_prb_ratio = 0.60f;
   input->slices[0].has_active_ues = true;
   
-  input->slices[1].slice_id = 2;
+  input->slices[1].slice_id = slice_id_from_int(2);
   input->slices[1].dedicated_prb_ratio = 0.60f;
   input->slices[1].min_prb_ratio = 0.60f;
   input->slices[1].max_prb_ratio = 0.60f;
@@ -473,7 +477,7 @@ static void test_max_ratio_enforcement(void) {
   ALLOCATE_TEST_STRUCTURES(1, input, result);
   
   // Slice with 30% max, but plenty of remaining PRBs
-  input->slices[0].slice_id = 1;
+  input->slices[0].slice_id = slice_id_from_int(1);
   input->slices[0].dedicated_prb_ratio = 0.10f;
   input->slices[0].min_prb_ratio = 0.10f;
   input->slices[0].max_prb_ratio = 0.30f;  // Hard limit at 30%
@@ -524,7 +528,7 @@ static void test_validation(void) {
   
   printf("  Testing invalid ratio (> 1.0)...\n");
   // Test invalid ratios
-  input->slices[0].slice_id = 1;
+  input->slices[0].slice_id = slice_id_from_int(1);
   input->slices[0].dedicated_prb_ratio = 1.5f;  // Invalid: > 1.0
   input->slices[0].min_prb_ratio = 0.5f;
   input->slices[0].max_prb_ratio = 0.5f;
@@ -553,7 +557,7 @@ static void test_zero_total_prbs(void) {
   
   ALLOCATE_TEST_STRUCTURES(1, input, result);
   
-  input->slices[0].slice_id = 1;
+  input->slices[0].slice_id = slice_id_from_int(1);
   input->slices[0].dedicated_prb_ratio = 0.5f;
   input->slices[0].min_prb_ratio = 0.5f;
   input->slices[0].max_prb_ratio = 0.5f;
@@ -586,14 +590,14 @@ static void test_real_world_106_prbs(void) {
   ALLOCATE_TEST_STRUCTURES(2, input, result);
   
   // Slice 1: 33% dedicated, 33% min, 50% max (typical eMBB slice)
-  input->slices[0].slice_id = 1;
+  input->slices[0].slice_id = slice_id_from_int(1);
   input->slices[0].dedicated_prb_ratio = 0.33f;
   input->slices[0].min_prb_ratio = 0.33f;
   input->slices[0].max_prb_ratio = 0.50f;
   input->slices[0].has_active_ues = true;
   
   // Slice 2: 20% dedicated, 20% min, 50% max (typical URLLC slice)
-  input->slices[1].slice_id = 2;
+  input->slices[1].slice_id = slice_id_from_int(2);
   input->slices[1].dedicated_prb_ratio = 0.20f;
   input->slices[1].min_prb_ratio = 0.20f;
   input->slices[1].max_prb_ratio = 0.50f;
@@ -656,13 +660,13 @@ static void test_pass1_dedicated(void) {
   ALLOCATE_TEST_STRUCTURES(2, input, result);
   
   // Test case 1: Normal dedicated allocation
-  input->slices[0].slice_id = 1;
+  input->slices[0].slice_id = slice_id_from_int(1);
   input->slices[0].dedicated_prb_ratio = 0.30f;
   input->slices[0].min_prb_ratio = 0.30f;
   input->slices[0].max_prb_ratio = 0.50f;
   input->slices[0].has_active_ues = true;
   
-  input->slices[1].slice_id = 2;
+  input->slices[1].slice_id = slice_id_from_int(2);
   input->slices[1].dedicated_prb_ratio = 0.20f;
   input->slices[1].min_prb_ratio = 0.20f;
   input->slices[1].max_prb_ratio = 0.50f;
@@ -739,14 +743,14 @@ static void test_pass2_prioritized(void) {
   ALLOCATE_TEST_STRUCTURES(2, input, result);
   
   // Setup: Pass 1 already allocated dedicated PRBs
-  input->slices[0].slice_id = 1;
+  input->slices[0].slice_id = slice_id_from_int(1);
   input->slices[0].dedicated_prb_ratio = 0.20f;
   input->slices[0].min_prb_ratio = 0.30f;
   input->slices[0].max_prb_ratio = 0.50f;
   input->slices[0].has_active_ues = true;
   input->slices[0].required_prbs = 35; // Needs more than dedicated
   
-  input->slices[1].slice_id = 2;
+  input->slices[1].slice_id = slice_id_from_int(2);
   input->slices[1].dedicated_prb_ratio = 0.10f;
   input->slices[1].min_prb_ratio = 0.25f;
   input->slices[1].max_prb_ratio = 0.50f;
@@ -805,14 +809,14 @@ static void test_pass3_shared(void) {
   ALLOCATE_TEST_STRUCTURES(2, input, result);
   
   // Setup: Pass 1 and 2 already allocated
-  input->slices[0].slice_id = 1;
+  input->slices[0].slice_id = slice_id_from_int(1);
   input->slices[0].dedicated_prb_ratio = 0.20f;
   input->slices[0].min_prb_ratio = 0.30f;
   input->slices[0].max_prb_ratio = 0.50f;
   input->slices[0].has_active_ues = true;
   input->slices[0].required_prbs = 45;
   
-  input->slices[1].slice_id = 2;
+  input->slices[1].slice_id = slice_id_from_int(2);
   input->slices[1].dedicated_prb_ratio = 0.10f;
   input->slices[1].min_prb_ratio = 0.25f;
   input->slices[1].max_prb_ratio = 0.50f;
@@ -873,9 +877,9 @@ static void test_pass4_ranges(void) {
   
   ALLOCATE_TEST_STRUCTURES(3, input, result);
   
-  input->slices[0].slice_id = 1;
-  input->slices[1].slice_id = 2;
-  input->slices[2].slice_id = 3;
+  input->slices[0].slice_id = slice_id_from_int(1);
+  input->slices[1].slice_id = slice_id_from_int(2);
+  input->slices[2].slice_id = slice_id_from_int(3);
   input->num_slices = 3;
   
   // Setup: PRBs already allocated (from previous passes)
@@ -926,13 +930,13 @@ static void test_pass1_dedicated_static_allocation(void) {
   
   ALLOCATE_TEST_STRUCTURES(2, input, result);
   
-  input->slices[0].slice_id = 1;
+  input->slices[0].slice_id = slice_id_from_int(1);
   input->slices[0].dedicated_prb_ratio = 0.50f;
   input->slices[0].min_prb_ratio = 0.50f;
   input->slices[0].max_prb_ratio = 0.50f;
   input->slices[0].has_active_ues = true;
   
-  input->slices[1].slice_id = 2;
+  input->slices[1].slice_id = slice_id_from_int(2);
   input->slices[1].dedicated_prb_ratio = 0.50f;
   input->slices[1].min_prb_ratio = 0.50f;
   input->slices[1].max_prb_ratio = 0.50f;
@@ -980,7 +984,7 @@ static void test_pass1_max_less_than_dedicated(void) {
   
   ALLOCATE_TEST_STRUCTURES(1, input, result);
   
-  input->slices[0].slice_id = 1;
+  input->slices[0].slice_id = slice_id_from_int(1);
   input->slices[0].dedicated_prb_ratio = 0.50f;
   input->slices[0].min_prb_ratio = 0.50f;
   input->slices[0].max_prb_ratio = 0.30f; // Max < dedicated
@@ -1023,7 +1027,7 @@ static void test_pass1_zero_dedicated(void) {
   
   ALLOCATE_TEST_STRUCTURES(1, input, result);
   
-  input->slices[0].slice_id = 1;
+  input->slices[0].slice_id = slice_id_from_int(1);
   input->slices[0].dedicated_prb_ratio = 0.0f;
   input->slices[0].min_prb_ratio = 0.30f;
   input->slices[0].max_prb_ratio = 0.50f;
@@ -1068,14 +1072,14 @@ static void test_pass2_slice_doesnt_need_prioritized(void) {
   
   ALLOCATE_TEST_STRUCTURES(2, input, result);
   
-  input->slices[0].slice_id = 1;
+  input->slices[0].slice_id = slice_id_from_int(1);
   input->slices[0].dedicated_prb_ratio = 0.20f;
   input->slices[0].min_prb_ratio = 0.30f;
   input->slices[0].max_prb_ratio = 0.50f;
   input->slices[0].has_active_ues = true;
   input->slices[0].required_prbs = 15; // Less than current (20)
   
-  input->slices[1].slice_id = 2;
+  input->slices[1].slice_id = slice_id_from_int(2);
   input->slices[1].dedicated_prb_ratio = 0.10f;
   input->slices[1].min_prb_ratio = 0.25f;
   input->slices[1].max_prb_ratio = 0.50f;
@@ -1133,14 +1137,14 @@ static void test_pass2_insufficient_prioritized(void) {
   
   ALLOCATE_TEST_STRUCTURES(2, input, result);
   
-  input->slices[0].slice_id = 1;
+  input->slices[0].slice_id = slice_id_from_int(1);
   input->slices[0].dedicated_prb_ratio = 0.20f;
   input->slices[0].min_prb_ratio = 0.50f; // Needs 30 prioritized
   input->slices[0].max_prb_ratio = 0.60f;
   input->slices[0].has_active_ues = true;
   input->slices[0].required_prbs = 50;
   
-  input->slices[1].slice_id = 2;
+  input->slices[1].slice_id = slice_id_from_int(2);
   input->slices[1].dedicated_prb_ratio = 0.10f;
   input->slices[1].min_prb_ratio = 0.40f; // Needs 30 prioritized
   input->slices[1].max_prb_ratio = 0.60f;
@@ -1198,7 +1202,7 @@ static void test_pass2_max_less_than_min(void) {
   
   ALLOCATE_TEST_STRUCTURES(1, input, result);
   
-  input->slices[0].slice_id = 1;
+  input->slices[0].slice_id = slice_id_from_int(1);
   input->slices[0].dedicated_prb_ratio = 0.20f;
   input->slices[0].min_prb_ratio = 0.50f; // Min = 50
   input->slices[0].max_prb_ratio = 0.30f; // Max = 30 (< min!)
@@ -1246,14 +1250,14 @@ static void test_pass3_no_prb_requirements(void) {
   
   ALLOCATE_TEST_STRUCTURES(2, input, result);
   
-  input->slices[0].slice_id = 1;
+  input->slices[0].slice_id = slice_id_from_int(1);
   input->slices[0].dedicated_prb_ratio = 0.30f;
   input->slices[0].min_prb_ratio = 0.30f;
   input->slices[0].max_prb_ratio = 0.50f;
   input->slices[0].has_active_ues = true;
   input->slices[0].required_prbs = 0; // No requirement
   
-  input->slices[1].slice_id = 2;
+  input->slices[1].slice_id = slice_id_from_int(2);
   input->slices[1].dedicated_prb_ratio = 0.20f;
   input->slices[1].min_prb_ratio = 0.20f;
   input->slices[1].max_prb_ratio = 0.50f;
@@ -1308,13 +1312,13 @@ static void test_pass3_all_slices_at_max(void) {
   
   ALLOCATE_TEST_STRUCTURES(2, input, result);
   
-  input->slices[0].slice_id = 1;
+  input->slices[0].slice_id = slice_id_from_int(1);
   input->slices[0].dedicated_prb_ratio = 0.50f;
   input->slices[0].min_prb_ratio = 0.50f;
   input->slices[0].max_prb_ratio = 0.50f;
   input->slices[0].has_active_ues = true;
   
-  input->slices[1].slice_id = 2;
+  input->slices[1].slice_id = slice_id_from_int(2);
   input->slices[1].dedicated_prb_ratio = 0.30f;
   input->slices[1].min_prb_ratio = 0.30f;
   input->slices[1].max_prb_ratio = 0.30f;
@@ -1368,7 +1372,7 @@ static void test_pass4_empty_result(void) {
   
   ALLOCATE_TEST_STRUCTURES(1, input, result);
   
-  input->slices[0].slice_id = 1;
+  input->slices[0].slice_id = slice_id_from_int(1);
   input->num_slices = 1;
   
   printf("  Input Configuration:\n");
@@ -1378,7 +1382,7 @@ static void test_pass4_empty_result(void) {
   
   // No PRBs allocated (all slices have num_prbs = 0)
   // Result already zeroed by calloc
-  result->ranges[0].slice_id = 1;
+  result->ranges[0].slice_id = slice_id_from_int(1);
   result->ranges[0].num_prbs = 0;
   
   int ret = pass4_assign_ranges(input, result);
@@ -1402,7 +1406,7 @@ static void test_pass4_single_slice(void) {
   
   ALLOCATE_TEST_STRUCTURES(1, input, result);
   
-  input->slices[0].slice_id = 1;
+  input->slices[0].slice_id = slice_id_from_int(1);
   input->num_slices = 1;
   
   printf("  Input Configuration:\n");
@@ -1410,7 +1414,7 @@ static void test_pass4_single_slice(void) {
   printf("    Slice 1: 100 PRBs allocated\n");
   printf("    Note: Single slice gets all PRBs, range should be [0, 100)\n\n");
   
-  result->ranges[0].slice_id = 1;
+  result->ranges[0].slice_id = slice_id_from_int(1);
   result->ranges[0].num_prbs = 100;
   
   int ret = pass4_assign_ranges(input, result);
@@ -1435,7 +1439,7 @@ static void test_integration_max_less_than_min(void) {
   
   ALLOCATE_TEST_STRUCTURES(1, input, result);
   
-  input->slices[0].slice_id = 1;
+  input->slices[0].slice_id = slice_id_from_int(1);
   input->slices[0].dedicated_prb_ratio = 0.20f;
   input->slices[0].min_prb_ratio = 0.50f; // Min = 50
   input->slices[0].max_prb_ratio = 0.30f; // Max = 30 (< min!)
@@ -1472,14 +1476,14 @@ static void test_integration_all_slices_no_prioritized_need(void) {
   
   ALLOCATE_TEST_STRUCTURES(2, input, result);
   
-  input->slices[0].slice_id = 1;
+  input->slices[0].slice_id = slice_id_from_int(1);
   input->slices[0].dedicated_prb_ratio = 0.20f;
   input->slices[0].min_prb_ratio = 0.30f;
   input->slices[0].max_prb_ratio = 0.50f;
   input->slices[0].has_active_ues = true;
   input->slices[0].required_prbs = 15; // Less than dedicated (20)
   
-  input->slices[1].slice_id = 2;
+  input->slices[1].slice_id = slice_id_from_int(2);
   input->slices[1].dedicated_prb_ratio = 0.10f;
   input->slices[1].min_prb_ratio = 0.25f;
   input->slices[1].max_prb_ratio = 0.50f;
@@ -1531,10 +1535,10 @@ static void test_oop_basic_two_slices(void) {
   ASSERT_TRUE(sch != NULL, "Scheduler should be created");
   
   // Add slice 1: 30% dedicated, 30% min, 50% max
-  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0.30f, 0.30f, 0.50f, true, 0), 0, "Should add slice 1");
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0, 0.30f, 0.30f, 0.50f, true, 0), 0, "Should add slice 1");
   
   // Add slice 2: 20% dedicated, 20% min, 50% max
-  ASSERT_EQ(slice_sch_add_slice(sch, 2, 0.20f, 0.20f, 0.50f, true, 0), 0, "Should add slice 2");
+  ASSERT_EQ(slice_sch_add_slice(sch, 2, 0, 0.20f, 0.20f, 0.50f, true, 0), 0, "Should add slice 2");
   
   printf("  Input Configuration:\n");
   printf("    Total PRBs: %d\n", sch->input->total_prbs);
@@ -1565,8 +1569,8 @@ static void test_oop_basic_two_slices(void) {
   // Find slices by ID
   int slice1_idx = -1, slice2_idx = -1;
   for (int i = 0; i < num_ranges; ++i) {
-    if (ranges[i].slice_id == 1) slice1_idx = i;
-    if (ranges[i].slice_id == 2) slice2_idx = i;
+    if (slice_id_eq_int(&ranges[i].slice_id, 1)) slice1_idx = i;
+    if (slice_id_eq_int(&ranges[i].slice_id, 2)) slice2_idx = i;
   }
   
   ASSERT_TRUE(slice1_idx >= 0, "Slice 1 should be found");
@@ -1596,9 +1600,9 @@ static void test_oop_add_delete_slices(void) {
   ASSERT_TRUE(sch != NULL, "Scheduler should be created");
   
   // Add three slices
-  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0.20f, 0.20f, 0.40f, true, 0), 0, "Should add slice 1");
-  ASSERT_EQ(slice_sch_add_slice(sch, 2, 0.15f, 0.15f, 0.35f, true, 0), 0, "Should add slice 2");
-  ASSERT_EQ(slice_sch_add_slice(sch, 3, 0.10f, 0.10f, 0.30f, true, 0), 0, "Should add slice 3");
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0, 0.20f, 0.20f, 0.40f, true, 0), 0, "Should add slice 1");
+  ASSERT_EQ(slice_sch_add_slice(sch, 2, 0, 0.15f, 0.15f, 0.35f, true, 0), 0, "Should add slice 2");
+  ASSERT_EQ(slice_sch_add_slice(sch, 3, 0, 0.10f, 0.10f, 0.30f, true, 0), 0, "Should add slice 3");
   
   ASSERT_EQ(sch->input->num_slices, 3, "Should have 3 slices");
   
@@ -1614,7 +1618,7 @@ static void test_oop_add_delete_slices(void) {
   printf("\n");
   
   // Delete slice 2
-  ASSERT_EQ(slice_sch_del_slice(sch, 2), 0, "Should delete slice 2");
+  ASSERT_EQ(slice_sch_del_slice(sch, 2, 0), 0, "Should delete slice 2");
   ASSERT_EQ(sch->input->num_slices, 2, "Should have 2 slices after deletion");
   
   // Schedule again
@@ -1630,7 +1634,7 @@ static void test_oop_add_delete_slices(void) {
   // Verify slice 2 is gone
   int found_slice2 = 0;
   for (int i = 0; i < num_ranges; ++i) {
-    if (ranges[i].slice_id == 2) {
+    if (slice_id_eq_int(&ranges[i].slice_id, 2)) {
       found_slice2 = 1;
       break;
     }
@@ -1640,8 +1644,8 @@ static void test_oop_add_delete_slices(void) {
   // Verify slices 1 and 3 are still there
   int found_slice1 = 0, found_slice3 = 0;
   for (int i = 0; i < num_ranges; ++i) {
-    if (ranges[i].slice_id == 1) found_slice1 = 1;
-    if (ranges[i].slice_id == 3) found_slice3 = 1;
+    if (slice_id_eq_int(&ranges[i].slice_id, 1)) found_slice1 = 1;
+    if (slice_id_eq_int(&ranges[i].slice_id, 3)) found_slice3 = 1;
   }
   ASSERT_EQ(found_slice1, 1, "Slice 1 should still be present");
   ASSERT_EQ(found_slice3, 1, "Slice 3 should still be present");
@@ -1662,8 +1666,8 @@ static void test_oop_update_require(void) {
   ASSERT_TRUE(sch != NULL, "Scheduler should be created");
   
   // Add slice with no requirement
-  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0.10f, 0.20f, 0.50f, true, 0), 0, "Should add slice 1");
-  ASSERT_EQ(slice_sch_add_slice(sch, 2, 0.10f, 0.20f, 0.50f, true, 0), 0, "Should add slice 2");
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0, 0.10f, 0.20f, 0.50f, true, 0), 0, "Should add slice 1");
+  ASSERT_EQ(slice_sch_add_slice(sch, 2, 0, 0.10f, 0.20f, 0.50f, true, 0), 0, "Should add slice 2");
   
   // Schedule
   ASSERT_EQ(slice_sch_schedule(sch), 0, "Schedule should succeed");
@@ -1673,7 +1677,7 @@ static void test_oop_update_require(void) {
   printf("\n");
   
   // Update requirement for slice 1
-  ASSERT_EQ(slice_sch_update_require(sch, 1, 40), 0, "Should update requirement for slice 1");
+  ASSERT_EQ(slice_sch_update_require(sch, 1, 0, 40), 0, "Should update requirement for slice 1");
   
   // Schedule again
   ASSERT_EQ(slice_sch_schedule(sch), 0, "Schedule should succeed after update");
@@ -1689,7 +1693,7 @@ static void test_oop_update_require(void) {
   
   int slice1_idx = -1;
   for (int i = 0; i < num_ranges; ++i) {
-    if (ranges[i].slice_id == 1) {
+    if (slice_id_eq_int(&ranges[i].slice_id, 1)) {
       slice1_idx = i;
       break;
     }
@@ -1716,7 +1720,7 @@ static void test_oop_dynamic_allocation(void) {
   int num_slices_to_add = 50;
   for (int i = 0; i < num_slices_to_add; ++i) {
     float ratio = 0.01f; // 1% each
-    ASSERT_EQ(slice_sch_add_slice(sch, i + 1, ratio, ratio, ratio * 2, true, 0), 0,
+    ASSERT_EQ(slice_sch_add_slice(sch, i + 1, 0, ratio, ratio, ratio * 2, true, 0), 0,
               "Should add slice");
   }
   
@@ -1748,7 +1752,7 @@ static void test_oop_dynamic_allocation(void) {
   printf("    (Showing first 5 allocations)\n");
   for (int i = 0; i < 5 && i < num_ranges; ++i) {
     if (ranges[i].num_prbs > 0) {
-      printf("      Slice %d: %d PRBs\n", ranges[i].slice_id, ranges[i].num_prbs);
+      printf("      Slice (SST=%d, SD=%u): %d PRBs\n", ranges[i].slice_id.sst, ranges[i].slice_id.sd, ranges[i].num_prbs);
     }
   }
   printf("    ...\n\n");
@@ -1768,10 +1772,10 @@ static void test_oop_error_handling(void) {
   printf("  Expected: Proper error codes for invalid operations\n\n");
   
   // Test NULL scheduler
-  ASSERT_EQ(slice_sch_add_slice(NULL, 1, 0.1f, 0.1f, 0.2f, true, 0), -1,
+  ASSERT_EQ(slice_sch_add_slice(NULL, 1, 0, 0.1f, 0.1f, 0.2f, true, 0), -1,
             "Should fail with NULL scheduler");
-  ASSERT_EQ(slice_sch_del_slice(NULL, 1), -1, "Should fail with NULL scheduler");
-  ASSERT_EQ(slice_sch_update_require(NULL, 1, 10), -1, "Should fail with NULL scheduler");
+  ASSERT_EQ(slice_sch_del_slice(NULL, 1, 0), -1, "Should fail with NULL scheduler");
+  ASSERT_EQ(slice_sch_update_require(NULL, 1, 0, 10), -1, "Should fail with NULL scheduler");
   ASSERT_EQ(slice_sch_schedule(NULL), -1, "Should fail with NULL scheduler");
   ASSERT_TRUE(slice_sch_get_allocation(NULL, NULL) == NULL, "Should return NULL with NULL scheduler");
   
@@ -1785,24 +1789,24 @@ static void test_oop_error_handling(void) {
   ASSERT_TRUE(sch_invalid == NULL, "Should fail with negative total PRBs");
   
   // Test duplicate slice ID
-  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0.1f, 0.1f, 0.2f, true, 0), 0, "Should add slice 1");
-  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0.1f, 0.1f, 0.2f, true, 0), -1,
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0, 0.1f, 0.1f, 0.2f, true, 0), 0, "Should add slice 1");
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0, 0.1f, 0.1f, 0.2f, true, 0), -1,
             "Should fail with duplicate slice ID");
   
   // Test invalid ratios
-  ASSERT_EQ(slice_sch_add_slice(sch, 2, -0.1f, 0.1f, 0.2f, true, 0), -1,
+  ASSERT_EQ(slice_sch_add_slice(sch, 2, 0, -0.1f, 0.1f, 0.2f, true, 0), -1,
             "Should fail with negative dedicated ratio");
-  ASSERT_EQ(slice_sch_add_slice(sch, 2, 0.1f, 1.5f, 0.2f, true, 0), -1,
+  ASSERT_EQ(slice_sch_add_slice(sch, 2, 0, 0.1f, 1.5f, 0.2f, true, 0), -1,
             "Should fail with ratio > 1.0");
-  ASSERT_EQ(slice_sch_add_slice(sch, 2, 0.3f, 0.1f, 0.2f, true, 0), -1,
+  ASSERT_EQ(slice_sch_add_slice(sch, 2, 0, 0.3f, 0.1f, 0.2f, true, 0), -1,
             "Should fail with dedicated > min");
   
   // Test invalid requirement
-  ASSERT_EQ(slice_sch_update_require(sch, 1, -1), -1, "Should fail with negative requirement");
+  ASSERT_EQ(slice_sch_update_require(sch, 1, 0, -1), -1, "Should fail with negative requirement");
   
   // Test non-existent slice
-  ASSERT_EQ(slice_sch_del_slice(sch, 999), -1, "Should fail with non-existent slice");
-  ASSERT_EQ(slice_sch_update_require(sch, 999, 10), -1, "Should fail with non-existent slice");
+  ASSERT_EQ(slice_sch_del_slice(sch, (uint8_t)999, 0), -1, "Should fail with non-existent slice");
+  ASSERT_EQ(slice_sch_update_require(sch, (uint8_t)999, 0, 10), -1, "Should fail with non-existent slice");
   
   // Test get_allocation before schedule
   int num_ranges = 0;
@@ -1845,7 +1849,7 @@ static void test_oop_array_growth(void) {
   
   // Add 8 slices (should fit in initial capacity)
   for (int i = 0; i < 8; ++i) {
-    ASSERT_EQ(slice_sch_add_slice(sch, i + 1, 0.05f, 0.05f, 0.10f, true, 0), 0,
+    ASSERT_EQ(slice_sch_add_slice(sch, i + 1, 0, 0.05f, 0.05f, 0.10f, true, 0), 0,
               "Should add slice");
   }
   printf("    After adding 8 slices: capacity=%d, num_slices=%d\n",
@@ -1854,7 +1858,7 @@ static void test_oop_array_growth(void) {
   ASSERT_EQ(sch->input->num_slices, 8, "Should have 8 slices");
   
   // Add one more (should trigger growth to 16)
-  ASSERT_EQ(slice_sch_add_slice(sch, 9, 0.05f, 0.05f, 0.10f, true, 0), 0,
+  ASSERT_EQ(slice_sch_add_slice(sch, 9, 0, 0.05f, 0.05f, 0.10f, true, 0), 0,
             "Should add 9th slice");
   printf("    After adding 9th slice: capacity=%d, num_slices=%d\n",
          sch->slices_capacity, sch->input->num_slices);
@@ -1863,7 +1867,7 @@ static void test_oop_array_growth(void) {
   
   // Add more to trigger another growth (to 32)
   for (int i = 9; i < 16; ++i) {
-    ASSERT_EQ(slice_sch_add_slice(sch, i + 1, 0.05f, 0.05f, 0.10f, true, 0), 0,
+    ASSERT_EQ(slice_sch_add_slice(sch, i + 1, 0, 0.05f, 0.05f, 0.10f, true, 0), 0,
               "Should add slice");
   }
   printf("    After adding 16th slice: capacity=%d, num_slices=%d\n",
@@ -1871,7 +1875,7 @@ static void test_oop_array_growth(void) {
   ASSERT_EQ(sch->slices_capacity, 16, "Capacity should still be 16");
   
   // Add one more to trigger growth to 32
-  ASSERT_EQ(slice_sch_add_slice(sch, 17, 0.05f, 0.05f, 0.10f, true, 0), 0,
+  ASSERT_EQ(slice_sch_add_slice(sch, 17, 0, 0.05f, 0.05f, 0.10f, true, 0), 0,
             "Should add 17th slice");
   printf("    After adding 17th slice: capacity=%d, num_slices=%d\n",
          sch->slices_capacity, sch->input->num_slices);
@@ -1895,7 +1899,7 @@ static void test_oop_array_shrinking(void) {
   
   // Grow array to 32 by adding 17 slices
   for (int i = 0; i < 17; ++i) {
-    ASSERT_EQ(slice_sch_add_slice(sch, i + 1, 0.05f, 0.05f, 0.10f, true, 0), 0,
+    ASSERT_EQ(slice_sch_add_slice(sch, i + 1, 0, 0.05f, 0.05f, 0.10f, true, 0), 0,
               "Should add slice");
   }
   printf("  After adding 17 slices:\n");
@@ -1907,7 +1911,7 @@ static void test_oop_array_shrinking(void) {
   // We need to delete down to 7 or fewer slices to trigger shrinking
   printf("\n  Deleting slices to trigger shrinking:\n");
   for (int i = 17; i > 7; --i) {
-    ASSERT_EQ(slice_sch_del_slice(sch, i), 0, "Should delete slice");
+    ASSERT_EQ(slice_sch_del_slice(sch, i, 0), 0, "Should delete slice");
   }
   printf("    After deleting down to 7 slices: capacity=%d, num_slices=%d\n",
          sch->slices_capacity, sch->input->num_slices);
@@ -1917,7 +1921,7 @@ static void test_oop_array_shrinking(void) {
   
   // Delete more to trigger another shrink
   for (int i = 7; i > 3; --i) {
-    ASSERT_EQ(slice_sch_del_slice(sch, i), 0, "Should delete slice");
+    ASSERT_EQ(slice_sch_del_slice(sch, i, 0), 0, "Should delete slice");
   }
   printf("    After deleting down to 3 slices: capacity=%d, num_slices=%d\n",
          sch->slices_capacity, sch->input->num_slices);
@@ -1926,7 +1930,7 @@ static void test_oop_array_shrinking(void) {
   ASSERT_EQ(sch->input->num_slices, 3, "Should have 3 slices");
   
   // Delete one more - should NOT shrink below MIN_CAPACITY
-  ASSERT_EQ(slice_sch_del_slice(sch, 2), 0, "Should delete slice");
+  ASSERT_EQ(slice_sch_del_slice(sch, 2, 0), 0, "Should delete slice");
   printf("    After deleting down to 2 slices: capacity=%d, num_slices=%d\n",
          sch->slices_capacity, sch->input->num_slices);
   // Should NOT shrink: 2 < 8/4 = 2, but capacity is already MIN_CAPACITY
@@ -1951,7 +1955,7 @@ static void test_oop_no_shrink_below_num_slices(void) {
   
   // Grow to capacity 16 by adding 9 slices
   for (int i = 0; i < 9; ++i) {
-    ASSERT_EQ(slice_sch_add_slice(sch, i + 1, 0.05f, 0.05f, 0.10f, true, 0), 0,
+    ASSERT_EQ(slice_sch_add_slice(sch, i + 1, 0, 0.05f, 0.05f, 0.10f, true, 0), 0,
               "Should add slice");
   }
   printf("  After adding 9 slices:\n");
@@ -1963,7 +1967,7 @@ static void test_oop_no_shrink_below_num_slices(void) {
   // Now delete to 5 slices
   // 5 < 16/4 = 4? No, 5 >= 4, so should NOT shrink
   for (int i = 9; i > 5; --i) {
-    ASSERT_EQ(slice_sch_del_slice(sch, i), 0, "Should delete slice");
+    ASSERT_EQ(slice_sch_del_slice(sch, i, 0), 0, "Should delete slice");
   }
   printf("\n  After deleting down to 5 slices:\n");
   printf("    Capacity: %d, Num slices: %d\n", sch->slices_capacity, sch->input->num_slices);
@@ -1973,7 +1977,7 @@ static void test_oop_no_shrink_below_num_slices(void) {
   
   // Delete one more to 4 slices
   // 4 < 16/4 = 4? No, 4 == 4, so should NOT shrink (needs to be < 25%)
-  ASSERT_EQ(slice_sch_del_slice(sch, 5), 0, "Should delete slice");
+  ASSERT_EQ(slice_sch_del_slice(sch, 5, 0), 0, "Should delete slice");
   printf("  After deleting down to 4 slices:\n");
   printf("    Capacity: %d, Num slices: %d\n", sch->slices_capacity, sch->input->num_slices);
   // 4 == 16/4 = 4, so should NOT shrink (needs to be strictly < 25%)
@@ -1983,7 +1987,7 @@ static void test_oop_no_shrink_below_num_slices(void) {
   // Delete one more to 3 slices
   // 3 < 16/4 = 4, so should shrink to 8
   // But 8 >= 3, so it's valid
-  ASSERT_EQ(slice_sch_del_slice(sch, 4), 0, "Should delete slice");
+  ASSERT_EQ(slice_sch_del_slice(sch, 4, 0), 0, "Should delete slice");
   printf("  After deleting down to 3 slices:\n");
   printf("    Capacity: %d, Num slices: %d\n", sch->slices_capacity, sch->input->num_slices);
   // 3 < 16/4 = 4, so should shrink to 8
@@ -2009,7 +2013,7 @@ static void test_oop_add_at_capacity_boundary(void) {
   // Fill to exact capacity (initial capacity is 8)
   int initial_capacity = sch->slices_capacity;
   for (int i = 1; i <= initial_capacity; ++i) {
-    ASSERT_EQ(slice_sch_add_slice(sch, i, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice");
+    ASSERT_EQ(slice_sch_add_slice(sch, i, 0, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice");
   }
   
   printf("  After adding %d slices (at capacity):\n", initial_capacity);
@@ -2018,7 +2022,7 @@ static void test_oop_add_at_capacity_boundary(void) {
   ASSERT_EQ(sch->input->num_slices, initial_capacity, "Should have 8 slices");
   
   // Add one more - should trigger growth
-  ASSERT_EQ(slice_sch_add_slice(sch, initial_capacity + 1, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice");
+  ASSERT_EQ(slice_sch_add_slice(sch, initial_capacity + 1, 0, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice");
   
   printf("  After adding one more slice (should grow):\n");
   printf("    Capacity: %d, Num slices: %d\n", sch->slices_capacity, sch->input->num_slices);
@@ -2040,18 +2044,18 @@ static void test_oop_delete_all_slices(void) {
   ASSERT_TRUE(sch != NULL, "Scheduler should be created");
   
   // Add some slices
-  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice 1");
-  ASSERT_EQ(slice_sch_add_slice(sch, 2, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice 2");
-  ASSERT_EQ(slice_sch_add_slice(sch, 3, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice 3");
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice 1");
+  ASSERT_EQ(slice_sch_add_slice(sch, 2, 0, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice 2");
+  ASSERT_EQ(slice_sch_add_slice(sch, 3, 0, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice 3");
   
   printf("  After adding 3 slices:\n");
   printf("    Num slices: %d\n", sch->input->num_slices);
   ASSERT_EQ(sch->input->num_slices, 3, "Should have 3 slices");
   
   // Delete all slices
-  ASSERT_EQ(slice_sch_del_slice(sch, 1), 0, "Should delete slice 1");
-  ASSERT_EQ(slice_sch_del_slice(sch, 2), 0, "Should delete slice 2");
-  ASSERT_EQ(slice_sch_del_slice(sch, 3), 0, "Should delete slice 3");
+  ASSERT_EQ(slice_sch_del_slice(sch, 1, 0), 0, "Should delete slice 1");
+  ASSERT_EQ(slice_sch_del_slice(sch, 2, 0), 0, "Should delete slice 2");
+  ASSERT_EQ(slice_sch_del_slice(sch, 3, 0), 0, "Should delete slice 3");
   
   printf("  After deleting all slices:\n");
   printf("    Num slices: %d\n", sch->input->num_slices);
@@ -2081,10 +2085,10 @@ static void test_oop_duplicate_slice_id(void) {
   slice_scheduler_t *sch = slice_sch_create(100);
   ASSERT_TRUE(sch != NULL, "Scheduler should be created");
   
-  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice 1");
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice 1");
   
   // Try to add duplicate
-  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0.2f, 0.3f, 0.6f, true, 0), -1, "Should reject duplicate ID");
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0, 0.2f, 0.3f, 0.6f, true, 0), -1, "Should reject duplicate ID");
   
   printf("  Verification:\n");
   printf("    ✓ Duplicate slice ID is rejected\n");
@@ -2102,22 +2106,22 @@ static void test_oop_invalid_ratios(void) {
   ASSERT_TRUE(sch != NULL, "Scheduler should be created");
   
   // Test negative dedicated
-  ASSERT_EQ(slice_sch_add_slice(sch, 1, -0.1f, 0.2f, 0.5f, true, 0), -1, "Should reject negative dedicated");
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0, -0.1f, 0.2f, 0.5f, true, 0), -1, "Should reject negative dedicated");
   
   // Test > 1.0 dedicated
-  ASSERT_EQ(slice_sch_add_slice(sch, 1, 1.5f, 0.2f, 0.5f, true, 0), -1, "Should reject dedicated > 1.0");
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0, 1.5f, 0.2f, 0.5f, true, 0), -1, "Should reject dedicated > 1.0");
   
   // Test negative min
-  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0.1f, -0.2f, 0.5f, true, 0), -1, "Should reject negative min");
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0, 0.1f, -0.2f, 0.5f, true, 0), -1, "Should reject negative min");
   
   // Test > 1.0 max
-  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0.1f, 0.2f, 1.5f, true, 0), -1, "Should reject max > 1.0");
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0, 0.1f, 0.2f, 1.5f, true, 0), -1, "Should reject max > 1.0");
   
   // Test dedicated > min (invalid relationship)
-  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0.3f, 0.2f, 0.5f, true, 0), -1, "Should reject dedicated > min");
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0, 0.3f, 0.2f, 0.5f, true, 0), -1, "Should reject dedicated > min");
   
   // Test dedicated > max (when max < min, dedicated should be <= max)
-  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0.3f, 0.5f, 0.2f, true, 0), -1, "Should reject dedicated > max when max < min");
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0, 0.3f, 0.5f, 0.2f, true, 0), -1, "Should reject dedicated > max when max < min");
   
   printf("  Verification:\n");
   printf("    ✓ All invalid ratio values are rejected\n");
@@ -2135,13 +2139,13 @@ static void test_oop_invalid_require(void) {
   ASSERT_TRUE(sch != NULL, "Scheduler should be created");
   
   // Test negative require in add
-  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0.1f, 0.2f, 0.5f, true, -10), -1, "Should reject negative require");
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0, 0.1f, 0.2f, 0.5f, true, -10), -1, "Should reject negative require");
   
   // Add valid slice first
-  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice");
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice");
   
   // Test negative require in update
-  ASSERT_EQ(slice_sch_update_require(sch, 1, -5), -1, "Should reject negative require in update");
+  ASSERT_EQ(slice_sch_update_require(sch, 1, 0, -5), -1, "Should reject negative require in update");
   
   printf("  Verification:\n");
   printf("    ✓ Negative require values are rejected\n");
@@ -2157,7 +2161,7 @@ static void test_oop_update_nonexistent_slice(void) {
   slice_scheduler_t *sch = slice_sch_create(100);
   ASSERT_TRUE(sch != NULL, "Scheduler should be created");
   
-  ASSERT_EQ(slice_sch_update_require(sch, 999, 50), -1, "Should reject update for non-existent slice");
+  ASSERT_EQ(slice_sch_update_require(sch, (uint8_t)999, 0, 50), -1, "Should reject update for non-existent slice");
   
   printf("  Verification:\n");
   printf("    ✓ Update for non-existent slice is rejected\n");
@@ -2173,7 +2177,7 @@ static void test_oop_delete_nonexistent_slice(void) {
   slice_scheduler_t *sch = slice_sch_create(100);
   ASSERT_TRUE(sch != NULL, "Scheduler should be created");
   
-  ASSERT_EQ(slice_sch_del_slice(sch, 999), -1, "Should reject delete for non-existent slice");
+  ASSERT_EQ(slice_sch_del_slice(sch, (uint8_t)999, 0), -1, "Should reject delete for non-existent slice");
   
   printf("  Verification:\n");
   printf("    ✓ Delete for non-existent slice is rejected\n");
@@ -2189,7 +2193,7 @@ static void test_oop_get_allocation_before_schedule(void) {
   slice_scheduler_t *sch = slice_sch_create(100);
   ASSERT_TRUE(sch != NULL, "Scheduler should be created");
   
-  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice");
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice");
   
   int num_ranges = 0;
   const slice_prb_range_t *ranges = slice_sch_get_allocation(sch, &num_ranges);
@@ -2215,13 +2219,13 @@ static void test_oop_boundary_ratios(void) {
   ASSERT_TRUE(sch != NULL, "Scheduler should be created");
   
   // Test all zeros (valid)
-  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0.0f, 0.0f, 1.0f, true, 0), 0, "Should accept all zeros");
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0, 0.0f, 0.0f, 1.0f, true, 0), 0, "Should accept all zeros");
   
   // Test all at 1.0 (valid)
-  ASSERT_EQ(slice_sch_add_slice(sch, 2, 0.0f, 1.0f, 1.0f, true, 0), 0, "Should accept max at 1.0");
+  ASSERT_EQ(slice_sch_add_slice(sch, 2, 0, 0.0f, 1.0f, 1.0f, true, 0), 0, "Should accept max at 1.0");
   
   // Test exact 1.0 dedicated (valid if min >= 1.0)
-  ASSERT_EQ(slice_sch_add_slice(sch, 3, 0.0f, 1.0f, 1.0f, true, 0), 0, "Should accept dedicated 0.0 with min 1.0");
+  ASSERT_EQ(slice_sch_add_slice(sch, 3, 0, 0.0f, 1.0f, 1.0f, true, 0), 0, "Should accept dedicated 0.0 with min 1.0");
   
   printf("  Verification:\n");
   printf("    ✓ Boundary ratio values (0.0, 1.0) are accepted\n");
@@ -2236,9 +2240,9 @@ static void test_oop_null_scheduler_operations(void) {
   printf("  Expected: All should return error or handle gracefully\n\n");
   
   // Test all operations with NULL
-  ASSERT_EQ(slice_sch_add_slice(NULL, 1, 0.1f, 0.2f, 0.5f, true, 0), -1, "Should reject NULL scheduler");
-  ASSERT_EQ(slice_sch_del_slice(NULL, 1), -1, "Should reject NULL scheduler");
-  ASSERT_EQ(slice_sch_update_require(NULL, 1, 50), -1, "Should reject NULL scheduler");
+  ASSERT_EQ(slice_sch_add_slice(NULL, 1, 0, 0.1f, 0.2f, 0.5f, true, 0), -1, "Should reject NULL scheduler");
+  ASSERT_EQ(slice_sch_del_slice(NULL, 1, 0), -1, "Should reject NULL scheduler");
+  ASSERT_EQ(slice_sch_update_require(NULL, 1, 0, 50), -1, "Should reject NULL scheduler");
   ASSERT_EQ(slice_sch_schedule(NULL), -1, "Should reject NULL scheduler");
   
   int num_ranges = 0;
@@ -2280,7 +2284,7 @@ static void test_oop_capacity_at_shrink_threshold(void) {
   
   // Grow to 16 capacity (add 9 slices to go from 8 to 16)
   for (int i = 1; i <= 9; ++i) {
-    ASSERT_EQ(slice_sch_add_slice(sch, i, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice");
+    ASSERT_EQ(slice_sch_add_slice(sch, i, 0, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice");
   }
   
   printf("  After adding 9 slices:\n");
@@ -2290,7 +2294,7 @@ static void test_oop_capacity_at_shrink_threshold(void) {
   
   // Delete down to exactly 4 (which is 16/4 = 25%)
   for (int i = 9; i >= 5; --i) {
-    ASSERT_EQ(slice_sch_del_slice(sch, i), 0, "Should delete slice");
+    ASSERT_EQ(slice_sch_del_slice(sch, i, 0), 0, "Should delete slice");
   }
   
   printf("  After deleting down to 4 slices (exactly 25%%):\n");
@@ -2299,7 +2303,7 @@ static void test_oop_capacity_at_shrink_threshold(void) {
   ASSERT_EQ(sch->input->num_slices, 4, "Should have 4 slices");
   
   // Delete one more to 3 (< 25%)
-  ASSERT_EQ(slice_sch_del_slice(sch, 4), 0, "Should delete slice");
+  ASSERT_EQ(slice_sch_del_slice(sch, 4, 0), 0, "Should delete slice");
   
   printf("  After deleting down to 3 slices (< 25%%):\n");
   printf("    Capacity: %d, Num slices: %d\n", sch->slices_capacity, sch->input->num_slices);
@@ -2323,9 +2327,9 @@ static void test_oop_rapid_add_delete(void) {
   
   // Rapid add/delete sequence
   for (int i = 1; i <= 20; ++i) {
-    ASSERT_EQ(slice_sch_add_slice(sch, i, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice");
+    ASSERT_EQ(slice_sch_add_slice(sch, i, 0, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice");
     if (i % 3 == 0) {
-      ASSERT_EQ(slice_sch_del_slice(sch, i - 1), 0, "Should delete slice");
+      ASSERT_EQ(slice_sch_del_slice(sch, i - 1, 0), 0, "Should delete slice");
     }
   }
   
@@ -2354,13 +2358,13 @@ static void test_oop_schedule_after_delete(void) {
   slice_scheduler_t *sch = slice_sch_create(100);
   ASSERT_TRUE(sch != NULL, "Scheduler should be created");
   
-  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice 1");
-  ASSERT_EQ(slice_sch_add_slice(sch, 2, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice 2");
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice 1");
+  ASSERT_EQ(slice_sch_add_slice(sch, 2, 0, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice 2");
   
   ASSERT_EQ(slice_sch_schedule(sch), 0, "Schedule should succeed");
   
   // Delete a slice - should invalidate result
-  ASSERT_EQ(slice_sch_del_slice(sch, 1), 0, "Should delete slice 1");
+  ASSERT_EQ(slice_sch_del_slice(sch, 1, 0), 0, "Should delete slice 1");
   
   // Get allocation should fail (result invalidated)
   int num_ranges = 0;
@@ -2388,19 +2392,21 @@ static void test_oop_statistics_initial_state(void) {
   slice_scheduler_t *sch = slice_sch_create(100);
   ASSERT_TRUE(sch != NULL, "Scheduler should be created");
   
-  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice 1");
-  ASSERT_EQ(slice_sch_add_slice(sch, 2, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice 2");
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice 1");
+  ASSERT_EQ(slice_sch_add_slice(sch, 2, 0, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice 2");
   
   slice_statistics_t stats1, stats2;
-  ASSERT_EQ(slice_sch_get_slice_statistics(sch, 1, &stats1), 0, "Should get stats for slice 1");
-  ASSERT_EQ(slice_sch_get_slice_statistics(sch, 2, &stats2), 0, "Should get stats for slice 2");
+  ASSERT_EQ(slice_sch_get_slice_statistics(sch, 1, 0, &stats1), 0, "Should get stats for slice 1");
+  ASSERT_EQ(slice_sch_get_slice_statistics(sch, 2, 0, &stats2), 0, "Should get stats for slice 2");
   
   printf("  Initial statistics:\n");
-  printf("    Slice 1: latest=(%d,%d,%d), avg=(%.1f,%.1f,%.1f), samples=%d\n",
+  printf("    Slice (SST=%d, SD=%u): latest=(%d,%d,%d), avg=(%.1f,%.1f,%.1f), samples=%d\n",
+         stats1.slice_id.sst, stats1.slice_id.sd,
          stats1.latest_start_prb, stats1.latest_end_prb, stats1.latest_num_prbs,
          stats1.avg_start_prb, stats1.avg_end_prb, stats1.avg_num_prbs, stats1.sample_count);
   
-  ASSERT_EQ(stats1.slice_id, 1, "Slice ID should be 1");
+  ASSERT_EQ(stats1.slice_id.sst, 1, "Slice ID SST should be 1");
+  ASSERT_EQ(stats1.slice_id.sd, 0, "Slice ID SD should be 0");
   ASSERT_EQ(stats1.latest_start_prb, 0, "Latest start should be 0");
   ASSERT_EQ(stats1.latest_end_prb, 0, "Latest end should be 0");
   ASSERT_EQ(stats1.latest_num_prbs, 0, "Latest num_prbs should be 0");
@@ -2423,14 +2429,14 @@ static void test_oop_statistics_after_schedule(void) {
   slice_scheduler_t *sch = slice_sch_create(100);
   ASSERT_TRUE(sch != NULL, "Scheduler should be created");
   
-  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0.0f, 0.2f, 0.5f, true, 0), 0, "Should add slice 1");
-  ASSERT_EQ(slice_sch_add_slice(sch, 2, 0.0f, 0.3f, 0.5f, true, 0), 0, "Should add slice 2");
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0, 0.0f, 0.2f, 0.5f, true, 0), 0, "Should add slice 1");
+  ASSERT_EQ(slice_sch_add_slice(sch, 2, 0, 0.0f, 0.3f, 0.5f, true, 0), 0, "Should add slice 2");
   
   ASSERT_EQ(slice_sch_schedule(sch), 0, "Schedule should succeed");
   
   slice_statistics_t stats1, stats2;
-  ASSERT_EQ(slice_sch_get_slice_statistics(sch, 1, &stats1), 0, "Should get stats for slice 1");
-  ASSERT_EQ(slice_sch_get_slice_statistics(sch, 2, &stats2), 0, "Should get stats for slice 2");
+  ASSERT_EQ(slice_sch_get_slice_statistics(sch, 1, 0, &stats1), 0, "Should get stats for slice 1");
+  ASSERT_EQ(slice_sch_get_slice_statistics(sch, 2, 0, &stats2), 0, "Should get stats for slice 2");
   
   printf("  Statistics after first schedule:\n");
   printf("    Slice 1: latest=(%d,%d,%d), avg=(%.1f,%.1f,%.1f), samples=%d\n",
@@ -2448,7 +2454,7 @@ static void test_oop_statistics_after_schedule(void) {
   // Find slice 1 in ranges
   int slice1_start = -1, slice1_end = -1, slice1_num = -1;
   for (int i = 0; i < num_ranges; ++i) {
-    if (ranges[i].slice_id == 1) {
+    if (slice_id_eq_int(&ranges[i].slice_id, 1)) {
       slice1_start = ranges[i].start_prb;
       slice1_end = ranges[i].end_prb;
       slice1_num = ranges[i].num_prbs;
@@ -2483,12 +2489,12 @@ static void test_oop_statistics_moving_average(void) {
   slice_scheduler_t *sch = slice_sch_create(100);
   ASSERT_TRUE(sch != NULL, "Scheduler should be created");
   
-  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0.0f, 0.2f, 0.5f, true, 0), 0, "Should add slice 1");
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0, 0.0f, 0.2f, 0.5f, true, 0), 0, "Should add slice 1");
   
   // First schedule
   ASSERT_EQ(slice_sch_schedule(sch), 0, "Schedule should succeed");
   slice_statistics_t stats;
-  ASSERT_EQ(slice_sch_get_slice_statistics(sch, 1, &stats), 0, "Should get stats");
+  ASSERT_EQ(slice_sch_get_slice_statistics(sch, 1, 0, &stats), 0, "Should get stats");
   
   int first_num = stats.latest_num_prbs;
   float first_avg = stats.avg_num_prbs;
@@ -2498,11 +2504,11 @@ static void test_oop_statistics_moving_average(void) {
          first_num, first_avg, stats.sample_count);
   
   // Update requirement to change allocation
-  ASSERT_EQ(slice_sch_update_require(sch, 1, 30), 0, "Should update requirement");
+  ASSERT_EQ(slice_sch_update_require(sch, 1, 0, 30), 0, "Should update requirement");
   
   // Second schedule
   ASSERT_EQ(slice_sch_schedule(sch), 0, "Schedule should succeed");
-  ASSERT_EQ(slice_sch_get_slice_statistics(sch, 1, &stats), 0, "Should get stats");
+  ASSERT_EQ(slice_sch_get_slice_statistics(sch, 1, 0, &stats), 0, "Should get stats");
   
   int second_num = stats.latest_num_prbs;
   float second_avg = stats.avg_num_prbs;
@@ -2513,7 +2519,7 @@ static void test_oop_statistics_moving_average(void) {
   
   // Third schedule
   ASSERT_EQ(slice_sch_schedule(sch), 0, "Schedule should succeed");
-  ASSERT_EQ(slice_sch_get_slice_statistics(sch, 1, &stats), 0, "Should get stats");
+  ASSERT_EQ(slice_sch_get_slice_statistics(sch, 1, 0, &stats), 0, "Should get stats");
   
   int third_num = stats.latest_num_prbs;
   float third_avg = stats.avg_num_prbs;
@@ -2552,14 +2558,14 @@ static void test_oop_statistics_no_allocation(void) {
   ASSERT_TRUE(sch != NULL, "Scheduler should be created");
   
   // Add slice with no active UEs (won't get allocation)
-  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0.0f, 0.0f, 1.0f, false, 0), 0, "Should add slice 1");
-  ASSERT_EQ(slice_sch_add_slice(sch, 2, 0.0f, 0.2f, 0.5f, true, 0), 0, "Should add slice 2");
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0, 0.0f, 0.0f, 1.0f, false, 0), 0, "Should add slice 1");
+  ASSERT_EQ(slice_sch_add_slice(sch, 2, 0, 0.0f, 0.2f, 0.5f, true, 0), 0, "Should add slice 2");
   
   ASSERT_EQ(slice_sch_schedule(sch), 0, "Schedule should succeed");
   
   slice_statistics_t stats1, stats2;
-  ASSERT_EQ(slice_sch_get_slice_statistics(sch, 1, &stats1), 0, "Should get stats for slice 1");
-  ASSERT_EQ(slice_sch_get_slice_statistics(sch, 2, &stats2), 0, "Should get stats for slice 2");
+  ASSERT_EQ(slice_sch_get_slice_statistics(sch, 1, 0, &stats1), 0, "Should get stats for slice 1");
+  ASSERT_EQ(slice_sch_get_slice_statistics(sch, 2, 0, &stats2), 0, "Should get stats for slice 2");
   
   printf("  Statistics:\n");
   printf("    Slice 1 (no allocation): latest=(%d,%d,%d), avg=(%.1f,%.1f,%.1f), samples=%d\n",
@@ -2595,9 +2601,9 @@ static void test_oop_statistics_get_all(void) {
   slice_scheduler_t *sch = slice_sch_create(100);
   ASSERT_TRUE(sch != NULL, "Scheduler should be created");
   
-  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0.0f, 0.2f, 0.5f, true, 0), 0, "Should add slice 1");
-  ASSERT_EQ(slice_sch_add_slice(sch, 2, 0.0f, 0.3f, 0.5f, true, 0), 0, "Should add slice 2");
-  ASSERT_EQ(slice_sch_add_slice(sch, 3, 0.0f, 0.1f, 0.5f, true, 0), 0, "Should add slice 3");
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0, 0.0f, 0.2f, 0.5f, true, 0), 0, "Should add slice 1");
+  ASSERT_EQ(slice_sch_add_slice(sch, 2, 0, 0.0f, 0.3f, 0.5f, true, 0), 0, "Should add slice 2");
+  ASSERT_EQ(slice_sch_add_slice(sch, 3, 0, 0.0f, 0.1f, 0.5f, true, 0), 0, "Should add slice 3");
   
   ASSERT_EQ(slice_sch_schedule(sch), 0, "Schedule should succeed");
   
@@ -2609,17 +2615,20 @@ static void test_oop_statistics_get_all(void) {
   
   printf("  All statistics:\n");
   for (int i = 0; i < num_stats; ++i) {
-    printf("    Slice %d: latest=(%d,%d,%d), avg=(%.1f,%.1f,%.1f), samples=%d\n",
-           all_stats[i].slice_id,
+    printf("    Slice (SST=%d, SD=%u): latest=(%d,%d,%d), avg=(%.1f,%.1f,%.1f), samples=%d\n",
+           all_stats[i].slice_id.sst, all_stats[i].slice_id.sd,
            all_stats[i].latest_start_prb, all_stats[i].latest_end_prb, all_stats[i].latest_num_prbs,
            all_stats[i].avg_start_prb, all_stats[i].avg_end_prb, all_stats[i].avg_num_prbs,
            all_stats[i].sample_count);
   }
   
   // Verify each slice
-  ASSERT_EQ(all_stats[0].slice_id, 1, "First entry should be slice 1");
-  ASSERT_EQ(all_stats[1].slice_id, 2, "Second entry should be slice 2");
-  ASSERT_EQ(all_stats[2].slice_id, 3, "Third entry should be slice 3");
+  ASSERT_EQ(all_stats[0].slice_id.sst, 1, "First entry should be slice 1 (SST=1)");
+  ASSERT_EQ(all_stats[0].slice_id.sd, 0, "First entry should have SD=0");
+  ASSERT_EQ(all_stats[1].slice_id.sst, 2, "Second entry should be slice 2 (SST=2)");
+  ASSERT_EQ(all_stats[1].slice_id.sd, 0, "Second entry should have SD=0");
+  ASSERT_EQ(all_stats[2].slice_id.sst, 3, "Third entry should be slice 3 (SST=3)");
+  ASSERT_EQ(all_stats[2].slice_id.sd, 0, "Third entry should have SD=0");
   
   printf("  Verification:\n");
   printf("    ✓ All statistics returned correctly\n");
@@ -2636,9 +2645,9 @@ static void test_oop_statistics_after_delete(void) {
   slice_scheduler_t *sch = slice_sch_create(100);
   ASSERT_TRUE(sch != NULL, "Scheduler should be created");
   
-  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0.0f, 0.2f, 0.5f, true, 0), 0, "Should add slice 1");
-  ASSERT_EQ(slice_sch_add_slice(sch, 2, 0.0f, 0.3f, 0.5f, true, 0), 0, "Should add slice 2");
-  ASSERT_EQ(slice_sch_add_slice(sch, 3, 0.0f, 0.1f, 0.5f, true, 0), 0, "Should add slice 3");
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0, 0.0f, 0.2f, 0.5f, true, 0), 0, "Should add slice 1");
+  ASSERT_EQ(slice_sch_add_slice(sch, 2, 0, 0.0f, 0.3f, 0.5f, true, 0), 0, "Should add slice 2");
+  ASSERT_EQ(slice_sch_add_slice(sch, 3, 0, 0.0f, 0.1f, 0.5f, true, 0), 0, "Should add slice 3");
   
   // Schedule multiple times to build up statistics
   for (int i = 0; i < 3; ++i) {
@@ -2646,20 +2655,20 @@ static void test_oop_statistics_after_delete(void) {
   }
   
   slice_statistics_t stats2_before;
-  ASSERT_EQ(slice_sch_get_slice_statistics(sch, 2, &stats2_before), 0, "Should get stats for slice 2");
+  ASSERT_EQ(slice_sch_get_slice_statistics(sch, 2, 0, &stats2_before), 0, "Should get stats for slice 2");
   
   printf("  Before delete:\n");
   printf("    Slice 2: latest=%d PRBs, avg=%.1f PRBs, samples=%d\n",
          stats2_before.latest_num_prbs, stats2_before.avg_num_prbs, stats2_before.sample_count);
   
   // Delete slice 1
-  ASSERT_EQ(slice_sch_del_slice(sch, 1), 0, "Should delete slice 1");
+  ASSERT_EQ(slice_sch_del_slice(sch, 1, 0), 0, "Should delete slice 1");
   
   // Slice 2 should still have its statistics (now at index 0, shifted in array)
   // Note: result_valid is set to false after delete, so statistics are preserved
   // but won't be updated until next schedule
   slice_statistics_t stats2_after;
-  ASSERT_EQ(slice_sch_get_slice_statistics(sch, 2, &stats2_after), 0, "Should get stats for slice 2");
+  ASSERT_EQ(slice_sch_get_slice_statistics(sch, 2, 0, &stats2_after), 0, "Should get stats for slice 2");
   
   printf("  After delete (before re-schedule):\n");
   printf("    Slice 2: latest=%d PRBs, avg=%.1f PRBs, samples=%d\n",
@@ -2674,7 +2683,7 @@ static void test_oop_statistics_after_delete(void) {
   ASSERT_EQ(slice_sch_schedule(sch), 0, "Re-schedule should succeed");
   
   slice_statistics_t stats2_after_schedule;
-  ASSERT_EQ(slice_sch_get_slice_statistics(sch, 2, &stats2_after_schedule), 0, "Should get stats for slice 2");
+  ASSERT_EQ(slice_sch_get_slice_statistics(sch, 2, 0, &stats2_after_schedule), 0, "Should get stats for slice 2");
   
   printf("  After re-schedule:\n");
   printf("    Slice 2: latest=%d PRBs, avg=%.1f PRBs, samples=%d\n",
@@ -2700,16 +2709,16 @@ static void test_oop_statistics_error_handling(void) {
   
   // Test NULL scheduler
   slice_statistics_t stats;
-  ASSERT_EQ(slice_sch_get_slice_statistics(NULL, 1, &stats), -1, "Should reject NULL scheduler");
+  ASSERT_EQ(slice_sch_get_slice_statistics(NULL, 1, 0, &stats), -1, "Should reject NULL scheduler");
   
   int num_stats = 0;
   ASSERT_TRUE(slice_sch_get_all_statistics(NULL, &num_stats) == NULL, "Should return NULL for NULL scheduler");
   
   // Test non-existent slice
-  ASSERT_EQ(slice_sch_get_slice_statistics(sch, 999, &stats), -1, "Should reject non-existent slice");
+  ASSERT_EQ(slice_sch_get_slice_statistics(sch, (uint8_t)999, 0, &stats), -1, "Should reject non-existent slice");
   
   // Test NULL stats pointer
-  ASSERT_EQ(slice_sch_get_slice_statistics(sch, 1, NULL), -1, "Should reject NULL stats pointer");
+  ASSERT_EQ(slice_sch_get_slice_statistics(sch, 1, 0, NULL), -1, "Should reject NULL stats pointer");
   
   printf("  Verification:\n");
   printf("    ✓ NULL scheduler handled correctly\n");
@@ -2731,7 +2740,7 @@ static void test_oop_crash_prevention_large_slices(void) {
   int num_slices = 1000;
   int success_count = 0;
   for (int i = 1; i <= num_slices; ++i) {
-    if (slice_sch_add_slice(sch, i, 0.01f, 0.01f, 0.02f, true, 0) == 0) {
+    if (slice_sch_add_slice(sch, i, 0, 0.01f, 0.01f, 0.02f, true, 0) == 0) {
       success_count++;
     } else {
       break; // Stop if allocation fails
@@ -2760,7 +2769,7 @@ static void test_oop_crash_prevention_large_total_prbs(void) {
   slice_scheduler_t *sch = slice_sch_create(10000);
   ASSERT_TRUE(sch != NULL, "Scheduler should be created");
   
-  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice");
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice");
   ASSERT_EQ(slice_sch_schedule(sch), 0, "Schedule should succeed");
   
   int num_ranges = 0;
@@ -2781,7 +2790,7 @@ static void test_oop_crash_prevention_use_after_destroy(void) {
   slice_scheduler_t *sch = slice_sch_create(100);
   ASSERT_TRUE(sch != NULL, "Scheduler should be created");
   
-  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice");
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice");
   
   // Test destroying NULL (should be safe)
   slice_sch_destroy(NULL);
@@ -2811,7 +2820,7 @@ static void test_oop_crash_prevention_overflow(void) {
   ASSERT_TRUE(sch != NULL, "Scheduler should be created");
   
   // Add slice with very large requirement (but within int range)
-  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0.0f, 0.0f, 1.0f, true, INT_MAX / 2), 0, "Should add slice with large requirement");
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0, 0.0f, 0.0f, 1.0f, true, INT_MAX / 2), 0, "Should add slice with large requirement");
   
   // Schedule should handle large requirement gracefully
   int ret = slice_sch_schedule(sch);
@@ -2835,12 +2844,12 @@ static void test_oop_crash_prevention_rapid_reallocation(void) {
   for (int cycle = 0; cycle < 10; ++cycle) {
     // Add slices to trigger growth
     for (int i = 1; i <= 20; ++i) {
-      slice_sch_add_slice(sch, cycle * 100 + i, 0.01f, 0.01f, 0.02f, true, 0);
+      slice_sch_add_slice(sch, cycle * 100 + i, 0, 0.01f, 0.01f, 0.02f, true, 0);
     }
     
     // Delete slices to trigger shrink
     for (int i = 1; i <= 15; ++i) {
-      slice_sch_del_slice(sch, cycle * 100 + i);
+      slice_sch_del_slice(sch, cycle * 100 + i, 0);
     }
     
     // Schedule to ensure consistency
@@ -2868,7 +2877,7 @@ static void test_oop_crash_prevention_zero_sized(void) {
   slice_scheduler_t *sch = slice_sch_create(1);
   ASSERT_TRUE(sch != NULL, "Scheduler should be created");
   
-  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0.0f, 1.0f, 1.0f, true, 0), 0, "Should add slice");
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0, 0.0f, 1.0f, 1.0f, true, 0), 0, "Should add slice");
   ASSERT_EQ(slice_sch_schedule(sch), 0, "Schedule should succeed");
   
   int num_ranges = 0;
@@ -2890,7 +2899,7 @@ static void test_oop_crash_prevention_invalid_state(void) {
   ASSERT_TRUE(sch != NULL, "Scheduler should be created");
   
   // Add slice but don't schedule
-  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice");
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice");
   
   // Try to get allocation before scheduling (should return NULL)
   int num_ranges = 0;
@@ -2924,8 +2933,8 @@ static void test_oop_crash_prevention_boundary_ratios(void) {
   ASSERT_TRUE(sch != NULL, "Scheduler should be created");
   
   // Test with ratios that sum to exactly 1.0
-  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0.0f, 0.5f, 0.5f, true, 0), 0, "Should add slice 1");
-  ASSERT_EQ(slice_sch_add_slice(sch, 2, 0.0f, 0.5f, 0.5f, true, 0), 0, "Should add slice 2");
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0, 0.0f, 0.5f, 0.5f, true, 0), 0, "Should add slice 1");
+  ASSERT_EQ(slice_sch_add_slice(sch, 2, 0, 0.0f, 0.5f, 0.5f, true, 0), 0, "Should add slice 2");
   
   ASSERT_EQ(slice_sch_schedule(sch), 0, "Schedule should succeed");
   
@@ -2933,7 +2942,7 @@ static void test_oop_crash_prevention_boundary_ratios(void) {
   slice_scheduler_t *sch2 = slice_sch_create(100);
   ASSERT_TRUE(sch2 != NULL, "Scheduler should be created");
   
-  ASSERT_EQ(slice_sch_add_slice(sch2, 1, 0.0f, 1.0f, 1.0f, true, 0), 0, "Should add slice");
+  ASSERT_EQ(slice_sch_add_slice(sch2, 1, 0, 0.0f, 1.0f, 1.0f, true, 0), 0, "Should add slice");
   ASSERT_EQ(slice_sch_schedule(sch2), 0, "Schedule should succeed");
   
   printf("  Verification:\n");
@@ -2956,7 +2965,7 @@ static void test_oop_crash_prevention_memory_pressure(void) {
   // But we can test that the scheduler handles many slices correctly
   int added = 0;
   for (int i = 1; i <= 10000; ++i) {
-    if (slice_sch_add_slice(sch, i, 0.001f, 0.001f, 0.002f, true, 0) == 0) {
+    if (slice_sch_add_slice(sch, i, 0, 0.001f, 0.001f, 0.002f, true, 0) == 0) {
       added++;
     } else {
       // Allocation failed - this is acceptable
@@ -2987,22 +2996,22 @@ static void test_oop_crash_prevention_invalid_sequences(void) {
   ASSERT_TRUE(sch != NULL, "Scheduler should be created");
   
   // Sequence 1: Delete before add
-  ASSERT_EQ(slice_sch_del_slice(sch, 999), -1, "Should fail to delete non-existent slice");
+  ASSERT_EQ(slice_sch_del_slice(sch, (uint8_t)999, 0), -1, "Should fail to delete non-existent slice");
   
   // Sequence 2: Update require before add
-  ASSERT_EQ(slice_sch_update_require(sch, 999, 50), -1, "Should fail to update non-existent slice");
+  ASSERT_EQ(slice_sch_update_require(sch, (uint8_t)999, 0, 50), -1, "Should fail to update non-existent slice");
   
   // Sequence 3: Add, delete, then try to use deleted slice
-  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice");
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice");
   ASSERT_EQ(slice_sch_schedule(sch), 0, "Schedule should succeed");
-  ASSERT_EQ(slice_sch_del_slice(sch, 1), 0, "Should delete slice");
+  ASSERT_EQ(slice_sch_del_slice(sch, 1, 0), 0, "Should delete slice");
   
   // Try to get stats for deleted slice
   slice_statistics_t stats;
-  ASSERT_EQ(slice_sch_get_slice_statistics(sch, 1, &stats), -1, "Should fail to get stats for deleted slice");
+  ASSERT_EQ(slice_sch_get_slice_statistics(sch, 1, 0, &stats), -1, "Should fail to get stats for deleted slice");
   
   // Sequence 4: Multiple deletes of same slice
-  ASSERT_EQ(slice_sch_del_slice(sch, 1), -1, "Should fail to delete already deleted slice");
+  ASSERT_EQ(slice_sch_del_slice(sch, 1, 0), -1, "Should fail to delete already deleted slice");
   
   printf("  Verification:\n");
   printf("    ✓ Scheduler handles invalid operation sequences gracefully\n");
@@ -3021,11 +3030,11 @@ static void test_oop_crash_prevention_array_bounds(void) {
   // Fill to capacity boundary
   int initial_capacity = sch->slices_capacity;
   for (int i = 1; i <= initial_capacity; ++i) {
-    ASSERT_EQ(slice_sch_add_slice(sch, i, 0.01f, 0.01f, 0.02f, true, 0), 0, "Should add slice");
+    ASSERT_EQ(slice_sch_add_slice(sch, i, 0, 0.01f, 0.01f, 0.02f, true, 0), 0, "Should add slice");
   }
   
   // Add one more to trigger growth (tests array bounds during reallocation)
-  ASSERT_EQ(slice_sch_add_slice(sch, initial_capacity + 1, 0.01f, 0.01f, 0.02f, true, 0), 0, "Should add slice at boundary");
+  ASSERT_EQ(slice_sch_add_slice(sch, initial_capacity + 1, 0, 0.01f, 0.01f, 0.02f, true, 0), 0, "Should add slice at boundary");
   
   // Schedule to ensure all indices are valid
   ASSERT_EQ(slice_sch_schedule(sch), 0, "Schedule should succeed");

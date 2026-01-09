@@ -88,6 +88,37 @@ Resource breakdown (for 100 PRBs):
 - Total: 30 PRBs dedicated, 20 PRBs prioritized, 50 PRBs shared
 ```
 
+### Slice Identifier Structure
+
+Slice identifiers use the `slice_id_t` struct with SST (Slice/Service Type) and SD (Slice Differentiator) bit fields, following the 5G S-NSSAI (Single Network Slice Selection Assistance Information) format:
+
+```c
+typedef struct {
+  uint32_t sst : 8;   // Slice/Service Type (0-255)
+  uint32_t sd : 24;   // Slice Differentiator (0-0xffffff)
+} slice_id_t;
+```
+
+**Helper Functions**:
+- `slice_id_create(sst, sd)`: Create a `slice_id_t` from SST and SD values
+- `slice_id_from_int(id)`: Convert an integer to `slice_id_t` (sets `sst=id`, `sd=0`)
+- `slice_id_eq(sid1, sid2)`: Compare two `slice_id_t` structures
+- `slice_id_eq_int(sid, id)`: Compare `slice_id_t` with an integer (compares SST only)
+
+**Example**:
+```c
+// Create slice ID with SST=1, SD=0
+slice_id_t slice1 = slice_id_create(1, 0);
+
+// Create from integer (for backward compatibility)
+slice_id_t slice2 = slice_id_from_int(2);  // SST=2, SD=0
+
+// Compare slice IDs
+if (slice_id_eq(&slice1, &slice2)) {
+    // Slices match
+}
+```
+
 ### Key Features
 
 - **Three-Tier Allocation**: Dedicated (non-shareable) → Prioritized (shareable with priority) → Shared (fully shareable)
@@ -95,6 +126,7 @@ Resource breakdown (for 100 PRBs):
 - **Contiguous Allocation**: PRBs allocated contiguously for frequency-domain slicing
 - **Proportional Scaling**: Handles over-allocation with fair proportional distribution
 - **PRB Requirements**: Optional `required_prbs` enables priority-based allocation
+- **5G S-NSSAI Support**: Slice identifiers use SST and SD bit fields following 3GPP standards
 
 ---
 
@@ -136,14 +168,16 @@ gcc -Wall -Wextra -std=c11 -O2 -g test_slice_prb_allocator.c slice_prb_allocator
 
 // Prepare input
 slice_alloc_input_t input = {0};
-input.slices[0].slice_id = 1;
+// Slice 1: SST=1, SD=0 (eMBB slice)
+input.slices[0].slice_id = slice_id_create(1, 0);
 input.slices[0].dedicated_prb_ratio = 0.33f;
 input.slices[0].min_prb_ratio = 0.33f;
 input.slices[0].max_prb_ratio = 0.50f;
 input.slices[0].has_active_ues = true;
 input.slices[0].required_prbs = 40;  // Optional: PRB requirement (0 = not used)
 
-input.slices[1].slice_id = 2;
+// Slice 2: SST=2, SD=0 (URLLC slice)
+input.slices[1].slice_id = slice_id_create(2, 0);
 input.slices[1].dedicated_prb_ratio = 0.20f;
 input.slices[1].min_prb_ratio = 0.20f;
 input.slices[1].max_prb_ratio = 0.50f;
@@ -160,14 +194,17 @@ int num_active = calculate_slice_prb_ranges(&input, &result);
 // Use results
 for (int s = 0; s < MAX_NUM_SLICES; ++s) {
     if (result.ranges[s].num_prbs > 0) {
-        printf("Slice %d: PRBs [%d, %d) (%d PRBs)\n",
-               result.ranges[s].slice_id,
+        printf("Slice (SST=%d, SD=%u): PRBs [%d, %d) (%d PRBs)\n",
+               result.ranges[s].slice_id.sst,
+               result.ranges[s].slice_id.sd,
                result.ranges[s].start_prb,
                result.ranges[s].end_prb,
                result.ranges[s].num_prbs);
     }
 }
 ```
+
+**Note**: Slice identifiers use the `slice_id_t` struct with SST (Slice/Service Type, 8 bits, 0-255) and SD (Slice Differentiator, 24 bits, 0-0xffffff) bit fields, following the 5G S-NSSAI (Single Network Slice Selection Assistance Information) format.
 
 ---
 
@@ -560,6 +597,55 @@ Total: 100 PRBs ✓
 
 ## Usage Examples
 
+### Example 0: OOP-like Scheduler Interface
+
+The module provides an OOP-like interface for managing slices dynamically:
+
+```c
+#include "slice_prb_allocator.h"
+
+// Create scheduler
+slice_scheduler_t *sch = slice_sch_create(106);  // 106 total PRBs
+
+// Add slices with SST and SD
+// Slice 1: SST=1, SD=0 (eMBB)
+slice_sch_add_slice(sch, 1, 0, 0.33f, 0.33f, 0.50f, true, 0);
+
+// Slice 2: SST=2, SD=0 (URLLC)
+slice_sch_add_slice(sch, 2, 0, 0.20f, 0.20f, 0.50f, true, 0);
+
+// Schedule allocation
+slice_sch_schedule(sch);
+
+// Get allocation results
+int num_ranges = 0;
+const slice_prb_range_t *ranges = slice_sch_get_allocation(sch, &num_ranges);
+for (int i = 0; i < num_ranges; ++i) {
+    printf("Slice (SST=%d, SD=%u): PRBs [%d, %d) (%d PRBs)\n",
+           ranges[i].slice_id.sst,
+           ranges[i].slice_id.sd,
+           ranges[i].start_prb,
+           ranges[i].end_prb,
+           ranges[i].num_prbs);
+}
+
+// Get statistics for a specific slice
+slice_statistics_t stats;
+if (slice_sch_get_slice_statistics(sch, 1, 0, &stats) == 0) {
+    printf("Slice (SST=%d, SD=%u): avg PRBs=%.1f\n",
+           stats.slice_id.sst, stats.slice_id.sd, stats.avg_num_prbs);
+}
+
+// Update PRB requirement for a slice
+slice_sch_update_require(sch, 1, 0, 40);
+
+// Delete a slice
+slice_sch_del_slice(sch, 2, 0);
+
+// Cleanup
+slice_sch_destroy(sch);
+```
+
 ### Example 1: Basic Two-Slice Allocation
 
 **Input**:
@@ -702,7 +788,9 @@ This algorithm is extracted from the OAI gNB MAC scheduler (`gNB_scheduler_dlsch
 2. Convert OAI slice structures to `slice_config_t`:
    ```c
    slice_config_t slice_config;
-   slice_config.slice_id = oai_slice->slice_id;
+   // Create slice_id_t from SST and SD (or use slice_id_from_int() for backward compatibility)
+   slice_config.slice_id = slice_id_create(oai_slice->sst, oai_slice->sd);
+   // Or if you have an integer slice_id: slice_config.slice_id = slice_id_from_int(oai_slice->slice_id);
    slice_config.dedicated_prb_ratio = oai_slice->dedicated_prb_ratio;
    slice_config.min_prb_ratio = oai_slice->min_prb_ratio;
    slice_config.max_prb_ratio = oai_slice->max_prb_ratio;

@@ -13,10 +13,55 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>  /* For NULL */
+
+/*! \brief Slice identifier with SST and SD bit fields (S-NSSAI) */
+typedef struct {
+  uint32_t sst : 8;   /*!< Slice/Service Type (8 bits, 0-255) */
+  uint32_t sd : 24;   /*!< Slice Differentiator (24 bits, 0-0xffffff) */
+} slice_id_t;
+
+/*! \brief Helper: Create slice_id_t from SST and SD values
+ *  \param sst Slice/Service Type (0-255)
+ *  \param sd Slice Differentiator (0-0xffffff)
+ *  \return slice_id_t structure
+ */
+static inline slice_id_t slice_id_create(uint8_t sst, uint32_t sd) {
+  slice_id_t id = {.sst = sst, .sd = sd & 0xffffff};
+  return id;
+}
+
+/*! \brief Helper: Create slice_id_t from integer (treats int as simple ID, sets sst=int, sd=0)
+ *  \param id Integer slice identifier
+ *  \return slice_id_t structure
+ */
+static inline slice_id_t slice_id_from_int(int id) {
+  slice_id_t sid = {.sst = (uint8_t)(id & 0xff), .sd = 0};
+  return sid;
+}
+
+/*! \brief Helper: Compare slice_id_t with integer slice_id
+ *  \param sid slice_id_t structure
+ *  \param id Integer slice identifier
+ *  \return true if they match (based on sst field), false otherwise
+ */
+static inline bool slice_id_eq_int(const slice_id_t *sid, int id) {
+  return (sid != NULL && sid->sst == (id & 0xff) && sid->sd == 0);
+}
+
+/*! \brief Helper: Compare two slice_id_t structures
+ *  \param sid1 First slice_id_t structure
+ *  \param sid2 Second slice_id_t structure
+ *  \return true if they match, false otherwise
+ */
+static inline bool slice_id_eq(const slice_id_t *sid1, const slice_id_t *sid2) {
+  return (sid1 != NULL && sid2 != NULL && 
+          sid1->sst == sid2->sst && sid1->sd == sid2->sd);
+}
 
 /*! \brief PRB range allocation result for a slice (used in OOP interface) */
 typedef struct {
-  int slice_id;
+  slice_id_t slice_id;  /*!< Slice ID with SST and SD */
   int start_prb;  /*!< Inclusive start PRB index */
   int end_prb;    /*!< Exclusive end PRB index (end_prb - start_prb = num_prbs) */
   int num_prbs;   /*!< Number of PRBs allocated */
@@ -28,7 +73,7 @@ typedef struct {
 
 /*! \brief Statistics for a single slice */
 typedef struct {
-  int slice_id;                           /*!< Slice ID */
+  slice_id_t slice_id;                    /*!< Slice ID with SST and SD */
   int latest_start_prb;                    /*!< Latest start PRB index */
   int latest_end_prb;                      /*!< Latest end PRB index */
   int latest_num_prbs;                     /*!< Latest number of PRBs */
@@ -64,7 +109,8 @@ void slice_sch_destroy(slice_scheduler_t *obj);
 
 /*! \brief Add a slice to the scheduler
  *  \param obj Scheduler object
- *  \param slice_id Unique slice identifier
+ *  \param sst Slice/Service Type (0-255)
+ *  \param sd Slice Differentiator (0-0xffffff)
  *  \param dedicated Dedicated PRB ratio (0.0-1.0)
  *  \param min Minimum PRB ratio (0.0-1.0)
  *  \param max Maximum PRB ratio (0.0-1.0)
@@ -72,23 +118,25 @@ void slice_sch_destroy(slice_scheduler_t *obj);
  *  \param require Current PRB requirement (0 = not used)
  *  \return 0 on success, -1 on error
  */
-int slice_sch_add_slice(slice_scheduler_t *obj, int slice_id, float dedicated,
+int slice_sch_add_slice(slice_scheduler_t *obj, uint8_t sst, uint32_t sd, float dedicated,
                         float min, float max, bool has, int require);
 
 /*! \brief Delete a slice from the scheduler
  *  \param obj Scheduler object
- *  \param slice_id Slice identifier to remove
+ *  \param sst Slice/Service Type (0-255)
+ *  \param sd Slice Differentiator (0-0xffffff)
  *  \return 0 on success, -1 on error (slice not found)
  */
-int slice_sch_del_slice(slice_scheduler_t *obj, int slice_id);
+int slice_sch_del_slice(slice_scheduler_t *obj, uint8_t sst, uint32_t sd);
 
 /*! \brief Update the PRB requirement for a slice
  *  \param obj Scheduler object
- *  \param slice_id Slice identifier
+ *  \param sst Slice/Service Type (0-255)
+ *  \param sd Slice Differentiator (0-0xffffff)
  *  \param require New PRB requirement (0 = not used)
  *  \return 0 on success, -1 on error (slice not found)
  */
-int slice_sch_update_require(slice_scheduler_t *obj, int slice_id, int require);
+int slice_sch_update_require(slice_scheduler_t *obj, uint8_t sst, uint32_t sd, int require);
 
 /*! \brief Perform scheduling/allocation of PRBs to slices
  *  \param obj Scheduler object
@@ -113,11 +161,12 @@ int slice_sch_get_stats(const slice_scheduler_t *obj, int *num_active_slices, in
 
 /*! \brief Get statistics for a specific slice
  *  \param obj Scheduler object
- *  \param slice_id Slice ID to get statistics for
+ *  \param sst Slice/Service Type (0-255)
+ *  \param sd Slice Differentiator (0-0xffffff)
  *  \param stats Output: Statistics structure (can be NULL to just check existence)
  *  \return 0 on success, -1 if slice not found
  */
-int slice_sch_get_slice_statistics(const slice_scheduler_t *obj, int slice_id, slice_statistics_t *stats);
+int slice_sch_get_slice_statistics(const slice_scheduler_t *obj, uint8_t sst, uint32_t sd, slice_statistics_t *stats);
 
 /*! \brief Get all slice statistics
  *  \param obj Scheduler object

@@ -59,13 +59,15 @@ void free_slice_result(slice_alloc_result_t *result) {
   }
 }
 
-/*! \brief Helper: Find slice index by slice_id */
-static int find_slice_index(const slice_scheduler_t *obj, int slice_id) {
+/*! \brief Helper: Find slice index by SST and SD */
+static int find_slice_index(const slice_scheduler_t *obj, uint8_t sst, uint32_t sd) {
   if (obj == NULL || obj->input == NULL) {
     return -1;
   }
   for (int i = 0; i < obj->input->num_slices; ++i) {
-    if (obj->input->slices[i].slice_id == slice_id) {
+    // Compare with slice_id_t from slice_config
+    if (obj->input->slices[i].slice_id.sst == sst && 
+        obj->input->slices[i].slice_id.sd == sd) {
       return i;
     }
   }
@@ -541,8 +543,9 @@ void print_slice_allocation(const slice_alloc_result_t *result, int num_slices) 
   // Iterate through all slices and print those with allocated PRBs
   for (int s = 0; s < num_slices; ++s) {
     if (result->ranges[s].num_prbs > 0) {
-      printf("Slice %d: PRBs [%d, %d) (%d PRBs)\n",
-             result->ranges[s].slice_id,
+      printf("Slice (SST=%d, SD=%u): PRBs [%d, %d) (%d PRBs)\n",
+             result->ranges[s].slice_id.sst,
+             result->ranges[s].slice_id.sd,
              result->ranges[s].start_prb,
              result->ranges[s].end_prb,
              result->ranges[s].num_prbs);
@@ -612,14 +615,14 @@ void slice_sch_destroy(slice_scheduler_t *obj) {
   }
 }
 
-int slice_sch_add_slice(slice_scheduler_t *obj, int slice_id, float dedicated,
+int slice_sch_add_slice(slice_scheduler_t *obj, uint8_t sst, uint32_t sd, float dedicated,
                         float min, float max, bool has, int require) {
   if (obj == NULL || obj->input == NULL) {
     return -1;
   }
   
   // Check if slice already exists
-  if (find_slice_index(obj, slice_id) >= 0) {
+  if (find_slice_index(obj, sst, sd) >= 0) {
     return -1; // Slice already exists
   }
   
@@ -698,7 +701,7 @@ int slice_sch_add_slice(slice_scheduler_t *obj, int slice_id, float dedicated,
   
   // Add the slice
   slice_config_t *slice = &obj->input->slices[obj->input->num_slices];
-  slice->slice_id = slice_id;
+  slice->slice_id = slice_id_create(sst, sd);
   slice->dedicated_prb_ratio = dedicated;
   slice->min_prb_ratio = min;
   slice->max_prb_ratio = max;
@@ -707,7 +710,7 @@ int slice_sch_add_slice(slice_scheduler_t *obj, int slice_id, float dedicated,
   
   // Initialize statistics for the new slice
   slice_statistics_t *stats = &obj->statistics[obj->input->num_slices];
-  stats->slice_id = slice_id;
+  stats->slice_id = slice_id_create(sst, sd);
   stats->latest_start_prb = 0;
   stats->latest_end_prb = 0;
   stats->latest_num_prbs = 0;
@@ -722,12 +725,12 @@ int slice_sch_add_slice(slice_scheduler_t *obj, int slice_id, float dedicated,
   return 0;
 }
 
-int slice_sch_del_slice(slice_scheduler_t *obj, int slice_id) {
+int slice_sch_del_slice(slice_scheduler_t *obj, uint8_t sst, uint32_t sd) {
   if (obj == NULL || obj->input == NULL) {
     return -1;
   }
   
-  int idx = find_slice_index(obj, slice_id);
+  int idx = find_slice_index(obj, sst, sd);
   if (idx < 0) {
     return -1; // Slice not found
   }
@@ -784,7 +787,7 @@ int slice_sch_del_slice(slice_scheduler_t *obj, int slice_id) {
   return 0;
 }
 
-int slice_sch_update_require(slice_scheduler_t *obj, int slice_id, int require) {
+int slice_sch_update_require(slice_scheduler_t *obj, uint8_t sst, uint32_t sd, int require) {
   if (obj == NULL || obj->input == NULL) {
     return -1;
   }
@@ -793,7 +796,7 @@ int slice_sch_update_require(slice_scheduler_t *obj, int slice_id, int require) 
     return -1;
   }
   
-  int idx = find_slice_index(obj, slice_id);
+  int idx = find_slice_index(obj, sst, sd);
   if (idx < 0) {
     return -1; // Slice not found
   }
@@ -898,13 +901,13 @@ int slice_sch_get_stats(const slice_scheduler_t *obj, int *num_active_slices, in
   return 0;
 }
 
-int slice_sch_get_slice_statistics(const slice_scheduler_t *obj, int slice_id, slice_statistics_t *stats) {
+int slice_sch_get_slice_statistics(const slice_scheduler_t *obj, uint8_t sst, uint32_t sd, slice_statistics_t *stats) {
   if (obj == NULL || obj->statistics == NULL || stats == NULL) {
     return -1;
   }
   
   // Find the slice index
-  int idx = find_slice_index(obj, slice_id);
+  int idx = find_slice_index(obj, sst, sd);
   if (idx < 0) {
     return -1; // Slice not found
   }
