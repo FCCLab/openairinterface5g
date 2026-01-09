@@ -12,6 +12,9 @@
 /*! \brief Minimum capacity for dynamic slice arrays */
 #define MIN_CAPACITY 8
 
+/*! \brief Exponential moving average alpha factor (0.1 = 10% weight for new value) */
+#define STATS_EMA_ALPHA 0.1f
+
 /*! \brief Helper: Get minimum of two integers */
 static inline int min_int(int a, int b) {
   return (a < b) ? a : b;
@@ -581,6 +584,15 @@ slice_scheduler_t* slice_sch_create(int total_prbs) {
     return NULL;
   }
   
+  // Allocate statistics array
+  obj->statistics = (slice_statistics_t*)calloc(obj->slices_capacity, sizeof(slice_statistics_t));
+  if (obj->statistics == NULL) {
+    free_slice_result(obj->result);
+    free_slice_input(obj->input);
+    free(obj);
+    return NULL;
+  }
+  
   return obj;
 }
 
@@ -591,6 +603,9 @@ void slice_sch_destroy(slice_scheduler_t *obj) {
     }
     if (obj->result != NULL) {
       free_slice_result(obj->result);
+    }
+    if (obj->statistics != NULL) {
+      free(obj->statistics);
     }
     free(obj);
   }
@@ -632,9 +647,28 @@ int slice_sch_add_slice(slice_scheduler_t *obj, int slice_id, float dedicated,
       return -1; // Allocation failed
     }
     
-    // Both reallocs succeeded, update pointers and capacity
+    // Reallocate statistics array
+    slice_statistics_t *new_statistics = (slice_statistics_t*)realloc(obj->statistics, 
+                                                                       new_capacity * sizeof(slice_statistics_t));
+    if (new_statistics == NULL) {
+      // If statistics realloc fails, try to restore input and result
+      size_t old_input_size = sizeof(slice_alloc_input_t) + obj->slices_capacity * sizeof(slice_config_t);
+      size_t old_result_size = sizeof(slice_alloc_result_t) + obj->slices_capacity * sizeof(slice_prb_range_t);
+      slice_alloc_input_t *old_input = (slice_alloc_input_t*)realloc(new_input, old_input_size);
+      slice_alloc_result_t *old_result = (slice_alloc_result_t*)realloc(new_result, old_result_size);
+      if (old_input != NULL) {
+        obj->input = old_input;
+      }
+      if (old_result != NULL) {
+        obj->result = old_result;
+      }
+      return -1; // Allocation failed
+    }
+    
+    // All reallocs succeeded, update pointers and capacity
     obj->input = new_input;
     obj->result = new_result;
+    obj->statistics = new_statistics;
     obj->slices_capacity = new_capacity;
   }
   
@@ -670,6 +704,17 @@ int slice_sch_add_slice(slice_scheduler_t *obj, int slice_id, float dedicated,
   slice->has_active_ues = has;
   slice->required_prbs = require;
   
+  // Initialize statistics for the new slice
+  slice_statistics_t *stats = &obj->statistics[obj->input->num_slices];
+  stats->slice_id = slice_id;
+  stats->latest_start_prb = 0;
+  stats->latest_end_prb = 0;
+  stats->latest_num_prbs = 0;
+  stats->avg_start_prb = 0.0f;
+  stats->avg_end_prb = 0.0f;
+  stats->avg_num_prbs = 0.0f;
+  stats->sample_count = 0;
+  
   obj->input->num_slices++;
   obj->result_valid = false; // Invalidate result
   
@@ -689,6 +734,8 @@ int slice_sch_del_slice(slice_scheduler_t *obj, int slice_id) {
   // Shift remaining slices to fill the gap
   for (int i = idx; i < obj->input->num_slices - 1; ++i) {
     obj->input->slices[i] = obj->input->slices[i + 1];
+    // Also shift statistics
+    obj->statistics[i] = obj->statistics[i + 1];
   }
   
   obj->input->num_slices--;
@@ -714,10 +761,18 @@ int slice_sch_del_slice(slice_scheduler_t *obj, int slice_id) {
       size_t result_size = sizeof(slice_alloc_result_t) + new_capacity * sizeof(slice_prb_range_t);
       slice_alloc_result_t *new_result = (slice_alloc_result_t*)realloc(obj->result, result_size);
       if (new_result != NULL) {
-        // Both reallocs succeeded, update pointers and capacity
-        obj->input = new_input;
-        obj->result = new_result;
-        obj->slices_capacity = new_capacity;
+        // Reallocate statistics array
+        slice_statistics_t *new_statistics = (slice_statistics_t*)realloc(obj->statistics,
+                                                                           new_capacity * sizeof(slice_statistics_t));
+        if (new_statistics != NULL) {
+          // All reallocs succeeded, update pointers and capacity
+          obj->input = new_input;
+          obj->result = new_result;
+          obj->statistics = new_statistics;
+          obj->slices_capacity = new_capacity;
+        }
+        // If statistics realloc fails, keep input and result at new size
+        // This is acceptable since we're shrinking
       }
       // If result realloc fails, keep input at new size (input realloc already succeeded)
       // This is acceptable since we're shrinking and the result will be recalculated on next schedule
@@ -771,6 +826,44 @@ int slice_sch_schedule(slice_scheduler_t *obj) {
     return -1;
   }
   
+  // Update statistics for each slice
+  // Note: result->ranges is indexed by slice index (same as input->slices)
+  for (int s = 0; s < obj->input->num_slices; ++s) {
+    slice_statistics_t *stats = &obj->statistics[s];
+    
+    // Check if this slice got an allocation (ranges array is indexed by slice index)
+    if (obj->result->ranges[s].num_prbs > 0) {
+      // Update latest values
+      stats->latest_start_prb = obj->result->ranges[s].start_prb;
+      stats->latest_end_prb = obj->result->ranges[s].end_prb;
+      stats->latest_num_prbs = obj->result->ranges[s].num_prbs;
+      
+      // Update moving averages using exponential moving average (EMA)
+      if (stats->sample_count == 0) {
+        // First sample: initialize averages
+        stats->avg_start_prb = (float)stats->latest_start_prb;
+        stats->avg_end_prb = (float)stats->latest_end_prb;
+        stats->avg_num_prbs = (float)stats->latest_num_prbs;
+      } else {
+        // Update EMA: new_avg = alpha * new_value + (1 - alpha) * old_avg
+        stats->avg_start_prb = STATS_EMA_ALPHA * (float)stats->latest_start_prb + 
+                               (1.0f - STATS_EMA_ALPHA) * stats->avg_start_prb;
+        stats->avg_end_prb = STATS_EMA_ALPHA * (float)stats->latest_end_prb + 
+                             (1.0f - STATS_EMA_ALPHA) * stats->avg_end_prb;
+        stats->avg_num_prbs = STATS_EMA_ALPHA * (float)stats->latest_num_prbs + 
+                              (1.0f - STATS_EMA_ALPHA) * stats->avg_num_prbs;
+      }
+      stats->sample_count++;
+    } else {
+      // Slice didn't get allocation - update latest to 0
+      // Don't increment sample_count for slices without allocation
+      stats->latest_start_prb = 0;
+      stats->latest_end_prb = 0;
+      stats->latest_num_prbs = 0;
+      // Don't update averages for slices without allocation
+    }
+  }
+  
   obj->result_valid = true;
   
   return 0;
@@ -802,4 +895,30 @@ int slice_sch_get_stats(const slice_scheduler_t *obj, int *num_active_slices, in
   *total_allocated_prbs = obj->result->total_allocated_prbs;
   
   return 0;
+}
+
+int slice_sch_get_slice_statistics(const slice_scheduler_t *obj, int slice_id, slice_statistics_t *stats) {
+  if (obj == NULL || obj->statistics == NULL || stats == NULL) {
+    return -1;
+  }
+  
+  // Find the slice index
+  int idx = find_slice_index(obj, slice_id);
+  if (idx < 0) {
+    return -1; // Slice not found
+  }
+  
+  // Copy statistics
+  *stats = obj->statistics[idx];
+  
+  return 0;
+}
+
+const slice_statistics_t* slice_sch_get_all_statistics(const slice_scheduler_t *obj, int *num_stats) {
+  if (obj == NULL || num_stats == NULL || obj->statistics == NULL || obj->input == NULL) {
+    return NULL;
+  }
+  
+  *num_stats = obj->input->num_slices;
+  return obj->statistics;
 }

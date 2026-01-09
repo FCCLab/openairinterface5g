@@ -152,10 +152,23 @@ int pass4_assign_ranges(const slice_alloc_input_t *input, slice_alloc_result_t *
  * OOP-like Scheduler Interface
  * ============================================================================ */
 
+/*! \brief Statistics for a single slice */
+typedef struct {
+  int slice_id;                           /*!< Slice ID */
+  int latest_start_prb;                    /*!< Latest start PRB index */
+  int latest_end_prb;                      /*!< Latest end PRB index */
+  int latest_num_prbs;                     /*!< Latest number of PRBs */
+  float avg_start_prb;                     /*!< Moving average of start PRB */
+  float avg_end_prb;                       /*!< Moving average of end PRB */
+  float avg_num_prbs;                      /*!< Moving average of number of PRBs */
+  int sample_count;                        /*!< Number of samples for moving average */
+} slice_statistics_t;
+
 /*! \brief Slice scheduler object that manages slices and allocations */
 typedef struct {
   slice_alloc_input_t *input;              /*!< Input structure with slice configurations */
   slice_alloc_result_t *result;            /*!< Result structure with PRB allocations */
+  slice_statistics_t *statistics;           /*!< Statistics for each slice */
   int slices_capacity;                     /*!< Current capacity for reallocation */
   bool result_valid;                       /*!< Whether the result is up-to-date */
 } slice_scheduler_t;
@@ -219,5 +232,20 @@ const slice_prb_range_t* slice_sch_get_allocation(const slice_scheduler_t *obj, 
  *  \return 0 on success, -1 on error
  */
 int slice_sch_get_stats(const slice_scheduler_t *obj, int *num_active_slices, int *total_allocated_prbs);
+
+/*! \brief Get statistics for a specific slice
+ *  \param obj Scheduler object
+ *  \param slice_id Slice ID to get statistics for
+ *  \param stats Output: Statistics structure (can be NULL to just check existence)
+ *  \return 0 on success, -1 if slice not found
+ */
+int slice_sch_get_slice_statistics(const slice_scheduler_t *obj, int slice_id, slice_statistics_t *stats);
+
+/*! \brief Get all slice statistics
+ *  \param obj Scheduler object
+ *  \param num_stats Output: Number of statistics entries
+ *  \return Pointer to statistics array, or NULL on error
+ */
+const slice_statistics_t* slice_sch_get_all_statistics(const slice_scheduler_t *obj, int *num_stats);
 
 #endif /* SLICE_PRB_ALLOCATOR_H */
