@@ -30,6 +30,7 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "common/utils/nr/nr_common.h"
 /*MAC*/
@@ -38,6 +39,7 @@
 #include "LAYER2/NR_MAC_gNB/mac_proto.h"
 #include "openair2/LAYER2/nr_rlc/nr_rlc_oai_api.h"
 #include "NR_MAC_gNB/gNB_scheduler_types.h"
+#include "NR_MAC_gNB/slice_prb_allocator/slice_prb_allocator.h"
 
 /*TAG*/
 #include "NR_TAG-Id.h"
@@ -748,13 +750,8 @@ static uint32_t update_dlsch_buffer_for_slice(frame_t frame, slot_t slot, NR_UE_
 }
 
 /*! \brief PRB range for a slice
+ *  Note: slice_prb_range_t is now defined in slice_prb_allocator.h
  */
-typedef struct {
-  int slice_id;
-  int start_prb;  // Inclusive
-  int end_prb;    // Exclusive (end_prb - start_prb = num_prbs)
-  int num_prbs;
-} slice_prb_range_t;
 
 /*! \brief Log slice PRB ranges to scheduler log file
  *  \param frame Current frame number
@@ -824,7 +821,7 @@ static int pf_dl_slice(gNB_MAC_INST *mac,
                         uint32_t *total_prbs,
                         uint32_t *total_tbs);
 
-/*! \brief Calculate PRB ranges for each slice based on dedicated/min/max ratios
+/*! \brief Calculate PRB ranges for each slice using the new slice PRB allocator
  *  \param mac MAC instance
  *  \param total_prbs Total number of PRBs available
  *  \param ranges Output array of PRB ranges (must be at least MAX_NUM_SLICES in size)
@@ -832,191 +829,245 @@ static int pf_dl_slice(gNB_MAC_INST *mac,
  *  \param slot Current slot number (for logging)
  *  \return Number of slices with allocated PRBs
  */
-static int calculate_slice_prb_ranges(gNB_MAC_INST *mac, int total_prbs, slice_prb_range_t *ranges,
-                                       frame_t frame, slot_t slot)
+static int calculate_slice_prb_ranges_impl(gNB_MAC_INST *mac, int total_prbs, slice_prb_range_t *ranges,
+                                           frame_t frame, slot_t slot)
 {
   if (mac->slice_info.num_slices == 0) {
     return 0;
   }
   
-  int num_active_slices = 0;
-  int allocated_prbs = 0;
+  // Check if total_prbs is valid
+  if (total_prbs <= 0) {
+    LOG_D(NR_MAC, "[%4d.%2d] Invalid total_prbs (%d), skipping PRB allocation\n", frame, slot, total_prbs);
+    return 0;
+  }
   
-  // First pass: Check which slices have UEs with data
-  // Count UEs per slice by checking LCIDs
-  int slice_ue_count[MAX_NUM_SLICES] = {0};
+  // Initialize output ranges
+  memset(ranges, 0, sizeof(slice_prb_range_t) * MAX_NUM_SLICES);
+  
+  // Allocate input structure on heap (structure is large with MAX_NUM_SLICES=1024)
+  slice_alloc_input_t *input = (slice_alloc_input_t *)calloc(1, sizeof(slice_alloc_input_t));
+  if (input == NULL) {
+    LOG_E(NR_MAC, "[%4d.%2d] ERROR: Failed to allocate input structure\n", frame, slot);
+    return 0;
+  }
+  
+  input->total_prbs = total_prbs;
+  
+  // Double-check total_prbs is valid (defensive programming)
+  if (input->total_prbs <= 0) {
+    LOG_E(NR_MAC, "[%4d.%2d] ERROR: total_prbs is invalid (%d) after assignment, skipping\n", 
+          frame, slot, input->total_prbs);
+    free(input);
+    return 0;
+  }
+  
+  // Calculate required PRBs and check for active UEs per slice
+  // Use slice_id as key to map between OAI slices and allocator slices
+  uint32_t slice_bytes_by_id[MAX_NUM_SLICES] = {0};
+  bool slice_has_active_ues_by_id[MAX_NUM_SLICES] = {false};
+  bool any_slice_has_active_ues = false;
+  
+  // Iterate through UEs to calculate required PRBs and check for active UEs
   UE_iterator(mac->UE_info.connected_ue_list, UE) {
     if (!nr_mac_ue_is_active(UE)) {
       continue;
     }
+    
     NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
+    uint16_t rnti = UE->rnti;
+    
+    // Check RLC status for each logical channel
     for (int i = 0; i < seq_arr_size(&sched_ctrl->lc_config); ++i) {
       const nr_lc_config_t *c = seq_arr_at(&sched_ctrl->lc_config, i);
+      if (c->suspended) {
+        continue;
+      }
+      
+      // Get RLC status
+      sched_ctrl->rlc_status[c->lcid] = nr_mac_rlc_status_ind(rnti, frame, c->lcid);
+      
+      // Find which slice this LCID belongs to
       for (int s = 0; s < mac->slice_info.num_slices; ++s) {
         network_slice_t *slice = mac->slice_info.slices[s];
         if (slice != NULL && lcid_belongs_to_slice(c, slice)) {
-          slice_ue_count[s]++;
-          break; // Count UE only once per slice
+          // Use slice_id as key (slice IDs should be unique and in valid range)
+          int slice_id = slice->slice_id;
+          if (slice_id >= 0 && slice_id < MAX_NUM_SLICES) {
+            // Mark slice as having active UEs if it has any UEs with LCIDs belonging to it
+            // This ensures dedicated PRBs are allocated even when buffer is temporarily empty
+            slice_has_active_ues_by_id[slice_id] = true;
+            any_slice_has_active_ues = true;
+            
+            // Accumulate bytes for required PRB calculation
+            if (sched_ctrl->rlc_status[c->lcid].bytes_in_buffer > 0) {
+              slice_bytes_by_id[slice_id] += sched_ctrl->rlc_status[c->lcid].bytes_in_buffer;
+            }
+          }
+          break;
         }
       }
     }
   }
   
-  // First pass: Allocate dedicated PRBs (non-shareable)
+  // If no slices have active UEs, return early (no allocation needed)
+  if (!any_slice_has_active_ues) {
+    LOG_D(NR_MAC, "[%4d.%2d] No slices have active UEs with data, skipping PRB allocation\n", frame, slot);
+    free(input);
+    return 0;
+  }
+  
+  // Estimate required PRBs for each slice based on bytes in buffer
+  // Using a simple estimation: assume average MCS 20 (QPSK, ~2 bits/symbol)
+  // With 14 symbols per slot, 1 PRB = 12 subcarriers * 14 symbols * 2 bits = 336 bits = 42 bytes
+  // This is a rough estimate; actual allocation will be refined by the scheduler
+  const int bytes_per_prb_estimate = 42; // Conservative estimate
+  
+  // Map OAI slice structures to allocator input structures
+  // Only include non-NULL slices to avoid validation errors
+  int allocator_slice_idx = 0;
+  for (int s = 0; s < mac->slice_info.num_slices && allocator_slice_idx < MAX_NUM_SLICES; ++s) {
+    network_slice_t *slice = mac->slice_info.slices[s];
+    if (slice == NULL) {
+      continue;
+    }
+    
+    int slice_id = slice->slice_id;
+    input->slices[allocator_slice_idx].slice_id = slice_id;
+    input->slices[allocator_slice_idx].dedicated_prb_ratio = slice->dedicated_prb_ratio;
+    input->slices[allocator_slice_idx].min_prb_ratio = slice->min_prb_ratio;
+    input->slices[allocator_slice_idx].max_prb_ratio = slice->max_prb_ratio;
+    
+    // Use slice_id to look up active UEs and bytes
+    if (slice_id >= 0 && slice_id < MAX_NUM_SLICES) {
+      input->slices[allocator_slice_idx].has_active_ues = slice_has_active_ues_by_id[slice_id];
+      
+      // Calculate required PRBs based on bytes in buffer
+      if (slice_bytes_by_id[slice_id] > 0) {
+        input->slices[allocator_slice_idx].required_prbs = (slice_bytes_by_id[slice_id] + bytes_per_prb_estimate - 1) / bytes_per_prb_estimate;
+        // Cap at total PRBs
+        if (input->slices[allocator_slice_idx].required_prbs > total_prbs) {
+          input->slices[allocator_slice_idx].required_prbs = total_prbs;
+        }
+      } else {
+        input->slices[allocator_slice_idx].required_prbs = 0;
+      }
+    } else {
+      // Invalid slice_id, default to no active UEs
+      input->slices[allocator_slice_idx].has_active_ues = false;
+      input->slices[allocator_slice_idx].required_prbs = 0;
+    }
+    
+    allocator_slice_idx++;
+  }
+  
+  input->num_slices = allocator_slice_idx;
+  
+  // Allocate result structure on heap (structure is large with MAX_NUM_SLICES=1024)
+  slice_alloc_result_t *result = (slice_alloc_result_t *)calloc(1, sizeof(slice_alloc_result_t));
+  if (result == NULL) {
+    LOG_E(NR_MAC, "[%4d.%2d] ERROR: Failed to allocate result structure\n", frame, slot);
+    free(input);
+    return 0;
+  }
+  
+  // Call the allocator (using the allocator's calculate_slice_prb_ranges function)
+  int ret = calculate_slice_prb_ranges(input, result);
+  
+  if (ret < 0) {
+    LOG_E(NR_MAC, "[%4d.%2d] Failed to calculate slice PRB ranges: num_slices=%d, total_prbs=%d\n",
+          frame, slot, input->num_slices, input->total_prbs);
+    // Log all slice configurations for debugging
+    for (int s = 0; s < input->num_slices; ++s) {
+      LOG_E(NR_MAC, "[%4d.%2d]   Slice %d (ID %d): dedicated=%.3f, min=%.3f, max=%.3f, has_ues=%d, required=%d\n",
+            frame, slot, s, input->slices[s].slice_id,
+            input->slices[s].dedicated_prb_ratio,
+            input->slices[s].min_prb_ratio,
+            input->slices[s].max_prb_ratio,
+            input->slices[s].has_active_ues,
+            input->slices[s].required_prbs);
+      // Check validation issues
+      if (input->slices[s].dedicated_prb_ratio < 0.0 || input->slices[s].dedicated_prb_ratio > 1.0) {
+        LOG_E(NR_MAC, "[%4d.%2d]     ERROR: dedicated ratio out of range [0.0, 1.0]\n", frame, slot);
+      }
+      if (input->slices[s].min_prb_ratio < 0.0 || input->slices[s].min_prb_ratio > 1.0) {
+        LOG_E(NR_MAC, "[%4d.%2d]     ERROR: min ratio out of range [0.0, 1.0]\n", frame, slot);
+      }
+      if (input->slices[s].max_prb_ratio < 0.0 || input->slices[s].max_prb_ratio > 1.0) {
+        LOG_E(NR_MAC, "[%4d.%2d]     ERROR: max ratio out of range [0.0, 1.0]\n", frame, slot);
+      }
+      if (input->slices[s].min_prb_ratio <= input->slices[s].max_prb_ratio) {
+        if (input->slices[s].dedicated_prb_ratio > input->slices[s].min_prb_ratio) {
+          LOG_E(NR_MAC, "[%4d.%2d]     ERROR: dedicated (%.3f) > min (%.3f)\n",
+                frame, slot, input->slices[s].dedicated_prb_ratio, input->slices[s].min_prb_ratio);
+        }
+      } else {
+        if (input->slices[s].dedicated_prb_ratio > input->slices[s].max_prb_ratio) {
+          LOG_E(NR_MAC, "[%4d.%2d]     ERROR: dedicated (%.3f) > max (%.3f) [max < min case]\n",
+                frame, slot, input->slices[s].dedicated_prb_ratio, input->slices[s].max_prb_ratio);
+        }
+      }
+    }
+    free(input);
+    free(result);
+    return 0;
+  }
+  
+  // Map allocator results back to OAI ranges structure
+  // Note: allocator uses slice_id to identify slices, but OAI uses array index
   for (int s = 0; s < mac->slice_info.num_slices; ++s) {
     network_slice_t *slice = mac->slice_info.slices[s];
-    if (slice == NULL || slice_ue_count[s] == 0) {
-      ranges[s].slice_id = slice ? slice->slice_id : -1;
+    if (slice == NULL) {
+      ranges[s].slice_id = -1;
       ranges[s].start_prb = 0;
       ranges[s].end_prb = 0;
       ranges[s].num_prbs = 0;
       continue;
     }
     
-    int dedicated_prbs = (int)(total_prbs * slice->dedicated_prb_ratio + 0.5);
-    int min_prbs = (int)(total_prbs * slice->min_prb_ratio + 0.5);
-    int max_prbs = (int)(total_prbs * slice->max_prb_ratio + 0.5);
-    
-    // Ensure min >= dedicated
-    if (min_prbs < dedicated_prbs) {
-      min_prbs = dedicated_prbs;
-    }
-    
-    // Ensure dedicated doesn't exceed max
-    if (dedicated_prbs > max_prbs) {
-      dedicated_prbs = max_prbs;
-    }
-    
-    ranges[s].slice_id = slice->slice_id;
-    ranges[s].num_prbs = dedicated_prbs;
-    allocated_prbs += dedicated_prbs;
-    num_active_slices++;
-  }
-  
-  if (allocated_prbs > total_prbs) {
-    LOG_W(NR_MAC, "Dedicated PRBs (%d) exceed total PRBs (%d), reducing allocations\n", allocated_prbs, total_prbs);
-    // Proportionally reduce dedicated allocations
-    float scale = (float)total_prbs / allocated_prbs;
-    allocated_prbs = 0;
-    for (int s = 0; s < mac->slice_info.num_slices; ++s) {
-      if (ranges[s].num_prbs > 0) {
-        ranges[s].num_prbs = (int)(ranges[s].num_prbs * scale + 0.5);
-        allocated_prbs += ranges[s].num_prbs;
-      }
-    }
-  }
-  
-    // Second pass: Distribute remaining PRBs based on min ratios
-    int remaining_prbs = total_prbs - allocated_prbs;
-    if (remaining_prbs > 0) {
-      int total_min_needed = 0;
-      for (int s = 0; s < mac->slice_info.num_slices; ++s) {
-        network_slice_t *slice = mac->slice_info.slices[s];
-        if (slice == NULL || slice_ue_count[s] == 0) {
-          continue;
-        }
-      int min_prbs = (int)(total_prbs * slice->min_prb_ratio + 0.5);
-      int min_needed = min_prbs - ranges[s].num_prbs;
-      if (min_needed > 0) {
-        total_min_needed += min_needed;
-      }
-    }
-    
-    if (total_min_needed > 0) {
-      // Allocate proportionally to meet min requirements
-      float scale = (float)remaining_prbs / total_min_needed;
-      if (scale > 1.0) {
-        scale = 1.0; // Can't allocate more than needed
-      }
-      
-      for (int s = 0; s < mac->slice_info.num_slices; ++s) {
-        network_slice_t *slice = mac->slice_info.slices[s];
-        if (slice == NULL || slice_ue_count[s] == 0) {
-          continue;
-        }
-        int min_prbs = (int)(total_prbs * slice->min_prb_ratio + 0.5);
-        int max_prbs = (int)(total_prbs * slice->max_prb_ratio + 0.5);
-        int min_needed = min_prbs - ranges[s].num_prbs;
-        if (min_needed > 0) {
-          int additional = (int)(min_needed * scale + 0.5);
-          // Ensure we don't exceed max_prb_ratio
-          if (ranges[s].num_prbs + additional > max_prbs) {
-            additional = max_prbs - ranges[s].num_prbs;
-          }
-          if (additional > 0) {
-            ranges[s].num_prbs += additional;
-            allocated_prbs += additional;
-            remaining_prbs -= additional;
+    // Find the result for this slice by slice_id
+    bool found = false;
+    for (int r = 0; r < MAX_NUM_SLICES; ++r) {
+      if (result->ranges[r].slice_id == slice->slice_id && result->ranges[r].num_prbs > 0) {
+        ranges[s].slice_id = result->ranges[r].slice_id;
+        ranges[s].start_prb = result->ranges[r].start_prb;
+        ranges[s].end_prb = result->ranges[r].end_prb;
+        ranges[s].num_prbs = result->ranges[r].num_prbs;
+        found = true;
+        
+        // Find required_prbs for logging
+        int required_prbs = 0;
+        for (int ai = 0; ai < input->num_slices; ++ai) {
+          if (input->slices[ai].slice_id == slice->slice_id) {
+            required_prbs = input->slices[ai].required_prbs;
+            break;
           }
         }
+        LOG_D(NR_MAC, "[%4d.%2d] Slice %d: PRBs [%d, %d) (%d PRBs), required=%d\n",
+              frame, slot, ranges[s].slice_id, ranges[s].start_prb, ranges[s].end_prb,
+              ranges[s].num_prbs, required_prbs);
+        break;
       }
     }
     
-    // Distribute any remaining PRBs proportionally, respecting max_prb_ratio limits
-    // This runs even if total_min_needed == 0, to allow slices to grow up to max_prb_ratio
-    if (remaining_prbs > 0) {
-      // First, calculate how much each slice can still take (up to max)
-      int total_capacity = 0;
-      for (int s = 0; s < mac->slice_info.num_slices; ++s) {
-        network_slice_t *slice = mac->slice_info.slices[s];
-        if (slice == NULL || slice_ue_count[s] == 0) {
-          continue;
-        }
-        int max_prbs = (int)(total_prbs * slice->max_prb_ratio + 0.5);
-        int can_add = max_prbs - ranges[s].num_prbs;
-        if (can_add > 0) {
-          total_capacity += can_add;
-        }
-      }
-      
-      // Distribute remaining PRBs proportionally to slices that haven't reached max
-      if (total_capacity > 0) {
-        for (int s = 0; s < mac->slice_info.num_slices; ++s) {
-          network_slice_t *slice = mac->slice_info.slices[s];
-          if (slice == NULL || slice_ue_count[s] == 0) {
-            continue;
-          }
-          int max_prbs = (int)(total_prbs * slice->max_prb_ratio + 0.5);
-          int can_add = max_prbs - ranges[s].num_prbs;
-          if (can_add > 0 && remaining_prbs > 0) {
-            // Allocate proportionally based on remaining capacity
-            int add = (int)((float)can_add / total_capacity * remaining_prbs + 0.5);
-            // Ensure we don't exceed what this slice can take
-            if (add > can_add) {
-              add = can_add;
-            }
-            // Ensure we don't exceed remaining PRBs
-            if (add > remaining_prbs) {
-              add = remaining_prbs;
-            }
-            if (add > 0) {
-              ranges[s].num_prbs += add;
-              remaining_prbs -= add;
-              total_capacity -= can_add; // Update for next iteration
-            }
-          }
-        }
-      }
-    }
-  }
-  
-  // Third pass: Assign PRB ranges (contiguous allocation)
-  int current_prb = 0;
-  for (int s = 0; s < mac->slice_info.num_slices; ++s) {
-    if (ranges[s].num_prbs > 0) {
-      ranges[s].start_prb = current_prb;
-      ranges[s].end_prb = current_prb + ranges[s].num_prbs;
-      current_prb = ranges[s].end_prb;
-      
-      LOG_D(NR_MAC, "Slice %d: PRBs [%d, %d) (%d PRBs)\n",
-            ranges[s].slice_id, ranges[s].start_prb, ranges[s].end_prb, ranges[s].num_prbs);
+    if (!found) {
+      ranges[s].slice_id = slice->slice_id;
+      ranges[s].start_prb = 0;
+      ranges[s].end_prb = 0;
+      ranges[s].num_prbs = 0;
     }
   }
   
   // Log PRB ranges to scheduler log file
-  log_slice_prb_ranges(frame, slot, mac, ranges, num_active_slices, total_prbs);
+  log_slice_prb_ranges(frame, slot, mac, ranges, result->num_active_slices, total_prbs);
   
-  return num_active_slices;
+  int num_active = result->num_active_slices;
+  
+  // Free allocated structures
+  free(input);
+  free(result);
+  
+  return num_active;
 }
 
 /*! \brief Network Slicing scheduler - 3GPP-compliant frequency-domain PRB allocation
@@ -1090,7 +1141,7 @@ static void network_slicing_dl(gNB_MAC_INST *mac,
   
   // Calculate PRB ranges for each slice
   slice_prb_range_t ranges[MAX_NUM_SLICES];
-  int num_active_slices = calculate_slice_prb_ranges(mac, total_prbs, ranges, frame, slot);
+  int num_active_slices = calculate_slice_prb_ranges_impl(mac, total_prbs, ranges, frame, slot);
   
   if (num_active_slices == 0) {
     // Log at INFO level periodically (every 100 slots) to avoid spam

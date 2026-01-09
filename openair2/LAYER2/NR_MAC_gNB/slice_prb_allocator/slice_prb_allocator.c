@@ -3,6 +3,13 @@
  * \brief Implementation of Network Slice PRB Range Allocation Algorithm
  */
 
+// Include platform constants FIRST to get MAX_NUM_SLICES definition
+// This ensures the structure size matches when compiled in OAI
+// When compiled standalone, this include will fail, but slice_prb_allocator.h will define MAX_NUM_SLICES=32
+// The include path should work when compiled as part of OAI
+#include "common/platform_constants.h"
+
+// Now include the header - it will use MAX_NUM_SLICES from platform_constants.h if available
 #include "slice_prb_allocator.h"
 #include <stdio.h>
 #include <stdlib.h>

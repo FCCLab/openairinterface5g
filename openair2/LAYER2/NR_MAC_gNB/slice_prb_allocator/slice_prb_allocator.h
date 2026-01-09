@@ -22,8 +22,13 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-/*! \brief Maximum number of slices supported */
+/*! \brief Maximum number of slices supported
+ *  When used in OAI, MAX_NUM_SLICES is already defined in platform_constants.h
+ *  For standalone compilation, defaults to 32
+ */
+#ifndef MAX_NUM_SLICES
 #define MAX_NUM_SLICES 32
+#endif
 
 /*! \brief Network slice configuration */
 typedef struct {
