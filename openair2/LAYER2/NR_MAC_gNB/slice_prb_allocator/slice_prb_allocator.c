@@ -820,6 +820,21 @@ int slice_sch_update_require(slice_scheduler_t *obj, uint8_t sst, uint32_t sd, i
   return 0;
 }
 
+int slice_sch_update_total_prbs(slice_scheduler_t *obj, int total_prbs) {
+  if (obj == NULL || obj->input == NULL) {
+    return -1;
+  }
+  
+  if (total_prbs <= 0) {
+    return -1;
+  }
+  
+  obj->input->total_prbs = total_prbs;
+  obj->result_valid = false; // Invalidate result
+  
+  return 0;
+}
+
 int slice_sch_schedule(slice_scheduler_t *obj) {
   if (obj == NULL || obj->input == NULL || obj->result == NULL) {
     return -1;
@@ -946,6 +961,14 @@ int slice_sch_get_num_slices(const slice_scheduler_t *obj) {
   }
   
   return obj->input->num_slices;
+}
+
+int slice_sch_get_total_prbs(const slice_scheduler_t *obj) {
+  if (obj == NULL || obj->input == NULL) {
+    return -1;
+  }
+  
+  return obj->input->total_prbs;
 }
 
 int slice_sch_get_slice_config(const slice_scheduler_t *obj, uint8_t sst, uint32_t sd,

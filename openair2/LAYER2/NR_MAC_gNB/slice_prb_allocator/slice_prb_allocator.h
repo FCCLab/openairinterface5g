@@ -144,6 +144,13 @@ int slice_sch_del_slice(slice_scheduler_t *obj, uint8_t sst, uint32_t sd);
  */
 int slice_sch_update_require(slice_scheduler_t *obj, uint8_t sst, uint32_t sd, int require);
 
+/*! \brief Update the total PRBs available for allocation
+ *  \param obj Scheduler object
+ *  \param total_prbs New total number of PRBs (must be > 0)
+ *  \return 0 on success, -1 on error
+ */
+int slice_sch_update_total_prbs(slice_scheduler_t *obj, int total_prbs);
+
 /*! \brief Perform scheduling/allocation of PRBs to slices
  *  \param obj Scheduler object
  *  \return 0 on success, -1 on error
@@ -186,6 +193,12 @@ const slice_statistics_t* slice_sch_get_all_statistics(const slice_scheduler_t *
  *  \return Number of slices, or -1 on error
  */
 int slice_sch_get_num_slices(const slice_scheduler_t *obj);
+
+/*! \brief Get total PRBs available for allocation
+ *  \param obj Scheduler object
+ *  \return Total number of PRBs, or -1 on error
+ */
+int slice_sch_get_total_prbs(const slice_scheduler_t *obj);
 
 /*! \brief Get slice configuration by SST and SD
  *  \param obj Scheduler object

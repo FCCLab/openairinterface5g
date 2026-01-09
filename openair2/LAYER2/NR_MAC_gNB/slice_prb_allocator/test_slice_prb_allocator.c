@@ -3156,6 +3156,137 @@ static void test_oop_crash_prevention_array_bounds(void) {
   slice_sch_destroy(sch);
 }
 
+/* Test OOP: Runtime total_prbs change */
+static void test_oop_runtime_total_prbs_change(void) {
+  printf("  Purpose: Test that total_prbs can be changed at runtime\n");
+  printf("  Expected: Allocations should correctly reflect the new total_prbs value\n\n");
+  
+  // Create scheduler with initial total_prbs
+  slice_scheduler_t *sch = slice_sch_create(100);
+  ASSERT_TRUE(sch != NULL, "Scheduler should be created");
+  
+  // Add slices with max ratios that allow full allocation (0.6 + 0.4 = 1.0)
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0, 0.2f, 0.3f, 0.6f, true, 0), 0, "Should add slice 1");
+  ASSERT_EQ(slice_sch_add_slice(sch, 2, 0, 0.1f, 0.2f, 0.4f, true, 0), 0, "Should add slice 2");
+  
+  // Schedule with initial total_prbs = 100
+  ASSERT_EQ(slice_sch_schedule(sch), 0, "Schedule should succeed");
+  
+  int num_ranges = 0;
+  const slice_prb_range_t *ranges = slice_sch_get_allocation(sch, &num_ranges);
+  ASSERT_TRUE(ranges != NULL, "Should get allocation");
+  
+  int num_active = 0;
+  int total_allocated = 0;
+  ASSERT_EQ(slice_sch_get_stats(sch, &num_active, &total_allocated), 0, "Should get stats");
+  
+  printf("  Initial state (total_prbs = 100):\n");
+  printf("    Total Allocated: %d / 100 PRBs\n", total_allocated);
+  ASSERT_EQ(total_allocated, 100, "Should allocate all 100 PRBs");
+  
+  // Find slice allocations
+  int slice1_prbs = 0, slice2_prbs = 0;
+  for (int i = 0; i < num_ranges; ++i) {
+    if (ranges[i].slice_id.sst == 1 && ranges[i].slice_id.sd == 0) {
+      slice1_prbs = ranges[i].num_prbs;
+    } else if (ranges[i].slice_id.sst == 2 && ranges[i].slice_id.sd == 0) {
+      slice2_prbs = ranges[i].num_prbs;
+    }
+  }
+  printf("    Slice 1: %d PRBs, Slice 2: %d PRBs\n", slice1_prbs, slice2_prbs);
+  ASSERT_GE(slice1_prbs, 20, "Slice 1 should get at least 20 dedicated PRBs");
+  ASSERT_GE(slice2_prbs, 10, "Slice 2 should get at least 10 dedicated PRBs");
+  
+  // Change total_prbs to 200 at runtime using update function
+  ASSERT_EQ(slice_sch_update_total_prbs(sch, 200), 0, "Should update total_prbs to 200");
+  printf("  Changed total_prbs to 200 at runtime\n");
+  
+  // Schedule again with new total_prbs
+  ASSERT_EQ(slice_sch_schedule(sch), 0, "Schedule should succeed with new total_prbs");
+  
+  ranges = slice_sch_get_allocation(sch, &num_ranges);
+  ASSERT_TRUE(ranges != NULL, "Should get allocation after total_prbs change");
+  
+  ASSERT_EQ(slice_sch_get_stats(sch, &num_active, &total_allocated), 0, "Should get stats");
+  
+  printf("  After change (total_prbs = 200):\n");
+  printf("    Total Allocated: %d / 200 PRBs\n", total_allocated);
+  ASSERT_EQ(total_allocated, 200, "Should allocate all 200 PRBs");
+  
+  // Verify allocations scale proportionally
+  int slice1_prbs_new = 0, slice2_prbs_new = 0;
+  for (int i = 0; i < num_ranges; ++i) {
+    if (ranges[i].slice_id.sst == 1 && ranges[i].slice_id.sd == 0) {
+      slice1_prbs_new = ranges[i].num_prbs;
+    } else if (ranges[i].slice_id.sst == 2 && ranges[i].slice_id.sd == 0) {
+      slice2_prbs_new = ranges[i].num_prbs;
+    }
+  }
+  printf("    Slice 1: %d PRBs, Slice 2: %d PRBs\n", slice1_prbs_new, slice2_prbs_new);
+  // Allocations should roughly double (within rounding)
+  ASSERT_GE(slice1_prbs_new, slice1_prbs * 2 - 2, "Slice 1 allocation should scale with total_prbs");
+  ASSERT_GE(slice2_prbs_new, slice2_prbs * 2 - 2, "Slice 2 allocation should scale with total_prbs");
+  
+  // Change total_prbs to 50 at runtime using update function
+  ASSERT_EQ(slice_sch_update_total_prbs(sch, 50), 0, "Should update total_prbs to 50");
+  printf("  Changed total_prbs to 50 at runtime\n");
+  
+  // Schedule again with new total_prbs
+  ASSERT_EQ(slice_sch_schedule(sch), 0, "Schedule should succeed with new total_prbs");
+  
+  ranges = slice_sch_get_allocation(sch, &num_ranges);
+  ASSERT_TRUE(ranges != NULL, "Should get allocation after second total_prbs change");
+  
+  ASSERT_EQ(slice_sch_get_stats(sch, &num_active, &total_allocated), 0, "Should get stats");
+  
+  printf("  After second change (total_prbs = 50):\n");
+  printf("    Total Allocated: %d / 50 PRBs\n", total_allocated);
+  ASSERT_EQ(total_allocated, 50, "Should allocate all 50 PRBs");
+  
+  // Verify allocations scale down proportionally
+  int slice1_prbs_50 = 0, slice2_prbs_50 = 0;
+  for (int i = 0; i < num_ranges; ++i) {
+    if (ranges[i].slice_id.sst == 1 && ranges[i].slice_id.sd == 0) {
+      slice1_prbs_50 = ranges[i].num_prbs;
+    } else if (ranges[i].slice_id.sst == 2 && ranges[i].slice_id.sd == 0) {
+      slice2_prbs_50 = ranges[i].num_prbs;
+    }
+  }
+  printf("    Slice 1: %d PRBs, Slice 2: %d PRBs\n", slice1_prbs_50, slice2_prbs_50);
+  // Allocations should roughly halve (within rounding)
+  ASSERT_LE(slice1_prbs_50, slice1_prbs / 2 + 2, "Slice 1 allocation should scale down with total_prbs");
+  ASSERT_LE(slice2_prbs_50, slice2_prbs / 2 + 2, "Slice 2 allocation should scale down with total_prbs");
+  
+  // Change total_prbs to a larger value (300) using update function
+  ASSERT_EQ(slice_sch_update_total_prbs(sch, 300), 0, "Should update total_prbs to 300");
+  printf("  Changed total_prbs to 300 at runtime\n");
+  
+  ASSERT_EQ(slice_sch_schedule(sch), 0, "Schedule should succeed with total_prbs = 300");
+  
+  ASSERT_EQ(slice_sch_get_stats(sch, &num_active, &total_allocated), 0, "Should get stats");
+  ASSERT_EQ(total_allocated, 300, "Should allocate all 300 PRBs");
+  
+  printf("  After third change (total_prbs = 300):\n");
+  printf("    Total Allocated: %d / 300 PRBs\n", total_allocated);
+  
+  // Test error handling: invalid total_prbs values
+  ASSERT_EQ(slice_sch_update_total_prbs(sch, 0), -1, "Should reject total_prbs = 0");
+  ASSERT_EQ(slice_sch_update_total_prbs(sch, -1), -1, "Should reject negative total_prbs");
+  ASSERT_EQ(slice_sch_update_total_prbs(NULL, 100), -1, "Should reject NULL scheduler");
+  
+  // Verify scheduler still has valid total_prbs after failed updates
+  ASSERT_EQ(slice_sch_get_stats(sch, &num_active, &total_allocated), 0, "Should get stats");
+  ASSERT_EQ(total_allocated, 300, "Should still have 300 PRBs allocated after failed update");
+  
+  printf("  Verification:\n");
+  printf("    ✓ total_prbs can be changed at runtime using slice_sch_update_total_prbs()\n");
+  printf("    ✓ Allocations correctly reflect new total_prbs value\n");
+  printf("    ✓ All PRBs are allocated (respecting max ratios)\n");
+  printf("    ✓ Invalid total_prbs values are rejected\n");
+  
+  slice_sch_destroy(sch);
+}
+
 int main(void) {
   printf("╔════════════════════════════════════════════════════════════════════════════════╗\n");
   printf("║     Network Slice PRB Allocation Algorithm - Unit Tests                     ║\n");
@@ -3256,6 +3387,9 @@ int main(void) {
   TEST(oop_crash_prevention_memory_pressure);
   TEST(oop_crash_prevention_invalid_sequences);
   TEST(oop_crash_prevention_array_bounds);
+  
+  printf("\n=== OOP Runtime Configuration Tests ===\n\n");
+  TEST(oop_runtime_total_prbs_change);
   
   printf("╔════════════════════════════════════════════════════════════════════════════════╗\n");
   printf("║                            Test Summary                                       ║\n");
