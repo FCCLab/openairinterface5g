@@ -939,3 +939,47 @@ const slice_statistics_t* slice_sch_get_all_statistics(const slice_scheduler_t *
   *num_stats = obj->input->num_slices;
   return obj->statistics;
 }
+
+int slice_sch_get_num_slices(const slice_scheduler_t *obj) {
+  if (obj == NULL || obj->input == NULL) {
+    return -1;
+  }
+  
+  return obj->input->num_slices;
+}
+
+int slice_sch_get_slice_config(const slice_scheduler_t *obj, uint8_t sst, uint32_t sd,
+                               uint8_t *sst_out, uint32_t *sd_out,
+                               float *dedicated_out, float *min_out, float *max_out) {
+  if (obj == NULL || obj->input == NULL) {
+    return -1;
+  }
+  
+  // Find the slice index
+  int idx = find_slice_index(obj, sst, sd);
+  if (idx < 0) {
+    return -1; // Slice not found
+  }
+  
+  // Get the slice configuration
+  const slice_config_t *slice = &obj->input->slices[idx];
+  
+  // Output the values if pointers are provided
+  if (sst_out != NULL) {
+    *sst_out = slice->slice_id.sst;
+  }
+  if (sd_out != NULL) {
+    *sd_out = slice->slice_id.sd;
+  }
+  if (dedicated_out != NULL) {
+    *dedicated_out = slice->dedicated_prb_ratio;
+  }
+  if (min_out != NULL) {
+    *min_out = slice->min_prb_ratio;
+  }
+  if (max_out != NULL) {
+    *max_out = slice->max_prb_ratio;
+  }
+  
+  return 0;
+}
