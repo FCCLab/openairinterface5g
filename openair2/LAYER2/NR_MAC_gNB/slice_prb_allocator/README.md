@@ -175,7 +175,6 @@ input.slices[0].slice_id = slice_nssai_create(1, 0);
 input.slices[0].dedicated_prb_ratio = 0.33f;
 input.slices[0].min_prb_ratio = 0.33f;
 input.slices[0].max_prb_ratio = 0.50f;
-input.slices[0].has_active_ues = true;
 input.slices[0].required_prbs = 40;  // Optional: PRB requirement (0 = not used)
 
 // Slice 2: SST=2, SD=0 (URLLC slice)
@@ -183,7 +182,6 @@ input.slices[1].slice_id = slice_nssai_create(2, 0);
 input.slices[1].dedicated_prb_ratio = 0.20f;
 input.slices[1].min_prb_ratio = 0.20f;
 input.slices[1].max_prb_ratio = 0.50f;
-input.slices[1].has_active_ues = true;
 input.slices[1].required_prbs = 30;  // Optional: PRB requirement
 
 input.num_slices = 2;
@@ -289,7 +287,6 @@ Given:
   - `dedicated_prb_ratio`: Non-shareable PRB allocation (0.0 - 1.0)
   - `min_prb_ratio`: Minimum guaranteed PRB allocation (0.0 - 1.0)
   - `max_prb_ratio`: Maximum allowed PRB allocation (0.0 - 1.0)
-  - `has_active_ues`: Whether the slice has active UEs with data to transmit
   - `required_prbs`: Optional current PRB requirement (0 = not used)
 - **Total PRBs**: Total number of available PRBs (e.g., 106 for typical 5G NR)
 
@@ -297,7 +294,7 @@ Find:
 - Contiguous PRB ranges `[start_prb, end_prb)` for each slice
 - Allocation must satisfy:
   1. `dedicated_prb_ratio ≤ min_prb_ratio ≤ max_prb_ratio`
-  2. Each slice gets at least `dedicated_prb_ratio` (if it has active UEs)
+  2. Each slice gets at least `dedicated_prb_ratio`
   3. Each slice gets at least `min_prb_ratio` when resources are available
   4. No slice exceeds `max_prb_ratio` (hard limit)
   5. All PRBs are allocated (no gaps)
@@ -308,7 +305,7 @@ Find:
 **Purpose**: Allocate non-shareable dedicated PRBs to each slice.
 
 **Steps**:
-1. For each slice with `has_active_ues == true`:
+1. For each slice:
    - Calculate `dedicated_prbs = total_prbs × dedicated_prb_ratio`
    - Calculate `min_prbs = total_prbs × min_prb_ratio`
    - Calculate `max_prbs = total_prbs × max_prb_ratio`
@@ -611,10 +608,10 @@ slice_scheduler_t *sch = slice_sch_create(106);  // 106 total PRBs
 
 // Add slices with SST and SD
 // Slice 1: SST=1, SD=0 (eMBB)
-slice_sch_add_slice(sch, 1, 0, 0.33f, 0.33f, 0.50f, true, 0);
+slice_sch_add_slice(sch, 1, 0, 0.33f, 0.33f, 0.50f, 0);
 
 // Slice 2: SST=2, SD=0 (URLLC)
-slice_sch_add_slice(sch, 2, 0, 0.20f, 0.20f, 0.50f, true, 0);
+slice_sch_add_slice(sch, 2, 0, 0.20f, 0.20f, 0.50f, 0);
 
 // Schedule allocation
 slice_sch_schedule(sch);
@@ -652,8 +649,8 @@ slice_sch_destroy(sch);
 
 **Input**:
 - Total PRBs: 100
-- Slice 1: dedicated=30%, min=30%, max=50%, has_active_ues=true
-- Slice 2: dedicated=20%, min=20%, max=50%, has_active_ues=true
+- Slice 1: dedicated=30%, min=30%, max=50%
+- Slice 2: dedicated=20%, min=20%, max=50%
 
 **Result**: Both slices get 50 PRBs each, respecting their maximum limits.
 
@@ -661,8 +658,8 @@ slice_sch_destroy(sch);
 
 **Input**:
 - Total PRBs: 100
-- Slice 1: dedicated=60%, min=60%, max=60%, has_active_ues=true
-- Slice 2: dedicated=60%, min=60%, max=60%, has_active_ues=true
+- Slice 1: dedicated=60%, min=60%, max=60%
+- Slice 2: dedicated=60%, min=60%, max=60%
 
 **Result**: Fair 50/50 split despite both requesting 60% (proportional scaling).
 
@@ -670,8 +667,8 @@ slice_sch_destroy(sch);
 
 **Input**:
 - Total PRBs: 106 (typical 5G NR bandwidth)
-- Slice 1 (eMBB): dedicated=33%, min=33%, max=50%, has_active_ues=true
-- Slice 2 (URLLC): dedicated=20%, min=20%, max=50%, has_active_ues=true
+- Slice 1 (eMBB): dedicated=33%, min=33%, max=50%
+- Slice 2 (URLLC): dedicated=20%, min=20%, max=50%
 
 **Result**: Both slices get 53 PRBs (50% each), maximizing resource utilization.
 
@@ -679,8 +676,8 @@ slice_sch_destroy(sch);
 
 **Input**:
 - Total PRBs: 100
-- Slice 1: dedicated=30%, min=30%, max=50%, required_prbs=45, has_active_ues=true
-- Slice 2: dedicated=20%, min=20%, max=50%, required_prbs=35, has_active_ues=true
+- Slice 1: dedicated=30%, min=30%, max=50%, required_prbs=45
+- Slice 2: dedicated=20%, min=20%, max=50%, required_prbs=35
 
 **Result**: 
 - Pass 1: Slice 1 gets 30 PRBs, Slice 2 gets 20 PRBs
@@ -796,7 +793,6 @@ This algorithm is extracted from the OAI gNB MAC scheduler (`gNB_scheduler_dlsch
    slice_config.dedicated_prb_ratio = oai_slice->dedicated_prb_ratio;
    slice_config.min_prb_ratio = oai_slice->min_prb_ratio;
    slice_config.max_prb_ratio = oai_slice->max_prb_ratio;
-   slice_config.has_active_ues = (oai_slice->num_ues > 0);
    slice_config.required_prbs = calculate_current_prb_requirement(oai_slice);
    ```
 

@@ -116,14 +116,13 @@ void slice_sch_destroy(slice_scheduler_t *obj);
  *  \param dedicated Dedicated PRB ratio (0.0-1.0)
  *  \param min Minimum PRB ratio (0.0-1.0)
  *  \param max Maximum PRB ratio (0.0-1.0)
- *  \param has Whether this slice has active UEs
  *  \param require Current PRB requirement (0 = not used)
  *  \return 0 on success (added or updated), -1 on error
  *  \note If a slice with the same SST/SD already exists, its parameters will be updated.
  *        Statistics for existing slices are preserved.
  */
 int slice_sch_add_slice(slice_scheduler_t *obj, uint8_t sst, uint32_t sd, float dedicated,
-                        float min, float max, bool has, int require);
+                        float min, float max, int require);
 
 /*! \brief Delete a slice from the scheduler
  *  \param obj Scheduler object
@@ -143,6 +142,15 @@ int slice_sch_del_slice(slice_scheduler_t *obj, uint8_t sst, uint32_t sd);
  *  \return 0 on success, -1 on error (slice not found)
  */
 int slice_sch_update_require(slice_scheduler_t *obj, uint8_t sst, uint32_t sd, int require);
+
+/*! \brief Get the PRB requirement for a slice
+ *  \param obj Scheduler object
+ *  \param sst Slice/Service Type (0-255)
+ *  \param sd Slice Differentiator (0-0xffffff)
+ *  \param require Output: PRB requirement (0 = not used)
+ *  \return 0 on success, -1 on error (slice not found)
+ */
+int slice_sch_get_require(slice_scheduler_t *obj, uint8_t sst, uint32_t sd, int *require);
 
 /*! \brief Update the total PRBs available for allocation
  *  \param obj Scheduler object
@@ -214,5 +222,12 @@ int slice_sch_get_total_prbs(const slice_scheduler_t *obj);
 int slice_sch_get_slice_config(const slice_scheduler_t *obj, uint8_t sst, uint32_t sd,
                                uint8_t *sst_out, uint32_t *sd_out,
                                float *dedicated_out, float *min_out, float *max_out);
+
+/*! \brief Get slice NSSAI by index
+ *  \param obj Scheduler object
+ *  \param slice_index Slice index (0-based)
+ *  \return Pointer to slice_nssai_t, or NULL on error
+ */
+const slice_nssai_t* slice_sch_get_slice_nssai(const slice_scheduler_t *obj, int slice_index);
 
 #endif /* SLICE_PRB_ALLOCATOR_H */

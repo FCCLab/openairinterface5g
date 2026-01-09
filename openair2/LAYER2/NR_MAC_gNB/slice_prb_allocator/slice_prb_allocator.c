@@ -136,13 +136,9 @@ int pass1_allocate_dedicated(const slice_alloc_input_t *input, slice_alloc_resul
   *num_active_slices = 0;
   int total_prbs = input->total_prbs;
   
-  // Allocate dedicated PRBs (non-shareable) to slices with active UEs
+  // Allocate dedicated PRBs (non-shareable) to all slices
   for (int s = 0; s < input->num_slices; ++s) {
     const slice_config_t *slice = &input->slices[s];
-    
-    if (!slice->has_active_ues) {
-      continue;
-    }
     
     int dedicated_prbs = (int)(total_prbs * slice->dedicated_prb_ratio + 0.5);
     int min_prbs = (int)(total_prbs * slice->min_prb_ratio + 0.5);
@@ -194,9 +190,6 @@ int pass2_allocate_prioritized(const slice_alloc_input_t *input, slice_alloc_res
   // Calculate total prioritized resources needed (based on required_prbs)
   for (int s = 0; s < input->num_slices; ++s) {
     const slice_config_t *slice = &input->slices[s];
-    if (!slice->has_active_ues) {
-      continue;
-    }
     int min_prbs = (int)(total_prbs * slice->min_prb_ratio + 0.5);
     int dedicated_prbs = (int)(total_prbs * slice->dedicated_prb_ratio + 0.5);
     int prioritized_prbs = min_prbs - dedicated_prbs; // Prioritized but shareable portion
@@ -234,9 +227,6 @@ int pass2_allocate_prioritized(const slice_alloc_input_t *input, slice_alloc_res
     
     for (int s = 0; s < input->num_slices; ++s) {
       const slice_config_t *slice = &input->slices[s];
-      if (!slice->has_active_ues) {
-        continue;
-      }
       int min_prbs = (int)(total_prbs * slice->min_prb_ratio + 0.5);
       int dedicated_prbs = (int)(total_prbs * slice->dedicated_prb_ratio + 0.5);
       int prioritized_prbs = min_prbs - dedicated_prbs;
@@ -295,9 +285,6 @@ int pass3_allocate_shared(const slice_alloc_input_t *input, slice_alloc_result_t
   // Calculate how much each slice can still take (up to max)
   for (int s = 0; s < input->num_slices; ++s) {
     const slice_config_t *slice = &input->slices[s];
-    if (!slice->has_active_ues) {
-      continue;
-    }
     int max_prbs = (int)(total_prbs * slice->max_prb_ratio + 0.5);
     int can_add = max_prbs - result->ranges[s].num_prbs;
     if (can_add > 0) {
@@ -322,9 +309,6 @@ int pass3_allocate_shared(const slice_alloc_input_t *input, slice_alloc_result_t
       // Allocate based on PRB requirements (weighted by PRB deficit)
       for (int s = 0; s < input->num_slices && remaining_to_allocate > 0; ++s) {
         const slice_config_t *slice = &input->slices[s];
-        if (!slice->has_active_ues) {
-          continue;
-        }
         
         int max_prbs = (int)(total_prbs * slice->max_prb_ratio + 0.5);
         int can_add = max_prbs - result->ranges[s].num_prbs;
@@ -371,18 +355,19 @@ int pass3_allocate_shared(const slice_alloc_input_t *input, slice_alloc_result_t
       
       // If there are still remaining PRBs after requirement-based allocation,
       // distribute them proportionally based on capacity
+      // Only allocate to slices that have min_prb_ratio > 0 or required_prbs > 0
       if (remaining_to_allocate > 0) {
-        // Recalculate total capacity
+        // Recalculate total capacity (only for slices with min > 0 or required > 0)
         total_capacity = 0;
         for (int s = 0; s < input->num_slices; ++s) {
           const slice_config_t *slice = &input->slices[s];
-          if (!slice->has_active_ues) {
-            continue;
-          }
-          int max_prbs = (int)(total_prbs * slice->max_prb_ratio + 0.5);
-          int can_add = max_prbs - result->ranges[s].num_prbs;
-          if (can_add > 0) {
-            total_capacity += can_add;
+          // Only count slices that have minimum guarantee or requirements
+          if (slice->min_prb_ratio > 0.0f || slice->required_prbs > 0) {
+            int max_prbs = (int)(total_prbs * slice->max_prb_ratio + 0.5);
+            int can_add = max_prbs - result->ranges[s].num_prbs;
+            if (can_add > 0) {
+              total_capacity += can_add;
+            }
           }
         }
         
@@ -390,25 +375,25 @@ int pass3_allocate_shared(const slice_alloc_input_t *input, slice_alloc_result_t
         if (total_capacity > 0) {
           for (int s = 0; s < input->num_slices && remaining_to_allocate > 0; ++s) {
             const slice_config_t *slice = &input->slices[s];
-            if (!slice->has_active_ues) {
-              continue;
-            }
-            int max_prbs = (int)(total_prbs * slice->max_prb_ratio + 0.5);
-            int can_add = max_prbs - result->ranges[s].num_prbs;
-            
-            if (can_add > 0 && remaining_to_allocate > 0) {
-              int add = (int)((float)can_add / total_capacity * remaining_to_allocate + 0.5);
-              if (add > can_add) {
-                add = can_add;
-              }
-              if (add > remaining_to_allocate) {
-                add = remaining_to_allocate;
-              }
-              if (add > 0) {
-                result->ranges[s].num_prbs += add;
-                *allocated_prbs += add;
-                remaining_to_allocate -= add;
-                total_capacity -= can_add;
+            // Only allocate to slices that have minimum guarantee or requirements
+            if (slice->min_prb_ratio > 0.0f || slice->required_prbs > 0) {
+              int max_prbs = (int)(total_prbs * slice->max_prb_ratio + 0.5);
+              int can_add = max_prbs - result->ranges[s].num_prbs;
+              
+              if (can_add > 0 && remaining_to_allocate > 0) {
+                int add = (int)((float)can_add / total_capacity * remaining_to_allocate + 0.5);
+                if (add > can_add) {
+                  add = can_add;
+                }
+                if (add > remaining_to_allocate) {
+                  add = remaining_to_allocate;
+                }
+                if (add > 0) {
+                  result->ranges[s].num_prbs += add;
+                  *allocated_prbs += add;
+                  remaining_to_allocate -= add;
+                  total_capacity -= can_add;
+                }
               }
             }
           }
@@ -418,27 +403,42 @@ int pass3_allocate_shared(const slice_alloc_input_t *input, slice_alloc_result_t
     } else {
       // No PRB requirements or requirement-based allocation disabled
       // Fall back to proportional distribution based on capacity
+      // Only allocate to slices that have min_prb_ratio > 0 or required_prbs > 0
+      // Recalculate total capacity (only for slices with min > 0 or required > 0)
+      total_capacity = 0;
+      for (int s = 0; s < input->num_slices; ++s) {
+        const slice_config_t *slice = &input->slices[s];
+        // Only count slices that have minimum guarantee or requirements
+        if (slice->min_prb_ratio > 0.0f || slice->required_prbs > 0) {
+          int max_prbs = (int)(total_prbs * slice->max_prb_ratio + 0.5);
+          int can_add = max_prbs - result->ranges[s].num_prbs;
+          if (can_add > 0) {
+            total_capacity += can_add;
+          }
+        }
+      }
+      
       for (int s = 0; s < input->num_slices && remaining_to_allocate > 0; ++s) {
         const slice_config_t *slice = &input->slices[s];
-        if (!slice->has_active_ues) {
-          continue;
-        }
-        int max_prbs = (int)(total_prbs * slice->max_prb_ratio + 0.5);
-        int can_add = max_prbs - result->ranges[s].num_prbs;
-        
-        if (can_add > 0 && remaining_to_allocate > 0) {
-          int add = (int)((float)can_add / total_capacity * remaining_to_allocate + 0.5);
-          if (add > can_add) {
-            add = can_add;
-          }
-          if (add > remaining_to_allocate) {
-            add = remaining_to_allocate;
-          }
-          if (add > 0) {
-            result->ranges[s].num_prbs += add;
-            *allocated_prbs += add;
-            remaining_to_allocate -= add;
-            total_capacity -= can_add;
+        // Only allocate to slices that have minimum guarantee or requirements
+        if (slice->min_prb_ratio > 0.0f || slice->required_prbs > 0) {
+          int max_prbs = (int)(total_prbs * slice->max_prb_ratio + 0.5);
+          int can_add = max_prbs - result->ranges[s].num_prbs;
+          
+          if (can_add > 0 && remaining_to_allocate > 0) {
+            int add = (int)((float)can_add / total_capacity * remaining_to_allocate + 0.5);
+            if (add > can_add) {
+              add = can_add;
+            }
+            if (add > remaining_to_allocate) {
+              add = remaining_to_allocate;
+            }
+            if (add > 0) {
+              result->ranges[s].num_prbs += add;
+              *allocated_prbs += add;
+              remaining_to_allocate -= add;
+              total_capacity -= can_add;
+            }
           }
         }
       }
@@ -519,6 +519,14 @@ int calculate_slice_prb_ranges(const slice_alloc_input_t *input, slice_alloc_res
   // Pass 4: Assign contiguous ranges
   if (pass4_assign_ranges(input, result) != 0) {
     return -1;
+  }
+  
+  // Recalculate num_active_slices based on slices that actually got PRBs
+  num_active_slices = 0;
+  for (int s = 0; s < input->num_slices; ++s) {
+    if (result->ranges[s].num_prbs > 0) {
+      num_active_slices++;
+    }
   }
   
   result->num_active_slices = num_active_slices;
@@ -616,7 +624,7 @@ void slice_sch_destroy(slice_scheduler_t *obj) {
 }
 
 int slice_sch_add_slice(slice_scheduler_t *obj, uint8_t sst, uint32_t sd, float dedicated,
-                        float min, float max, bool has, int require) {
+                        float min, float max, int require) {
   if (obj == NULL || obj->input == NULL) {
     return -1;
   }
@@ -652,7 +660,6 @@ int slice_sch_add_slice(slice_scheduler_t *obj, uint8_t sst, uint32_t sd, float 
     slice->dedicated_prb_ratio = dedicated;
     slice->min_prb_ratio = min;
     slice->max_prb_ratio = max;
-    slice->has_active_ues = has;
     slice->required_prbs = require;
     
     // Note: Statistics are preserved for the existing slice
@@ -717,7 +724,6 @@ int slice_sch_add_slice(slice_scheduler_t *obj, uint8_t sst, uint32_t sd, float 
   slice->dedicated_prb_ratio = dedicated;
   slice->min_prb_ratio = min;
   slice->max_prb_ratio = max;
-  slice->has_active_ues = has;
   slice->required_prbs = require;
   
   // Initialize statistics for the new slice
@@ -816,6 +822,21 @@ int slice_sch_update_require(slice_scheduler_t *obj, uint8_t sst, uint32_t sd, i
   
   obj->input->slices[idx].required_prbs = require;
   obj->result_valid = false; // Invalidate result
+  
+  return 0;
+}
+
+int slice_sch_get_require(slice_scheduler_t *obj, uint8_t sst, uint32_t sd, int *require) {
+  if (obj == NULL || obj->input == NULL || require == NULL) {
+    return -1;
+  }
+  
+  int idx = find_slice_index(obj, sst, sd);
+  if (idx < 0) {
+    return -1; // Slice not found
+  }
+  
+  *require = obj->input->slices[idx].required_prbs;
   
   return 0;
 }
@@ -1005,4 +1026,16 @@ int slice_sch_get_slice_config(const slice_scheduler_t *obj, uint8_t sst, uint32
   }
   
   return 0;
+}
+
+const slice_nssai_t* slice_sch_get_slice_nssai(const slice_scheduler_t *obj, int slice_index) {
+  if (obj == NULL || obj->input == NULL) {
+    return NULL;
+  }
+  
+  if (slice_index < 0 || slice_index >= obj->input->num_slices) {
+    return NULL;
+  }
+  
+  return &obj->input->slices[slice_index].slice_id;
 }

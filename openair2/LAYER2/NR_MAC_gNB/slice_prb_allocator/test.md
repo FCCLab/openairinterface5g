@@ -150,8 +150,8 @@ These tests verify each pass function works correctly in isolation.
 - **Expected**: Slice gets all 100 PRBs
 
 #### Test 17: `test_no_active_ues`
-- **Purpose**: Slices without active UEs get no PRBs
-- **Input**: 2 slices, both `has_active_ues = false`
+- **Purpose**: Slices with zero ratios get no PRBs
+- **Input**: 2 slices with zero ratios
 - **Expected**: Both slices get 0 PRBs
 
 #### Test 18: `test_multiple_slices_different_ratios`

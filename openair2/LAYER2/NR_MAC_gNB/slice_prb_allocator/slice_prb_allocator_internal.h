@@ -21,7 +21,6 @@ typedef struct {
   float dedicated_prb_ratio; /*!< Dedicated PRB ratio (0.0-1.0), non-shareable */
   float min_prb_ratio;       /*!< Minimum PRB ratio (0.0-1.0), guaranteed */
   float max_prb_ratio;       /*!< Maximum PRB ratio (0.0-1.0), hard limit */
-  bool has_active_ues;       /*!< Whether this slice has active UEs with data */
   int required_prbs;         /*!< Current PRB requirement for this slice (0 = not used, all symbols allocated) */
 } slice_config_t;
 
@@ -75,7 +74,7 @@ void free_slice_result(slice_alloc_result_t *result);
  *  \return Number of slices with allocated PRBs, or -1 on error
  * 
  *  Algorithm:
- *  1. Allocate dedicated PRBs to slices with active UEs
+ *  1. Allocate dedicated PRBs to all slices
  *  2. If dedicated allocations exceed total, scale them down proportionally
  *  3. Distribute remaining PRBs to meet minimum guarantees
  *  4. Distribute any remaining PRBs considering PRB requirements (slices with higher
