@@ -90,31 +90,33 @@ Resource breakdown (for 100 PRBs):
 
 ### Slice Identifier Structure
 
-Slice identifiers use the `slice_id_t` struct with SST (Slice/Service Type) and SD (Slice Differentiator) bit fields, following the 5G S-NSSAI (Single Network Slice Selection Assistance Information) format:
+Slice identifiers use the `slice_nssai_t` struct with SST (Slice/Service Type) and SD (Slice Differentiator) bit fields, following the 5G S-NSSAI (Single Network Slice Selection Assistance Information) format:
 
 ```c
 typedef struct {
   uint32_t sst : 8;   // Slice/Service Type (0-255)
   uint32_t sd : 24;   // Slice Differentiator (0-0xffffff)
-} slice_id_t;
+} slice_nssai_t;
 ```
 
+**Note**: This is named `slice_nssai_t` to avoid conflict with OAI's existing `slice_id_t` (uint8_t) in `platform_types.h`.
+
 **Helper Functions**:
-- `slice_id_create(sst, sd)`: Create a `slice_id_t` from SST and SD values
-- `slice_id_from_int(id)`: Convert an integer to `slice_id_t` (sets `sst=id`, `sd=0`)
-- `slice_id_eq(sid1, sid2)`: Compare two `slice_id_t` structures
-- `slice_id_eq_int(sid, id)`: Compare `slice_id_t` with an integer (compares SST only)
+- `slice_nssai_create(sst, sd)`: Create a `slice_nssai_t` from SST and SD values
+- `slice_nssai_from_int(id)`: Convert an integer to `slice_nssai_t` (sets `sst=id`, `sd=0`)
+- `slice_nssai_eq(sid1, sid2)`: Compare two `slice_nssai_t` structures
+- `slice_nssai_eq_int(sid, id)`: Compare `slice_nssai_t` with an integer (compares SST only)
 
 **Example**:
 ```c
 // Create slice ID with SST=1, SD=0
-slice_id_t slice1 = slice_id_create(1, 0);
+slice_nssai_t slice1 = slice_nssai_create(1, 0);
 
 // Create from integer (for backward compatibility)
-slice_id_t slice2 = slice_id_from_int(2);  // SST=2, SD=0
+slice_nssai_t slice2 = slice_nssai_from_int(2);  // SST=2, SD=0
 
 // Compare slice IDs
-if (slice_id_eq(&slice1, &slice2)) {
+if (slice_nssai_eq(&slice1, &slice2)) {
     // Slices match
 }
 ```
@@ -169,7 +171,7 @@ gcc -Wall -Wextra -std=c11 -O2 -g test_slice_prb_allocator.c slice_prb_allocator
 // Prepare input
 slice_alloc_input_t input = {0};
 // Slice 1: SST=1, SD=0 (eMBB slice)
-input.slices[0].slice_id = slice_id_create(1, 0);
+input.slices[0].slice_id = slice_nssai_create(1, 0);
 input.slices[0].dedicated_prb_ratio = 0.33f;
 input.slices[0].min_prb_ratio = 0.33f;
 input.slices[0].max_prb_ratio = 0.50f;
@@ -177,7 +179,7 @@ input.slices[0].has_active_ues = true;
 input.slices[0].required_prbs = 40;  // Optional: PRB requirement (0 = not used)
 
 // Slice 2: SST=2, SD=0 (URLLC slice)
-input.slices[1].slice_id = slice_id_create(2, 0);
+input.slices[1].slice_id = slice_nssai_create(2, 0);
 input.slices[1].dedicated_prb_ratio = 0.20f;
 input.slices[1].min_prb_ratio = 0.20f;
 input.slices[1].max_prb_ratio = 0.50f;
@@ -204,7 +206,7 @@ for (int s = 0; s < MAX_NUM_SLICES; ++s) {
 }
 ```
 
-**Note**: Slice identifiers use the `slice_id_t` struct with SST (Slice/Service Type, 8 bits, 0-255) and SD (Slice Differentiator, 24 bits, 0-0xffffff) bit fields, following the 5G S-NSSAI (Single Network Slice Selection Assistance Information) format.
+**Note**: Slice identifiers use the `slice_nssai_t` struct with SST (Slice/Service Type, 8 bits, 0-255) and SD (Slice Differentiator, 24 bits, 0-0xffffff) bit fields, following the 5G S-NSSAI (Single Network Slice Selection Assistance Information) format.
 
 ---
 
@@ -788,9 +790,9 @@ This algorithm is extracted from the OAI gNB MAC scheduler (`gNB_scheduler_dlsch
 2. Convert OAI slice structures to `slice_config_t`:
    ```c
    slice_config_t slice_config;
-   // Create slice_id_t from SST and SD (or use slice_id_from_int() for backward compatibility)
-   slice_config.slice_id = slice_id_create(oai_slice->sst, oai_slice->sd);
-   // Or if you have an integer slice_id: slice_config.slice_id = slice_id_from_int(oai_slice->slice_id);
+   // Create slice_nssai_t from SST and SD (or use slice_nssai_from_int() for backward compatibility)
+   slice_config.slice_id = slice_nssai_create(oai_slice->sst, oai_slice->sd);
+   // Or if you have an integer slice_id: slice_config.slice_id = slice_nssai_from_int(oai_slice->slice_id);
    slice_config.dedicated_prb_ratio = oai_slice->dedicated_prb_ratio;
    slice_config.min_prb_ratio = oai_slice->min_prb_ratio;
    slice_config.max_prb_ratio = oai_slice->max_prb_ratio;

@@ -65,7 +65,7 @@ static int find_slice_index(const slice_scheduler_t *obj, uint8_t sst, uint32_t 
     return -1;
   }
   for (int i = 0; i < obj->input->num_slices; ++i) {
-    // Compare with slice_id_t from slice_config
+    // Compare with slice_nssai_t from slice_config
     if (obj->input->slices[i].slice_id.sst == sst && 
         obj->input->slices[i].slice_id.sd == sd) {
       return i;
@@ -621,9 +621,44 @@ int slice_sch_add_slice(slice_scheduler_t *obj, uint8_t sst, uint32_t sd, float 
     return -1;
   }
   
-  // Check if slice already exists
-  if (find_slice_index(obj, sst, sd) >= 0) {
-    return -1; // Slice already exists
+  // Validate ratios
+  if (dedicated < 0.0 || dedicated > 1.0 ||
+      min < 0.0 || min > 1.0 ||
+      max < 0.0 || max > 1.0) {
+    return -1;
+  }
+  
+  // Validate ratio relationships
+  if (min <= max) {
+    if (dedicated > min) {
+      return -1;
+    }
+  } else {
+    if (dedicated > max) {
+      return -1;
+    }
+  }
+  
+  // Validate require
+  if (require < 0) {
+    return -1;
+  }
+  
+  // Check if slice already exists - if so, update it
+  int existing_idx = find_slice_index(obj, sst, sd);
+  if (existing_idx >= 0) {
+    // Update existing slice parameters
+    slice_config_t *slice = &obj->input->slices[existing_idx];
+    slice->dedicated_prb_ratio = dedicated;
+    slice->min_prb_ratio = min;
+    slice->max_prb_ratio = max;
+    slice->has_active_ues = has;
+    slice->required_prbs = require;
+    
+    // Note: Statistics are preserved for the existing slice
+    obj->result_valid = false; // Invalidate result since configuration changed
+    
+    return 0; // Successfully updated
   }
   
   // Reallocate if needed
@@ -676,32 +711,9 @@ int slice_sch_add_slice(slice_scheduler_t *obj, uint8_t sst, uint32_t sd, float 
     obj->slices_capacity = new_capacity;
   }
   
-  // Validate ratios
-  if (dedicated < 0.0 || dedicated > 1.0 ||
-      min < 0.0 || min > 1.0 ||
-      max < 0.0 || max > 1.0) {
-    return -1;
-  }
-  
-  // Validate ratio relationships
-  if (min <= max) {
-    if (dedicated > min) {
-      return -1;
-    }
-  } else {
-    if (dedicated > max) {
-      return -1;
-    }
-  }
-  
-  // Validate require
-  if (require < 0) {
-    return -1;
-  }
-  
-  // Add the slice
+  // Add the slice (new slice, not existing)
   slice_config_t *slice = &obj->input->slices[obj->input->num_slices];
-  slice->slice_id = slice_id_create(sst, sd);
+  slice->slice_id = slice_nssai_create(sst, sd);
   slice->dedicated_prb_ratio = dedicated;
   slice->min_prb_ratio = min;
   slice->max_prb_ratio = max;
@@ -710,7 +722,7 @@ int slice_sch_add_slice(slice_scheduler_t *obj, uint8_t sst, uint32_t sd, float 
   
   // Initialize statistics for the new slice
   slice_statistics_t *stats = &obj->statistics[obj->input->num_slices];
-  stats->slice_id = slice_id_create(sst, sd);
+  stats->slice_id = slice_nssai_create(sst, sd);
   stats->latest_start_prb = 0;
   stats->latest_end_prb = 0;
   stats->latest_num_prbs = 0;
@@ -732,7 +744,8 @@ int slice_sch_del_slice(slice_scheduler_t *obj, uint8_t sst, uint32_t sd) {
   
   int idx = find_slice_index(obj, sst, sd);
   if (idx < 0) {
-    return -1; // Slice not found
+    // Slice not found - return success (idempotent: desired state already achieved)
+    return 0;
   }
   
   // Shift remaining slices to fill the gap

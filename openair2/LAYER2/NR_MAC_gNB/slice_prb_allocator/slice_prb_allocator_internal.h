@@ -17,7 +17,7 @@
 
 /*! \brief Network slice configuration */
 typedef struct {
-  slice_id_t slice_id;       /*!< Slice identifier with SST and SD */
+  slice_nssai_t slice_id;       /*!< Slice identifier with SST and SD */
   float dedicated_prb_ratio; /*!< Dedicated PRB ratio (0.0-1.0), non-shareable */
   float min_prb_ratio;       /*!< Minimum PRB ratio (0.0-1.0), guaranteed */
   float max_prb_ratio;       /*!< Maximum PRB ratio (0.0-1.0), hard limit */

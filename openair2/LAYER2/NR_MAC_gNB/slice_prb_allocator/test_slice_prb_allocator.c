@@ -90,7 +90,7 @@ static void print_allocation_result_with_required(const slice_alloc_result_t *re
       // Find the corresponding slice config to get required_prbs
       int required_prbs = 0;
       for (int i = 0; i < input->num_slices; ++i) {
-        if (slice_id_eq(&result->ranges[s].slice_id, &input->slices[i].slice_id)) {
+        if (slice_nssai_eq(&result->ranges[s].slice_id, &input->slices[i].slice_id)) {
           required_prbs = input->slices[i].required_prbs;
           break;
         }
@@ -140,7 +140,7 @@ static void print_oop_allocation_result(const slice_scheduler_t *obj, int total_
       int required_prbs = 0;
       if (obj->input != NULL) {
         for (int i = 0; i < obj->input->num_slices; ++i) {
-          if (slice_id_eq(&ranges[s].slice_id, &obj->input->slices[i].slice_id)) {
+          if (slice_nssai_eq(&ranges[s].slice_id, &obj->input->slices[i].slice_id)) {
             required_prbs = obj->input->slices[i].required_prbs;
             break;
           }
@@ -192,14 +192,14 @@ static void test_basic_two_slices(void) {
   ALLOCATE_TEST_STRUCTURES(2, input, result);
   
   // Slice 1: 30% dedicated, 30% min, 50% max
-  input->slices[0].slice_id = slice_id_from_int(1);
+  input->slices[0].slice_id = slice_nssai_from_int(1);
   input->slices[0].dedicated_prb_ratio = 0.30f;
   input->slices[0].min_prb_ratio = 0.30f;
   input->slices[0].max_prb_ratio = 0.50f;
   input->slices[0].has_active_ues = true;
   
   // Slice 2: 20% dedicated, 20% min, 50% max
-  input->slices[1].slice_id = slice_id_from_int(2);
+  input->slices[1].slice_id = slice_nssai_from_int(2);
   input->slices[1].dedicated_prb_ratio = 0.20f;
   input->slices[1].min_prb_ratio = 0.20f;
   input->slices[1].max_prb_ratio = 0.50f;
@@ -267,7 +267,7 @@ static void test_single_slice_all_prbs(void) {
   
   ALLOCATE_TEST_STRUCTURES(1, input, result);
   
-  input->slices[0].slice_id = slice_id_from_int(1);
+  input->slices[0].slice_id = slice_nssai_from_int(1);
   input->slices[0].dedicated_prb_ratio = 1.0f;
   input->slices[0].min_prb_ratio = 1.0f;
   input->slices[0].max_prb_ratio = 1.0f;
@@ -306,7 +306,7 @@ static void test_no_active_ues(void) {
   
   ALLOCATE_TEST_STRUCTURES(1, input, result);
   
-  input->slices[0].slice_id = slice_id_from_int(1);
+  input->slices[0].slice_id = slice_nssai_from_int(1);
   input->slices[0].dedicated_prb_ratio = 0.5f;
   input->slices[0].min_prb_ratio = 0.5f;
   input->slices[0].max_prb_ratio = 0.5f;
@@ -345,21 +345,21 @@ static void test_multiple_slices_different_ratios(void) {
   ALLOCATE_TEST_STRUCTURES(3, input, result);
   
   // Slice 1: 10% dedicated, 20% min, 40% max
-  input->slices[0].slice_id = slice_id_from_int(1);
+  input->slices[0].slice_id = slice_nssai_from_int(1);
   input->slices[0].dedicated_prb_ratio = 0.10f;
   input->slices[0].min_prb_ratio = 0.20f;
   input->slices[0].max_prb_ratio = 0.40f;
   input->slices[0].has_active_ues = true;
   
   // Slice 2: 15% dedicated, 25% min, 50% max
-  input->slices[1].slice_id = slice_id_from_int(2);
+  input->slices[1].slice_id = slice_nssai_from_int(2);
   input->slices[1].dedicated_prb_ratio = 0.15f;
   input->slices[1].min_prb_ratio = 0.25f;
   input->slices[1].max_prb_ratio = 0.50f;
   input->slices[1].has_active_ues = true;
   
   // Slice 3: 5% dedicated, 10% min, 30% max
-  input->slices[2].slice_id = slice_id_from_int(3);
+  input->slices[2].slice_id = slice_nssai_from_int(3);
   input->slices[2].dedicated_prb_ratio = 0.05f;
   input->slices[2].min_prb_ratio = 0.10f;
   input->slices[2].max_prb_ratio = 0.30f;
@@ -425,13 +425,13 @@ static void test_dedicated_exceeds_total(void) {
   ALLOCATE_TEST_STRUCTURES(2, input, result);
   
   // Two slices, each wants 60% dedicated (total 120%)
-  input->slices[0].slice_id = slice_id_from_int(1);
+  input->slices[0].slice_id = slice_nssai_from_int(1);
   input->slices[0].dedicated_prb_ratio = 0.60f;
   input->slices[0].min_prb_ratio = 0.60f;
   input->slices[0].max_prb_ratio = 0.60f;
   input->slices[0].has_active_ues = true;
   
-  input->slices[1].slice_id = slice_id_from_int(2);
+  input->slices[1].slice_id = slice_nssai_from_int(2);
   input->slices[1].dedicated_prb_ratio = 0.60f;
   input->slices[1].min_prb_ratio = 0.60f;
   input->slices[1].max_prb_ratio = 0.60f;
@@ -477,7 +477,7 @@ static void test_max_ratio_enforcement(void) {
   ALLOCATE_TEST_STRUCTURES(1, input, result);
   
   // Slice with 30% max, but plenty of remaining PRBs
-  input->slices[0].slice_id = slice_id_from_int(1);
+  input->slices[0].slice_id = slice_nssai_from_int(1);
   input->slices[0].dedicated_prb_ratio = 0.10f;
   input->slices[0].min_prb_ratio = 0.10f;
   input->slices[0].max_prb_ratio = 0.30f;  // Hard limit at 30%
@@ -528,7 +528,7 @@ static void test_validation(void) {
   
   printf("  Testing invalid ratio (> 1.0)...\n");
   // Test invalid ratios
-  input->slices[0].slice_id = slice_id_from_int(1);
+  input->slices[0].slice_id = slice_nssai_from_int(1);
   input->slices[0].dedicated_prb_ratio = 1.5f;  // Invalid: > 1.0
   input->slices[0].min_prb_ratio = 0.5f;
   input->slices[0].max_prb_ratio = 0.5f;
@@ -557,7 +557,7 @@ static void test_zero_total_prbs(void) {
   
   ALLOCATE_TEST_STRUCTURES(1, input, result);
   
-  input->slices[0].slice_id = slice_id_from_int(1);
+  input->slices[0].slice_id = slice_nssai_from_int(1);
   input->slices[0].dedicated_prb_ratio = 0.5f;
   input->slices[0].min_prb_ratio = 0.5f;
   input->slices[0].max_prb_ratio = 0.5f;
@@ -590,14 +590,14 @@ static void test_real_world_106_prbs(void) {
   ALLOCATE_TEST_STRUCTURES(2, input, result);
   
   // Slice 1: 33% dedicated, 33% min, 50% max (typical eMBB slice)
-  input->slices[0].slice_id = slice_id_from_int(1);
+  input->slices[0].slice_id = slice_nssai_from_int(1);
   input->slices[0].dedicated_prb_ratio = 0.33f;
   input->slices[0].min_prb_ratio = 0.33f;
   input->slices[0].max_prb_ratio = 0.50f;
   input->slices[0].has_active_ues = true;
   
   // Slice 2: 20% dedicated, 20% min, 50% max (typical URLLC slice)
-  input->slices[1].slice_id = slice_id_from_int(2);
+  input->slices[1].slice_id = slice_nssai_from_int(2);
   input->slices[1].dedicated_prb_ratio = 0.20f;
   input->slices[1].min_prb_ratio = 0.20f;
   input->slices[1].max_prb_ratio = 0.50f;
@@ -660,13 +660,13 @@ static void test_pass1_dedicated(void) {
   ALLOCATE_TEST_STRUCTURES(2, input, result);
   
   // Test case 1: Normal dedicated allocation
-  input->slices[0].slice_id = slice_id_from_int(1);
+  input->slices[0].slice_id = slice_nssai_from_int(1);
   input->slices[0].dedicated_prb_ratio = 0.30f;
   input->slices[0].min_prb_ratio = 0.30f;
   input->slices[0].max_prb_ratio = 0.50f;
   input->slices[0].has_active_ues = true;
   
-  input->slices[1].slice_id = slice_id_from_int(2);
+  input->slices[1].slice_id = slice_nssai_from_int(2);
   input->slices[1].dedicated_prb_ratio = 0.20f;
   input->slices[1].min_prb_ratio = 0.20f;
   input->slices[1].max_prb_ratio = 0.50f;
@@ -743,14 +743,14 @@ static void test_pass2_prioritized(void) {
   ALLOCATE_TEST_STRUCTURES(2, input, result);
   
   // Setup: Pass 1 already allocated dedicated PRBs
-  input->slices[0].slice_id = slice_id_from_int(1);
+  input->slices[0].slice_id = slice_nssai_from_int(1);
   input->slices[0].dedicated_prb_ratio = 0.20f;
   input->slices[0].min_prb_ratio = 0.30f;
   input->slices[0].max_prb_ratio = 0.50f;
   input->slices[0].has_active_ues = true;
   input->slices[0].required_prbs = 35; // Needs more than dedicated
   
-  input->slices[1].slice_id = slice_id_from_int(2);
+  input->slices[1].slice_id = slice_nssai_from_int(2);
   input->slices[1].dedicated_prb_ratio = 0.10f;
   input->slices[1].min_prb_ratio = 0.25f;
   input->slices[1].max_prb_ratio = 0.50f;
@@ -809,14 +809,14 @@ static void test_pass3_shared(void) {
   ALLOCATE_TEST_STRUCTURES(2, input, result);
   
   // Setup: Pass 1 and 2 already allocated
-  input->slices[0].slice_id = slice_id_from_int(1);
+  input->slices[0].slice_id = slice_nssai_from_int(1);
   input->slices[0].dedicated_prb_ratio = 0.20f;
   input->slices[0].min_prb_ratio = 0.30f;
   input->slices[0].max_prb_ratio = 0.50f;
   input->slices[0].has_active_ues = true;
   input->slices[0].required_prbs = 45;
   
-  input->slices[1].slice_id = slice_id_from_int(2);
+  input->slices[1].slice_id = slice_nssai_from_int(2);
   input->slices[1].dedicated_prb_ratio = 0.10f;
   input->slices[1].min_prb_ratio = 0.25f;
   input->slices[1].max_prb_ratio = 0.50f;
@@ -877,9 +877,9 @@ static void test_pass4_ranges(void) {
   
   ALLOCATE_TEST_STRUCTURES(3, input, result);
   
-  input->slices[0].slice_id = slice_id_from_int(1);
-  input->slices[1].slice_id = slice_id_from_int(2);
-  input->slices[2].slice_id = slice_id_from_int(3);
+  input->slices[0].slice_id = slice_nssai_from_int(1);
+  input->slices[1].slice_id = slice_nssai_from_int(2);
+  input->slices[2].slice_id = slice_nssai_from_int(3);
   input->num_slices = 3;
   
   // Setup: PRBs already allocated (from previous passes)
@@ -930,13 +930,13 @@ static void test_pass1_dedicated_static_allocation(void) {
   
   ALLOCATE_TEST_STRUCTURES(2, input, result);
   
-  input->slices[0].slice_id = slice_id_from_int(1);
+  input->slices[0].slice_id = slice_nssai_from_int(1);
   input->slices[0].dedicated_prb_ratio = 0.50f;
   input->slices[0].min_prb_ratio = 0.50f;
   input->slices[0].max_prb_ratio = 0.50f;
   input->slices[0].has_active_ues = true;
   
-  input->slices[1].slice_id = slice_id_from_int(2);
+  input->slices[1].slice_id = slice_nssai_from_int(2);
   input->slices[1].dedicated_prb_ratio = 0.50f;
   input->slices[1].min_prb_ratio = 0.50f;
   input->slices[1].max_prb_ratio = 0.50f;
@@ -984,7 +984,7 @@ static void test_pass1_max_less_than_dedicated(void) {
   
   ALLOCATE_TEST_STRUCTURES(1, input, result);
   
-  input->slices[0].slice_id = slice_id_from_int(1);
+  input->slices[0].slice_id = slice_nssai_from_int(1);
   input->slices[0].dedicated_prb_ratio = 0.50f;
   input->slices[0].min_prb_ratio = 0.50f;
   input->slices[0].max_prb_ratio = 0.30f; // Max < dedicated
@@ -1027,7 +1027,7 @@ static void test_pass1_zero_dedicated(void) {
   
   ALLOCATE_TEST_STRUCTURES(1, input, result);
   
-  input->slices[0].slice_id = slice_id_from_int(1);
+  input->slices[0].slice_id = slice_nssai_from_int(1);
   input->slices[0].dedicated_prb_ratio = 0.0f;
   input->slices[0].min_prb_ratio = 0.30f;
   input->slices[0].max_prb_ratio = 0.50f;
@@ -1072,14 +1072,14 @@ static void test_pass2_slice_doesnt_need_prioritized(void) {
   
   ALLOCATE_TEST_STRUCTURES(2, input, result);
   
-  input->slices[0].slice_id = slice_id_from_int(1);
+  input->slices[0].slice_id = slice_nssai_from_int(1);
   input->slices[0].dedicated_prb_ratio = 0.20f;
   input->slices[0].min_prb_ratio = 0.30f;
   input->slices[0].max_prb_ratio = 0.50f;
   input->slices[0].has_active_ues = true;
   input->slices[0].required_prbs = 15; // Less than current (20)
   
-  input->slices[1].slice_id = slice_id_from_int(2);
+  input->slices[1].slice_id = slice_nssai_from_int(2);
   input->slices[1].dedicated_prb_ratio = 0.10f;
   input->slices[1].min_prb_ratio = 0.25f;
   input->slices[1].max_prb_ratio = 0.50f;
@@ -1137,14 +1137,14 @@ static void test_pass2_insufficient_prioritized(void) {
   
   ALLOCATE_TEST_STRUCTURES(2, input, result);
   
-  input->slices[0].slice_id = slice_id_from_int(1);
+  input->slices[0].slice_id = slice_nssai_from_int(1);
   input->slices[0].dedicated_prb_ratio = 0.20f;
   input->slices[0].min_prb_ratio = 0.50f; // Needs 30 prioritized
   input->slices[0].max_prb_ratio = 0.60f;
   input->slices[0].has_active_ues = true;
   input->slices[0].required_prbs = 50;
   
-  input->slices[1].slice_id = slice_id_from_int(2);
+  input->slices[1].slice_id = slice_nssai_from_int(2);
   input->slices[1].dedicated_prb_ratio = 0.10f;
   input->slices[1].min_prb_ratio = 0.40f; // Needs 30 prioritized
   input->slices[1].max_prb_ratio = 0.60f;
@@ -1202,7 +1202,7 @@ static void test_pass2_max_less_than_min(void) {
   
   ALLOCATE_TEST_STRUCTURES(1, input, result);
   
-  input->slices[0].slice_id = slice_id_from_int(1);
+  input->slices[0].slice_id = slice_nssai_from_int(1);
   input->slices[0].dedicated_prb_ratio = 0.20f;
   input->slices[0].min_prb_ratio = 0.50f; // Min = 50
   input->slices[0].max_prb_ratio = 0.30f; // Max = 30 (< min!)
@@ -1250,14 +1250,14 @@ static void test_pass3_no_prb_requirements(void) {
   
   ALLOCATE_TEST_STRUCTURES(2, input, result);
   
-  input->slices[0].slice_id = slice_id_from_int(1);
+  input->slices[0].slice_id = slice_nssai_from_int(1);
   input->slices[0].dedicated_prb_ratio = 0.30f;
   input->slices[0].min_prb_ratio = 0.30f;
   input->slices[0].max_prb_ratio = 0.50f;
   input->slices[0].has_active_ues = true;
   input->slices[0].required_prbs = 0; // No requirement
   
-  input->slices[1].slice_id = slice_id_from_int(2);
+  input->slices[1].slice_id = slice_nssai_from_int(2);
   input->slices[1].dedicated_prb_ratio = 0.20f;
   input->slices[1].min_prb_ratio = 0.20f;
   input->slices[1].max_prb_ratio = 0.50f;
@@ -1312,13 +1312,13 @@ static void test_pass3_all_slices_at_max(void) {
   
   ALLOCATE_TEST_STRUCTURES(2, input, result);
   
-  input->slices[0].slice_id = slice_id_from_int(1);
+  input->slices[0].slice_id = slice_nssai_from_int(1);
   input->slices[0].dedicated_prb_ratio = 0.50f;
   input->slices[0].min_prb_ratio = 0.50f;
   input->slices[0].max_prb_ratio = 0.50f;
   input->slices[0].has_active_ues = true;
   
-  input->slices[1].slice_id = slice_id_from_int(2);
+  input->slices[1].slice_id = slice_nssai_from_int(2);
   input->slices[1].dedicated_prb_ratio = 0.30f;
   input->slices[1].min_prb_ratio = 0.30f;
   input->slices[1].max_prb_ratio = 0.30f;
@@ -1372,7 +1372,7 @@ static void test_pass4_empty_result(void) {
   
   ALLOCATE_TEST_STRUCTURES(1, input, result);
   
-  input->slices[0].slice_id = slice_id_from_int(1);
+  input->slices[0].slice_id = slice_nssai_from_int(1);
   input->num_slices = 1;
   
   printf("  Input Configuration:\n");
@@ -1382,7 +1382,7 @@ static void test_pass4_empty_result(void) {
   
   // No PRBs allocated (all slices have num_prbs = 0)
   // Result already zeroed by calloc
-  result->ranges[0].slice_id = slice_id_from_int(1);
+  result->ranges[0].slice_id = slice_nssai_from_int(1);
   result->ranges[0].num_prbs = 0;
   
   int ret = pass4_assign_ranges(input, result);
@@ -1406,7 +1406,7 @@ static void test_pass4_single_slice(void) {
   
   ALLOCATE_TEST_STRUCTURES(1, input, result);
   
-  input->slices[0].slice_id = slice_id_from_int(1);
+  input->slices[0].slice_id = slice_nssai_from_int(1);
   input->num_slices = 1;
   
   printf("  Input Configuration:\n");
@@ -1414,7 +1414,7 @@ static void test_pass4_single_slice(void) {
   printf("    Slice 1: 100 PRBs allocated\n");
   printf("    Note: Single slice gets all PRBs, range should be [0, 100)\n\n");
   
-  result->ranges[0].slice_id = slice_id_from_int(1);
+  result->ranges[0].slice_id = slice_nssai_from_int(1);
   result->ranges[0].num_prbs = 100;
   
   int ret = pass4_assign_ranges(input, result);
@@ -1439,7 +1439,7 @@ static void test_integration_max_less_than_min(void) {
   
   ALLOCATE_TEST_STRUCTURES(1, input, result);
   
-  input->slices[0].slice_id = slice_id_from_int(1);
+  input->slices[0].slice_id = slice_nssai_from_int(1);
   input->slices[0].dedicated_prb_ratio = 0.20f;
   input->slices[0].min_prb_ratio = 0.50f; // Min = 50
   input->slices[0].max_prb_ratio = 0.30f; // Max = 30 (< min!)
@@ -1476,14 +1476,14 @@ static void test_integration_all_slices_no_prioritized_need(void) {
   
   ALLOCATE_TEST_STRUCTURES(2, input, result);
   
-  input->slices[0].slice_id = slice_id_from_int(1);
+  input->slices[0].slice_id = slice_nssai_from_int(1);
   input->slices[0].dedicated_prb_ratio = 0.20f;
   input->slices[0].min_prb_ratio = 0.30f;
   input->slices[0].max_prb_ratio = 0.50f;
   input->slices[0].has_active_ues = true;
   input->slices[0].required_prbs = 15; // Less than dedicated (20)
   
-  input->slices[1].slice_id = slice_id_from_int(2);
+  input->slices[1].slice_id = slice_nssai_from_int(2);
   input->slices[1].dedicated_prb_ratio = 0.10f;
   input->slices[1].min_prb_ratio = 0.25f;
   input->slices[1].max_prb_ratio = 0.50f;
@@ -1569,8 +1569,8 @@ static void test_oop_basic_two_slices(void) {
   // Find slices by ID
   int slice1_idx = -1, slice2_idx = -1;
   for (int i = 0; i < num_ranges; ++i) {
-    if (slice_id_eq_int(&ranges[i].slice_id, 1)) slice1_idx = i;
-    if (slice_id_eq_int(&ranges[i].slice_id, 2)) slice2_idx = i;
+    if (slice_nssai_eq_int(&ranges[i].slice_id, 1)) slice1_idx = i;
+    if (slice_nssai_eq_int(&ranges[i].slice_id, 2)) slice2_idx = i;
   }
   
   ASSERT_TRUE(slice1_idx >= 0, "Slice 1 should be found");
@@ -1634,7 +1634,7 @@ static void test_oop_add_delete_slices(void) {
   // Verify slice 2 is gone
   int found_slice2 = 0;
   for (int i = 0; i < num_ranges; ++i) {
-    if (slice_id_eq_int(&ranges[i].slice_id, 2)) {
+    if (slice_nssai_eq_int(&ranges[i].slice_id, 2)) {
       found_slice2 = 1;
       break;
     }
@@ -1644,8 +1644,8 @@ static void test_oop_add_delete_slices(void) {
   // Verify slices 1 and 3 are still there
   int found_slice1 = 0, found_slice3 = 0;
   for (int i = 0; i < num_ranges; ++i) {
-    if (slice_id_eq_int(&ranges[i].slice_id, 1)) found_slice1 = 1;
-    if (slice_id_eq_int(&ranges[i].slice_id, 3)) found_slice3 = 1;
+    if (slice_nssai_eq_int(&ranges[i].slice_id, 1)) found_slice1 = 1;
+    if (slice_nssai_eq_int(&ranges[i].slice_id, 3)) found_slice3 = 1;
   }
   ASSERT_EQ(found_slice1, 1, "Slice 1 should still be present");
   ASSERT_EQ(found_slice3, 1, "Slice 3 should still be present");
@@ -1693,7 +1693,7 @@ static void test_oop_update_require(void) {
   
   int slice1_idx = -1;
   for (int i = 0; i < num_ranges; ++i) {
-    if (slice_id_eq_int(&ranges[i].slice_id, 1)) {
+    if (slice_nssai_eq_int(&ranges[i].slice_id, 1)) {
       slice1_idx = i;
       break;
     }
@@ -1788,10 +1788,17 @@ static void test_oop_error_handling(void) {
   sch_invalid = slice_sch_create(-1);
   ASSERT_TRUE(sch_invalid == NULL, "Should fail with negative total PRBs");
   
-  // Test duplicate slice ID
+  // Test duplicate slice ID (should update existing slice, not reject)
   ASSERT_EQ(slice_sch_add_slice(sch, 1, 0, 0.1f, 0.1f, 0.2f, true, 0), 0, "Should add slice 1");
-  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0, 0.1f, 0.1f, 0.2f, true, 0), -1,
-            "Should fail with duplicate slice ID");
+  ASSERT_EQ(sch->input->num_slices, 1, "Should have 1 slice");
+  ASSERT_FLOAT_EQ(sch->input->slices[0].dedicated_prb_ratio, 0.1f, "Initial dedicated should be 0.1");
+  
+  // Add with same SST/SD - should update, not reject
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0, 0.2f, 0.2f, 0.3f, false, 10), 0,
+            "Should update existing slice with same SST/SD");
+  ASSERT_EQ(sch->input->num_slices, 1, "Should still have 1 slice (not duplicated)");
+  ASSERT_FLOAT_EQ(sch->input->slices[0].dedicated_prb_ratio, 0.2f, "Updated dedicated should be 0.2");
+  ASSERT_EQ(sch->input->slices[0].has_active_ues, false, "Updated has_active_ues should be false");
   
   // Test invalid ratios
   ASSERT_EQ(slice_sch_add_slice(sch, 2, 0, -0.1f, 0.1f, 0.2f, true, 0), -1,
@@ -1804,8 +1811,8 @@ static void test_oop_error_handling(void) {
   // Test invalid requirement
   ASSERT_EQ(slice_sch_update_require(sch, 1, 0, -1), -1, "Should fail with negative requirement");
   
-  // Test non-existent slice
-  ASSERT_EQ(slice_sch_del_slice(sch, (uint8_t)999, 0), -1, "Should fail with non-existent slice");
+  // Test non-existent slice (delete is idempotent - returns success)
+  ASSERT_EQ(slice_sch_del_slice(sch, (uint8_t)999, 0), 0, "Should succeed with non-existent slice (idempotent)");
   ASSERT_EQ(slice_sch_update_require(sch, (uint8_t)999, 0, 10), -1, "Should fail with non-existent slice");
   
   // Test get_allocation before schedule
@@ -2077,22 +2084,105 @@ static void test_oop_delete_all_slices(void) {
   slice_sch_destroy(sch);
 }
 
-/* Test OOP: Edge case - Duplicate slice IDs */
-static void test_oop_duplicate_slice_id(void) {
-  printf("  Purpose: Test adding slice with duplicate ID\n");
-  printf("  Expected: Should reject duplicate slice ID\n\n");
+/* Test OOP: Edge case - Update existing slice */
+static void test_oop_update_existing_slice(void) {
+  printf("  Purpose: Test updating an existing slice with same SST/SD\n");
+  printf("  Expected: Should update parameters instead of adding duplicate\n\n");
   
   slice_scheduler_t *sch = slice_sch_create(100);
   ASSERT_TRUE(sch != NULL, "Scheduler should be created");
   
-  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice 1");
+  // Add initial slice
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0, 0.1f, 0.2f, 0.5f, true, 10), 0, "Should add slice 1");
+  ASSERT_EQ(sch->input->num_slices, 1, "Should have 1 slice");
   
-  // Try to add duplicate
-  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0, 0.2f, 0.3f, 0.6f, true, 0), -1, "Should reject duplicate ID");
+  // Verify initial parameters
+  ASSERT_FLOAT_EQ(sch->input->slices[0].dedicated_prb_ratio, 0.1f, "Initial dedicated should be 0.1");
+  ASSERT_FLOAT_EQ(sch->input->slices[0].min_prb_ratio, 0.2f, "Initial min should be 0.2");
+  ASSERT_FLOAT_EQ(sch->input->slices[0].max_prb_ratio, 0.5f, "Initial max should be 0.5");
+  ASSERT_EQ(sch->input->slices[0].has_active_ues, true, "Initial has_active_ues should be true");
+  ASSERT_EQ(sch->input->slices[0].required_prbs, 10, "Initial required_prbs should be 10");
+  
+  // Schedule multiple times to generate some statistics
+  ASSERT_EQ(slice_sch_schedule(sch), 0, "First schedule should succeed");
+  ASSERT_EQ(slice_sch_schedule(sch), 0, "Second schedule should succeed");
+  
+  // Get statistics before update
+  slice_statistics_t stats_before;
+  ASSERT_EQ(slice_sch_get_slice_statistics(sch, 1, 0, &stats_before), 0, "Should get stats for slice 1");
+  int sample_count_before = stats_before.sample_count;
+  float avg_num_prbs_before = stats_before.avg_num_prbs;
+  
+  // Verify we have some statistics
+  ASSERT_GT(sample_count_before, 0, "Should have some statistics before update");
+  
+  // Update the slice with new parameters (same SST/SD)
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0, 0.2f, 0.3f, 0.6f, false, 20), 0, "Should update slice 1");
+  ASSERT_EQ(sch->input->num_slices, 1, "Should still have only 1 slice (not duplicated)");
+  
+  // Verify updated parameters
+  ASSERT_FLOAT_EQ(sch->input->slices[0].dedicated_prb_ratio, 0.2f, "Updated dedicated should be 0.2");
+  ASSERT_FLOAT_EQ(sch->input->slices[0].min_prb_ratio, 0.3f, "Updated min should be 0.3");
+  ASSERT_FLOAT_EQ(sch->input->slices[0].max_prb_ratio, 0.6f, "Updated max should be 0.6");
+  ASSERT_EQ(sch->input->slices[0].has_active_ues, false, "Updated has_active_ues should be false");
+  ASSERT_EQ(sch->input->slices[0].required_prbs, 20, "Updated required_prbs should be 20");
+  
+  // Verify statistics are preserved (not reset)
+  slice_statistics_t stats_after;
+  ASSERT_EQ(slice_sch_get_slice_statistics(sch, 1, 0, &stats_after), 0, "Should get stats for slice 1 after update");
+  ASSERT_EQ(stats_after.sample_count, sample_count_before, "Statistics sample count should be preserved");
+  ASSERT_FLOAT_EQ(stats_after.avg_num_prbs, avg_num_prbs_before, "Statistics average should be preserved");
+  
+  // Verify result is invalidated (need to reschedule)
+  int num_ranges = 0;
+  const slice_prb_range_t *ranges = slice_sch_get_allocation(sch, &num_ranges);
+  // Result should still be valid from previous schedule, but let's reschedule to get new allocation
+  ASSERT_EQ(slice_sch_schedule(sch), 0, "Reschedule should succeed after update");
+  ranges = slice_sch_get_allocation(sch, &num_ranges);
+  ASSERT_TRUE(ranges != NULL, "Allocation should be available after reschedule");
   
   printf("  Verification:\n");
-  printf("    ✓ Duplicate slice ID is rejected\n");
-  ASSERT_EQ(sch->input->num_slices, 1, "Should still have only 1 slice");
+  printf("    ✓ Slice parameters are updated when adding with same SST/SD\n");
+  printf("    ✓ Slice count remains the same (no duplicate added)\n");
+  printf("    ✓ Statistics are preserved during update\n");
+  printf("    ✓ Result is invalidated after update\n");
+  
+  slice_sch_destroy(sch);
+}
+
+/* Test OOP: Edge case - Update slice with different SD */
+static void test_oop_update_slice_with_different_sd(void) {
+  printf("  Purpose: Test that slices with same SST but different SD are treated separately\n");
+  printf("  Expected: Should add as new slice, not update\n\n");
+  
+  slice_scheduler_t *sch = slice_sch_create(100);
+  ASSERT_TRUE(sch != NULL, "Scheduler should be created");
+  
+  // Add slice with SST=1, SD=0
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0, 0.1f, 0.2f, 0.5f, true, 10), 0, "Should add slice (SST=1, SD=0)");
+  ASSERT_EQ(sch->input->num_slices, 1, "Should have 1 slice");
+  
+  // Add slice with SST=1, SD=1 (different SD, should be new slice)
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 1, 0.2f, 0.3f, 0.6f, true, 20), 0, "Should add new slice (SST=1, SD=1)");
+  ASSERT_EQ(sch->input->num_slices, 2, "Should have 2 slices (different SD)");
+  
+  // Update slice with SST=1, SD=0 (should update first slice)
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0, 0.15f, 0.25f, 0.55f, false, 15), 0, "Should update slice (SST=1, SD=0)");
+  ASSERT_EQ(sch->input->num_slices, 2, "Should still have 2 slices");
+  
+  // Verify first slice was updated
+  ASSERT_FLOAT_EQ(sch->input->slices[0].dedicated_prb_ratio, 0.15f, "First slice dedicated should be updated");
+  ASSERT_FLOAT_EQ(sch->input->slices[0].min_prb_ratio, 0.25f, "First slice min should be updated");
+  ASSERT_EQ(sch->input->slices[0].has_active_ues, false, "First slice has_active_ues should be updated");
+  
+  // Verify second slice was not affected
+  ASSERT_FLOAT_EQ(sch->input->slices[1].dedicated_prb_ratio, 0.2f, "Second slice dedicated should be unchanged");
+  ASSERT_FLOAT_EQ(sch->input->slices[1].min_prb_ratio, 0.3f, "Second slice min should be unchanged");
+  ASSERT_EQ(sch->input->slices[1].has_active_ues, true, "Second slice has_active_ues should be unchanged");
+  
+  printf("  Verification:\n");
+  printf("    ✓ Slices with same SST but different SD are treated separately\n");
+  printf("    ✓ Update only affects the slice with matching SST and SD\n");
   
   slice_sch_destroy(sch);
 }
@@ -2171,16 +2261,31 @@ static void test_oop_update_nonexistent_slice(void) {
 
 /* Test OOP: Edge case - Delete non-existent slice */
 static void test_oop_delete_nonexistent_slice(void) {
-  printf("  Purpose: Test deleting non-existent slice\n");
-  printf("  Expected: Should return error\n\n");
+  printf("  Purpose: Test deleting non-existent slice (idempotent behavior)\n");
+  printf("  Expected: Should return success (idempotent operation)\n\n");
   
   slice_scheduler_t *sch = slice_sch_create(100);
   ASSERT_TRUE(sch != NULL, "Scheduler should be created");
   
-  ASSERT_EQ(slice_sch_del_slice(sch, (uint8_t)999, 0), -1, "Should reject delete for non-existent slice");
+  // Delete non-existent slice - should succeed (idempotent)
+  ASSERT_EQ(slice_sch_del_slice(sch, (uint8_t)999, 0), 0, "Should succeed for non-existent slice (idempotent)");
+  ASSERT_EQ(sch->input->num_slices, 0, "Should still have 0 slices");
+  
+  // Add a slice and verify it exists
+  ASSERT_EQ(slice_sch_add_slice(sch, 1, 0, 0.1f, 0.2f, 0.5f, true, 0), 0, "Should add slice 1");
+  ASSERT_EQ(sch->input->num_slices, 1, "Should have 1 slice");
+  
+  // Delete it
+  ASSERT_EQ(slice_sch_del_slice(sch, 1, 0), 0, "Should delete slice 1");
+  ASSERT_EQ(sch->input->num_slices, 0, "Should have 0 slices after deletion");
+  
+  // Delete again - should still succeed (idempotent)
+  ASSERT_EQ(slice_sch_del_slice(sch, 1, 0), 0, "Should succeed deleting already-deleted slice (idempotent)");
+  ASSERT_EQ(sch->input->num_slices, 0, "Should still have 0 slices");
   
   printf("  Verification:\n");
-  printf("    ✓ Delete for non-existent slice is rejected\n");
+  printf("    ✓ Delete for non-existent slice returns success (idempotent)\n");
+  printf("    ✓ Multiple deletes of same slice are safe (idempotent)\n");
   
   slice_sch_destroy(sch);
 }
@@ -2454,7 +2559,7 @@ static void test_oop_statistics_after_schedule(void) {
   // Find slice 1 in ranges
   int slice1_start = -1, slice1_end = -1, slice1_num = -1;
   for (int i = 0; i < num_ranges; ++i) {
-    if (slice_id_eq_int(&ranges[i].slice_id, 1)) {
+    if (slice_nssai_eq_int(&ranges[i].slice_id, 1)) {
       slice1_start = ranges[i].start_prb;
       slice1_end = ranges[i].end_prb;
       slice1_num = ranges[i].num_prbs;
@@ -2995,8 +3100,8 @@ static void test_oop_crash_prevention_invalid_sequences(void) {
   slice_scheduler_t *sch = slice_sch_create(100);
   ASSERT_TRUE(sch != NULL, "Scheduler should be created");
   
-  // Sequence 1: Delete before add
-  ASSERT_EQ(slice_sch_del_slice(sch, (uint8_t)999, 0), -1, "Should fail to delete non-existent slice");
+  // Sequence 1: Delete before add (idempotent - should succeed)
+  ASSERT_EQ(slice_sch_del_slice(sch, (uint8_t)999, 0), 0, "Should succeed deleting non-existent slice (idempotent)");
   
   // Sequence 2: Update require before add
   ASSERT_EQ(slice_sch_update_require(sch, (uint8_t)999, 0, 50), -1, "Should fail to update non-existent slice");
@@ -3010,8 +3115,8 @@ static void test_oop_crash_prevention_invalid_sequences(void) {
   slice_statistics_t stats;
   ASSERT_EQ(slice_sch_get_slice_statistics(sch, 1, 0, &stats), -1, "Should fail to get stats for deleted slice");
   
-  // Sequence 4: Multiple deletes of same slice
-  ASSERT_EQ(slice_sch_del_slice(sch, 1, 0), -1, "Should fail to delete already deleted slice");
+  // Sequence 4: Multiple deletes of same slice (idempotent - should succeed)
+  ASSERT_EQ(slice_sch_del_slice(sch, 1, 0), 0, "Should succeed deleting already deleted slice (idempotent)");
   
   printf("  Verification:\n");
   printf("    ✓ Scheduler handles invalid operation sequences gracefully\n");
@@ -3116,7 +3221,8 @@ int main(void) {
   printf("\n=== OOP Edge Case Tests ===\n\n");
   TEST(oop_add_at_capacity_boundary);
   TEST(oop_delete_all_slices);
-  TEST(oop_duplicate_slice_id);
+  TEST(oop_update_existing_slice);
+  TEST(oop_update_slice_with_different_sd);
   TEST(oop_invalid_ratios);
   TEST(oop_invalid_require);
   TEST(oop_update_nonexistent_slice);
