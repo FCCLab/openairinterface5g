@@ -2487,8 +2487,24 @@ NR_UE_info_t *find_ra_UE(NR_UEs_t *UEs, rnti_t rntiP)
 
 void delete_nr_ue_data(NR_UE_info_t *UE, NR_COMMON_channels_t *ccPtr, uid_allocator_t *uia)
 {
+  // Free reconfigSpCellConfig first if it exists and is not the same as CellGroup->spCellConfig
+  // During reconfiguration, reconfigSpCellConfig temporarily owns spCellConfig while
+  // CellGroup->spCellConfig is NULL. After reconfiguration completes, reconfigSpCellConfig
+  // is set to NULL. We need to avoid double-free if they point to the same memory.
+  if (UE->reconfigSpCellConfig != NULL) {
+    // Check if CellGroup->spCellConfig also points to the same memory
+    if (UE->CellGroup != NULL && UE->CellGroup->spCellConfig != NULL &&
+        UE->CellGroup->spCellConfig == UE->reconfigSpCellConfig) {
+      // They point to the same memory, CellGroup will free it, so just clear the pointer
+      UE->reconfigSpCellConfig = NULL;
+    } else {
+      // reconfigSpCellConfig owns the memory, free it separately
+      ASN_STRUCT_FREE(asn_DEF_NR_SpCellConfig, UE->reconfigSpCellConfig);
+      UE->reconfigSpCellConfig = NULL;
+    }
+  }
+  
   ASN_STRUCT_FREE(asn_DEF_NR_CellGroupConfig, UE->CellGroup);
-  ASN_STRUCT_FREE(asn_DEF_NR_SpCellConfig, UE->reconfigSpCellConfig);
   ASN_STRUCT_FREE(asn_DEF_NR_UE_NR_Capability, UE->capability);
   NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
   seq_arr_free(&sched_ctrl->lc_config, NULL);

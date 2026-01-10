@@ -1197,22 +1197,76 @@ static void pf_dl_slice(gNB_MAC_INST *mac,
     uint16_t *rballoc_mask = mac->common_channels[CC_id].vrb_map[beam.idx];
     bwp_info_t bwp_info = get_pdsch_bwp_start_size(mac, iterator->UE);
     
-    int rbStart = prb_range->start_prb; // WRT BWP start
-    int rbStop = prb_range->end_prb;
-    
     int bwp_start = bwp_info.bwpStart;
+    int bwp_size = bwp_info.bwpSize;
+    int bwp_end = bwp_start + bwp_size;
     
-    // Freq-demain allocation
+    // Convert absolute PRB coordinates (relative to carrier Point A) to BWP-relative coordinates
+    // Slice range: [prb_range->start_prb, prb_range->end_prb) in absolute coordinates
+    // BWP range: [bwp_start, bwp_start + bwp_size) in absolute coordinates
+    // If slice range is completely inside BWP, use slice range; otherwise use whole BWP
+    
+    int slice_start_abs = prb_range->start_prb;
+    int slice_end_abs = prb_range->end_prb;
+    int rbStart, rbStop;
+    
+    // Check if slice range is completely inside BWP
+    bool slice_inside_bwp = (slice_start_abs >= bwp_start && slice_end_abs <= bwp_end);
+    
+    if (slice_inside_bwp) {
+      // Slice range is completely inside BWP - use slice range
+      // Convert to BWP-relative coordinates
+      rbStart = slice_start_abs - bwp_start; // WRT BWP start
+      rbStop = slice_end_abs - bwp_start;   // WRT BWP start
+      LOG_D(NR_MAC, "[UE %04x][%4d.%2d] Using slice range [%d, %d) (BWP-relative: [%d, %d)) within BWP [%d, %d)\n",
+            rnti, frame, slot, slice_start_abs, slice_end_abs, rbStart, rbStop, bwp_start, bwp_end);
+    } else {
+      // Slice range is not completely inside BWP - use whole BWP
+      rbStart = 0;
+      rbStop = bwp_size;
+      LOG_D(NR_MAC, "[UE %04x][%4d.%2d] Slice range [%d, %d) not completely inside BWP [%d, %d), using whole BWP [0, %d)\n",
+            rnti, frame, slot, slice_start_abs, slice_end_abs, bwp_start, bwp_end, bwp_size);
+    }
+    
+    // Ensure rbStart and rbStop are within valid BWP bounds [0, bwp_size)
+    if (rbStart < 0) rbStart = 0;
+    if (rbStop > bwp_size) rbStop = bwp_size;
+    if (rbStart >= rbStop) {
+      LOG_D(NR_MAC, "[UE %04x][%4d.%2d] Invalid BWP-relative range [%d, %d) for BWP size %d\n",
+            rnti, frame, slot, rbStart, rbStop, bwp_size);
+      reset_beam_status(&mac->beam_info, frame, slot, iterator->UE->UE_beam_index, slots_per_frame, beam.new_beam);
+      iterator++;
+      continue;
+    }
+    
+    // Freq-domain allocation
     while (rbStart < rbStop && (rballoc_mask[rbStart + bwp_start] & slbitmap))
       rbStart++;
 
+    // Calculate maximum available RBs: rbStop is exclusive, so max is rbStop - rbStart
+    int available_rbs = rbStop - rbStart;
+    if (available_rbs < min_rbSize) {
+      LOG_D(NR_MAC, "[UE %04x][%4d.%2d] Not enough available RBs: %d < %d (rbStart: %d, rbStop: %d)\n",
+            rnti, frame, slot, available_rbs, min_rbSize, rbStart, rbStop);
+      reset_beam_status(&mac->beam_info, frame, slot, iterator->UE->UE_beam_index, slots_per_frame, beam.new_beam);
+      iterator++;
+      continue;
+    }
+
     uint16_t max_rbSize = 1;
 
-    while (rbStart + max_rbSize <= rbStop && !(rballoc_mask[rbStart + max_rbSize + bwp_start] & slbitmap))
+    // Find consecutive free PRBs starting from rbStart
+    // Use < instead of <= because rbStop is exclusive (the last valid RB is rbStop - 1)
+    while (rbStart + max_rbSize < rbStop && !(rballoc_mask[rbStart + max_rbSize + bwp_start] & slbitmap))
       max_rbSize++;
+    
+    // Final clamp to ensure we never exceed available_rbs
+    if (max_rbSize > available_rbs) {
+      max_rbSize = available_rbs;
+    }
 
     if (max_rbSize < min_rbSize) {
-      LOG_I(NR_MAC,
+      LOG_D(NR_MAC,
             "(%d.%d) Cannot schedule RNTI %04x, rbStart %d, rbSize %d, rbStop %d\n",
             frame,
             slot,
@@ -1295,6 +1349,41 @@ static void pf_dl_slice(gNB_MAC_INST *mac,
                   &sched_pdsch.tb_size,
                   &sched_pdsch.rbSize);
 
+    // Safety check: ensure rbStart + rbSize doesn't exceed BWP bounds
+    // This prevents assertion failure in PRBalloc_to_locationandbandwidth0
+    // Note: available_rbs was already calculated above, reuse it here
+    if (sched_pdsch.rbSize > available_rbs) {
+      LOG_W(NR_MAC, "[UE %04x][%4d.%2d] Clamping rbSize from %d to %d (available: %d, rbStart: %d, rbStop: %d, BWP size: %d)\n",
+            rnti, frame, slot, sched_pdsch.rbSize, available_rbs, available_rbs, rbStart, rbStop, bwp_size);
+      sched_pdsch.rbSize = available_rbs;
+      // Recalculate TBS with clamped rbSize
+      if (sched_pdsch.rbSize >= min_rbSize) {
+        sched_pdsch.tb_size = nr_compute_tbs(sched_pdsch.Qm,
+                                             sched_pdsch.R,
+                                             sched_pdsch.rbSize,
+                                             tda_info.nrOfSymbols,
+                                             sched_pdsch.dmrs_parms.N_PRB_DMRS * sched_pdsch.dmrs_parms.N_DMRS_SLOT,
+                                             0, // N_PRB_oh, 0 for initialBWP
+                                             0, // tb_scaling
+                                             sched_pdsch.nrOfLayers) >> 3;
+      } else {
+        LOG_D(NR_MAC, "[UE %04x][%4d.%2d] Clamped rbSize %d is less than min_rbSize %d, skipping UE\n",
+              rnti, frame, slot, sched_pdsch.rbSize, min_rbSize);
+        reset_beam_status(&mac->beam_info, frame, slot, iterator->UE->UE_beam_index, slots_per_frame, beam.new_beam);
+        iterator++;
+        continue;
+      }
+    }
+
+    // Final validation: ensure rbStart + rbSize <= bwp_size
+    if (sched_pdsch.rbStart + sched_pdsch.rbSize > bwp_size) {
+      LOG_E(NR_MAC, "[UE %04x][%4d.%2d] Invalid allocation: rbStart %d + rbSize %d = %d > BWP size %d\n",
+            rnti, frame, slot, sched_pdsch.rbStart, sched_pdsch.rbSize, 
+            sched_pdsch.rbStart + sched_pdsch.rbSize, bwp_size);
+      reset_beam_status(&mac->beam_info, frame, slot, iterator->UE->UE_beam_index, slots_per_frame, beam.new_beam);
+      iterator++;
+      continue;
+    }
 
     post_process_dlsch(mac, pp_pdsch, iterator->UE, &sched_pdsch);
 
@@ -1372,7 +1461,6 @@ static void pf_dl_slice(gNB_MAC_INST *mac,
   int n_rb_sched[num_beams])
 {
   frame_t frame = pp_pdsch->frame;
-  slot_t slot = pp_pdsch->slot;
   
   int UEs_in_this_beam_count = 0;
   NR_UE_info_t **UEs_in_this_beam = calloc(MAX_MOBILES_PER_GNB + 1, sizeof(NR_UE_info_t *));
@@ -1412,6 +1500,9 @@ static void pf_dl_slice(gNB_MAC_INST *mac,
       }
       // Iterate through UEs in this beam structure index
       UE_iterator(UEs_in_this_beam, UE) {
+
+        int accumulated_prbs = 0;
+
         // Iterate all logical channel configs (lcid) for this UE, including SRB/DRB
         NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
         for (int l = 0; l < seq_arr_size(&sched_ctrl->lc_config); ++l) {
@@ -1429,13 +1520,25 @@ static void pf_dl_slice(gNB_MAC_INST *mac,
             
             // Accumulate bytes for this slice to calculate required PRBs
             if (sched_ctrl->rlc_status[lcid].bytes_in_buffer > 0) {
-              // Estimate bytes per PRB: conservative estimate based on QPSK modulation
-              // Calculation: 1 REG = 12 subcarriers × 14 OFDM symbols = 168 resource elements
-              // With QPSK (2 bits per RE): 168 RE × 2 bits = 336 bits = 42 bytes per REG
-              // This is a conservative estimate assuming lower MCS; actual capacity may be higher
-              const int bytes_per_prb_estimate = 42;
+              // Estimate bytes per PRB: conservative estimate based on MCS 0 (QPSK with code rate 120/1024)
+              // Calculation: 1 PRB = 12 subcarriers × 14 OFDM symbols = 168 resource elements
+              // Accounting for DMRS overhead (~12 REs): ~156 data REs per PRB
+              // MCS 0: Qm = 2 (QPSK), code rate R = 120/1024 ≈ 0.117
+              // Effective bits per RE = Qm × R = 2 × 0.117 = 0.234 bits
+              // For 156 data REs: 156 × 0.234 ≈ 36.5 bits ≈ 4.5 bytes per PRB
+              // Using conservative estimate of 4 bytes per PRB to account for additional overhead
+              const int bytes_per_prb_estimate = 4 - 1;
               int prbs_needed = (sched_ctrl->rlc_status[lcid].bytes_in_buffer + bytes_per_prb_estimate - 1) / bytes_per_prb_estimate;
-              required_prbs += prbs_needed;
+              
+              // In there is DRB (eq_arr_size(&sched_ctrl->lc_config) > 3) and this is SRB (lc->lcid < 3), accumulate PRBs for SRB
+              if (seq_arr_size(&sched_ctrl->lc_config) >= 3 && lc->lcid < 3) {
+                accumulated_prbs += prbs_needed;
+              }
+              else {
+                // For DRB, add accumulated PRBs for SRB and the required PRBs for this DRB
+                required_prbs += accumulated_prbs + prbs_needed;
+                accumulated_prbs = 0;
+              }
             }
           }
         }
@@ -1489,7 +1592,7 @@ static void pf_dl_slice(gNB_MAC_INST *mac,
       UE_iterator(UEs_in_this_beam, UE) {
         for (int l = 0; l < seq_arr_size(&UE->UE_sched_ctrl.lc_config); ++l) {
           const nr_lc_config_t *lc = seq_arr_at(&UE->UE_sched_ctrl.lc_config, l);
-          if (lc->lcid < 3 && seq_arr_size(&UE->UE_sched_ctrl.lc_config) > 3) {
+          if (lc->lcid < 3 && seq_arr_size(&UE->UE_sched_ctrl.lc_config) >= 3) {
             continue;
           }
           // LOG_I(NR_MAC, "LC ID %d SST 0x%02x SD 0x%06x\n", lc->lcid, lc->nssai.sst, lc->nssai.sd);
