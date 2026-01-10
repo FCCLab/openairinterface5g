@@ -1461,7 +1461,8 @@ static void pf_dl_slice(gNB_MAC_INST *mac,
   int n_rb_sched[num_beams])
 {
   frame_t frame = pp_pdsch->frame;
-  
+  slot_t slot = pp_pdsch->slot;
+
   int UEs_in_this_beam_count = 0;
   NR_UE_info_t **UEs_in_this_beam = calloc(MAX_MOBILES_PER_GNB + 1, sizeof(NR_UE_info_t *));
 
@@ -1477,7 +1478,7 @@ static void pf_dl_slice(gNB_MAC_INST *mac,
         UEs_in_this_beam[UEs_in_this_beam_count] = UE;
         UEs_in_this_beam_count++;
       }
-      if (UEs_in_this_beam_count >= max_num_ue || UEs_in_this_beam_count >= MAX_MOBILES_PER_GNB) {
+      if (UEs_in_this_beam_count >= MAX_MOBILES_PER_GNB) {
         break;
       }
     }
@@ -1527,7 +1528,7 @@ static void pf_dl_slice(gNB_MAC_INST *mac,
               // Effective bits per RE = Qm × R = 2 × 0.117 = 0.234 bits
               // For 156 data REs: 156 × 0.234 ≈ 36.5 bits ≈ 4.5 bytes per PRB
               // Using conservative estimate of 4 bytes per PRB to account for additional overhead
-              const int bytes_per_prb_estimate = 4 - 1;
+              const int bytes_per_prb_estimate = 4 - 2;
               int prbs_needed = (sched_ctrl->rlc_status[lcid].bytes_in_buffer + bytes_per_prb_estimate - 1) / bytes_per_prb_estimate;
               
               // In there is DRB (eq_arr_size(&sched_ctrl->lc_config) > 3) and this is SRB (lc->lcid < 3), accumulate PRBs for SRB
@@ -1548,14 +1549,14 @@ static void pf_dl_slice(gNB_MAC_INST *mac,
         required_prbs = total_prbs;
       }      
 
-      // if (required_prbs > 0) {
-      //   // Get slice configuration to log ratios
-      //   float dedicated = 0.0f, min = 0.0f, max = 0.0f;
-      //   slice_sch_get_slice_config(slice_scheduler, slice_nssai->sst, slice_nssai->sd,
-      //                              NULL, NULL, &dedicated, &min, &max);
-      //   LOG_I(NR_MAC, "Frame %d slot %d: Slice SST 0x%02x SD 0x%06x: Required PRBs %d, Config: dedicated=%.3f min=%.3f max=%.3f\n",
-      //         frame, slot, slice_nssai->sst, slice_nssai->sd, required_prbs, dedicated, min, max);
-      // }
+      if (required_prbs > 0) {
+        // Get slice configuration to log ratios
+        float dedicated = 0.0f, min = 0.0f, max = 0.0f;
+        slice_sch_get_slice_config(slice_scheduler, slice_nssai->sst, slice_nssai->sd,
+                                   NULL, NULL, &dedicated, &min, &max);
+        LOG_D(NR_MAC, "Frame %d slot %d: Slice SST 0x%02x SD 0x%06x: --- Required PRBs %d, Config: dedicated=%.3f min=%.3f max=%.3f\n",
+              frame, slot, slice_nssai->sst, slice_nssai->sd, required_prbs, dedicated, min, max);
+      }
       slice_sch_update_require(slice_scheduler, slice_nssai->sst, slice_nssai->sd, required_prbs);
     }
 
