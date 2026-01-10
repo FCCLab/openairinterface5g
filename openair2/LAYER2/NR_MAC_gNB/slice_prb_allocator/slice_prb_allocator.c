@@ -869,37 +869,30 @@ int slice_sch_schedule(slice_scheduler_t *obj) {
   for (int s = 0; s < obj->input->num_slices; ++s) {
     slice_statistics_t *stats = &obj->statistics[s];
     
-    // Check if this slice got an allocation (ranges array is indexed by slice index)
-    if (obj->result->ranges[s].num_prbs > 0) {
-      // Update latest values
-      stats->latest_start_prb = obj->result->ranges[s].start_prb;
-      stats->latest_end_prb = obj->result->ranges[s].end_prb;
-      stats->latest_num_prbs = obj->result->ranges[s].num_prbs;
-      
-      // Update moving averages using exponential moving average (EMA)
-      if (stats->sample_count == 0) {
-        // First sample: initialize averages
-        stats->avg_start_prb = (float)stats->latest_start_prb;
-        stats->avg_end_prb = (float)stats->latest_end_prb;
-        stats->avg_num_prbs = (float)stats->latest_num_prbs;
-      } else {
-        // Update EMA: new_avg = alpha * new_value + (1 - alpha) * old_avg
-        stats->avg_start_prb = STATS_EMA_ALPHA * (float)stats->latest_start_prb + 
-                               (1.0f - STATS_EMA_ALPHA) * stats->avg_start_prb;
-        stats->avg_end_prb = STATS_EMA_ALPHA * (float)stats->latest_end_prb + 
-                             (1.0f - STATS_EMA_ALPHA) * stats->avg_end_prb;
-        stats->avg_num_prbs = STATS_EMA_ALPHA * (float)stats->latest_num_prbs + 
-                              (1.0f - STATS_EMA_ALPHA) * stats->avg_num_prbs;
-      }
-      stats->sample_count++;
+    // Always update latest values (whether allocation is 0 or not)
+    stats->latest_start_prb = obj->result->ranges[s].start_prb;
+    stats->latest_end_prb = obj->result->ranges[s].end_prb;
+    stats->latest_num_prbs = obj->result->ranges[s].num_prbs;
+    
+    // Always update moving averages using exponential moving average (EMA)
+    // This includes cases where the slice gets 0 PRBs, so the average reflects
+    // the true average allocation over all scheduling decisions
+    if (stats->sample_count == 0) {
+      // First sample: initialize averages
+      stats->avg_start_prb = (float)stats->latest_start_prb;
+      stats->avg_end_prb = (float)stats->latest_end_prb;
+      stats->avg_num_prbs = (float)stats->latest_num_prbs;
     } else {
-      // Slice didn't get allocation - update latest to 0
-      // Don't increment sample_count for slices without allocation
-      stats->latest_start_prb = 0;
-      stats->latest_end_prb = 0;
-      stats->latest_num_prbs = 0;
-      // Don't update averages for slices without allocation
+      // Update EMA: new_avg = alpha * new_value + (1 - alpha) * old_avg
+      stats->avg_start_prb = STATS_EMA_ALPHA * (float)stats->latest_start_prb + 
+                             (1.0f - STATS_EMA_ALPHA) * stats->avg_start_prb;
+      stats->avg_end_prb = STATS_EMA_ALPHA * (float)stats->latest_end_prb + 
+                           (1.0f - STATS_EMA_ALPHA) * stats->avg_end_prb;
+      stats->avg_num_prbs = STATS_EMA_ALPHA * (float)stats->latest_num_prbs + 
+                            (1.0f - STATS_EMA_ALPHA) * stats->avg_num_prbs;
     }
+    // Always increment sample_count to track all scheduling decisions
+    stats->sample_count++;
   }
   
   obj->result_valid = true;

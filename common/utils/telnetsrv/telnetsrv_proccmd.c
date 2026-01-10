@@ -523,8 +523,10 @@ int proccmd_show(char *buf, int debug, telnet_printfunc_t prnt)
                       const uint32_t sd = c->nssai.sd;
                       const int lcid = c->lcid;
                         
-                      prnt("  UE %04x: LCID %2d | SST: %d | SD: 0x%06x | Buffer: %-10d bytes\n",
+                      prnt("  UE %04x: Index %d/%d LCID %2d | SST: %d | SD: 0x%06x | Buffer: %-10d bytes\n",
                            UE->rnti,
+                           i,
+                           seq_arr_size(&sched_ctrl->lc_config),
                            lcid,
                            sst,
                            sd,
