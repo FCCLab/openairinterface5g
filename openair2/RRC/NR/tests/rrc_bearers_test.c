@@ -153,6 +153,18 @@ static void test_rrc_qos(void)
   AssertFatal(found && found == added, "find_qos failed");
   LOG_A(NR_RRC, "QoS flow find test passed\n");
 
+  const int qfi2 = 5;
+  const pdusession_level_qos_parameter_t param2 = { .fiveQI = 8, .fiveQI_type = NON_DYNAMIC, .qfi = qfi2 };
+  LOG_A(NR_RRC, "Adding second QoS flow with QFI %d\n", qfi2);
+  nr_rrc_qos_t *added2 = add_qos(&in.qos, &param2);
+  AssertFatal(added2, "add_qos failed for second flow");
+  LOG_A(NR_RRC, "Second QoS flow added successfully\n");
+
+  nr_rrc_qos_t *found2 = find_qos(&in.qos, qfi2);
+  AssertFatal(found2 && found2 == added2, "find_qos failed for second flow");
+  AssertFatal(seq_arr_size(&in.qos) == 2, "Incorrect number of QoS flows");
+  LOG_A(NR_RRC, "Multiple QoS flows test passed\n");
+
   seq_arr_free(&pduSessions, free_pdusession);
 }
 

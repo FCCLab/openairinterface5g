@@ -200,10 +200,16 @@ static void cp_pdusession_transfer_to_pdusession(pdusession_t *dst, const pduses
   // Initialise mapped QoS list per PDU Session
   seq_arr_init(&dst->qos, sizeof(nr_rrc_qos_t));
   // Add QoS flow to list
+  // OAI gNB only supports 1 QoS flow per PDU session
+  // If AMF sends multiple QoS flows, only accept the first one
   for (uint8_t i = 0; i < src->nb_qos; ++i) {
-    if (!add_qos(&dst->qos, &src->qos[i])) {
-      LOG_E(NR_RRC, "Failed to add QoS flow %d for PDU session %d\n", src->qos[i].qfi, dst->pdusession_id);
-      continue;
+    if (i == 0) {
+      if (!add_qos(&dst->qos, &src->qos[i])) {
+        LOG_E(NR_RRC, "Failed to add QoS flow %d for PDU session %d\n", src->qos[i].qfi, dst->pdusession_id);
+        continue;
+      }
+    } else {
+      LOG_W(NR_RRC, "Skipping QoS flow %d (qfi=%d): OAI gNB only supports 1 QoS flow per PDU session\n", i, src->qos[i].qfi);
     }
   }
 }
@@ -407,9 +413,10 @@ bool trigger_bearer_setup(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE, int n, pdusession
         LOG_E(NR_RRC, "UE %d: failed to add DRB for PDU session ID %d\n", UE->rrc_ue_id, session->pdusession_id);
         return false;
       }
-      DevAssert(seq_arr_size(&pduSession->param.qos) == 1);
-      nr_rrc_qos_t *qos = (nr_rrc_qos_t *)seq_arr_at(&pduSession->param.qos, 0);
-      qos->drb_id = rrc_drb->drb_id; // map DRB to QFI
+      // map DRB to all QFIs
+      FOR_EACH_SEQ_ARR(nr_rrc_qos_t *, qos, &pduSession->param.qos) {
+        qos->drb_id = rrc_drb->drb_id;
+      }
       LOG_I(NR_RRC, "UE %d: added DRB %d for PDU session ID %d\n", UE->rrc_ue_id, rrc_drb->drb_id, rrc_drb->pdusession_id);
       pdu->DRBnGRanList[0] = fill_e1_drb_to_setup(rrc_drb, session, rrc->configuration.um_on_default_drb, UE->redcap_cap);
     }

@@ -60,7 +60,7 @@ nr_rrc_qos_t *add_qos(seq_arr_t *qos, const pdusession_level_qos_parameter_t *in
   DevAssert(qos);
   DevAssert(in);
 
-  if (seq_arr_size(qos) == MAX_QOS_FLOWS) {
+  if (seq_arr_size(qos) >= MAX_QOS_FLOWS) {
     LOG_W(NR_RRC, "Reached maximum number of QoS flows = %ld\n", seq_arr_size(qos));
     return NULL;
   }
@@ -74,7 +74,7 @@ nr_rrc_qos_t *add_qos(seq_arr_t *qos, const pdusession_level_qos_parameter_t *in
   LOG_I(NR_RRC, "Added QoS flow with qfi=%d, total number of QoS flows = %ld\n", in->qfi, seq_arr_size(qos));
 
   // Only one QoS flow is supported
-  AssertFatal(seq_arr_size(qos) == 1, "only 1 Qos flow supported\n");
+  // AssertFatal(seq_arr_size(qos) == 1, "only 1 Qos flow supported\n");
 
   return added;
 }
