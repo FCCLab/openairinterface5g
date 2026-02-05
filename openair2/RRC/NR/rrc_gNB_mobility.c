@@ -110,17 +110,19 @@ static int fill_drb_to_be_setup(const gNB_RRC_INST *rrc, gNB_RRC_UE_t *ue, f1ap_
 
     drb->qos_choice = F1AP_QOS_CHOICE_NR;
     drb->nr.nssai = pdu->param.nssai;
-    drb->nr.flows_len = 1;
-    drb->nr.flows = calloc_or_fail(1, sizeof(*drb->nr.flows));
+    int nb_flows = seq_arr_size(&pdu->param.qos);
+    DevAssert(nb_flows > 0 && nb_flows <= MAX_QOS_FLOWS);
+    drb->nr.flows_len = nb_flows;
+    drb->nr.flows = calloc_or_fail(nb_flows, sizeof(*drb->nr.flows));
 
-    // Find the QoS flow associated with this DRB
-    // Since we don't have QFI mapping in the new structure, we'll use the first QoS flow
-    AssertFatal(seq_arr_size(&pdu->param.qos) == 1, "only 1 Qos flow supported\n");
-    nr_rrc_qos_t *qos_param = (nr_rrc_qos_t *)seq_arr_at(&pdu->param.qos, 0);
-    DevAssert(qos_param->qos.qfi > 0);
-    drb->nr.flows[0].qfi = qos_param->qos.qfi;
-    drb->nr.flows[0].param = get_qos_char_from_qos_flow_param(&qos_param->qos);
-    /* the DRB QoS parameters: we just reuse the ones from the first flow */
+    // Map all QoS flows associated with this DRB
+    for (int q = 0; q < nb_flows; q++) {
+      nr_rrc_qos_t *qos_param = (nr_rrc_qos_t *)seq_arr_at(&pdu->param.qos, q);
+      DevAssert(qos_param->qos.qfi > 0);
+      drb->nr.flows[q].qfi = qos_param->qos.qfi;
+      drb->nr.flows[q].param = get_qos_char_from_qos_flow_param(&qos_param->qos);
+    }
+    /* the DRB QoS parameters: use the first flow's params */
     drb->nr.drb_qos = drb->nr.flows[0].param;
 
     memcpy(&drb->up_ul_tnl[0].tl_address, &rrc_drb->cuup_tunnel_config.addr.buffer, sizeof(uint8_t) * 4);

@@ -197,19 +197,14 @@ static void cp_pdusession_transfer_to_pdusession(pdusession_t *dst, const pduses
   /* QoS handling */
   DevAssert(!dst->qos.data);
   DevAssert(src->nb_qos < MAX_QOS_FLOWS);
+  DevAssert(src->nb_qos > 0);
   // Initialise mapped QoS list per PDU Session
   seq_arr_init(&dst->qos, sizeof(nr_rrc_qos_t));
-  // Add QoS flow to list
-  // OAI gNB only supports 1 QoS flow per PDU session
-  // If AMF sends multiple QoS flows, only accept the first one
+  // Add all QoS flows from the transfer (supports multiple QFIs per PDU session)
   for (uint8_t i = 0; i < src->nb_qos; ++i) {
-    if (i == 0) {
-      if (!add_qos(&dst->qos, &src->qos[i])) {
-        LOG_E(NR_RRC, "Failed to add QoS flow %d for PDU session %d\n", src->qos[i].qfi, dst->pdusession_id);
-        continue;
-      }
-    } else {
-      LOG_W(NR_RRC, "Skipping QoS flow %d (qfi=%d): OAI gNB only supports 1 QoS flow per PDU session\n", i, src->qos[i].qfi);
+    if (!add_qos(&dst->qos, &src->qos[i])) {
+      LOG_E(NR_RRC, "Failed to add QoS flow %d (qfi=%d) for PDU session %d\n", i, src->qos[i].qfi, dst->pdusession_id);
+      continue;
     }
   }
 }
@@ -890,8 +885,7 @@ void rrc_gNB_process_NGAP_PDUSESSION_SETUP_REQ(MessageDef *msg_p, instance_t ins
 /** @brief Update existing QoS Flow mapped in the UE context */
 static void nr_rrc_update_qos(seq_arr_t *list, const int nb_qos, const pdusession_level_qos_parameter_t *in_qos)
 {
-  DevAssert(nb_qos == 1);
-  DevAssert(nb_qos < MAX_QOS_FLOWS);
+  DevAssert(nb_qos > 0 && nb_qos < MAX_QOS_FLOWS);
   for (uint8_t i = 0; i < nb_qos; ++i) {
     nr_rrc_qos_t *qos = find_qos(list, in_qos[i].qfi);
     if (qos) {

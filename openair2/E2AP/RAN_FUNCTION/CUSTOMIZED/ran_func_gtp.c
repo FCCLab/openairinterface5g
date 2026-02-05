@@ -66,8 +66,8 @@ bool read_gtp_sm(void * data)
     FOR_EACH_SEQ_ARR(rrc_pdu_session_param_t*, session, &ue_context_p->ue_context.pduSessions) {
       gtp->msg.ngut[i].teidgnb = session->param.n3_outgoing.teid;
       gtp->msg.ngut[i].teidupf = session->param.n3_incoming.teid;
-      // TODO: one PDU session has multiple QoS Flow
-      DevAssert(seq_arr_size(&session->param.qos) == 1);
+      // Use first QoS flow for E2 report (PDU session may have multiple QoS flows)
+      DevAssert(seq_arr_size(&session->param.qos) > 0);
       FOR_EACH_SEQ_ARR(nr_rrc_qos_t *, qos, &session->param.qos) {
         gtp->msg.ngut[i].qfi = qos->qos.qfi;
       }
