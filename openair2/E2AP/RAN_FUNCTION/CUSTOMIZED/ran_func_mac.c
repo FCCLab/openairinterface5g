@@ -93,6 +93,14 @@ bool read_mac_sm(void* data)
     rd->ul_mcs2 = 0;
     rd->phr = sched_ctrl->ph;
 
+    const NR_mac_stats_t *mac_stats = &UE->mac_stats;
+    rd->rsrp = mac_stats->num_rsrp_meas > 0
+               ? mac_stats->cumul_rsrp / (int)mac_stats->num_rsrp_meas
+               : -999;
+    rd->sinr = mac_stats->num_sinr_meas > 0
+               ? (float)mac_stats->cumul_sinrx10 / (float)mac_stats->num_sinr_meas / 10.0f
+               : -999.0f;
+
     const uint32_t bufferSize = sched_ctrl->estimated_ul_buffer - sched_ctrl->sched_ul_bytes;
     rd->bsr = bufferSize;
 
