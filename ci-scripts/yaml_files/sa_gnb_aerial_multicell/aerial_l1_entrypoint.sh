@@ -1,5 +1,4 @@
 #!/bin/bash
-# SPDX-License-Identifier: MIT
 
 # Check if cuBB_SDK is defined, if not, use default path
 cuBB_Path="${cuBB_SDK:-/opt/nvidia/cuBB}"
@@ -37,6 +36,7 @@ if [ $# -eq 0 ]; then
 		;;
 	"Supermicro-G1SMH-G")
 		argument="P5G_WNC_GH"
+		#argument="P5G_FXN_GH"
 		;;
 	*)
 		echo "Unrecognized server: $serverVendorAndModel"
@@ -50,9 +50,9 @@ fi
 configFile=${cuBB_SDK}/cuPHY-CP/cuphycontroller/config/cuphycontroller_${argument}.yaml  
 
 #Change this to the MAC address of the ORU
-sudo -E sed -i "s/ dst_mac_addr:.*/ dst_mac_addr: e8:c7:cf:ac:58:32/" ${configFile}
+#sudo -E sed -i "s/ dst_mac_addr:.*/ dst_mac_addr: e8:c7:cf:ac:58:32/" ${configFile}
 if [[ $argument == "P5G_FXN_GH" ]]; then
-	sudo -E sed -i "s/ dst_mac_addr:.*/ dst_mac_addr: 6c:ad:ad:00:0a:70/" ${configFile}
+	sudo -E sed -i "s/ dst_mac_addr:.*/ dst_mac_addr: 6c:ad:ad:00:04:6c/" ${configFile}
 	sudo -E sed -i "s/ vlan:.*/ vlan: 2/" ${configFile}
 fi
 # Uncomment for below config. Because aerial is mounted as a volume the $configFile needs to be reverted.
