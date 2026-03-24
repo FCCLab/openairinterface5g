@@ -19,15 +19,15 @@ services:
       - /lib/modules:/lib/modules
       - /dev/hugepages:/dev/hugepages
       - /usr/src:/usr/src
-      - ./aerial_l1_entrypoint.sh:/opt/nvidia/cuBB/aerial_l1_entrypoint.sh
       - /var/log/aerial:/var/log/aerial
       - ../../../cmake_targets/share:/opt/cuBB/share
     userns_mode: host
     ipc: "shareable"
-    image: nvcr.io/nvidia/aerial/aerial-cuda-accelerated-ran:25-3-cubb
+    image: ${REGISTRY-nvcr.io/nvidia/aerial/}${L1_IMG:-aerial-cuda-accelerated-ran}:${TAG:-26-1-cubb}
     environment:
       - cuBB_SDK=/opt/nvidia/cuBB
-    command: bash -c "sudo rm -rf /tmp/phy.log && sudo chmod +x /opt/nvidia/cuBB/aerial_l1_entrypoint.sh && /opt/nvidia/cuBB/aerial_l1_entrypoint.sh"
+      - AERIAL_LOG_PATH=/var/log/aerial
+    command: bash -c "sudo rm -rf /tmp/phy.log && /opt/nvidia/cuBB/run_l1.sh"
     healthcheck:
       test: ["CMD-SHELL",'grep -q "L1 is ready!" /tmp/phy.log && echo 0 || echo 1']
       interval: 20s
