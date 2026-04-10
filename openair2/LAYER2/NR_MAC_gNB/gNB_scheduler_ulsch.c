@@ -146,12 +146,12 @@ bwp_info_t get_pusch_bwp_start_size(NR_UE_info_t *UE)
   return bwp_info;
 }
 
-float compute_ph_rb_factor(int mu, int rb)
+static float compute_ph_rb_factor(int mu, int rb)
 {
   return roundf(10 * log10(rb << mu));
 }
 
-float compute_ph_mcs_factor(const NR_sched_pusch_t *pusch)
+static float compute_ph_mcs_factor(const NR_sched_pusch_t *pusch)
 {
   // 38.213 7.1.1
   // if the PUSCH transmission is over more than one layer delta_tf = 0
@@ -226,6 +226,45 @@ static int estimate_ul_buffer_long_bsr(const NR_BSR_LONG *bsr)
   return estim_size;
 }
 
+static void handle_single_entry_phr(const NR_UE_UL_BWP_t *ul_bwp,
+                                    NR_UE_sched_ctrl_t *sched_ctrl,
+                                    int harq_pid,
+                                    const NR_SINGLE_ENTRY_PHR_MAC_CE *phr)
+{
+  if (harq_pid < 0) {
+    LOG_E(NR_MAC, "Invalid HARQ PID %d\n", harq_pid);
+    return;
+  }
+  NR_sched_pusch_t *sched_pusch = &sched_ctrl->ul_harq_processes[harq_pid].sched_pusch;
+
+  /* Save the phr info */
+  int PH;
+  const int PCMAX = phr->PCMAX;
+  /* 38.133 Table10.1.17.1-1 */
+  if (phr->PH < 55) {
+    PH = phr->PH - 32;
+  } else if (phr->PH < 63) {
+    PH = 24 + (phr->PH - 55) * 2;
+  } else {
+    PH = 38;
+  }
+  // in sched_ctrl we set normalized PH wrt MCS and PRBs
+  sched_ctrl->ph = PH + compute_ph_rb_factor(ul_bwp->scs, sched_pusch->rbSize);
+  bool hasDeltaMCS = ul_bwp->pusch_Config && ul_bwp->pusch_Config->pusch_PowerControl->deltaMCS;
+  if (hasDeltaMCS)
+    sched_ctrl->ph += compute_ph_mcs_factor(sched_pusch);
+  /* 38.133 Table10.1.18.1-1 */
+  sched_ctrl->pcmax = PCMAX - 29;
+  LOG_D(NR_MAC,
+        "SINGLE ENTRY PHR %d PH %d (%d dB) R2 %d PCMAX %d (%d dBm)\n",
+        phr->R1,
+        PH,
+        sched_ctrl->ph,
+        phr->R2,
+        PCMAX,
+        sched_ctrl->pcmax);
+}
+
 //  For both UL-SCH except:
 //   - UL-SCH: fixed-size MAC CE(known by LCID)
 //   - UL-SCH: padding
@@ -252,7 +291,7 @@ static int estimate_ul_buffer_long_bsr(const NR_BSR_LONG *bsr)
 
 // return: length of subPdu header
 // 3GPP TS 38.321 Section 6
-uint8_t decode_ul_mac_sub_pdu_header(uint8_t *pduP, uint8_t *lcid, uint16_t *length)
+static uint8_t decode_ul_mac_sub_pdu_header(uint8_t *pduP, uint8_t *lcid, uint16_t *length)
 {
   uint16_t mac_subheader_len = 1;
   *lcid = pduP[0] & 0x3F;
@@ -510,43 +549,10 @@ static int nr_process_mac_pdu(instance_t module_idP,
         break;
 
       case UL_SCH_LCID_SINGLE_ENTRY_PHR:
-        if (harq_pid < 0) {
-          LOG_E(NR_MAC, "Invalid HARQ PID %d\n", harq_pid);
-          continue;
-        }
-        NR_sched_pusch_t *sched_pusch = &sched_ctrl->ul_harq_processes[harq_pid].sched_pusch;
-
         /* Extract SINGLE ENTRY PHR elements for PHR calculation */
         ce_ptr = &pduP[mac_subheader_len];
         NR_SINGLE_ENTRY_PHR_MAC_CE *phr = (NR_SINGLE_ENTRY_PHR_MAC_CE *)ce_ptr;
-        /* Save the phr info */
-        int PH;
-        const int PCMAX = phr->PCMAX;
-        /* 38.133 Table10.1.17.1-1 */
-        if (phr->PH < 55) {
-          PH = phr->PH - 32;
-        } else if (phr->PH < 63) {
-          PH = 24 + (phr->PH - 55) * 2;
-        } else {
-          PH = 38;
-        }
-        // in sched_ctrl we set normalized PH wrt MCS and PRBs
-        sched_ctrl->ph = PH + compute_ph_rb_factor(ul_bwp->scs, sched_pusch->rbSize);
-        bool hasDeltaMCS = ul_bwp->pusch_Config && ul_bwp->pusch_Config->pusch_PowerControl->deltaMCS;
-        if (hasDeltaMCS)
-          sched_ctrl->ph += compute_ph_mcs_factor(sched_pusch);
-        /* 38.133 Table10.1.18.1-1 */
-        sched_ctrl->pcmax = PCMAX - 29;
-        LOG_D(NR_MAC,
-              "SINGLE ENTRY PHR %d.%d R1 %d PH %d (%d dB) R2 %d PCMAX %d (%d dBm)\n",
-              frameP,
-              slot,
-              phr->R1,
-              PH,
-              sched_ctrl->ph,
-              phr->R2,
-              PCMAX,
-              sched_ctrl->pcmax);
+        handle_single_entry_phr(ul_bwp, sched_ctrl, harq_pid, phr);
         break;
 
       case UL_SCH_LCID_C_RNTI:
@@ -869,7 +875,7 @@ static void nr_rx_ra_sdu(const module_id_t mod_id,
 
     // Decode the entire MAC PDU
     // It may have multiple MAC subPDUs, for example, a MAC subPDU with LCID 1 caring a RRCReestablishmentComplete
-    nr_process_mac_pdu(mod_id, old_UE, CC_id, frame, slot, sdu, sdu_len, -1);
+    nr_process_mac_pdu(mod_id, old_UE, CC_id, frame, slot, sdu, sdu_len, harq_pid);
     return;
   }
 
@@ -882,9 +888,7 @@ static void nr_rx_ra_sdu(const module_id_t mod_id,
   memcpy(ra->cont_res_id, &sdu[1], sizeof(uint8_t) * 6);
 
   // Decode MAC PDU
-  // the function is only called to decode the contention resolution sub-header
-  // harq_pid set a non-valid value because it is not used in this call
-  nr_process_mac_pdu(mod_id, UE, CC_id, frame, slot, sdu, sdu_len, -1);
+  nr_process_mac_pdu(mod_id, UE, CC_id, frame, slot, sdu, sdu_len, harq_pid);
 
   LOG_I(NR_MAC,
         "Activating scheduling %s for TC_RNTI 0x%04x (state %s)\n",
