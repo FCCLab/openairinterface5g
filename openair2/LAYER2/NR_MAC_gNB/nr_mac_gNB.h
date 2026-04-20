@@ -837,7 +837,7 @@ typedef struct {
 
 #define UE_iterator(BaSe, VaR) for (NR_UE_info_t **VaR##pptr=BaSe, *VaR=*VaR##pptr; VaR; VaR=*(++VaR##pptr))
 
-/* Note: Network slice information is now managed by slice_scheduler_t.
+/* Note: Network slice PRB ratios are managed by slice_scheduler_dl / slice_scheduler_ul.
  * Use slice_prb_allocator.h functions to access slice configurations.
  * The old network_slice_t and network_slice_info_t structures have been removed.
  */
@@ -984,11 +984,16 @@ typedef struct gNB_MAC_INST_s {
   nr_pp_impl_dl pre_processor_dl;
   /// UL preprocessor for differentiated scheduling
   nr_pp_impl_ul pre_processor_ul;
-  /// Scheduler algorithm type
+  /// Scheduler algorithm type (legacy, applied to both directions when per-direction type is not set)
   scheduler_type_t scheduler_type;
-  /// Slice PRB allocator scheduler instance (persistent, reused across scheduling cycles)
-  /// The scheduler stores slice configurations and is the single source of truth for slice information
-  slice_scheduler_t *slice_scheduler;
+  /// DL scheduler algorithm type
+  scheduler_type_t scheduler_type_dl;
+  /// UL scheduler algorithm type
+  scheduler_type_t scheduler_type_ul;
+  /// Slice PRB allocator for DL (ratios from dedicated_prb_ratio / dl_* in gNB config)
+  slice_scheduler_t *slice_scheduler_dl;
+  /// Slice PRB allocator for UL (ratios from dedicated_prb_ratio / ul_* in gNB config)
+  slice_scheduler_t *slice_scheduler_ul;
 
   nr_mac_config_t radio_config;
   nr_rlc_configuration_t rlc_config;

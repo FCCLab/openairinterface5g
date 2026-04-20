@@ -762,6 +762,13 @@ void rrc_gNB_send_NGAP_PDUSESSION_SETUP_RESP(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE
   resp->gNB_ue_ngap_id = UE->rrc_ue_id;
 
   FOR_EACH_SEQ_ARR(rrc_pdu_session_param_t *, session, &UE->pduSessions) {
+    LOG_D(NR_RRC,
+          "UE %d: PDU session %d status=%d xid=%d (target xid=%d)\n",
+          UE->rrc_ue_id,
+          session->param.pdusession_id,
+          session->status,
+          session->xid,
+          xid);
     if (session->status == PDU_SESSION_STATUS_DONE) {
       resp->pdusessions[pdu_sessions_done++] = fill_ngap_pdusession_setup(&session->param);
       session->status = PDU_SESSION_STATUS_ESTABLISHED;
@@ -777,9 +784,19 @@ void rrc_gNB_send_NGAP_PDUSESSION_SETUP_RESP(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE
     resp->nb_of_pdusessions_failed = pdu_sessions_failed;
   }
 
-  if ((pdu_sessions_done > 0 || pdu_sessions_failed)) {
-    LOG_I(NR_RRC, "NGAP_PDUSESSION_SETUP_RESP: sending the message\n");
+  if (pdu_sessions_done > 0 || pdu_sessions_failed > 0) {
+    LOG_I(NR_RRC,
+          "UE %d: NGAP_PDUSESSION_SETUP_RESP send (xid=%d, done=%d, failed=%d)\n",
+          UE->rrc_ue_id,
+          xid,
+          pdu_sessions_done,
+          pdu_sessions_failed);
     itti_send_msg_to_task(TASK_NGAP, rrc->module_id, msg_p);
+  } else {
+    LOG_W(NR_RRC,
+          "UE %d: NGAP_PDUSESSION_SETUP_RESP not sent (xid=%d, done=0, failed=0)\n",
+          UE->rrc_ue_id,
+          xid);
   }
 
   FOR_EACH_SEQ_ARR(rrc_pdu_session_param_t *, session, &UE->pduSessions) {
@@ -803,6 +820,13 @@ static void send_ngap_pdu_session_setup_resp_fail(instance_t instance, ngap_pdus
   for (int i = 0; i < resp->nb_of_pdusessions_failed; ++i) {
     fill_pdu_session_resource_failed_to_setup_item(&resp->pdusessions_failed[i], msg->pdusession[i].pdusession_id, cause);
   }
+  LOG_W(NR_RRC,
+        "[gNB %ld] UE NGAP ID %u: sending NGAP_PDUSESSION_SETUP_RESP fail (nb_failed=%d, cause_type=%d, cause_value=%d)\n",
+        instance,
+        msg->gNB_ue_ngap_id,
+        resp->nb_of_pdusessions_failed,
+        cause.type,
+        cause.value);
   itti_send_msg_to_task(TASK_NGAP, instance, msg_resp);
 }
 
@@ -823,7 +847,12 @@ void rrc_gNB_process_NGAP_PDUSESSION_SETUP_REQ(MessageDef *msg_p, instance_t ins
   }
 
   gNB_RRC_UE_t *UE = &ue_context_p->ue_context;
-  LOG_I(NR_RRC, "UE %d: received PDU Session Resource Setup Request\n", UE->rrc_ue_id);
+  LOG_I(NR_RRC,
+        "UE %d: received PDU Session Resource Setup Request (req_nb=%d, amf_ue_ngap_id=%lu, gNB_ue_ngap_id=%u)\n",
+        UE->rrc_ue_id,
+        msg->nb_pdusessions_tosetup,
+        msg->amf_ue_ngap_id,
+        msg->gNB_ue_ngap_id);
 
   // Reject PDU Session Resource setup if gNB_ue_ngap_id is not matching
   if (UE->rrc_ue_id != msg->gNB_ue_ngap_id) {

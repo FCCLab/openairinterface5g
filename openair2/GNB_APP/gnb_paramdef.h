@@ -478,6 +478,12 @@ typedef enum {
 #define GNB_CONFIG_STRING_SLICE_DEDICATED_PRB_RATIO      "dedicated_prb_ratio"
 #define GNB_CONFIG_STRING_SLICE_MIN_PRB_RATIO            "min_prb_ratio"
 #define GNB_CONFIG_STRING_SLICE_MAX_PRB_RATIO            "max_prb_ratio"
+#define GNB_CONFIG_STRING_SLICE_DL_DEDICATED_PRB_RATIO   "dl_dedicated_prb_ratio"
+#define GNB_CONFIG_STRING_SLICE_DL_MIN_PRB_RATIO        "dl_min_prb_ratio"
+#define GNB_CONFIG_STRING_SLICE_DL_MAX_PRB_RATIO        "dl_max_prb_ratio"
+#define GNB_CONFIG_STRING_SLICE_UL_DEDICATED_PRB_RATIO  "ul_dedicated_prb_ratio"
+#define GNB_CONFIG_STRING_SLICE_UL_MIN_PRB_RATIO       "ul_min_prb_ratio"
+#define GNB_CONFIG_STRING_SLICE_UL_MAX_PRB_RATIO        "ul_max_prb_ratio"
 
 #define GNB_SLICE_ID_IDX                 0
 #define GNB_SLICE_SST_IDX               1
@@ -485,6 +491,12 @@ typedef enum {
 #define GNB_SLICE_DEDICATED_PRB_RATIO_IDX 3
 #define GNB_SLICE_MIN_PRB_RATIO_IDX     4
 #define GNB_SLICE_MAX_PRB_RATIO_IDX     5
+#define GNB_SLICE_DL_DEDICATED_PRB_RATIO_IDX 6
+#define GNB_SLICE_DL_MIN_PRB_RATIO_IDX     7
+#define GNB_SLICE_DL_MAX_PRB_RATIO_IDX     8
+#define GNB_SLICE_UL_DEDICATED_PRB_RATIO_IDX 9
+#define GNB_SLICE_UL_MIN_PRB_RATIO_IDX     10
+#define GNB_SLICE_UL_MAX_PRB_RATIO_IDX     11
 
 #define GNBSLICEPARAMS_DESC {                                                                  \
 /*   optname                               helpstr                 paramflags XXXptr     def val              type    numelt */ \
@@ -494,6 +506,12 @@ typedef enum {
   {GNB_CONFIG_STRING_SLICE_DEDICATED_PRB_RATIO, "dedicated PRB ratio (%)", 0, .dblptr=NULL, .defdblval=0.0,    TYPE_DOUBLE, 0}, \
   {GNB_CONFIG_STRING_SLICE_MIN_PRB_RATIO, "minimum PRB ratio (%)",        0, .dblptr=NULL, .defdblval=0.0,    TYPE_DOUBLE, 0}, \
   {GNB_CONFIG_STRING_SLICE_MAX_PRB_RATIO, "maximum PRB ratio (%)",       0, .dblptr=NULL, .defdblval=100.0, TYPE_DOUBLE, 0}, \
+  {GNB_CONFIG_STRING_SLICE_DL_DEDICATED_PRB_RATIO, "DL dedicated PRB ratio (%, -1=use dedicated_prb_ratio)", 0, .dblptr=NULL, .defdblval=-1.0, TYPE_DOUBLE, 0}, \
+  {GNB_CONFIG_STRING_SLICE_DL_MIN_PRB_RATIO, "DL minimum PRB ratio (%, -1=use min_prb_ratio)", 0, .dblptr=NULL, .defdblval=-1.0, TYPE_DOUBLE, 0}, \
+  {GNB_CONFIG_STRING_SLICE_DL_MAX_PRB_RATIO, "DL maximum PRB ratio (%, -1=use max_prb_ratio)", 0, .dblptr=NULL, .defdblval=-1.0, TYPE_DOUBLE, 0}, \
+  {GNB_CONFIG_STRING_SLICE_UL_DEDICATED_PRB_RATIO, "UL dedicated PRB ratio (%, -1=use dedicated_prb_ratio)", 0, .dblptr=NULL, .defdblval=-1.0, TYPE_DOUBLE, 0}, \
+  {GNB_CONFIG_STRING_SLICE_UL_MIN_PRB_RATIO, "UL minimum PRB ratio (%, -1=use min_prb_ratio)", 0, .dblptr=NULL, .defdblval=-1.0, TYPE_DOUBLE, 0}, \
+  {GNB_CONFIG_STRING_SLICE_UL_MAX_PRB_RATIO, "UL maximum PRB ratio (%, -1=use max_prb_ratio)", 0, .dblptr=NULL, .defdblval=-1.0, TYPE_DOUBLE, 0}, \
 }
 
 #define SLICE_ID_OKRANGE                 {0, 1023}
@@ -508,6 +526,12 @@ typedef enum {
   { .s5 = { NULL } }, /* dedicated_prb_ratio - no validation, checked in code */ \
   { .s5 = { NULL } }, /* min_prb_ratio - no validation, checked in code */ \
   { .s5 = { NULL } }, /* max_prb_ratio - no validation, checked in code */ \
+  { .s5 = { NULL } }, /* dl_* optional overrides */ \
+  { .s5 = { NULL } }, \
+  { .s5 = { NULL } }, \
+  { .s5 = { NULL } }, /* ul_* optional overrides */ \
+  { .s5 = { NULL } }, \
+  { .s5 = { NULL } }, \
 }
 
 /* AMF configuration parameters section name */

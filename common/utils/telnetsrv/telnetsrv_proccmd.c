@@ -580,12 +580,14 @@ int proccmd_show(char *buf, int debug, telnet_printfunc_t prnt)
        // Display scheduler information
        if (RC.nb_nr_macrlc_inst > 0 && RC.nrmac != NULL && RC.nrmac[0] != NULL) {
            gNB_MAC_INST *mac = RC.nrmac[0];
-           const char *scheduler_name = (mac->scheduler_type == SCHE_NS) ? "Network Slicing (SCHE_NS)" : "Proportional Fair (SCHE_PF)";
+          const char *scheduler_name_dl = (mac->scheduler_type_dl == SCHE_NS) ? "Network Slicing (SCHE_NS)" : "Proportional Fair (SCHE_PF)";
+          const char *scheduler_name_ul = (mac->scheduler_type_ul == SCHE_NS) ? "Network Slicing (SCHE_NS)" : "Proportional Fair (SCHE_PF)";
            
            prnt("\n=== Scheduler Information ===\n\n");               
            
            prnt("- MAC Module ID: %d\n", mac->Mod_id);
-           prnt("  Scheduler Type: %s (%d)\n", scheduler_name, mac->scheduler_type);
+          prnt("  DL Scheduler Type: %s (%d)\n", scheduler_name_dl, mac->scheduler_type_dl);
+          prnt("  UL Scheduler Type: %s (%d)\n", scheduler_name_ul, mac->scheduler_type_ul);
            
            // Display pre-processor information (function pointer)
            if (mac->pre_processor_dl != NULL) {
@@ -612,114 +614,95 @@ int proccmd_show(char *buf, int debug, telnet_printfunc_t prnt)
                }
            }
            
-           // Display slice scheduler information if available
-           if (mac->scheduler_type == SCHE_NS && mac->slice_scheduler != NULL) {
-               prnt("\n  === Network Slices ===\n");
-               
-               int num_slices = slice_sch_get_num_slices(mac->slice_scheduler);
-               prnt("  Total Slices: %d\n", num_slices);
-               
-               if (num_slices > 0) {
+          if ((mac->scheduler_type_dl == SCHE_NS || mac->scheduler_type_ul == SCHE_NS)
+              && (mac->slice_scheduler_dl != NULL || mac->slice_scheduler_ul != NULL)) {
+               prnt("\n  === Network Slices (DL / UL) ===\n");
+               for (int dir = 0; dir < 2; dir++) {
+                   slice_scheduler_t *sch = (dir == 0) ? mac->slice_scheduler_dl : mac->slice_scheduler_ul;
+                   const char *dir_label = (dir == 0) ? "DL" : "UL";
+                   if (sch == NULL) {
+                       prnt("\n  [%s] scheduler not initialized\n", dir_label);
+                       continue;
+                   }
+                   int num_slices = slice_sch_get_num_slices(sch);
+                   prnt("\n  --- %s (%d slices) ---\n", dir_label, num_slices);
+                   if (num_slices <= 0) {
+                       prnt("  No slices\n");
+                       continue;
+                   }
                    int num_stats = 0;
-                   const slice_statistics_t *all_stats = slice_sch_get_all_statistics(mac->slice_scheduler, &num_stats);
-                   
+                   const slice_statistics_t *all_stats = slice_sch_get_all_statistics(sch, &num_stats);
                    if (all_stats != NULL) {
-                       prnt("\n  Slice Configuration:\n");
-                       prnt("  %-4s %-18s %-12s %-12s %-12s\n", 
+                       prnt("\n  Slice configuration (%s):\n", dir_label);
+                       prnt("  %-4s %-18s %-12s %-12s %-12s\n",
                             "Idx", "SST/SD", "Dedicated", "Min Ratio", "Max Ratio");
                        prnt("  %s\n", "----------------------------------------------------------------------------");
-                       
                        for (int s = 0; s < num_stats; ++s) {
                            uint8_t sst = all_stats[s].slice_id.sst;
                            uint32_t sd = all_stats[s].slice_id.sd;
-                           
-                           // Get slice configuration
                            uint8_t config_sst;
                            uint32_t config_sd;
-                           float dedicated, min, max;
-                           if (slice_sch_get_slice_config(mac->slice_scheduler, sst, sd, 
-                                                          &config_sst, &config_sd, 
-                                                          &dedicated, &min, &max) == 0) {
-                               // Format SST/SD together in one column
+                           float dedicated, min_r, max_r;
+                           if (slice_sch_get_slice_config(sch, sst, sd, &config_sst, &config_sd, &dedicated, &min_r, &max_r) == 0) {
                                char sst_sd_str[32];
-                               if (sd > 0) {
+                               if (sd > 0)
                                    snprintf(sst_sd_str, sizeof(sst_sd_str), "%3d/%06x", sst, sd);
-                               } else {
+                               else
                                    snprintf(sst_sd_str, sizeof(sst_sd_str), "%3d/0x000000", sst);
-                               }
-                               
-                               prnt("  %-4d %-18s %-12.3f %-12.3f %-12.3f\n", 
-                                    s, sst_sd_str, dedicated, min, max);
+                               prnt("  %-4d %-18s %-12.3f %-12.3f %-12.3f\n", s, sst_sd_str, dedicated, min_r, max_r);
                            }
                        }
-                       
-                       // Display allocation statistics if available
                        int num_active_slices = 0;
                        int total_allocated_prbs = 0;
-                       if (slice_sch_get_stats(mac->slice_scheduler, &num_active_slices, &total_allocated_prbs) == 0) {
-                           prnt("\n  Allocation Statistics:\n");
-                           prnt("  Active Slices: %d\n", num_active_slices);
-                           prnt("  Total Allocated PRBs: %d\n", total_allocated_prbs);
-                           
+                       if (slice_sch_get_stats(sch, &num_active_slices, &total_allocated_prbs) == 0) {
+                           prnt("\n  Allocation statistics (%s):\n", dir_label);
+                           prnt("  Active slices: %d\n", num_active_slices);
+                           prnt("  Total allocated PRBs: %d\n", total_allocated_prbs);
                            int num_ranges = 0;
-                           const slice_prb_range_t *ranges = slice_sch_get_allocation(mac->slice_scheduler, &num_ranges);
+                           const slice_prb_range_t *ranges = slice_sch_get_allocation(sch, &num_ranges);
                            if (ranges != NULL && num_ranges > 0) {
-                               prnt("\n  Current PRB Allocations:\n");
-                               prnt("  %-18s %-12s %-12s %-12s\n", 
-                                    "SST/SD", "Start PRB", "End PRB", "Num PRBs");
+                               prnt("\n  Current PRB allocations (%s):\n", dir_label);
+                               prnt("  %-18s %-12s %-12s %-12s\n", "SST/SD", "Start PRB", "End PRB", "Num PRBs");
                                prnt("  %s\n", "------------------------------------------------------------");
-                               
                                for (int r = 0; r < num_ranges; ++r) {
                                    if (ranges[r].num_prbs > 0) {
                                        char sst_sd_str[32];
-                                       if (ranges[r].slice_id.sd > 0) {
-                                           snprintf(sst_sd_str, sizeof(sst_sd_str), "%3d/%06x", 
-                                                   ranges[r].slice_id.sst, ranges[r].slice_id.sd);
-                                       } else {
-                                           snprintf(sst_sd_str, sizeof(sst_sd_str), "%3d/0x000000", 
-                                                   ranges[r].slice_id.sst);
-                                       }
+                                       if (ranges[r].slice_id.sd > 0)
+                                           snprintf(sst_sd_str, sizeof(sst_sd_str), "%3d/%06x",
+                                                    ranges[r].slice_id.sst, ranges[r].slice_id.sd);
+                                       else
+                                           snprintf(sst_sd_str, sizeof(sst_sd_str), "%3d/0x000000",
+                                                    ranges[r].slice_id.sst);
                                        prnt("  %-18s %-12d %-12d %-12d\n",
                                             sst_sd_str, ranges[r].start_prb, ranges[r].end_prb, ranges[r].num_prbs);
                                    }
                                }
                            }
-                           
-                           // Display per-slice statistics
-                           prnt("\n  Per-Slice Statistics:\n");
-                           prnt("  %-18s %-12s %-12s %-12s %-12s\n", 
+                           prnt("\n  Per-slice statistics (%s):\n", dir_label);
+                           prnt("  %-18s %-12s %-12s %-12s %-12s\n",
                                 "SST/SD", "Latest PRBs", "Avg PRBs", "Samples", "Allocated");
                            prnt("  %s\n", "----------------------------------------------------------------------------");
-                           
                            for (int s = 0; s < num_stats; ++s) {
                                uint8_t sst = all_stats[s].slice_id.sst;
                                uint32_t sd = all_stats[s].slice_id.sd;
-                               
-                               // Format SST/SD together in one column
                                char sst_sd_str[32];
-                               if (sd > 0) {
+                               if (sd > 0)
                                    snprintf(sst_sd_str, sizeof(sst_sd_str), "%3d/%06x", sst, sd);
-                               } else {
+                               else
                                    snprintf(sst_sd_str, sizeof(sst_sd_str), "%3d/0x000000", sst);
-                               }
-                               
-                               prnt("  %-18s %-12d %-12.1f %-12d", 
+                               prnt("  %-18s %-12d %-12.1f %-12d",
                                     sst_sd_str,
-                                    all_stats[s].latest_num_prbs, 
+                                    all_stats[s].latest_num_prbs,
                                     all_stats[s].avg_num_prbs,
                                     all_stats[s].sample_count);
-                               
-                               // Check if slice has allocated PRBs
                                bool has_allocation = (all_stats[s].latest_num_prbs > 0);
                                prnt("  %s\n", has_allocation ? "Yes" : "No");
                            }
                        }
                    }
-               } else {
-                   prnt("  No slices configured\n");
                }
-           } else if (mac->scheduler_type == SCHE_NS) {
-               prnt("\n  Network Slicing enabled but slice scheduler not initialized\n");
+          } else if (mac->scheduler_type_dl == SCHE_NS || mac->scheduler_type_ul == SCHE_NS) {
+               prnt("\n  Network Slicing enabled but slice schedulers (DL/UL) not initialized\n");
            }
            
            prnt("\n=============================\n");

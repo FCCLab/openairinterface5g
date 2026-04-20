@@ -323,6 +323,8 @@ void mac_top_init_gNB(ngran_node_t node_type,
 
       // Initialize scheduler type (default to Proportional Fair)
       RC.nrmac[i]->scheduler_type = SCHE_PF;
+      RC.nrmac[i]->scheduler_type_dl = SCHE_PF;
+      RC.nrmac[i]->scheduler_type_ul = SCHE_PF;
 
       if (get_softmodem_params()->phy_test) {
         RC.nrmac[i]->pre_processor_dl = nr_preprocessor_phytest;
@@ -377,10 +379,13 @@ void mac_top_destroy_gNB(gNB_MAC_INST *mac)
     free_f1ap_setup_response(mac->f1_config.setup_resp);
   free(mac->f1_config.setup_resp);
   
-  // Clean up slice scheduler
-  if (mac->slice_scheduler != NULL) {
-    slice_sch_destroy(mac->slice_scheduler);
-    mac->slice_scheduler = NULL;
+  if (mac->slice_scheduler_dl != NULL) {
+    slice_sch_destroy(mac->slice_scheduler_dl);
+    mac->slice_scheduler_dl = NULL;
+  }
+  if (mac->slice_scheduler_ul != NULL) {
+    slice_sch_destroy(mac->slice_scheduler_ul);
+    mac->slice_scheduler_ul = NULL;
   }
 }
 

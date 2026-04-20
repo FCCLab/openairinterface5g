@@ -240,16 +240,22 @@ static NR_RLC_BearerConfig_t *get_bearerconfig_from_srb(const f1ap_srb_to_setup_
  */
 static bool get_first_nssai_from_config(gNB_MAC_INST *mac, nssai_t *nssai_out)
 {
-  if (mac == NULL || mac->slice_scheduler == NULL || nssai_out == NULL) {
+  if (mac == NULL || nssai_out == NULL) {
     return false;
   }
-  
-  int num_slices = slice_sch_get_num_slices(mac->slice_scheduler);
+
+  // Prefer DL slice config if present, otherwise fallback to UL slice config.
+  slice_scheduler_t *slice_scheduler = mac->slice_scheduler_dl != NULL ? mac->slice_scheduler_dl : mac->slice_scheduler_ul;
+  if (slice_scheduler == NULL) {
+    return false;
+  }
+
+  int num_slices = slice_sch_get_num_slices(slice_scheduler);
   if (num_slices == 0) {
     return false;
   }
   
-  const slice_nssai_t *slice_nssai = slice_sch_get_slice_nssai(mac->slice_scheduler, 0);
+  const slice_nssai_t *slice_nssai = slice_sch_get_slice_nssai(slice_scheduler, 0);
   if (slice_nssai == NULL) {
     return false;
   }
@@ -387,6 +393,16 @@ static int handle_ue_context_drbs_setup(NR_UE_info_t *UE,
     resp_drb->id = drb->id;
     resp_drb->lcid = malloc_or_fail(sizeof(*resp_drb->lcid));
     *resp_drb->lcid = c.lcid;
+    LOG_I(
+        NR_MAC,
+        "UE %04x DRB setup: DRB %d -> LCID %d, NSSAI SST=0x%02x SD=0x%06x, flows=%d, prio=%d\n",
+        UE->rnti,
+        (int)drb->id,
+        (int)c.lcid,
+        c.nssai.sst,
+        (unsigned)c.nssai.sd,
+        (int)drb->nr.flows_len,
+        (int)c.priority);
     // just put same number of tunnels in DL as in UL
     DevAssert(drb->up_ul_tnl_len == 1);
     resp_drb->up_dl_tnl_len = drb->up_ul_tnl_len;
