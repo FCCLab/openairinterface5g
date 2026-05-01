@@ -132,13 +132,14 @@ void nr_preprocessor_phytest(gNB_MAC_INST *mac, post_process_pdsch_t *pp_pdsch)
   sched_ctrl->num_total_bytes += sched_ctrl->rlc_status[lcid].bytes_in_buffer;
 
   int CCEIndex = get_cce_index(mac,
-                               CC_id, slot, UE->rnti,
+                               CC_id, frame, slot, UE->rnti,
                                &sched_ctrl->aggregation_level,
                                beam,
                                sched_ctrl->search_space,
                                sched_ctrl->coreset,
                                &sched_ctrl->sched_pdcch,
-                               0);
+                               0,
+                               "PHYTEST_DL_DCI");
   AssertFatal(CCEIndex >= 0, "Could not find CCE for UE %04x\n", UE->rnti);
 
   int alloc = -1;
@@ -161,7 +162,8 @@ void nr_preprocessor_phytest(gNB_MAC_INST *mac, post_process_pdsch_t *pp_pdsch)
                      &sched_ctrl->sched_pdcch,
                      CCEIndex,
                      sched_ctrl->aggregation_level,
-                     beam);
+                     beam,
+                     "PHYTEST");
 
   NR_sched_pdsch_t sched_pdsch = {
       .rbSize = rbSize,
@@ -273,13 +275,14 @@ void nr_ul_preprocessor_phytest(gNB_MAC_INST *nr_mac, post_process_pusch_t *pp_p
   }
 
   int CCEIndex = get_cce_index(nr_mac,
-                               CC_id, slot, UE->rnti,
+                               CC_id, frame, slot, UE->rnti,
                                &sched_ctrl->aggregation_level,
                                beam,
                                sched_ctrl->search_space,
                                sched_ctrl->coreset,
                                &sched_ctrl->sched_pdcch,
-                               0);
+                               0,
+                               "PHYTEST_UL_DCI");
   if (CCEIndex < 0) {
     LOG_E(MAC, "%s(): CCE list not empty, couldn't schedule PUSCH\n", __func__);
     return;
@@ -333,7 +336,8 @@ void nr_ul_preprocessor_phytest(gNB_MAC_INST *nr_mac, post_process_pusch_t *pp_p
                      &sched_ctrl->sched_pdcch,
                      CCEIndex,
                      sched_ctrl->aggregation_level,
-                     beam);
+                     beam,
+                     "PHYTEST");
 
   for (int rb = rbStart; rb < rbStart + rbSize; rb++)
     vrb_map_UL[rb+BWPStart] |= SL_to_bitmap(tda_info.startSymbolIndex, tda_info.nrOfSymbols);

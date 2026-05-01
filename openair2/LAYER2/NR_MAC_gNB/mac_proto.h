@@ -249,7 +249,8 @@ void fill_pdcch_vrb_map(gNB_MAC_INST *mac,
                         NR_sched_pdcch_t *pdcch,
                         int first_cce,
                         int aggregation,
-                        int beam);
+                        int beam,
+                        const char *alloc_src);
 
 void fill_dci_pdu_rel15(const NR_UE_ServingCell_Info_t *servingCellInfo,
                         const NR_UE_DL_BWP_t *current_DL_BWP,
@@ -414,8 +415,9 @@ const NR_tda_info_t *get_best_ul_tda(const gNB_MAC_INST *nrmac,
                                      int *rb_start,
                                      int *rb_len);
 
-int get_cce_index(const gNB_MAC_INST *nrmac,
+int get_cce_index(gNB_MAC_INST *nrmac,
                   const int CC_id,
+                  const frame_t frame,
                   const int slot,
                   const rnti_t rnti,
                   uint8_t *aggregation_level,
@@ -423,7 +425,11 @@ int get_cce_index(const gNB_MAC_INST *nrmac,
                   const NR_SearchSpace_t *ss,
                   const NR_ControlResourceSet_t *coreset,
                   NR_sched_pdcch_t *sched_pdcch,
-                  float pdcch_cl_adjust);
+                  float pdcch_cl_adjust,
+                  const char *pdcch_reason);
+
+void nr_mac_pdcch_slot_trace_reset(gNB_MAC_INST *mac, int CC_id);
+void nr_mac_pdcch_slot_trace_flush_if_needed(gNB_MAC_INST *mac, int CC_id, frame_t frame, slot_t slot);
 
 bool nr_find_nb_rb(uint16_t Qm,
                    uint16_t R,

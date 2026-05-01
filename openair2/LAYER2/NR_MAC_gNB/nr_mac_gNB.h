@@ -900,6 +900,48 @@ typedef struct fsn {
   slot_t s;
 } fsn_t;
 
+#define NR_MAC_PDCCH_SLOT_TRACE_MAX 96
+#define NR_MAC_PDCCH_SLOT_FAIL_MAX 48
+#define NR_MAC_PDCCH_VRB_FILL_MAX 48
+
+/* Every fill_pdcch_vrb_map in the slot (SIB, RA, DL/UL DCI, etc.) for verification vs traced get_cce_index. */
+typedef struct {
+  char source[20];
+  uint16_t first_cce;
+  uint8_t aggregation;
+  int8_t beam_idx;
+  uint16_t bwp_start;
+  uint8_t start_sym;
+  uint8_t n_symb;
+} nr_mac_pdcch_vrb_fill_rec_t;
+
+typedef struct {
+  rnti_t rnti;
+  uint16_t first_cce;
+  uint8_t aggregation;
+  int8_t beam_idx;
+  int16_t coreset_id;
+  int16_t search_space_id;
+  char purpose[24];
+} nr_mac_pdcch_slot_alloc_rec_t;
+
+typedef struct {
+  rnti_t rnti;
+  char purpose[24];
+} nr_mac_pdcch_slot_fail_rec_t;
+
+typedef struct {
+  uint32_t n_alloc;
+  uint32_t n_fail;
+  bool overflow_alloc;
+  bool overflow_fail;
+  nr_mac_pdcch_slot_alloc_rec_t alloc[NR_MAC_PDCCH_SLOT_TRACE_MAX];
+  nr_mac_pdcch_slot_fail_rec_t fail[NR_MAC_PDCCH_SLOT_FAIL_MAX];
+  uint32_t n_vrb_fill;
+  bool overflow_vrb_fill;
+  nr_mac_pdcch_vrb_fill_rec_t vrb_fill[NR_MAC_PDCCH_VRB_FILL_MAX];
+} nr_mac_pdcch_slot_trace_t;
+
 /*! \brief top level eNB MAC structure */
 typedef struct gNB_MAC_INST_s {
   /// Ethernet parameters for northbound midhaul interface
@@ -1030,6 +1072,9 @@ typedef struct gNB_MAC_INST_s {
 
   dlul_mac_stats_t mac_stats;
   uint64_t num_scheduled_prach_rx;
+
+  /// Per-slot trace of PDCCH CCE allocations (via get_cce_index); flushed if any lookup failed
+  nr_mac_pdcch_slot_trace_t pdcch_slot_trace[NFAPI_CC_MAX];
 } gNB_MAC_INST;
 
 #endif /*__LAYER2_NR_MAC_GNB_H__ */

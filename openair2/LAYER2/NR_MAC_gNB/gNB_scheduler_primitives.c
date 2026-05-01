@@ -30,6 +30,7 @@
  */
 
 #include <softmodem-common.h>
+#include <string.h>
 #include "assertions.h"
 
 #include "NR_MAC_gNB/nr_mac_gNB.h"
@@ -542,6 +543,303 @@ NR_sched_pdcch_t set_pdcch_structure(gNB_MAC_INST *gNB_mac,
   return pdcch;
 }
 
+/* Max USS candidates for which we compute REG overlap vs prior allocs on CCE failure (stack-sized). */
+#define NR_MAC_PDCCH_FAIL_CAND_TRACE_MAX 16
+
+/* Mark BWP vrb_map indices [0..mark_len) touched by CCE indices [first_cce .. first_cce+aggregation-1] (same geometry as fill_pdcch_vrb_map). */
+static void pdcch_cce_al_mark_vrb_indices(const NR_sched_pdcch_t *pdcch,
+                                        const NR_ControlResourceSet_t *coreset,
+                                        int first_cce,
+                                        int aggregation,
+                                        uint8_t *mark,
+                                        int mark_len)
+{
+  if (mark == NULL || mark_len < MAX_BWP_SIZE)
+    return;
+  memset(mark, 0, (size_t)mark_len);
+  const int N_rb = pdcch->n_rb;
+  const int N_symb = coreset->duration;
+  const int N_regs = N_rb * N_symb;
+  const int R = pdcch->InterleaverSize;
+  const int L = pdcch->RegBundleSize;
+  const int C = R > 0 ? N_regs / (L * R) : 0;
+  const int B_rb = L / N_symb;
+
+  for (int j = first_cce; j < first_cce + aggregation; j++) {
+    for (int k = 6 * j / L; k < (6 * j / L + 6 / L); k++) {
+      int f = cce_to_reg_interleaving(R, k, pdcch->ShiftIndex, C, L, N_regs);
+      for (int rb = 0; rb < B_rb; rb++) {
+        const int off = pdcch->BWPStart + f * B_rb + rb;
+        if (off >= 0 && off < mark_len)
+          mark[off] = 1u;
+      }
+    }
+  }
+}
+
+static bool pdcch_cce_al_marks_overlap(const uint8_t *a, const uint8_t *b, int len)
+{
+  for (int i = 0; i < len; i++) {
+    if (a[i] && b[i])
+      return true;
+  }
+  return false;
+}
+
+static void nr_mac_log_pdcch_cce_fail_occupants(gNB_MAC_INST *mac,
+                                                int CC_id,
+                                                frame_t frame,
+                                                slot_t slot,
+                                                rnti_t failing_rnti,
+                                                const char *failing_reason,
+                                                const NR_SearchSpace_t *ss,
+                                                const NR_ControlResourceSet_t *coreset,
+                                                NR_sched_pdcch_t *sched_pdcch,
+                                                int beam_idx,
+                                                uint32_t Y,
+                                                uint8_t L_sel,
+                                                uint8_t nr_of_candidates,
+                                                int N_cces_cand,
+                                                bool have_uss_geometry)
+{
+  const int N_ci = 0;
+  if (mac == NULL || CC_id < 0 || CC_id >= NFAPI_CC_MAX || coreset == NULL || ss == NULL)
+    return;
+
+  nr_mac_pdcch_slot_trace_t *tr = &mac->pdcch_slot_trace[CC_id];
+  LOG_I(NR_MAC,
+        "PDCCH_CCE_FAIL_OCCUPANTS Frame.Slot %u.%02d failing RNTI 0x%04x reason=%s CORESET%ld SS%ld beam%d "
+        "prior_PDCCH_in_slot=%u prior_trace_overflow=%c\n",
+        frame,
+        slot,
+        failing_rnti,
+        failing_reason != NULL ? failing_reason : "unknown",
+        (long)coreset->controlResourceSetId,
+        (long)ss->searchSpaceId,
+        beam_idx,
+        tr->n_alloc,
+        tr->overflow_alloc ? 'Y' : 'N');
+
+  if (tr->n_alloc == 0) {
+    LOG_I(NR_MAC,
+          "  (no prior successful PDCCH/CCE on this CC in this slot before this failure; vrb_map may be PDSCH/SIB/RA/CSS/other beam or REG "
+          "overlap from resources not traced here)\n");
+  }
+
+  uint8_t cand_mark[NR_MAC_PDCCH_FAIL_CAND_TRACE_MAX][MAX_BWP_SIZE];
+  unsigned n_cm = 0;
+  if (have_uss_geometry && sched_pdcch != NULL && nr_of_candidates > 0 && L_sel > 0 && (N_cces_cand / L_sel) > 0) {
+    n_cm = (unsigned)nr_of_candidates > NR_MAC_PDCCH_FAIL_CAND_TRACE_MAX ? NR_MAC_PDCCH_FAIL_CAND_TRACE_MAX : (unsigned)nr_of_candidates;
+    memset(cand_mark, 0, sizeof(cand_mark));
+    for (unsigned m = 0; m < n_cm; m++) {
+      const int fc = L_sel * ((Y + ((m * N_cces_cand) / (L_sel * nr_of_candidates)) + N_ci) % (N_cces_cand / L_sel));
+      pdcch_cce_al_mark_vrb_indices(sched_pdcch, coreset, fc, L_sel, cand_mark[m], MAX_BWP_SIZE);
+    }
+    if ((unsigned)nr_of_candidates > NR_MAC_PDCCH_FAIL_CAND_TRACE_MAX) {
+      LOG_I(NR_MAC,
+            "  NOTE: USS has %u candidates; REG_overlap_* uses first %u only\n",
+            (unsigned)nr_of_candidates,
+            NR_MAC_PDCCH_FAIL_CAND_TRACE_MAX);
+    }
+  }
+
+  uint8_t alloc_mark[MAX_BWP_SIZE];
+  for (uint32_t i = 0; i < tr->n_alloc; i++) {
+    const nr_mac_pdcch_slot_alloc_rec_t *pr = &tr->alloc[i];
+    char ovl[64] = "-";
+    if (n_cm > 0 && sched_pdcch != NULL && pr->coreset_id == (int16_t)coreset->controlResourceSetId
+        && pr->beam_idx == (int8_t)beam_idx) {
+      pdcch_cce_al_mark_vrb_indices(sched_pdcch, coreset, pr->first_cce, pr->aggregation, alloc_mark, MAX_BWP_SIZE);
+      int po = 0;
+      ovl[0] = '\0';
+      for (unsigned m = 0; m < n_cm; m++) {
+        if (pdcch_cce_al_marks_overlap(alloc_mark, cand_mark[m], MAX_BWP_SIZE))
+          po += snprintf(ovl + po, sizeof(ovl) - po, "%sm%u", po ? "," : "", m);
+      }
+      if (po == 0)
+        snprintf(ovl, sizeof(ovl), "none");
+    } else if (n_cm > 0)
+      snprintf(ovl, sizeof(ovl), "n/a(coreset/beam)");
+
+    LOG_I(NR_MAC,
+          "  prior[%u] RNTI 0x%04x CCE[%u..%u] L=%u purpose=%s SS%ld beam%d REG_overlap_failed_USS_cand=%s\n",
+          i,
+          pr->rnti,
+          (unsigned)pr->first_cce,
+          (unsigned)(pr->first_cce + pr->aggregation - 1),
+          (unsigned)pr->aggregation,
+          pr->purpose,
+          (long)pr->search_space_id,
+          pr->beam_idx,
+          ovl);
+  }
+}
+
+/* First BWP RB index (absolute) where this candidate's REG mapping hits busy vrb_map bits for CORESET symbols (same test as pdcch_cce_al_region_busy). */
+static void pdcch_cce_log_first_vrb_busy_hit(const gNB_MAC_INST *mac,
+                                             int cc_id,
+                                             int beam_idx,
+                                             const NR_sched_pdcch_t *pdcch,
+                                             const NR_ControlResourceSet_t *coreset,
+                                             int first_cce,
+                                             int aggregation,
+                                             frame_t frame,
+                                             int slot,
+                                             unsigned cand_m)
+{
+  if (mac == NULL || pdcch == NULL || coreset == NULL)
+    return;
+  const uint16_t *vrb_map = mac->common_channels[cc_id].vrb_map[beam_idx];
+  const int N_rb = pdcch->n_rb;
+  const int N_symb = coreset->duration;
+  const int N_regs = N_rb * N_symb;
+  const int R = pdcch->InterleaverSize;
+  const int L = pdcch->RegBundleSize;
+  const int C = R > 0 ? N_regs / (L * R) : 0;
+  const int B_rb = L / N_symb;
+  const uint16_t sym_mask = SL_to_bitmap(pdcch->StartSymbolIndex, N_symb);
+
+  for (int j = first_cce; j < first_cce + aggregation; j++) {
+    for (int k = 6 * j / L; k < (6 * j / L + 6 / L); k++) {
+      int f = cce_to_reg_interleaving(R, k, pdcch->ShiftIndex, C, L, N_regs);
+      for (int rb = 0; rb < B_rb; rb++) {
+        const int off = pdcch->BWPStart + f * B_rb + rb;
+        if (off < 0 || off >= MAX_BWP_SIZE)
+          continue;
+        const uint16_t vm = vrb_map[off];
+        if (vm & sym_mask) {
+          LOG_I(NR_MAC,
+                "PDCCH_CCE_CAND_FIRST_BUSY Frame.Slot %u.%02d cand m%u CCE[%d..%d] first BWP_RB_off=%d vrb_map=0x%x "
+                "sym_chk=0x%x (bits here block this candidate)\n",
+                frame,
+                slot,
+                cand_m,
+                first_cce,
+                first_cce + aggregation - 1,
+                off,
+                vm,
+                sym_mask);
+          return;
+        }
+      }
+    }
+  }
+  LOG_I(NR_MAC,
+        "PDCCH_CCE_CAND_FIRST_BUSY Frame.Slot %u.%02d cand m%u CCE[%d..%d] no RB hit in walk (unexpected if find_pdcch failed)\n",
+        frame,
+        slot,
+        cand_m,
+        first_cce,
+        first_cce + aggregation - 1);
+}
+
+/* Per-USS-candidate: first vrb_map collision + which traced PDCCH allocs REG-overlap this candidate (explains m0 vs m1). */
+static void nr_mac_log_pdcch_cce_failed_candidates_detail(gNB_MAC_INST *mac,
+                                                          int CC_id,
+                                                          frame_t frame,
+                                                          int slot,
+                                                          int beam_idx,
+                                                          const NR_sched_pdcch_t *sched_pdcch,
+                                                          const NR_ControlResourceSet_t *coreset,
+                                                          uint32_t Y,
+                                                          uint8_t L_sel,
+                                                          uint8_t nr_of_candidates,
+                                                          int N_cces_cand)
+{
+  const int N_ci = 0;
+  if (mac == NULL || CC_id < 0 || CC_id >= NFAPI_CC_MAX || sched_pdcch == NULL || coreset == NULL)
+    return;
+  if (nr_of_candidates == 0 || L_sel == 0 || (N_cces_cand / L_sel) == 0)
+    return;
+
+  const unsigned n_cm = (unsigned)nr_of_candidates > NR_MAC_PDCCH_FAIL_CAND_TRACE_MAX ? NR_MAC_PDCCH_FAIL_CAND_TRACE_MAX
+                                                                                      : (unsigned)nr_of_candidates;
+  uint8_t cand_mark[NR_MAC_PDCCH_FAIL_CAND_TRACE_MAX][MAX_BWP_SIZE];
+  memset(cand_mark, 0, sizeof(cand_mark));
+  for (unsigned m = 0; m < n_cm; m++) {
+    const int fc = L_sel * ((Y + ((m * N_cces_cand) / (L_sel * nr_of_candidates)) + N_ci) % (N_cces_cand / L_sel));
+    pdcch_cce_al_mark_vrb_indices(sched_pdcch, coreset, fc, L_sel, cand_mark[m], MAX_BWP_SIZE);
+  }
+
+  nr_mac_pdcch_slot_trace_t *tr = &mac->pdcch_slot_trace[CC_id];
+  uint8_t alloc_mark[MAX_BWP_SIZE];
+
+  for (unsigned m = 0; m < n_cm; m++) {
+    const int fc = L_sel * ((Y + ((m * N_cces_cand) / (L_sel * nr_of_candidates)) + N_ci) % (N_cces_cand / L_sel));
+    pdcch_cce_log_first_vrb_busy_hit(mac, CC_id, beam_idx, sched_pdcch, coreset, fc, L_sel, frame, slot, m);
+
+    char tr_overlap[256];
+    tr_overlap[0] = '\0';
+    int po = 0;
+    for (uint32_t i = 0; i < tr->n_alloc; i++) {
+      const nr_mac_pdcch_slot_alloc_rec_t *pr = &tr->alloc[i];
+      if (pr->coreset_id != (int16_t)coreset->controlResourceSetId || pr->beam_idx != (int8_t)beam_idx)
+        continue;
+      pdcch_cce_al_mark_vrb_indices(sched_pdcch, coreset, pr->first_cce, pr->aggregation, alloc_mark, MAX_BWP_SIZE);
+      if (pdcch_cce_al_marks_overlap(alloc_mark, cand_mark[m], MAX_BWP_SIZE)) {
+        po += snprintf(tr_overlap + po,
+                       sizeof(tr_overlap) - (size_t)po,
+                       "%sprior[%u]0x%04x[CCE%u..%u]",
+                       po ? " " : "",
+                       i,
+                       pr->rnti,
+                       (unsigned)pr->first_cce,
+                       (unsigned)(pr->first_cce + pr->aggregation - 1));
+      }
+    }
+    if (po == 0) {
+      snprintf(tr_overlap,
+               sizeof(tr_overlap),
+               "(none — busy bits not from traced UE PDCCH on this CORESET/beam; likely SI/PDSCH/RA/CSS)");
+    }
+    LOG_I(NR_MAC,
+          "PDCCH_CCE_FAIL_CAND_DETAIL Frame.Slot %u.%02d m%u USS_first_CCE=%d L=%u traced_REG_overlap=%s\n",
+          frame,
+          slot,
+          m,
+          fc,
+          (unsigned)L_sel,
+          tr_overlap);
+  }
+  if ((unsigned)nr_of_candidates > NR_MAC_PDCCH_FAIL_CAND_TRACE_MAX) {
+    LOG_I(NR_MAC,
+          "PDCCH_CCE_FAIL_CAND_DETAIL Frame.Slot %u.%02d (only first %u candidates detailed)\n",
+          frame,
+          slot,
+          NR_MAC_PDCCH_FAIL_CAND_TRACE_MAX);
+  }
+}
+
+/* true if any REG/RB mapped to CCEs [first_cce .. first_cce+aggregation-1] hits vrb_map (same rule as find_pdcch_candidate) */
+static bool pdcch_cce_al_region_busy(const gNB_MAC_INST *mac,
+                                     int cc_id,
+                                     int beam_idx,
+                                     const NR_sched_pdcch_t *pdcch,
+                                     const NR_ControlResourceSet_t *coreset,
+                                     int first_cce,
+                                     int aggregation)
+{
+  const uint16_t *vrb_map = mac->common_channels[cc_id].vrb_map[beam_idx];
+  const int N_rb = pdcch->n_rb;
+  const int N_symb = coreset->duration;
+  const int N_regs = N_rb * N_symb;
+  const int R = pdcch->InterleaverSize;
+  const int L = pdcch->RegBundleSize;
+  const int C = R > 0 ? N_regs / (L * R) : 0;
+  const int B_rb = L / N_symb;
+
+  for (int j = first_cce; j < first_cce + aggregation; j++) {
+    for (int k = 6 * j / L; k < (6 * j / L + 6 / L); k++) {
+      int f = cce_to_reg_interleaving(R, k, pdcch->ShiftIndex, C, L, N_regs);
+      for (int rb = 0; rb < B_rb; rb++) {
+        if (vrb_map[pdcch->BWPStart + f * B_rb + rb] & SL_to_bitmap(pdcch->StartSymbolIndex, N_symb))
+          return true;
+      }
+    }
+  }
+  return false;
+}
+
 int find_pdcch_candidate(const gNB_MAC_INST *mac,
                          int cc_id,
                          int aggregation,
@@ -551,44 +849,295 @@ int find_pdcch_candidate(const gNB_MAC_INST *mac,
                          const NR_ControlResourceSet_t *coreset,
                          uint32_t Y)
 {
-  const uint16_t *vrb_map = mac->common_channels[cc_id].vrb_map[beam_idx];
   const int N_ci = 0;
 
   const int N_rb = pdcch->n_rb;  // nb of rbs of coreset per symbol
   const int N_symb = coreset->duration; // nb of coreset symbols
   const int N_regs = N_rb * N_symb; // nb of REGs per coreset
   const int N_cces = N_regs / NR_NB_REG_PER_CCE; // nb of cces in coreset
-  const int R = pdcch->InterleaverSize;
-  const int L = pdcch->RegBundleSize;
-  const int C = R > 0 ? N_regs / (L * R) : 0;
-  const int B_rb = L / N_symb; // nb of RBs occupied by each REG bundle
 
   // loop over all the available candidates
   // this implements TS 38.211 Sec. 7.3.2.2
   for(int m = 0; m < nr_of_candidates; m++) { // loop over candidates
-    bool taken = false; // flag if the resource for a given candidate are taken
     int first_cce = aggregation * ((Y + ((m * N_cces) / (aggregation * nr_of_candidates)) + N_ci) % (N_cces / aggregation));
     LOG_D(NR_MAC,"Candidate %d of %d first_cce %d (L %d N_cces %d Y %d)\n", m, nr_of_candidates, first_cce, aggregation, N_cces, Y);
-    for (int j = first_cce; (j < first_cce + aggregation) && !taken; j++) { // loop over CCEs
-      for (int k = 6 * j / L; (k < (6 * j / L + 6 / L)) && !taken; k++) { // loop over REG bundles
-        int f = cce_to_reg_interleaving(R, k, pdcch->ShiftIndex, C, L, N_regs);
-        for(int rb = 0; rb < B_rb; rb++) { // loop over the RBs of the bundle
-          if(vrb_map[pdcch->BWPStart + f * B_rb + rb] & SL_to_bitmap(pdcch->StartSymbolIndex,N_symb)) {
-            taken = true;
-            break;
-          }
-        }
-      }
-    }
-    if(!taken)
+    if (!pdcch_cce_al_region_busy(mac, cc_id, beam_idx, pdcch, coreset, first_cce, aggregation))
       return first_cce;
   }
   return -1;
 }
 
+void nr_mac_pdcch_slot_trace_reset(gNB_MAC_INST *mac, int CC_id)
+{
+  if (mac == NULL || CC_id < 0 || CC_id >= NFAPI_CC_MAX)
+    return;
+  memset(&mac->pdcch_slot_trace[CC_id], 0, sizeof(mac->pdcch_slot_trace[CC_id]));
+}
 
-int get_cce_index(const gNB_MAC_INST *nrmac,
+static void nr_mac_pdcch_slot_trace_record_alloc(gNB_MAC_INST *mac,
+                                                 int CC_id,
+                                                 rnti_t rnti,
+                                                 int first_cce,
+                                                 uint8_t agg,
+                                                 int beam_idx,
+                                                 const NR_ControlResourceSet_t *coreset,
+                                                 const NR_SearchSpace_t *ss,
+                                                 const char *purpose)
+{
+  if (mac == NULL || CC_id < 0 || CC_id >= NFAPI_CC_MAX)
+    return;
+  nr_mac_pdcch_slot_trace_t *tr = &mac->pdcch_slot_trace[CC_id];
+  if (tr->n_alloc >= NR_MAC_PDCCH_SLOT_TRACE_MAX) {
+    tr->overflow_alloc = true;
+    return;
+  }
+  nr_mac_pdcch_slot_alloc_rec_t *r = &tr->alloc[tr->n_alloc++];
+  r->rnti = rnti;
+  r->first_cce = (uint16_t)first_cce;
+  r->aggregation = agg;
+  r->beam_idx = (int8_t)beam_idx;
+  r->coreset_id = coreset != NULL ? (int16_t)coreset->controlResourceSetId : (int16_t)-1;
+  r->search_space_id = ss != NULL ? (int16_t)ss->searchSpaceId : (int16_t)-1;
+  if (purpose != NULL) {
+    strncpy(r->purpose, purpose, sizeof(r->purpose) - 1);
+    r->purpose[sizeof(r->purpose) - 1] = '\0';
+  } else {
+    r->purpose[0] = '\0';
+  }
+}
+
+static void nr_mac_pdcch_slot_trace_record_fail(gNB_MAC_INST *mac, int CC_id, rnti_t rnti, const char *purpose)
+{
+  if (mac == NULL || CC_id < 0 || CC_id >= NFAPI_CC_MAX)
+    return;
+  nr_mac_pdcch_slot_trace_t *tr = &mac->pdcch_slot_trace[CC_id];
+  if (tr->n_fail >= NR_MAC_PDCCH_SLOT_FAIL_MAX) {
+    tr->overflow_fail = true;
+    return;
+  }
+  nr_mac_pdcch_slot_fail_rec_t *r = &tr->fail[tr->n_fail++];
+  r->rnti = rnti;
+  if (purpose != NULL) {
+    strncpy(r->purpose, purpose, sizeof(r->purpose) - 1);
+    r->purpose[sizeof(r->purpose) - 1] = '\0';
+  } else {
+    r->purpose[0] = '\0';
+  }
+}
+
+#define NR_MAC_CCE_TABLE_MAX 32
+/* two traced alloc records claimed the same logical CCE index */
+#define NR_MAC_CCE_TABLE_CONFLICT ((rnti_t)0xFFFEu)
+
+/* Per-slot table: one row per logical CCE (from traced get_cce_index successes only). */
+static void nr_mac_log_slot_cce_occupation_table(const nr_mac_pdcch_slot_trace_t *tr, frame_t frame, slot_t slot, int CC_id)
+{
+  int high_cce = -1;
+  for (uint32_t i = 0; i < tr->n_alloc; i++) {
+    const int end = (int)tr->alloc[i].first_cce + (int)tr->alloc[i].aggregation - 1;
+    if (end > high_cce)
+      high_cce = end;
+  }
+  int n_show = 16;
+  if (high_cce >= 16)
+    n_show = high_cce + 1;
+  if (n_show > NR_MAC_CCE_TABLE_MAX)
+    n_show = NR_MAC_CCE_TABLE_MAX;
+
+  LOG_I(NR_MAC,
+        "PDCCH_SLOT_CCE_TABLE Frame.Slot %u.%02d CC%d rows=%d (UE PDCCH via get_cce_index only; SI/RA/CSS not listed)\n",
+        frame,
+        slot,
+        CC_id,
+        n_show);
+  LOG_I(NR_MAC, "  %4s | %8s | %8s | %6s | %s\n", "CCE", "RNTI", "CORESET", "SS", "purpose");
+
+  for (int c = 0; c < n_show; c++) {
+    rnti_t occupant = 0;
+    int claimants = 0;
+    int16_t coreset_id = -1;
+    int16_t search_space_id = -1;
+    char purpose[sizeof(tr->alloc[0].purpose)];
+
+    purpose[0] = '\0';
+    for (uint32_t i = 0; i < tr->n_alloc; i++) {
+      const nr_mac_pdcch_slot_alloc_rec_t *a = &tr->alloc[i];
+      if (c >= (int)a->first_cce && c < (int)a->first_cce + (int)a->aggregation) {
+        claimants++;
+        if (occupant == 0) {
+          occupant = a->rnti;
+          coreset_id = a->coreset_id;
+          search_space_id = a->search_space_id;
+          strncpy(purpose, a->purpose, sizeof(purpose) - 1);
+          purpose[sizeof(purpose) - 1] = '\0';
+        } else if (occupant != a->rnti) {
+          occupant = NR_MAC_CCE_TABLE_CONFLICT;
+        }
+      }
+    }
+
+    if (claimants == 0) {
+      LOG_I(NR_MAC, "  %4d | %8s | %8s | %6s | %s\n", c, "--", "--", "--", "(no traced UE PDCCH)");
+    } else if (occupant == NR_MAC_CCE_TABLE_CONFLICT) {
+      LOG_I(NR_MAC, "  %4d | %8s | %8s | %6s | %s\n", c, "!!", "--", "--", "CONFLICT");
+    } else {
+      LOG_I(NR_MAC,
+            "  %4d | 0x%04x | %8ld | %6ld | %s\n",
+            c,
+            occupant,
+            (long)coreset_id,
+            (long)search_space_id,
+            purpose);
+    }
+  }
+
+  LOG_I(NR_MAC,
+        "  Note: Interleaved CORESET — USS can fail on [a..b] with REG overlap vs other indices here, or busy from "
+        "untraced PDCCH/PDSCH/SIB.\n");
+}
+
+/* Verifies on-air PDCCH resource marking: every fill_pdcch_vrb_map in the slot (order preserved). */
+static void nr_mac_log_pdcch_vrb_alloc_table(const nr_mac_pdcch_slot_trace_t *tr, frame_t frame, slot_t slot, int CC_id)
+{
+  LOG_I(NR_MAC,
+        "PDCCH_SLOT_PDCCH_VRB_ALLOCS Frame.Slot %u.%02d CC%d n=%u%s (all fill_pdcch_vrb_map; order = scheduler order)\n",
+        frame,
+        slot,
+        CC_id,
+        (unsigned)tr->n_vrb_fill,
+        tr->overflow_vrb_fill ? " VRB_FILL_LIST_TRUNC" : "");
+  if (tr->n_vrb_fill == 0) {
+    LOG_I(NR_MAC,
+          "  (no PDCCH vrb map fills on this CC this slot — SIB/RA/UE DCI not via fill, or before trace reset)\n");
+    return;
+  }
+  for (uint32_t i = 0; i < tr->n_vrb_fill; i++) {
+    const nr_mac_pdcch_vrb_fill_rec_t *f = &tr->vrb_fill[i];
+    LOG_I(NR_MAC,
+          "  [%u] %-19s beam%d CCE[%u..%u] L=%u BWP_RB_off=%u sym s%u n%u\n",
+          i,
+          f->source,
+          (int)f->beam_idx,
+          (unsigned)f->first_cce,
+          (unsigned)(f->first_cce + f->aggregation - 1),
+          (unsigned)f->aggregation,
+          (unsigned)f->bwp_start,
+          (unsigned)f->start_sym,
+          (unsigned)f->n_symb);
+  }
+}
+
+/* Type-0 CORESET0 PDCCH only (BCH SIB1 / other SI) — same data as tagged rows in PDCCH_VRB_ALLOCS, tabular. */
+static void nr_mac_log_coreset0_pdcch_table(const nr_mac_pdcch_slot_trace_t *tr, frame_t frame, slot_t slot, int CC_id)
+{
+  uint32_t n = 0;
+  for (uint32_t i = 0; i < tr->n_vrb_fill; i++) {
+    const char *s = tr->vrb_fill[i].source;
+    if (strcmp(s, "BCH_SIB1") == 0 || strcmp(s, "BCH_OtherSI") == 0)
+      n++;
+  }
+  LOG_I(NR_MAC,
+        "PDCCH_SLOT_CORESET0_TABLE Frame.Slot %u.%02d CC%d n=%u (Type-0 PDCCH from BCH: controlResourceSetId=0, searchSpaceId=0 in OAI; "
+        "CCEs are for CORESET0 not USS)\n",
+        frame,
+        slot,
+        CC_id,
+        (unsigned)n);
+  if (n == 0) {
+    LOG_I(NR_MAC, "  (no BCH / Type-0 PDCCH vrb fill on this CC this slot)\n");
+    return;
+  }
+  LOG_I(NR_MAC, "  %3s | %-10s | %4s | %2s | %8s | %7s | %s\n", "#", "source", "beam", "L", "CCE", "BWP_RB0", "sym");
+  uint32_t row = 0;
+  for (uint32_t i = 0; i < tr->n_vrb_fill; i++) {
+    const nr_mac_pdcch_vrb_fill_rec_t *f = &tr->vrb_fill[i];
+    if (strcmp(f->source, "BCH_SIB1") != 0 && strcmp(f->source, "BCH_OtherSI") != 0)
+      continue;
+    LOG_I(NR_MAC,
+          "  %3u | %-10s | %4d | %2u | [%u..%u] | %7u | s%u n%u\n",
+          row,
+          f->source,
+          (int)f->beam_idx,
+          (unsigned)f->aggregation,
+          (unsigned)f->first_cce,
+          (unsigned)(f->first_cce + f->aggregation - 1),
+          (unsigned)f->bwp_start,
+          (unsigned)f->start_sym,
+          (unsigned)f->n_symb);
+    row++;
+  }
+}
+
+static void nr_mac_pdcch_vrb_fill_record(gNB_MAC_INST *mac,
+                                        int CC_id,
+                                        const NR_sched_pdcch_t *pdcch,
+                                        int first_cce,
+                                        int aggregation,
+                                        int beam,
+                                        const char *alloc_src)
+{
+  if (mac == NULL || pdcch == NULL || CC_id < 0 || CC_id >= NFAPI_CC_MAX)
+    return;
+  nr_mac_pdcch_slot_trace_t *tr = &mac->pdcch_slot_trace[CC_id];
+  if (tr->n_vrb_fill >= NR_MAC_PDCCH_VRB_FILL_MAX) {
+    tr->overflow_vrb_fill = true;
+    return;
+  }
+  nr_mac_pdcch_vrb_fill_rec_t *r = &tr->vrb_fill[tr->n_vrb_fill++];
+  const char *src = (alloc_src != NULL && alloc_src[0] != '\0') ? alloc_src : "?";
+  snprintf(r->source, sizeof(r->source), "%s", src);
+  r->first_cce = (uint16_t)first_cce;
+  r->aggregation = (uint8_t)aggregation;
+  r->beam_idx = (int8_t)beam;
+  r->bwp_start = pdcch->BWPStart;
+  r->start_sym = pdcch->StartSymbolIndex;
+  r->n_symb = pdcch->DurationSymbols;
+}
+
+void nr_mac_pdcch_slot_trace_flush_if_needed(gNB_MAC_INST *mac, int CC_id, frame_t frame, slot_t slot)
+{
+  if (mac == NULL || CC_id < 0 || CC_id >= NFAPI_CC_MAX)
+    return;
+  nr_mac_pdcch_slot_trace_t *tr = &mac->pdcch_slot_trace[CC_id];
+  if (tr->n_fail == 0)
+    return;
+
+  LOG_I(NR_MAC,
+        "PDCCH_SLOT_CCE_SUMMARY Frame.Slot %u.%02d CC%d failures=%u successful_CCE_allocations=%u%s%s\n",
+        frame,
+        slot,
+        CC_id,
+        tr->n_fail,
+        tr->n_alloc,
+        tr->overflow_fail ? " FAIL_LIST_TRUNCATED" : "",
+        tr->overflow_alloc ? " ALLOC_LIST_TRUNCATED" : "");
+
+  nr_mac_log_slot_cce_occupation_table(tr, frame, slot, CC_id);
+  nr_mac_log_pdcch_vrb_alloc_table(tr, frame, slot, CC_id);
+  nr_mac_log_coreset0_pdcch_table(tr, frame, slot, CC_id);
+
+  for (uint32_t i = 0; i < tr->n_fail; i++) {
+    LOG_I(NR_MAC, "  FAIL[%u] RNTI 0x%04x purpose=%s\n", i, tr->fail[i].rnti, tr->fail[i].purpose);
+  }
+  for (uint32_t i = 0; i < tr->n_alloc; i++) {
+    const nr_mac_pdcch_slot_alloc_rec_t *a = &tr->alloc[i];
+    LOG_I(NR_MAC,
+          "  ALLOC[%u] RNTI 0x%04x CORESET%ld SS%ld beam%d CCE[%u..%u] L=%u purpose=%s\n",
+          i,
+          a->rnti,
+          (long)a->coreset_id,
+          (long)a->search_space_id,
+          a->beam_idx,
+          (unsigned)a->first_cce,
+          (unsigned)(a->first_cce + a->aggregation - 1),
+          (unsigned)a->aggregation,
+          a->purpose);
+  }
+}
+
+int get_cce_index(gNB_MAC_INST *nrmac,
                   const int CC_id,
+                  const frame_t frame,
                   const int slot,
                   const rnti_t rnti,
                   uint8_t *aggregation_level,
@@ -596,8 +1145,10 @@ int get_cce_index(const gNB_MAC_INST *nrmac,
                   const NR_SearchSpace_t *ss,
                   const NR_ControlResourceSet_t *coreset,
                   NR_sched_pdcch_t *sched_pdcch,
-                  float pdcch_cl_adjust)
+                  float pdcch_cl_adjust,
+                  const char *pdcch_reason)
 {
+  const char *rsn = (pdcch_reason != NULL && pdcch_reason[0] != '\0') ? pdcch_reason : "unknown";
   const uint32_t Y = get_Y(ss, slot, rnti);
   uint8_t nr_of_candidates;
 
@@ -609,7 +1160,160 @@ int get_cce_index(const gNB_MAC_INST *nrmac,
     if (nr_of_candidates > 0)
       break;
   }
+  const int N_regs_cand = sched_pdcch->n_rb * coreset->duration;
+  const int N_cces_cand = N_regs_cand / NR_NB_REG_PER_CCE;
+  const uint8_t L_sel = *aggregation_level;
+  const int N_ci = 0;
+  const bool have_cand_info = (nr_of_candidates > 0 && L_sel > 0 && (N_cces_cand / L_sel) > 0);
+  char cand_buf[160] = {0};
+  if (have_cand_info) {
+    int p = 0;
+    for (uint8_t m = 0; m < nr_of_candidates && p < (int)sizeof(cand_buf) - 20; m++) {
+      const int fc = L_sel * ((Y + ((m * N_cces_cand) / (L_sel * nr_of_candidates)) + N_ci) % (N_cces_cand / L_sel));
+      p += snprintf(cand_buf + p,
+                    sizeof(cand_buf) - (size_t)p,
+                    " m%u:CCE[%d..%d]",
+                    m,
+                    fc,
+                    fc + L_sel - 1);
+    }
+  }
   int CCEIndex = find_pdcch_candidate(nrmac, CC_id, *aggregation_level, nr_of_candidates, beam_idx, sched_pdcch, coreset, Y);
+  if (CCEIndex >= 0) {
+    const int N_regs = sched_pdcch->n_rb * coreset->duration;
+    const int N_cces = N_regs / NR_NB_REG_PER_CCE;
+    nr_mac_pdcch_slot_trace_record_alloc(nrmac,
+                                         CC_id,
+                                         rnti,
+                                         CCEIndex,
+                                         *aggregation_level,
+                                         beam_idx,
+                                         coreset,
+                                         ss,
+                                         rsn);
+    if (have_cand_info) {
+      LOG_D(NR_MAC,
+            "PDCCH_CAND %u.%02d RNTI 0x%04x CORESET%ld SS%ld beam%d reason=%s Y=%u L=%u nr_cand=%u N_CCE=%d%s\n",
+            frame,
+            slot,
+            rnti,
+            (long)coreset->controlResourceSetId,
+            (long)ss->searchSpaceId,
+            beam_idx,
+            rsn,
+            Y,
+            (unsigned)L_sel,
+            (unsigned)nr_of_candidates,
+            N_cces_cand,
+            cand_buf);
+    }
+    LOG_D(NR_MAC,
+          "PDCCH_CCE_ALLOC %u.%02d RNTI 0x%04x CORESET%ld SS%ld beam%d reason=%s L=%u CCE[%d..%d] N_CCE=%d\n",
+          frame,
+          slot,
+          rnti,
+          (long)coreset->controlResourceSetId,
+          (long)ss->searchSpaceId,
+          beam_idx,
+          rsn,
+          (unsigned)*aggregation_level,
+          CCEIndex,
+          CCEIndex + *aggregation_level - 1,
+          N_cces);
+  } else if (have_cand_info) {
+    char usage_buf[400] = {0};
+    int pu = 0;
+    for (int fc = 0; fc + L_sel <= N_cces_cand && pu < (int)sizeof(usage_buf) - 28; fc += L_sel) {
+      const bool busy = pdcch_cce_al_region_busy(nrmac, CC_id, beam_idx, sched_pdcch, coreset, fc, L_sel);
+      pu += snprintf(usage_buf + pu,
+                     sizeof(usage_buf) - (size_t)pu,
+                     " [%d..%d]=%s",
+                     fc,
+                     fc + L_sel - 1,
+                     busy ? "busy" : "free");
+    }
+    nr_mac_pdcch_slot_trace_record_fail(nrmac, CC_id, rnti, rsn);
+    nr_mac_log_pdcch_cce_fail_occupants(nrmac,
+                                        CC_id,
+                                        frame,
+                                        slot,
+                                        rnti,
+                                        rsn,
+                                        ss,
+                                        coreset,
+                                        sched_pdcch,
+                                        beam_idx,
+                                        Y,
+                                        L_sel,
+                                        nr_of_candidates,
+                                        N_cces_cand,
+                                        true);
+    nr_mac_log_pdcch_cce_failed_candidates_detail(nrmac,
+                                                    CC_id,
+                                                    frame,
+                                                    slot,
+                                                    beam_idx,
+                                                    sched_pdcch,
+                                                    coreset,
+                                                    Y,
+                                                    L_sel,
+                                                    nr_of_candidates,
+                                                    N_cces_cand);
+    LOG_D(NR_MAC,
+          "PDCCH_CCE_FAIL Frame.Slot %u.%02d RNTI 0x%04x CORESET%ld SS%ld beam%d reason=%s Y=%u L=%u nr_cand=%u "
+          "N_CCE=%d (no free candidate; vrb_map busy)%s\n",
+          frame,
+          slot,
+          rnti,
+          (long)coreset->controlResourceSetId,
+          (long)ss->searchSpaceId,
+          beam_idx,
+          rsn,
+          Y,
+          (unsigned)L_sel,
+          (unsigned)nr_of_candidates,
+          N_cces_cand,
+          cand_buf);
+    LOG_D(NR_MAC,
+          "PDCCH_CCE_SLOT_USAGE Frame.Slot %u.%02d CORESET%ld SS%ld beam%d L=%u N_CCE=%d vrb_map AL_regions:%s\n",
+          frame,
+          slot,
+          (long)coreset->controlResourceSetId,
+          (long)ss->searchSpaceId,
+          beam_idx,
+          (unsigned)L_sel,
+          N_cces_cand,
+          usage_buf);
+  } else {
+    nr_mac_pdcch_slot_trace_record_fail(nrmac, CC_id, rnti, rsn);
+    nr_mac_log_pdcch_cce_fail_occupants(nrmac,
+                                        CC_id,
+                                        frame,
+                                        slot,
+                                        rnti,
+                                        rsn,
+                                        ss,
+                                        coreset,
+                                        sched_pdcch,
+                                        beam_idx,
+                                        Y,
+                                        L_sel,
+                                        nr_of_candidates,
+                                        N_cces_cand,
+                                        false);
+    LOG_D(NR_MAC,
+          "PDCCH_CCE_FAIL Frame.Slot %u.%02d RNTI 0x%04x CORESET%ld SS%ld beam%d reason=%s L=%u nr_cand=%u (no valid "
+          "search-space candidates)\n",
+          frame,
+          slot,
+          rnti,
+          (long)coreset->controlResourceSetId,
+          (long)ss->searchSpaceId,
+          beam_idx,
+          rsn,
+          (unsigned)L_sel,
+          (unsigned)nr_of_candidates);
+  }
   return CCEIndex;
 }
 
@@ -618,7 +1322,8 @@ void fill_pdcch_vrb_map(gNB_MAC_INST *mac,
                         NR_sched_pdcch_t *pdcch,
                         int first_cce,
                         int aggregation,
-                        int beam)
+                        int beam,
+                        const char *alloc_src)
 {
   uint16_t *vrb_map = mac->common_channels[CC_id].vrb_map[beam];
 
@@ -638,6 +1343,7 @@ void fill_pdcch_vrb_map(gNB_MAC_INST *mac,
         vrb_map[pdcch->BWPStart + f*B_rb + rb] |= SL_to_bitmap(pdcch->StartSymbolIndex, N_symb);
     }
   }
+  nr_mac_pdcch_vrb_fill_record(mac, CC_id, pdcch, first_cce, aggregation, beam, alloc_src);
 }
 
 static bool multiple_2_3_5(int rb)

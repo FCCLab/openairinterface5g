@@ -1884,6 +1884,7 @@ static bool allocate_ul_retransmission(gNB_MAC_INST *nrmac,
   /* Find a free CCE */
   int CCEIndex = get_cce_index(nrmac,
                                CC_id,
+                               frame,
                                slot,
                                UE->rnti,
                                &sched_ctrl->aggregation_level,
@@ -1891,7 +1892,8 @@ static bool allocate_ul_retransmission(gNB_MAC_INST *nrmac,
                                sched_ctrl->search_space,
                                sched_ctrl->coreset,
                                &sched_ctrl->sched_pdcch,
-                               sched_ctrl->pdcch_cl_adjust);
+                               sched_ctrl->pdcch_cl_adjust,
+                               "UL_DCI_RETX");
   if (CCEIndex<0) {
     LOG_D(NR_MAC, "[UE %04x][%4d.%2d] no free CCE for retransmission UL DCI UE\n", UE->rnti, frame, slot);
     sched_ctrl->ul_cce_fail++;
@@ -1899,7 +1901,7 @@ static bool allocate_ul_retransmission(gNB_MAC_INST *nrmac,
   }
 
   sched_ctrl->cce_index = CCEIndex;
-  fill_pdcch_vrb_map(nrmac, CC_id, &sched_ctrl->sched_pdcch, CCEIndex, sched_ctrl->aggregation_level, dci_beam_idx);
+  fill_pdcch_vrb_map(nrmac, CC_id, &sched_ctrl->sched_pdcch, CCEIndex, sched_ctrl->aggregation_level, dci_beam_idx, "ULSCH");
 
   // signal new allocation
   DevAssert(new_sched.time_domain_allocation == tda);
@@ -2206,13 +2208,14 @@ static int pf_ul(gNB_MAC_INST *nrmac,
     }
 
     int CCEIndex = get_cce_index(nrmac,
-                                 CC_id, slot, iterator->UE->rnti,
+                                 CC_id, frame, slot, iterator->UE->rnti,
                                  &sched_ctrl->aggregation_level,
                                  dci_beam.idx,
                                  sched_ctrl->search_space,
                                  sched_ctrl->coreset,
                                  &sched_ctrl->sched_pdcch,
-                                 sched_ctrl->pdcch_cl_adjust);
+                                 sched_ctrl->pdcch_cl_adjust,
+                                 "UL_DCI");
 
     if (CCEIndex < 0) {
       sched_ctrl->ul_cce_fail++;
@@ -2454,7 +2457,7 @@ static int pf_ul(gNB_MAC_INST *nrmac,
     /* Mark the corresponding RBs as used */
 
     sched_ctrl->cce_index = CCEIndex;
-    fill_pdcch_vrb_map(nrmac, CC_id, &sched_ctrl->sched_pdcch, CCEIndex, sched_ctrl->aggregation_level, dci_beam.idx);
+    fill_pdcch_vrb_map(nrmac, CC_id, &sched_ctrl->sched_pdcch, CCEIndex, sched_ctrl->aggregation_level, dci_beam.idx, "ULSCH");
 
     /* save allocation to FAPI structures */
     post_process_ulsch(nrmac, pp_pusch, iterator->UE, &sched);

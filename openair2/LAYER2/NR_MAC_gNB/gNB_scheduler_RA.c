@@ -911,13 +911,14 @@ static void nr_generate_Msg3_retransmission(module_id_t module_idP,
 
     uint8_t aggregation_level;
     int CCEIndex = get_cce_index(nr_mac,
-                                 CC_id, slot, 0,
+                                 CC_id, frame, slot, 0,
                                  &aggregation_level,
                                  beam_dci.idx,
                                  ss,
                                  coreset,
                                  &UE->UE_sched_ctrl.sched_pdcch,
-                                 0);
+                                 0,
+                                 "RA_Msg3_RETX_UL_DCI");
     if (CCEIndex < 0) {
       LOG_E(NR_MAC, "UE %04x cannot find free CCE!\n", UE->rnti);
       reset_beam_status(&nr_mac->beam_info, sched_frame, sched_slot, UE->UE_beam_index, slots_frame, beam_ul.new_beam);
@@ -970,7 +971,8 @@ static void nr_generate_Msg3_retransmission(module_id_t module_idP,
                        &UE->UE_sched_ctrl.sched_pdcch,
                        CCEIndex,
                        aggregation_level,
-                       beam_dci.idx);
+                       beam_dci.idx,
+                       "RA_Msg3_RETX");
 
     for (int rb = 0; rb < ra->msg3_nb_rb; rb++) {
       vrb_map_UL[rbStart + sched_pusch.bwp_info.bwpStart + rb] |= SL_to_bitmap(tda_info.startSymbolIndex, tda_info.nrOfSymbols);
@@ -1518,7 +1520,18 @@ static void nr_generate_Msg2(module_id_t module_idP,
   }
 
   uint8_t aggregation_level;
-  int CCEIndex = get_cce_index(nr_mac, CC_id, slotP, 0, &aggregation_level, beam.idx, ss, coreset, &sched_ctrl->sched_pdcch, 0);
+  int CCEIndex = get_cce_index(nr_mac,
+                                CC_id,
+                                frameP,
+                                slotP,
+                                0,
+                                &aggregation_level,
+                                beam.idx,
+                                ss,
+                                coreset,
+                                &sched_ctrl->sched_pdcch,
+                                0,
+                                "RA_Msg2_DL_DCI");
 
   if (CCEIndex < 0) {
     LOG_W(NR_MAC, "UE %04x: %d.%d cannot find free CCE for Msg2!\n", UE->rnti, frameP, slotP);
@@ -1658,7 +1671,7 @@ static void nr_generate_Msg2(module_id_t module_idP,
     T_BUFFER(&tx_req->TLVs[0].value.direct[0], tx_req->TLVs[0].length));
 
   // Mark the corresponding symbols RBs as used
-  fill_pdcch_vrb_map(nr_mac, CC_id, &sched_ctrl->sched_pdcch, CCEIndex, aggregation_level, beam.idx);
+  fill_pdcch_vrb_map(nr_mac, CC_id, &sched_ctrl->sched_pdcch, CCEIndex, aggregation_level, beam.idx, "RA_Msg2");
   for (int rb = 0; rb < rbSize; rb++) {
     vrb_map[bwp_info.bwpStart + rb + rbStart] |= SL_to_bitmap(tda_info.startSymbolIndex, tda_info.nrOfSymbols);
   }
@@ -1719,13 +1732,14 @@ static void nr_generate_Msg4_MsgB(module_id_t module_idP,
     // get CCEindex, needed also for PUCCH and then later for PDCCH
     uint8_t aggregation_level;
     int CCEIndex = get_cce_index(nr_mac,
-                                 CC_id, slotP, 0,
+                                 CC_id, frameP, slotP, 0,
                                  &aggregation_level,
                                  beam.idx,
                                  ss,
                                  coreset,
                                  &sched_ctrl->sched_pdcch,
-                                 0);
+                                 0,
+                                 "RA_Msg4_DL_DCI");
 
     if (CCEIndex < 0) {
       LOG_E(NR_MAC, "Cannot find free CCE for RA RNTI 0x%04x!\n", UE->rnti);
@@ -1944,7 +1958,8 @@ static void nr_generate_Msg4_MsgB(module_id_t module_idP,
                        &sched_ctrl->sched_pdcch,
                        CCEIndex,
                        aggregation_level,
-                       beam.idx);
+                       beam.idx,
+                       "RA_Msg4_MsgB");
     for (int rb = 0; rb < rbSize; rb++) {
       vrb_map[bwp_info.bwpStart + rb + rbStart] |= SL_to_bitmap(msg4_tda.startSymbolIndex, msg4_tda.nrOfSymbols);
     }

@@ -559,6 +559,7 @@ static bool allocate_dl_retransmission(gNB_MAC_INST *nr_mac,
   /* Find a free CCE */
   int CCEIndex = get_cce_index(nr_mac,
                                CC_id,
+                               frame,
                                slot,
                                UE->rnti,
                                &sched_ctrl->aggregation_level,
@@ -566,7 +567,8 @@ static bool allocate_dl_retransmission(gNB_MAC_INST *nr_mac,
                                sched_ctrl->search_space,
                                sched_ctrl->coreset,
                                &sched_ctrl->sched_pdcch,
-                               sched_ctrl->pdcch_cl_adjust);
+                               sched_ctrl->pdcch_cl_adjust,
+                               "DL_DCI_RETX");
   if (CCEIndex<0) {
     sched_ctrl->dl_cce_fail++;
     LOG_D(NR_MAC, "[UE %04x][%4d.%2d] could not find free CCE for DL DCI retransmission\n", UE->rnti, frame, slot);
@@ -587,7 +589,7 @@ static bool allocate_dl_retransmission(gNB_MAC_INST *nr_mac,
   }
 
   sched_ctrl->cce_index = CCEIndex;
-  fill_pdcch_vrb_map(nr_mac, CC_id, &sched_ctrl->sched_pdcch, CCEIndex, sched_ctrl->aggregation_level, beam_idx);
+  fill_pdcch_vrb_map(nr_mac, CC_id, &sched_ctrl->sched_pdcch, CCEIndex, sched_ctrl->aggregation_level, beam_idx, "DLSCH");
 
   new_sched.rbStart = rbStart - bwp_info.bwpStart;
   new_sched.pucch_allocation = alloc;
@@ -971,6 +973,7 @@ static void pf_dl(gNB_MAC_INST *mac,
 
     int CCEIndex = get_cce_index(mac,
                                  CC_id,
+                                 frame,
                                  slot,
                                  iterator->UE->rnti,
                                  &sched_ctrl->aggregation_level,
@@ -978,10 +981,11 @@ static void pf_dl(gNB_MAC_INST *mac,
                                  sched_ctrl->search_space,
                                  sched_ctrl->coreset,
                                  &sched_ctrl->sched_pdcch,
-                                 sched_ctrl->pdcch_cl_adjust);
+                                 sched_ctrl->pdcch_cl_adjust,
+                                 "DL_DCI");
     if (CCEIndex < 0) {
       sched_ctrl->dl_cce_fail++;
-      LOG_I(NR_MAC, "[UE %04x][%4d.%2d] could not find free CCE for DL DCI\n", rnti, frame, slot);
+      LOG_D(NR_MAC, "[UE %04x][%4d.%2d] could not find free CCE for DL DCI\n", rnti, frame, slot);
       reset_beam_status(&mac->beam_info, frame, slot, iterator->UE->UE_beam_index, slots_per_frame, beam.new_beam);
       iterator++;
       continue;
@@ -1003,7 +1007,7 @@ static void pf_dl(gNB_MAC_INST *mac,
     }
 
     sched_ctrl->cce_index = CCEIndex;
-    fill_pdcch_vrb_map(mac, CC_id, &sched_ctrl->sched_pdcch, CCEIndex, sched_ctrl->aggregation_level, beam.idx);
+    fill_pdcch_vrb_map(mac, CC_id, &sched_ctrl->sched_pdcch, CCEIndex, sched_ctrl->aggregation_level, beam.idx, "DLSCH");
 
     int l = get_dl_nrOfLayers(sched_ctrl, dl_bwp->dci_format);
     NR_sched_pdsch_t sched_pdsch = {

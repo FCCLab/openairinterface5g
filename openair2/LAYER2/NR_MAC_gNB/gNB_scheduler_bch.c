@@ -385,7 +385,8 @@ static NR_sched_pdsch_t schedule_control_sib1(gNB_MAC_INST *gNB_mac,
                      pdcch,
                      gNB_mac->sched_ctrlCommon->cce_index,
                      gNB_mac->sched_ctrlCommon->aggregation_level,
-                     beam);
+                     beam,
+                     "BCH_SIB1");
   for (int rb = 0; rb < pdsch.rbSize; rb++) {
     vrb_map[rb + type0_PDCCH_CSS_config->cset_start_rb] |= SL_to_bitmap(tda_info->startSymbolIndex, tda_info->nrOfSymbols);
   }
@@ -691,7 +692,7 @@ static void other_sib_sched_control(module_id_t module_idP,
   AssertFatal(cce_index >= 0, "Could not find CCE for otherSIB DCI\n");
 
   // Mark the corresponding RBs as used
-  fill_pdcch_vrb_map(gNB_mac, 0, gNB_mac->sched_pdcch_otherSI, cce_index, aggregation_level, beam.idx);
+  fill_pdcch_vrb_map(gNB_mac, 0, gNB_mac->sched_pdcch_otherSI, cce_index, aggregation_level, beam.idx, "BCH_OtherSI");
 
   NR_sched_pdsch_t sched_pdsch_otherSI = {0};
   sched_pdsch_otherSI.time_domain_allocation = time_domain_allocation;
