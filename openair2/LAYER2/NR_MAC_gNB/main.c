@@ -45,6 +45,7 @@
 #include "NR_MAC_COMMON/nr_mac.h"
 #include "NR_MAC_COMMON/nr_mac_common.h"
 #include "NR_MAC_gNB/mac_proto.h"
+#include "NR_MAC_gNB/resgrid_plotter_slot_fifo.h"
 #include "NR_MAC_gNB/mac_rrc_ul.h"
 #include "NR_MAC_gNB/nr_mac_gNB.h"
 #include "NR_MAC_gNB/gNB_scheduler_types.h"
@@ -310,6 +311,8 @@ void mac_top_init_gNB(ngran_node_t node_type,
 
       RC.nrmac[i]->first_MIB = true;
       RC.nrmac[i]->num_scheduled_prach_rx = 0;
+      RC.nrmac[i]->resgrid_slot_seq = 0;
+      RC.nrmac[i]->resgrid_slot_fifo_fd = -1;
       RC.nrmac[i]->common_channels[0].mib = get_new_MIB_NR(scc);
 
       RC.nrmac[i]->cset0_bwp_start = 0;
@@ -364,6 +367,7 @@ void mac_top_init_gNB(ngran_node_t node_type,
 
 void mac_top_destroy_gNB(gNB_MAC_INST *mac)
 {
+  nr_mac_resgrid_slot_fifo_cleanup(mac);
   NR_COMMON_channels_t *cc = &mac->common_channels[0];
   ASN_STRUCT_FREE(asn_DEF_NR_BCCH_BCH_Message, cc->mib);
   ASN_STRUCT_FREE(asn_DEF_NR_BCCH_DL_SCH_Message, cc->sib1);

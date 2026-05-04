@@ -1073,6 +1073,11 @@ typedef struct gNB_MAC_INST_s {
   dlul_mac_stats_t mac_stats;
   uint64_t num_scheduled_prach_rx;
 
+  /// Monotonic counter for resgrid_plotter slot FIFO (`RESGRID_SLOT_FIFO_PATH` / `CUDA_SLOT_FIFO_PATH`)
+  uint32_t resgrid_slot_seq;
+  /// Writer fd for slot FIFO, or -1 if closed / not opened
+  int resgrid_slot_fifo_fd;
+
   /// Per-slot trace of PDCCH CCE allocations (via get_cce_index); flushed if any lookup failed
   nr_mac_pdcch_slot_trace_t pdcch_slot_trace[NFAPI_CC_MAX];
 } gNB_MAC_INST;
