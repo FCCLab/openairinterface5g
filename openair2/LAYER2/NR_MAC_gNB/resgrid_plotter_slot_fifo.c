@@ -1,6 +1,14 @@
 /*
  * Optional slot FIFO export for resgrid_plotter (channel-based / --data-mode 3).
- * Wire format: see oai-nvidia/resouce-grid/docs/CHANNEL_BASED_INTERFACE.md
+ * Wire format: resouce-grid/docs/CHANNEL_BASED_INTERFACE.md
+ *
+ * Env (both required): RESGRID_SLOT_FIFO_PATH_DL and RESGRID_SLOT_FIFO_PATH_UL,
+ * or CUDA_SLOT_FIFO_PATH_DL and CUDA_SLOT_FIFO_PATH_UL. If either side is unset,
+ * slot export is disabled (no open). Routing: DL NFAPI regions go to the DL FIFO only
+ * FDD: both FIFOs each tick (v1 empty if that direction has no NFAPI regions). TDD pure
+ * DL: DL FIFO only (same-dir v1 empty if no regions); no UL FIFO write. TDD pure UL: UL
+ * FIFO only; no DL FIFO write. TDD mixed: no write to either FIFO. slot_id increments
+ * only on writes to that FIFO.
  */
 
 #include <errno.h>
@@ -34,6 +42,7 @@
 
 /** Keep one Linux pipe write under PIPE_BUF (4096) for atomicity on common kernels. */
 #define RESGRID_REGIONS_CHUNK 236
+#define RESGRID_MAX_REGIONS 1536
 
 #pragma pack(push, 1)
 typedef struct {
@@ -131,31 +140,51 @@ static bool resgrid_write_all(int fd, const void *buf, size_t len)
   return true;
 }
 
-static const char *resgrid_fifo_path_from_env(void)
+static const char *resgrid_env_nonempty(const char *key)
 {
-  const char *p = getenv("RESGRID_SLOT_FIFO_PATH");
-  if (p && p[0])
-    return p;
-  p = getenv("CUDA_SLOT_FIFO_PATH");
-  if (p && p[0])
-    return p;
-  return NULL;
+  const char *p = getenv(key);
+  return (p && p[0]) ? p : NULL;
 }
 
-/** Reader closed or FIFO recreated: drop writer fd so the next emit retries open(2). */
-static void resgrid_fifo_drop_writer(gNB_MAC_INST *gNB)
+/** DL slot FIFO path (`*_DL` or CUDA equivalent). */
+static const char *resgrid_fifo_path_dl_dual(void)
 {
-  if (gNB->resgrid_slot_fifo_fd >= 0) {
-    close(gNB->resgrid_slot_fifo_fd);
-    gNB->resgrid_slot_fifo_fd = -1;
+  const char *p = resgrid_env_nonempty("RESGRID_SLOT_FIFO_PATH_DL");
+  if (p)
+    return p;
+  return resgrid_env_nonempty("CUDA_SLOT_FIFO_PATH_DL");
+}
+
+static const char *resgrid_fifo_path_ul_dual(void)
+{
+  const char *p = resgrid_env_nonempty("RESGRID_SLOT_FIFO_PATH_UL");
+  if (p)
+    return p;
+  return resgrid_env_nonempty("CUDA_SLOT_FIFO_PATH_UL");
+}
+
+static void resgrid_fifo_drop_fd(gNB_MAC_INST *gNB, int *fd_store)
+{
+  if (*fd_store >= 0) {
+    close(*fd_store);
+    *fd_store = -1;
   }
 }
 
-static bool resgrid_ensure_fifo_open(gNB_MAC_INST *gNB)
+static void resgrid_fifo_drop_dl(gNB_MAC_INST *gNB)
 {
-  if (gNB->resgrid_slot_fifo_fd >= 0)
+  resgrid_fifo_drop_fd(gNB, &gNB->resgrid_slot_fifo_fd_dl);
+}
+
+static void resgrid_fifo_drop_ul(gNB_MAC_INST *gNB)
+{
+  resgrid_fifo_drop_fd(gNB, &gNB->resgrid_slot_fifo_fd_ul);
+}
+
+static bool resgrid_ensure_fifo_open(gNB_MAC_INST *gNB, int *fd_store, const char *path)
+{
+  if (*fd_store >= 0)
     return true;
-  const char *path = resgrid_fifo_path_from_env();
   if (!path)
     return false;
   int fd = open(path, O_WRONLY | O_NONBLOCK);
@@ -165,7 +194,7 @@ static bool resgrid_ensure_fifo_open(gNB_MAC_INST *gNB)
       LOG_W(NR_MAC, "resgrid slot FIFO open(%s): %s\n", path, strerror(errno));
     return false;
   }
-  gNB->resgrid_slot_fifo_fd = fd;
+  *fd_store = fd;
   LOG_I(NR_MAC, "resgrid slot FIFO writer opened %s (fd=%d)\n", path, fd);
   return true;
 }
@@ -200,10 +229,16 @@ static void resgrid_pack_hdr_v2_multi(resgrid_SlotMsgHdr *h, uint32_t slot_id, u
   h->n_complex = n_complex;
 }
 
-static bool resgrid_emit_v2_chunks(gNB_MAC_INST *gNB, uint32_t slot_id, resgrid_region_t *regs, int n_regs)
+static bool resgrid_emit_v2_chunks(gNB_MAC_INST *gNB,
+                                   int *fd_store,
+                                   const char *path,
+                                   uint32_t slot_id,
+                                   resgrid_region_t *regs,
+                                   int n_regs)
 {
-  if (!resgrid_ensure_fifo_open(gNB))
+  if (!resgrid_ensure_fifo_open(gNB, fd_store, path))
     return false;
+  const int fd = *fd_store;
   int off = 0;
   while (off < n_regs) {
     const int chunk = n_regs - off > RESGRID_REGIONS_CHUNK ? RESGRID_REGIONS_CHUNK : n_regs - off;
@@ -226,13 +261,13 @@ static bool resgrid_emit_v2_chunks(gNB_MAC_INST *gNB, uint32_t slot_id, resgrid_
       rd[i].channel = s->channel;
       rd[i].reserved[0] = rd[i].reserved[1] = rd[i].reserved[2] = 0;
     }
-    bool ok = resgrid_write_all(gNB->resgrid_slot_fifo_fd, buf, blob);
+    bool ok = resgrid_write_all(fd, buf, blob);
     free(buf);
     if (!ok) {
       static uint32_t w;
       if ((w++ % 500u) == 0u)
         LOG_W(NR_MAC, "resgrid slot FIFO write failed: %s\n", strerror(errno));
-      resgrid_fifo_drop_writer(gNB);
+      resgrid_fifo_drop_fd(gNB, fd_store);
       return false;
     }
     off += chunk;
@@ -240,20 +275,34 @@ static bool resgrid_emit_v2_chunks(gNB_MAC_INST *gNB, uint32_t slot_id, resgrid_
   return true;
 }
 
-static bool resgrid_emit_v1_empty(gNB_MAC_INST *gNB, uint32_t slot_id)
+static bool resgrid_emit_v1_empty(gNB_MAC_INST *gNB, int *fd_store, const char *path, uint32_t slot_id)
 {
-  if (!resgrid_ensure_fifo_open(gNB))
+  if (!resgrid_ensure_fifo_open(gNB, fd_store, path))
     return false;
+  const int fd = *fd_store;
   resgrid_SlotMsgHdr h;
   resgrid_pack_hdr_v1_empty(&h, slot_id);
-  if (!resgrid_write_all(gNB->resgrid_slot_fifo_fd, &h, sizeof h)) {
+  if (!resgrid_write_all(fd, &h, sizeof h)) {
     static uint32_t w;
     if ((w++ % 500u) == 0u)
       LOG_W(NR_MAC, "resgrid slot FIFO write (v1 empty) failed: %s\n", strerror(errno));
-    resgrid_fifo_drop_writer(gNB);
+    resgrid_fifo_drop_fd(gNB, fd_store);
     return false;
   }
   return true;
+}
+
+static void resgrid_emit_regions_or_empty(gNB_MAC_INST *gNB,
+                                          int *fd_store,
+                                          const char *path,
+                                          uint32_t slot_id,
+                                          resgrid_region_t *regs,
+                                          int n_regs)
+{
+  if (n_regs <= 0)
+    (void)resgrid_emit_v1_empty(gNB, fd_store, path, slot_id);
+  else
+    (void)resgrid_emit_v2_chunks(gNB, fd_store, path, slot_id, regs, n_regs);
 }
 
 static int resgrid_collect_dl(gNB_MAC_INST *gNB,
@@ -426,7 +475,8 @@ static int resgrid_collect_ul(gNB_MAC_INST *gNB,
 void nr_mac_resgrid_slot_fifo_cleanup(struct gNB_MAC_INST_s *gNB_in)
 {
   gNB_MAC_INST *gNB = (gNB_MAC_INST *)gNB_in;
-  resgrid_fifo_drop_writer(gNB);
+  resgrid_fifo_drop_dl(gNB);
+  resgrid_fifo_drop_ul(gNB);
 }
 
 void nr_mac_resgrid_emit_after_schedule(struct gNB_MAC_INST_s *gNB_in,
@@ -435,28 +485,50 @@ void nr_mac_resgrid_emit_after_schedule(struct gNB_MAC_INST_s *gNB_in,
                                         frame_t frame,
                                         slot_t slot)
 {
-  (void)frame;
-  (void)slot;
   gNB_MAC_INST *gNB = (gNB_MAC_INST *)gNB_in;
-  if (!resgrid_fifo_path_from_env())
+  (void)frame;
+  const char *path_dl = resgrid_fifo_path_dl_dual();
+  const char *path_ul = resgrid_fifo_path_ul_dual();
+  if (!path_dl || !path_ul)
     return;
-
-  gNB->resgrid_slot_seq++;
-  const uint32_t slot_id = gNB->resgrid_slot_seq;
 
   NR_ServingCellConfigCommon_t *scc = gNB->common_channels[0].ServingCellConfigCommon;
   const int max_sym = NR_NUMBER_OF_SYMBOLS_PER_SLOT;
   const int max_prb = scc->downlinkConfigCommon->frequencyInfoDL->scs_SpecificCarrierList.list.array[0]->carrierBandwidth;
 
-#define RESGRID_MAX_REGIONS 1536
-  resgrid_region_t regs[RESGRID_MAX_REGIONS];
-  int n = resgrid_collect_dl(gNB, dl, scc, max_prb, max_sym, regs, RESGRID_MAX_REGIONS);
-  n = resgrid_collect_ul(gNB, ul, scc, max_prb, max_sym, regs, RESGRID_MAX_REGIONS, n);
+  const frame_structure_t *fs = &gNB->frame_structure;
 
-  if (n <= 0) {
-    (void)resgrid_emit_v1_empty(gNB, slot_id);
-    return;
+  resgrid_region_t regs_dl[RESGRID_MAX_REGIONS];
+  resgrid_region_t regs_ul[RESGRID_MAX_REGIONS];
+  const int ndl = resgrid_collect_dl(gNB, dl, scc, max_prb, max_sym, regs_dl, RESGRID_MAX_REGIONS);
+  const int nul = resgrid_collect_ul(gNB, ul, scc, max_prb, max_sym, regs_ul, RESGRID_MAX_REGIONS, 0);
+
+  int n_dl_fifo = 0;
+  int n_ul_fifo = 0;
+
+  const bool tdd_mixed = (fs->frame_type != FDD) && is_mixed_slot(slot, fs);
+  if (fs->frame_type == FDD) {
+    n_dl_fifo = ndl;
+    n_ul_fifo = nul;
+  } else if (tdd_mixed) {
+    n_dl_fifo = 0;
+    n_ul_fifo = 0;
+  } else {
+    if (is_dl_slot(slot, fs))
+      n_dl_fifo = ndl;
+    if (is_ul_slot(slot, fs))
+      n_ul_fifo = nul;
   }
 
-  (void)resgrid_emit_v2_chunks(gNB, slot_id, regs, n);
+  const bool emit_dl = (fs->frame_type == FDD) || (is_dl_slot(slot, fs) && !tdd_mixed);
+  const bool emit_ul = (fs->frame_type == FDD) || (is_ul_slot(slot, fs) && !tdd_mixed);
+
+  if (emit_dl) {
+    gNB->resgrid_slot_seq_dl++;
+    resgrid_emit_regions_or_empty(gNB, &gNB->resgrid_slot_fifo_fd_dl, path_dl, gNB->resgrid_slot_seq_dl, regs_dl, n_dl_fifo);
+  }
+  if (emit_ul) {
+    gNB->resgrid_slot_seq_ul++;
+    resgrid_emit_regions_or_empty(gNB, &gNB->resgrid_slot_fifo_fd_ul, path_ul, gNB->resgrid_slot_seq_ul, regs_ul, n_ul_fifo);
+  }
 }

@@ -311,8 +311,10 @@ void mac_top_init_gNB(ngran_node_t node_type,
 
       RC.nrmac[i]->first_MIB = true;
       RC.nrmac[i]->num_scheduled_prach_rx = 0;
-      RC.nrmac[i]->resgrid_slot_seq = 0;
-      RC.nrmac[i]->resgrid_slot_fifo_fd = -1;
+      RC.nrmac[i]->resgrid_slot_seq_dl = 0;
+      RC.nrmac[i]->resgrid_slot_seq_ul = 0;
+      RC.nrmac[i]->resgrid_slot_fifo_fd_dl = -1;
+      RC.nrmac[i]->resgrid_slot_fifo_fd_ul = -1;
       RC.nrmac[i]->common_channels[0].mib = get_new_MIB_NR(scc);
 
       RC.nrmac[i]->cset0_bwp_start = 0;

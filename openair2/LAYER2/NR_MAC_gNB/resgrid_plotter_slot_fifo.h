@@ -1,6 +1,7 @@
 /*
  * Optional slot FIFO export for resgrid_plotter channel-based mode.
  * Wire format: resouce-grid/docs/CHANNEL_BASED_INTERFACE.md
+ * DL/UL FIFO env and routing: see resgrid_plotter_slot_fifo.c file comment.
  */
 #ifndef RESGRID_PLOTTER_SLOT_FIFO_H
 #define RESGRID_PLOTTER_SLOT_FIFO_H
