@@ -2,17 +2,43 @@
  * Optional slot FIFO export for resgrid_plotter (channel-based / --data-mode 3).
  * Wire format: resouce-grid/docs/CHANNEL_BASED_INTERFACE.md
  *
- * Env (both required): RESGRID_SLOT_FIFO_PATH_DL and RESGRID_SLOT_FIFO_PATH_UL,
- * or CUDA_SLOT_FIFO_PATH_DL and CUDA_SLOT_FIFO_PATH_UL. If either side is unset,
- * slot export is disabled (no open). Routing: DL NFAPI regions go to the DL FIFO only
- * FDD: both FIFOs each tick (v1 empty if that direction has no NFAPI regions). TDD pure
- * DL: DL FIFO only (same-dir v1 empty if no regions); no UL FIFO write. TDD pure UL: UL
- * FIFO only; no DL FIFO write. TDD mixed: no write to either FIFO. slot_id increments
- * only on writes to that FIFO.
+ * Data path
+ * ---------
+ * NFAPI DL/UL TTI PDUs are turned into axis-aligned rectangles (sym_start/count,
+ * prb_start/count) tagged with RESGRID_CHAN_* and optional RNTI, then written as
+ * one v1 “empty marker” frame or chunked v2 multi-region frames (see below).
+ *
+ * CSI-RS / SRS
+ * -------------
+ * CSI-RS (`NFAPI_NR_DL_TTI_CSI_RS_PDU_TYPE`): NFAPI carries `start_rb` / `nr_of_rbs` and row/l0/l1;
+ * symbol span follows the same `SL_to_bitmap` patterns as `nr_csirs_meas_scheduling()` in
+ * gNB_scheduler_primitives.c (axis-aligned bbox).
+ * SRS (`NFAPI_NR_UL_CONFIG_SRS_PDU_TYPE`): BWP-wide PRB rectangle (`bwp_start` / `bwp_size`) and
+ * `SL_to_bitmap(time_start_position, 1<<num_symbols)` as in `nr_configure_srs()` (gNB_scheduler_srs.c).
+ *
+ * Each DCI in a PDCCH PDU (DL_TTI or UL_DCI.request) becomes one rectangle: the
+ * axis-aligned bbox of PRBs touched by CceIndex..CceIndex+L-1 using the same
+ * CCE→REG→RB geometry as fill_pdcch_vrb_map() / cce_to_reg_interleaving() in
+ * gNB_scheduler_primitives.c (not the full CORESET outline). UL DCI is still on
+ * the downlink air interface, so those regions are appended to the DL FIFO list.
+ *
+ * Environment
+ * -----------
+ * Both FIFO paths must be set or the module does nothing:
+ *   RESGRID_SLOT_FIFO_PATH_DL / RESGRID_SLOT_FIFO_PATH_UL
+ * or CUDA_SLOT_FIFO_PATH_DL / CUDA_SLOT_FIFO_PATH_UL (aliases).
+ *
+ * TDD routing
+ * -----------
+ * FDD: both FIFOs written each schedule tick (v1 empty if that direction has zero
+ * regions). TDD DL-only slot: DL FIFO only. TDD UL-only slot: UL FIFO only.
+ * TDD mixed slot: no write to either FIFO (ambiguous overlay). slot_id increments
+ * only when its FIFO is actually written.
  */
 
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -33,18 +59,23 @@
 #define RESGRID_SLOT_VER2 2u
 #define RESGRID_SLOT_FLAG_MULTI 1u
 
-#define RESGRID_CHAN_PBCH 1u
-#define RESGRID_CHAN_PDCCH 2u
-#define RESGRID_CHAN_PDSCH 3u
-#define RESGRID_CHAN_PUSCH 4u
-#define RESGRID_CHAN_PUCCH 5u
-#define RESGRID_CHAN_PRACH 6u
+/* Logical channel bytes (paired DL/UL + sounding); must match plotter CUDA legend. */
+#define RESGRID_CHAN_SSB 1u
+#define RESGRID_CHAN_PRACH 2u
+#define RESGRID_CHAN_PDCCH 3u
+#define RESGRID_CHAN_PUCCH 4u
+#define RESGRID_CHAN_PDSCH 5u
+#define RESGRID_CHAN_PUSCH 6u
+#define RESGRID_CHAN_CSI_RS 7u
+#define RESGRID_CHAN_SRS 8u
 
 /** Keep one Linux pipe write under PIPE_BUF (4096) for atomicity on common kernels. */
 #define RESGRID_REGIONS_CHUNK 236
 #define RESGRID_MAX_REGIONS 1536
 
 #pragma pack(push, 1)
+/* v1: single-slot heartbeat — sym/prb counts zero; channel 0.
+ * v2 + FLAG_MULTI: sym/prb zero in hdr; next uint16_t = N; then N × SlotRegionDesc. */
 typedef struct {
   uint32_t magic;
   uint16_t version;
@@ -80,6 +111,7 @@ typedef struct {
 
 _Static_assert(sizeof(resgrid_SlotRegionDesc) == 16, "resgrid slot region size");
 
+/* Working copy while collecting; flattened into SlotRegionDesc on write. */
 typedef struct {
   uint16_t sym_start;
   uint16_t sym_count;
@@ -88,6 +120,64 @@ typedef struct {
   uint32_t rnti;
   uint8_t channel;
 } resgrid_region_t;
+
+static void resgrid_clamp_region(resgrid_region_t *r, int max_prb, int max_sym);
+
+/** Symbol bitmask for NZP CSI-RS from NFAPI `row` / `symb_l0` / `symb_l1` (matches MAC vrb_map OR patterns). */
+static uint16_t resgrid_csirs_symbol_mask(uint8_t row, uint8_t symb_l0, uint8_t symb_l1)
+{
+  switch (row) {
+    case 1:
+    case 2:
+    case 3:
+    case 4:
+    case 6:
+    case 9:
+      return SL_to_bitmap(symb_l0, 1);
+    case 5:
+    case 7:
+    case 8:
+    case 10:
+    case 11:
+    case 12:
+      return SL_to_bitmap(symb_l0, 2);
+    case 13:
+    case 14:
+    case 16:
+    case 17:
+      return (uint16_t)(SL_to_bitmap(symb_l0, 2) | SL_to_bitmap(symb_l1, 2));
+    case 15:
+    case 18:
+      return SL_to_bitmap(symb_l0, 3);
+    default:
+      return 0;
+  }
+}
+
+static void resgrid_sym_mask_to_span(uint16_t mask, uint16_t *sym_start, uint16_t *sym_count)
+{
+  if (mask == 0) {
+    *sym_start = 0;
+    *sym_count = 0;
+    return;
+  }
+  int lo = -1;
+  int hi = -1;
+  for (int s = 0; s < NR_NUMBER_OF_SYMBOLS_PER_SLOT; s++) {
+    if (mask & (1u << s)) {
+      if (lo < 0)
+        lo = s;
+      hi = s;
+    }
+  }
+  if (lo < 0 || hi < 0) {
+    *sym_start = 0;
+    *sym_count = 0;
+    return;
+  }
+  *sym_start = (uint16_t)lo;
+  *sym_count = (uint16_t)(hi - lo + 1);
+}
 
 static int resgrid_prach_symbol_duration(uint8_t prach_format)
 {
@@ -98,10 +188,73 @@ static int resgrid_prach_symbol_duration(uint8_t prach_format)
   return val[prach_format];
 }
 
-static uint64_t resgrid_coreset_bitmap(const uint8_t freq[6])
+/* One bbox per DCI; PRB extent = min/max of RB indices marked by MAC/PHY PDCCH mapping. */
+static void resgrid_pdcch_pdu_append_dcis(const nfapi_nr_dl_tti_pdcch_pdu_rel15_t *p,
+                                          int max_prb,
+                                          int max_sym,
+                                          resgrid_region_t *out,
+                                          int *n_io,
+                                          int out_cap)
 {
-  return (((uint64_t)freq[0]) << 37) | (((uint64_t)freq[1]) << 29) | (((uint64_t)freq[2]) << 21) | (((uint64_t)freq[3]) << 13)
-         | (((uint64_t)freq[4]) << 5) | (((uint64_t)freq[5]) >> 3);
+  int n_rb = 0;
+  int rb_off_unused = 0;
+  get_coreset_rballoc(p->FreqDomainResource, &n_rb, &rb_off_unused);
+  const int Lbundle = (int)p->RegBundleSize;
+  const int R = (int)p->InterleaverSize;
+  const int N_symb = (int)p->DurationSymbols;
+  if (n_rb <= 0 || N_symb <= 0 || Lbundle <= 0 || (Lbundle % N_symb) != 0)
+    return;
+
+  const int N_regs = n_rb * N_symb;
+  const int B_rb = Lbundle / N_symb;
+  if (B_rb <= 0)
+    return;
+
+  int C = 0;
+  if (R > 0) {
+    const int denom = Lbundle * R;
+    if (denom <= 0 || (N_regs % denom) != 0)
+      return;
+    C = N_regs / denom;
+  }
+
+  const int n_shift = (int)p->ShiftIndex;
+
+  for (uint16_t di = 0; di < p->numDlDci && *n_io < out_cap; di++) {
+    const nfapi_nr_dl_dci_pdu_t *dci = &p->dci_pdu[di];
+    const int agg = (int)dci->AggregationLevel;
+    const int first_cce = (int)dci->CceIndex;
+    if (agg <= 0 || first_cce < 0)
+      continue;
+
+    int prb_min = INT_MAX;
+    int prb_max = INT_MIN;
+    for (int j = first_cce; j < first_cce + agg; j++) {
+      for (int k = 6 * j / Lbundle; k < (6 * j / Lbundle + 6 / Lbundle); k++) {
+        const int f = cce_to_reg_interleaving(R, k, n_shift, C, Lbundle, N_regs);
+        for (int rb = 0; rb < B_rb; rb++) {
+          const int abs_rb = (int)p->BWPStart + f * B_rb + rb;
+          if (abs_rb < prb_min)
+            prb_min = abs_rb;
+          if (abs_rb > prb_max)
+            prb_max = abs_rb;
+        }
+      }
+    }
+
+    if (prb_min > prb_max || prb_min < 0)
+      continue;
+
+    resgrid_region_t reg = {.sym_start = p->StartSymbolIndex,
+                            .sym_count = (uint16_t)N_symb,
+                            .prb_start = (uint16_t)prb_min,
+                            .prb_count = (uint16_t)(prb_max - prb_min + 1),
+                            .rnti = dci->RNTI,
+                            .channel = RESGRID_CHAN_PDCCH};
+    resgrid_clamp_region(&reg, max_prb, max_sym);
+    if (reg.sym_count > 0 && reg.prb_count > 0)
+      out[(*n_io)++] = reg;
+  }
 }
 
 static void resgrid_clamp_region(resgrid_region_t *r, int max_prb, int max_sym)
@@ -199,6 +352,7 @@ static bool resgrid_ensure_fifo_open(gNB_MAC_INST *gNB, int *fd_store, const cha
   return true;
 }
 
+/* v1 frame: slot advance marker only (zero-area region). */
 static void resgrid_pack_hdr_v1_empty(resgrid_SlotMsgHdr *h, uint32_t slot_id)
 {
   memset(h, 0, sizeof(*h));
@@ -219,6 +373,7 @@ static void resgrid_pack_hdr_v1_empty(resgrid_SlotMsgHdr *h, uint32_t slot_id)
   h->reserved3 = 0;
 }
 
+/* v2 multi header: geometry lives in following uint16 count + SlotRegionDesc[]. */
 static void resgrid_pack_hdr_v2_multi(resgrid_SlotMsgHdr *h, uint32_t slot_id, uint32_t n_complex)
 {
   memset(h, 0, sizeof(*h));
@@ -229,6 +384,7 @@ static void resgrid_pack_hdr_v2_multi(resgrid_SlotMsgHdr *h, uint32_t slot_id, u
   h->n_complex = n_complex;
 }
 
+/* Split large region lists so each write stays <= PIPE_BUF for pipe atomicity. */
 static bool resgrid_emit_v2_chunks(gNB_MAC_INST *gNB,
                                    int *fd_store,
                                    const char *path,
@@ -299,14 +455,17 @@ static void resgrid_emit_regions_or_empty(gNB_MAC_INST *gNB,
                                           resgrid_region_t *regs,
                                           int n_regs)
 {
+  /* Reader distinguishes slot tick with no shapes vs payload present. */
   if (n_regs <= 0)
     (void)resgrid_emit_v1_empty(gNB, fd_store, path, slot_id);
   else
     (void)resgrid_emit_v2_chunks(gNB, fd_store, path, slot_id, regs, n_regs);
 }
 
+/* Scan DL_tti PDUs plus UL_DCI.request PDCCH PDUs (UL grants on DL). */
 static int resgrid_collect_dl(gNB_MAC_INST *gNB,
                               const nfapi_nr_dl_tti_request_t *dl,
+                              const nfapi_nr_ul_dci_request_t *ul_dci,
                               NR_ServingCellConfigCommon_t *scc,
                               int max_prb,
                               int max_sym,
@@ -314,6 +473,7 @@ static int resgrid_collect_dl(gNB_MAC_INST *gNB,
                               int out_cap)
 {
   int n = 0;
+  (void)gNB;
   if (!dl)
     return 0;
   const nfapi_nr_dl_tti_request_body_t *body = &dl->dl_tti_request_body;
@@ -326,31 +486,10 @@ static int resgrid_collect_dl(gNB_MAC_INST *gNB,
     switch (pdu->PDUType) {
       case NFAPI_NR_DL_TTI_PDCCH_PDU_TYPE: {
         const nfapi_nr_dl_tti_pdcch_pdu_rel15_t *p = &pdu->pdcch_pdu.pdcch_pdu_rel15;
-        uint32_t rnti = 0;
-        if (p->numDlDci > 0)
-          rnti = p->dci_pdu[0].RNTI;
-        const uint64_t bitmap = resgrid_coreset_bitmap(p->FreqDomainResource);
-        int j = 0;
-        while (j < 45 && n < out_cap) {
-          if (((bitmap >> (44 - j)) & 1u) == 0u) {
-            j++;
-            continue;
-          }
-          const int run0 = j;
-          while (j < 45 && ((bitmap >> (44 - j)) & 1u) != 0u)
-            j++;
-          out[n].sym_start = p->StartSymbolIndex;
-          out[n].sym_count = p->DurationSymbols;
-          out[n].prb_start = p->BWPStart + (uint16_t)(6 * run0);
-          out[n].prb_count = (uint16_t)(6 * (j - run0));
-          out[n].rnti = rnti;
-          out[n].channel = RESGRID_CHAN_PDCCH;
-          resgrid_clamp_region(&out[n], max_prb, max_sym);
-          if (out[n].sym_count > 0 && out[n].prb_count > 0)
-            n++;
-        }
+        resgrid_pdcch_pdu_append_dcis(p, max_prb, max_sym, out, &n, out_cap);
       } break;
 
+      /* Scheduled DL data: NFAPI rbStart/rbSize + symbol span are explicit. */
       case NFAPI_NR_DL_TTI_PDSCH_PDU_TYPE: {
         const nfapi_nr_dl_tti_pdsch_pdu_rel15_t *p = &pdu->pdsch_pdu.pdsch_pdu_rel15;
         out[n].sym_start = p->StartSymbolIndex;
@@ -364,6 +503,7 @@ static int resgrid_collect_dl(gNB_MAC_INST *gNB,
           n++;
       } break;
 
+      /* SS/PBCH block: map band/SCS/ssbOffsetPointA into slot-local PRB/symbol box. */
       case NFAPI_NR_DL_TTI_SSB_PDU_TYPE: {
         const nfapi_nr_dl_tti_ssb_pdu_rel15_t *p = &pdu->ssb_pdu.ssb_pdu_rel15;
         const uint16_t ssb_sym = get_ssb_start_symbol(band, ssb_scs, p->SsbBlockIndex) % NR_NUMBER_OF_SYMBOLS_PER_SLOT;
@@ -381,7 +521,28 @@ static int resgrid_collect_dl(gNB_MAC_INST *gNB,
         out[n].prb_start = (uint16_t)prb0;
         out[n].prb_count = (uint16_t)(20 + extra);
         out[n].rnti = 0;
-        out[n].channel = RESGRID_CHAN_PBCH;
+        out[n].channel = RESGRID_CHAN_SSB;
+        resgrid_clamp_region(&out[n], max_prb, max_sym);
+        if (out[n].sym_count > 0 && out[n].prb_count > 0)
+          n++;
+      } break;
+
+      case NFAPI_NR_DL_TTI_CSI_RS_PDU_TYPE: {
+        const nfapi_nr_dl_tti_csi_rs_pdu_rel15_t *p = &pdu->csi_rs_pdu.csi_rs_pdu_rel15;
+        if (p->nr_of_rbs == 0)
+          break;
+        const uint16_t sm = resgrid_csirs_symbol_mask(p->row, p->symb_l0, p->symb_l1);
+        uint16_t ss = 0;
+        uint16_t sc = 0;
+        resgrid_sym_mask_to_span(sm, &ss, &sc);
+        if (sc == 0)
+          break;
+        out[n].sym_start = ss;
+        out[n].sym_count = sc;
+        out[n].prb_start = p->start_rb;
+        out[n].prb_count = p->nr_of_rbs;
+        out[n].rnti = 0;
+        out[n].channel = RESGRID_CHAN_CSI_RS;
         resgrid_clamp_region(&out[n], max_prb, max_sym);
         if (out[n].sym_count > 0 && out[n].prb_count > 0)
           n++;
@@ -391,9 +552,21 @@ static int resgrid_collect_dl(gNB_MAC_INST *gNB,
         break;
     }
   }
+
+  if (ul_dci != NULL) {
+    for (uint8_t ui = 0; ui < ul_dci->numPdus && n < out_cap; ui++) {
+      const nfapi_nr_ul_dci_request_pdus_t *upd = &ul_dci->ul_dci_pdu_list[ui];
+      if (upd->PDUType != NFAPI_NR_DL_TTI_PDCCH_PDU_TYPE)
+        continue;
+      const nfapi_nr_dl_tti_pdcch_pdu_rel15_t *p = &upd->pdcch_pdu.pdcch_pdu_rel15;
+      resgrid_pdcch_pdu_append_dcis(p, max_prb, max_sym, out, &n, out_cap);
+    }
+  }
+
   return n;
 }
 
+/* UL regions from ul_tti only (PUSCH / PUCCH / PRACH). PRACH PRBs derived from RACH config. */
 static int resgrid_collect_ul(gNB_MAC_INST *gNB,
                               const nfapi_nr_ul_tti_request_t *ul,
                               NR_ServingCellConfigCommon_t *scc,
@@ -465,6 +638,28 @@ static int resgrid_collect_ul(gNB_MAC_INST *gNB,
           n++;
       } break;
 
+      case NFAPI_NR_UL_CONFIG_SRS_PDU_TYPE: {
+        const nfapi_nr_srs_pdu_t *p = &pdu->srs_pdu;
+        if (p->bwp_size == 0)
+          break;
+        const unsigned num_sym = 1u << (unsigned)p->num_symbols;
+        const uint16_t sm = SL_to_bitmap((int)p->time_start_position, (int)num_sym);
+        uint16_t ss = 0;
+        uint16_t sc = 0;
+        resgrid_sym_mask_to_span(sm, &ss, &sc);
+        if (sc == 0)
+          break;
+        out[n].sym_start = ss;
+        out[n].sym_count = sc;
+        out[n].prb_start = p->bwp_start;
+        out[n].prb_count = p->bwp_size;
+        out[n].rnti = p->rnti;
+        out[n].channel = RESGRID_CHAN_SRS;
+        resgrid_clamp_region(&out[n], max_prb, max_sym);
+        if (out[n].sym_count > 0 && out[n].prb_count > 0)
+          n++;
+      } break;
+
       default:
         break;
     }
@@ -479,9 +674,18 @@ void nr_mac_resgrid_slot_fifo_cleanup(struct gNB_MAC_INST_s *gNB_in)
   resgrid_fifo_drop_ul(gNB);
 }
 
+/*
+ * Collect rectangles for this scheduling call, then apply TDD policy:
+ *   FDD        -> emit DL list to DL FIFO and UL list to UL FIFO (counts may differ).
+ *   TDD mixed  -> emit nothing (both n_*_fifo forced to 0); avoids ambiguous overlays.
+ *   TDD DL/UL  -> only the matching-direction FIFO gets data for that slot.
+ * emit_* gates increment slot_id only when that FIFO is written (see block comment top).
+ * ul_dci regions are appended with DL regions (both are DL-air PDCCH); NULL skips UL-DCI merge.
+ */
 void nr_mac_resgrid_emit_after_schedule(struct gNB_MAC_INST_s *gNB_in,
                                         const nfapi_nr_dl_tti_request_t *dl,
                                         const nfapi_nr_ul_tti_request_t *ul,
+                                        const nfapi_nr_ul_dci_request_t *ul_dci,
                                         frame_t frame,
                                         slot_t slot)
 {
@@ -500,7 +704,7 @@ void nr_mac_resgrid_emit_after_schedule(struct gNB_MAC_INST_s *gNB_in,
 
   resgrid_region_t regs_dl[RESGRID_MAX_REGIONS];
   resgrid_region_t regs_ul[RESGRID_MAX_REGIONS];
-  const int ndl = resgrid_collect_dl(gNB, dl, scc, max_prb, max_sym, regs_dl, RESGRID_MAX_REGIONS);
+  const int ndl = resgrid_collect_dl(gNB, dl, ul_dci, scc, max_prb, max_sym, regs_dl, RESGRID_MAX_REGIONS);
   const int nul = resgrid_collect_ul(gNB, ul, scc, max_prb, max_sym, regs_ul, RESGRID_MAX_REGIONS, 0);
 
   int n_dl_fifo = 0;
