@@ -49,7 +49,7 @@
 #include "nfapi/oai_integration/vendor_ext.h"
 #include "executables/nr-softmodem.h"
 
-#include "NR_MAC_gNB/resgrid_plotter_slot_fifo.h"
+#include "NR_MAC_gNB/resgrid_plotter_slot_mq.h"
 
 #include <errno.h>
 #include <string.h>

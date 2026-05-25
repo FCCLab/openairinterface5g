@@ -1221,7 +1221,7 @@ set (MAC_NR_SRC
   ${NR_GNB_MAC_DIR}/gNB_scheduler.c
   ${NR_GNB_MAC_DIR}/gNB_scheduler_bch.c
   ${NR_GNB_MAC_DIR}/gNB_scheduler_dlsch.c
-  ${NR_GNB_MAC_DIR}/resgrid_plotter_slot_fifo.c
+  ${NR_GNB_MAC_DIR}/resgrid_plotter_slot_mq.c
   ${NR_GNB_MAC_DIR}/slice_prb_allocator/slice_prb_allocator.c
   ${NR_GNB_MAC_DIR}/gNB_scheduler_ulsch.c
   ${NR_GNB_MAC_DIR}/gNB_scheduler_primitives.c

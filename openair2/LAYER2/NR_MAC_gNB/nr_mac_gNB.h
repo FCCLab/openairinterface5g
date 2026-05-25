@@ -42,6 +42,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <pthread.h>
+#include <mqueue.h>
 #include "common/utils/ds/seq_arr.h"
 #include "common/utils/nr/nr_common.h"
 #include "common/utils/ds/byte_array.h"
@@ -1073,14 +1074,14 @@ typedef struct gNB_MAC_INST_s {
   dlul_mac_stats_t mac_stats;
   uint64_t num_scheduled_prach_rx;
 
-  /// slot_id for resgrid DL FIFO; incremented only when a message is written (`resgrid_plotter_slot_fifo.c`)
+  /// slot_id for resgrid DL slot export; incremented only when a message is written (`resgrid_plotter_slot_mq.c`)
   uint32_t resgrid_slot_seq_dl;
-  /// slot_id for resgrid UL FIFO; incremented only when a message is written
+  /// slot_id for resgrid UL slot export; incremented only when a message is written
   uint32_t resgrid_slot_seq_ul;
-  /// Writer fd for DL slot FIFO, or -1
-  int resgrid_slot_fifo_fd_dl;
-  /// Writer fd for UL slot FIFO, or -1
-  int resgrid_slot_fifo_fd_ul;
+  /// Writer mq descriptor for DL slot export, or (mqd_t)-1
+  mqd_t resgrid_slot_mq_dl;
+  /// Writer mq descriptor for UL slot export, or (mqd_t)-1
+  mqd_t resgrid_slot_mq_ul;
 
   /// Per-slot trace of PDCCH CCE allocations (via get_cce_index); flushed if any lookup failed
   nr_mac_pdcch_slot_trace_t pdcch_slot_trace[NFAPI_CC_MAX];
