@@ -1107,7 +1107,7 @@ static void pf_dl(gNB_MAC_INST *mac,
     post_process_dlsch(mac, pp_pdsch, iterator->UE, &sched_pdsch);
 
     /* Collect allocation info for new transmission */
-    if (!use_slice && num_allocations < MAX_MOBILES_PER_GNB) {
+    if (num_allocations < MAX_MOBILES_PER_GNB) {
       const NR_tda_info_t *alloc_tda_info = &sched_pdsch.tda_info;
       allocations[num_allocations].rnti = rnti;
       allocations[num_allocations].start_symbol = alloc_tda_info->startSymbolIndex;
@@ -1135,8 +1135,8 @@ static void pf_dl(gNB_MAC_INST *mac,
     iterator++;
   }
 
-  /* Log scheduler allocations to file */
-  if (!use_slice)
+  /* PF does not rely on the scheduler allocation file; skip file logging there. */
+  if (use_slice)
     log_scheduler_allocations(frame, slot, allocations, num_allocations);
 }
 

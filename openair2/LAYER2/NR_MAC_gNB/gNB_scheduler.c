@@ -258,8 +258,8 @@ void gNB_dlsch_ulsch_scheduler(module_id_t module_idP, frame_t frame, slot_t slo
 
   nr_schedule_pucch(gNB, frame, slot);
 
-  for (int CC_id = 0; CC_id < MAX_NUM_CCs; CC_id++)
-    nr_mac_pdcch_slot_trace_flush_if_needed(gNB, CC_id, frame, slot);
+  // for (int CC_id = 0; CC_id < MAX_NUM_CCs; CC_id++)
+  //   nr_mac_pdcch_slot_trace_flush_if_needed(gNB, CC_id, frame, slot);
 
   /* TODO: we copy from gNB->UL_tti_req_ahead[0][current_index], ie. CC_id == 0,
    * is more than 1 CC supported?

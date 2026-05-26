@@ -1101,7 +1101,7 @@ void nr_mac_pdcch_slot_trace_flush_if_needed(gNB_MAC_INST *mac, int CC_id, frame
   nr_mac_pdcch_slot_trace_t *tr = &mac->pdcch_slot_trace[CC_id];
   if (tr->n_fail == 0)
     return;
-
+  LOG_I(NR_MAC, "------------------- Frame.Slot %u.%02d CC%d -------------------\n", frame, slot, CC_id);
   LOG_I(NR_MAC,
         "PDCCH_SLOT_CCE_SUMMARY Frame.Slot %u.%02d CC%d failures=%u successful_CCE_allocations=%u%s%s\n",
         frame,
@@ -1133,6 +1133,7 @@ void nr_mac_pdcch_slot_trace_flush_if_needed(gNB_MAC_INST *mac, int CC_id, frame
           (unsigned)a->aggregation,
           a->purpose);
   }
+  LOG_I(NR_MAC, "------------------- End of Frame.Slot %u.%02d CC%d -------------------\n", frame, slot, CC_id);
 }
 
 int get_cce_index(gNB_MAC_INST *nrmac,
@@ -1180,8 +1181,6 @@ int get_cce_index(gNB_MAC_INST *nrmac,
   }
   int CCEIndex = find_pdcch_candidate(nrmac, CC_id, *aggregation_level, nr_of_candidates, beam_idx, sched_pdcch, coreset, Y);
   if (CCEIndex >= 0) {
-    const int N_regs = sched_pdcch->n_rb * coreset->duration;
-    const int N_cces = N_regs / NR_NB_REG_PER_CCE;
     nr_mac_pdcch_slot_trace_record_alloc(nrmac,
                                          CC_id,
                                          rnti,
@@ -1191,128 +1190,57 @@ int get_cce_index(gNB_MAC_INST *nrmac,
                                          coreset,
                                          ss,
                                          rsn);
-    if (have_cand_info) {
-      LOG_D(NR_MAC,
-            "PDCCH_CAND %u.%02d RNTI 0x%04x CORESET%ld SS%ld beam%d reason=%s Y=%u L=%u nr_cand=%u N_CCE=%d%s\n",
-            frame,
-            slot,
-            rnti,
-            (long)coreset->controlResourceSetId,
-            (long)ss->searchSpaceId,
-            beam_idx,
-            rsn,
-            Y,
-            (unsigned)L_sel,
-            (unsigned)nr_of_candidates,
-            N_cces_cand,
-            cand_buf);
-    }
-    LOG_D(NR_MAC,
-          "PDCCH_CCE_ALLOC %u.%02d RNTI 0x%04x CORESET%ld SS%ld beam%d reason=%s L=%u CCE[%d..%d] N_CCE=%d\n",
-          frame,
-          slot,
-          rnti,
-          (long)coreset->controlResourceSetId,
-          (long)ss->searchSpaceId,
-          beam_idx,
-          rsn,
-          (unsigned)*aggregation_level,
-          CCEIndex,
-          CCEIndex + *aggregation_level - 1,
-          N_cces);
-  } else if (have_cand_info) {
-    char usage_buf[400] = {0};
-    int pu = 0;
-    for (int fc = 0; fc + L_sel <= N_cces_cand && pu < (int)sizeof(usage_buf) - 28; fc += L_sel) {
-      const bool busy = pdcch_cce_al_region_busy(nrmac, CC_id, beam_idx, sched_pdcch, coreset, fc, L_sel);
-      pu += snprintf(usage_buf + pu,
-                     sizeof(usage_buf) - (size_t)pu,
-                     " [%d..%d]=%s",
-                     fc,
-                     fc + L_sel - 1,
-                     busy ? "busy" : "free");
-    }
-    nr_mac_pdcch_slot_trace_record_fail(nrmac, CC_id, rnti, rsn);
-    nr_mac_log_pdcch_cce_fail_occupants(nrmac,
-                                        CC_id,
-                                        frame,
-                                        slot,
-                                        rnti,
-                                        rsn,
-                                        ss,
-                                        coreset,
-                                        sched_pdcch,
-                                        beam_idx,
-                                        Y,
-                                        L_sel,
-                                        nr_of_candidates,
-                                        N_cces_cand,
-                                        true);
-    nr_mac_log_pdcch_cce_failed_candidates_detail(nrmac,
-                                                    CC_id,
-                                                    frame,
-                                                    slot,
-                                                    beam_idx,
-                                                    sched_pdcch,
-                                                    coreset,
-                                                    Y,
-                                                    L_sel,
-                                                    nr_of_candidates,
-                                                    N_cces_cand);
-    LOG_D(NR_MAC,
-          "PDCCH_CCE_FAIL Frame.Slot %u.%02d RNTI 0x%04x CORESET%ld SS%ld beam%d reason=%s Y=%u L=%u nr_cand=%u "
-          "N_CCE=%d (no free candidate; vrb_map busy)%s\n",
-          frame,
-          slot,
-          rnti,
-          (long)coreset->controlResourceSetId,
-          (long)ss->searchSpaceId,
-          beam_idx,
-          rsn,
-          Y,
-          (unsigned)L_sel,
-          (unsigned)nr_of_candidates,
-          N_cces_cand,
-          cand_buf);
-    LOG_D(NR_MAC,
-          "PDCCH_CCE_SLOT_USAGE Frame.Slot %u.%02d CORESET%ld SS%ld beam%d L=%u N_CCE=%d vrb_map AL_regions:%s\n",
-          frame,
-          slot,
-          (long)coreset->controlResourceSetId,
-          (long)ss->searchSpaceId,
-          beam_idx,
-          (unsigned)L_sel,
-          N_cces_cand,
-          usage_buf);
-  } else {
-    nr_mac_pdcch_slot_trace_record_fail(nrmac, CC_id, rnti, rsn);
-    nr_mac_log_pdcch_cce_fail_occupants(nrmac,
-                                        CC_id,
-                                        frame,
-                                        slot,
-                                        rnti,
-                                        rsn,
-                                        ss,
-                                        coreset,
-                                        sched_pdcch,
-                                        beam_idx,
-                                        Y,
-                                        L_sel,
-                                        nr_of_candidates,
-                                        N_cces_cand,
-                                        false);
-    LOG_D(NR_MAC,
-          "PDCCH_CCE_FAIL Frame.Slot %u.%02d RNTI 0x%04x CORESET%ld SS%ld beam%d reason=%s L=%u nr_cand=%u (no valid "
-          "search-space candidates)\n",
-          frame,
-          slot,
-          rnti,
-          (long)coreset->controlResourceSetId,
-          (long)ss->searchSpaceId,
-          beam_idx,
-          rsn,
-          (unsigned)L_sel,
-          (unsigned)nr_of_candidates);
+  }
+  else {
+    // LOG_I(NR_MAC,"---------------- Failed on CCE allocation on Frame.Slot %u.%02d CC%d -----------------\n", frame, slot, CC_id);
+    // if (have_cand_info) {
+    //   nr_mac_pdcch_slot_trace_record_fail(nrmac, CC_id, rnti, rsn);
+    //   nr_mac_log_pdcch_cce_fail_occupants(nrmac,
+    //                                       CC_id,
+    //                                       frame,
+    //                                       slot,
+    //                                       rnti,
+    //                                       rsn,
+    //                                       ss,
+    //                                       coreset,
+    //                                       sched_pdcch,
+    //                                       beam_idx,
+    //                                       Y,
+    //                                       L_sel,
+    //                                       nr_of_candidates,
+    //                                       N_cces_cand,
+    //                                       true);
+    //   nr_mac_log_pdcch_cce_failed_candidates_detail(nrmac,
+    //                                                   CC_id,
+    //                                                   frame,
+    //                                                   slot,
+    //                                                   beam_idx,
+    //                                                   sched_pdcch,
+    //                                                   coreset,
+    //                                                   Y,
+    //                                                   L_sel,
+    //                                                   nr_of_candidates,
+    //                                                   N_cces_cand);
+    // }
+    // else {
+    //   nr_mac_pdcch_slot_trace_record_fail(nrmac, CC_id, rnti, rsn);
+    //   nr_mac_log_pdcch_cce_fail_occupants(nrmac,
+    //                                       CC_id,
+    //                                       frame,
+    //                                       slot,
+    //                                       rnti,
+    //                                       rsn,
+    //                                       ss,
+    //                                       coreset,
+    //                                       sched_pdcch,
+    //                                       beam_idx,
+    //                                       Y,
+    //                                       L_sel,
+    //                                       nr_of_candidates,
+    //                                       N_cces_cand,
+    //                                       false);
+    // }
+    // LOG_I(NR_MAC, "------------------- End of Frame.Slot %u.%02d CC%d -------------------\n", frame, slot, CC_id);
   }
   return CCEIndex;
 }

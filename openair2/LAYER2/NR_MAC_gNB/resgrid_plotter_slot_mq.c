@@ -24,8 +24,10 @@
  *
  * Environment
  * -----------
- * Both slot MQ names must be set or the module does nothing:
+ * Set both slot MQ names to enable export:
  *   FAPI_MQ_PATH_DL / FAPI_MQ_PATH_UL
+ * Optional:
+ *   ENABLE_RESOURCE_GRID_VISUALIZATION=0 disables slot export even when MQ names are set.
  *
  * TDD routing
  * -----------
@@ -298,6 +300,59 @@ static const char *resgrid_env_nonempty(const char *key)
   return (p && p[0]) ? p : NULL;
 }
 
+static char resgrid_ascii_tolower(char c)
+{
+  return (c >= 'A' && c <= 'Z') ? (char)(c - 'A' + 'a') : c;
+}
+
+static bool resgrid_str_ieq(const char *a, const char *b)
+{
+  if (!a || !b)
+    return false;
+  while (*a && *b) {
+    if (resgrid_ascii_tolower(*a) != resgrid_ascii_tolower(*b))
+      return false;
+    ++a;
+    ++b;
+  }
+  return *a == '\0' && *b == '\0';
+}
+
+static bool resgrid_parse_bool_default_true(const char *raw, bool *valid)
+{
+  if (valid)
+    *valid = true;
+  if (!raw || raw[0] == '\0')
+    return true;
+
+  if (strcmp(raw, "1") == 0 || resgrid_str_ieq(raw, "true") || resgrid_str_ieq(raw, "yes") || resgrid_str_ieq(raw, "on"))
+    return true;
+  if (strcmp(raw, "0") == 0 || resgrid_str_ieq(raw, "false") || resgrid_str_ieq(raw, "no") || resgrid_str_ieq(raw, "off"))
+    return false;
+
+  if (valid)
+    *valid = false;
+  return true;
+}
+
+static bool resgrid_visualization_enabled(void)
+{
+  static int cached = -1;
+  if (cached >= 0)
+    return cached == 1;
+
+  bool valid = true;
+  const char *raw = getenv("ENABLE_RESOURCE_GRID_VISUALIZATION");
+  const bool enabled = resgrid_parse_bool_default_true(raw, &valid);
+  if (!valid)
+    LOG_W(NR_MAC,
+          "invalid ENABLE_RESOURCE_GRID_VISUALIZATION=%s, defaulting to enabled\n",
+          raw ? raw : "(null)");
+
+  cached = enabled ? 1 : 0;
+  return enabled;
+}
+
 /** DL slot MQ name (`FAPI_MQ_PATH_DL`). */
 static const char *resgrid_slot_mq_path_dl(void)
 {
@@ -327,6 +382,15 @@ static void resgrid_log_missing_config_once(const char *path_dl, const char *pat
         "resgrid slot mq disabled: DL path=%s UL path=%s (set FAPI_MQ_PATH_DL/UL)\n",
         path_dl ? path_dl : "(null)",
         path_ul ? path_ul : "(null)");
+  warned = true;
+}
+
+static void resgrid_log_disabled_by_env_once(void)
+{
+  static bool warned;
+  if (warned)
+    return;
+  LOG_W(NR_MAC, "resgrid slot mq disabled by ENABLE_RESOURCE_GRID_VISUALIZATION\n");
   warned = true;
 }
 
@@ -855,6 +919,10 @@ void nr_mac_resgrid_emit_after_schedule(struct gNB_MAC_INST_s *gNB_in,
 {
   gNB_MAC_INST *gNB = (gNB_MAC_INST *)gNB_in;
   (void)frame;
+  if (!resgrid_visualization_enabled()) {
+    resgrid_log_disabled_by_env_once();
+    return;
+  }
   const char *path_dl = resgrid_slot_mq_path_dl();
   const char *path_ul = resgrid_slot_mq_path_ul();
   if (!path_dl || !path_ul) {
