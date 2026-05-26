@@ -2730,6 +2730,7 @@ void post_process_ulsch(gNB_MAC_INST *nr_mac, post_process_pusch_t *pusch, NR_UE
   /* Statistics */
   AssertFatal(cur_harq->round < nr_mac->ul_bler.harq_round_max, "Indexing ulsch_rounds[%d] is out of bounds\n", cur_harq->round);
   UE->mac_stats.ul.rounds[cur_harq->round]++;
+  UE->mac_stats.ul.used_slots++;
   /* Save information on MCS, TBS etc for the current initial transmission
    * so we have access to it when retransmitting */
   cur_harq->sched_pusch = *sched_pusch;

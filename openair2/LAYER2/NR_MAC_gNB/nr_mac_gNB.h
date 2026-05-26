@@ -726,6 +726,7 @@ typedef struct NR_mac_dir_stats {
   uint32_t total_rbs_retx;
   uint32_t num_mac_sdu;
   uint32_t current_rbs;
+  uint64_t used_slots;
 } NR_mac_dir_stats_t;
 
 typedef struct NR_mac_stats {
@@ -742,6 +743,9 @@ typedef struct NR_mac_stats {
   int pusch_snrx10;
   int deltaMCS;
   int NPRB;
+  uint64_t dl_used_slots_last;
+  uint64_t ul_used_slots_last;
+  uint64_t global_slot_counter_last;
 } NR_mac_stats_t;
 
 typedef struct NR_bler_options {
@@ -1063,6 +1067,7 @@ typedef struct gNB_MAC_INST_s {
   nr_mac_rrc_ul_if_t mac_rrc;
   f1_config_t f1_config;
   int16_t frame;
+  uint64_t slot_counter;
 
   /// number of UEs to exceed to disable stats
   int stats_max_ue;

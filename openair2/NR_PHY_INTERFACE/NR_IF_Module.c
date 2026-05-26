@@ -35,6 +35,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "LAYER2/NR_MAC_gNB/mac_proto.h"
+#include "common/ran_context.h"
 #include "common/platform_constants.h"
 #include "common/utils/T/T.h"
 #include "executables/softmodem-common.h"
@@ -48,6 +49,17 @@
 #define MAX_IF_MODULES 100
 
 static NR_IF_Module_t *nr_if_inst[MAX_IF_MODULES];
+extern RAN_CONTEXT_t RC;
+
+static void nr_mac_increment_slot_counter(module_id_t module_id)
+{
+  gNB_MAC_INST *gNB = RC.nrmac[module_id];
+  AssertFatal(gNB != NULL, "MAC instance is null for module %d\n", module_id);
+
+  NR_SCHED_LOCK(&gNB->sched_lock);
+  gNB->slot_counter++;
+  NR_SCHED_UNLOCK(&gNB->sched_lock);
+}
 
 static void handle_nr_rach(NR_UL_IND_t *UL_info)
 {
@@ -384,6 +396,7 @@ static void pnf_send_slot_ind(const nfapi_nr_slot_indication_scf_t *ind, NR_Sche
   module_id_t module_id = 0;
   int CC_id = 0;
   reset_sched_response(rsp, ind->sfn, ind->slot, module_id, CC_id);
+  nr_mac_increment_slot_counter(module_id);
   handle_nr_slot_ind(ind->sfn, ind->slot, rsp);
 }
 
@@ -392,6 +405,7 @@ static void run_scheduler_monolithic(const nfapi_nr_slot_indication_scf_t *ind, 
   module_id_t module_id = 0;
   int CC_id = 0;
   reset_sched_response(rsp, ind->sfn, ind->slot, module_id, CC_id);
+  nr_mac_increment_slot_counter(module_id);
   gNB_dlsch_ulsch_scheduler(rsp->module_id, ind->sfn, ind->slot, rsp);
 }
 

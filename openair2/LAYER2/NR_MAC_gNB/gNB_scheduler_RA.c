@@ -1851,6 +1851,7 @@ static void nr_generate_Msg4_MsgB(module_id_t module_idP,
     harq->is_waiting = true;
     ra->harq_pid = current_harq_pid;
     UE->mac_stats.dl.rounds[harq->round]++;
+    UE->mac_stats.dl.used_slots++;
     harq->tb_size = tb_size;
     uint8_t *buf = allocate_transportBlock_buffer(&harq->transportBlock, tb_size);
     // Bytes to be transmitted

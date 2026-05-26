@@ -1477,6 +1477,7 @@ void post_process_dlsch(gNB_MAC_INST *nr_mac, post_process_pdsch_t *pdsch, NR_UE
     harq->is_waiting = true;
   }
   UE->mac_stats.dl.rounds[harq->round]++;
+  UE->mac_stats.dl.used_slots++;
   LOG_D(NR_MAC,
         "%4d.%2d [DLSCH/PDSCH/PUCCH] RNTI %04x DCI L %d start %3d RBs %3d startSymbol %2d nb_symbol %2d dmrspos %x MCS %2d nrOfLayers %d TBS %4d HARQ PID %2d round %d RV %d NDI %d dl_data_to_ULACK %d (%d.%d) PUCCH allocation %d TPC %d\n",
         frame,

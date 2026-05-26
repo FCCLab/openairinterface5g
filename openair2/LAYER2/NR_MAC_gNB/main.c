@@ -141,12 +141,25 @@ size_t dump_mac_stats(gNB_MAC_INST *gNB, char *output, size_t strlen, bool reset
   /* this function is called from gNB_dlsch_ulsch_scheduler(), so assumes the
    * scheduler to be locked*/
   NR_SCHED_ENSURE_LOCKED(&gNB->sched_lock);
+  const uint64_t current_global_slot_counter = gNB->slot_counter;
 
   UE_iterator(gNB->UE_info.connected_ue_list, UE) {
     NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
     NR_mac_stats_t *stats = &UE->mac_stats;
+    const uint64_t elapsed_global_slots =
+        (stats->global_slot_counter_last != 0 && current_global_slot_counter > stats->global_slot_counter_last)
+            ? current_global_slot_counter - stats->global_slot_counter_last
+            : 0;
+    const double dl_pslot =
+        elapsed_global_slots > 0 ? 100.0 * (double)(stats->dl.used_slots - stats->dl_used_slots_last) / elapsed_global_slots : 0.0;
+    const double ul_pslot =
+        elapsed_global_slots > 0 ? 100.0 * (double)(stats->ul.used_slots - stats->ul_used_slots_last) / elapsed_global_slots : 0.0;
     const int avg_rsrp = stats->num_rsrp_meas > 0 ? stats->cumul_rsrp / stats->num_rsrp_meas : 0;
     const int avg_sinrx10 = stats->num_sinr_meas > 0 ? stats->cumul_sinrx10 / stats->num_sinr_meas : 0;
+
+    stats->dl_used_slots_last = stats->dl.used_slots;
+    stats->ul_used_slots_last = stats->ul.used_slots;
+    stats->global_slot_counter_last = current_global_slot_counter;
 
     output = st_append(output, end, "UE RNTI %04x CU-UE-ID ", UE->rnti);
     if (du_exists_f1_ue_data(UE->rnti)) {
@@ -201,13 +214,15 @@ size_t dump_mac_stats(gNB_MAC_INST *gNB, char *output, size_t strlen, bool reset
 
     output = st_append(output,
                        end,
-                       ", dlsch_errors %"PRIu64", pucch0_DTX %d, BLER %.5f MCS (%d) %d CCE fail %d\n",
+                       ", dlsch_errors %"PRIu64", pucch0_DTX %d, BLER %.5f MCS (%d) %d CCE fail %d DL slots %"PRIu64" PSlot %.3f%%\n",
                        stats->dl.errors,
                        stats->pucch0_DTX,
                        sched_ctrl->dl_bler_stats.bler,
                        UE->current_DL_BWP.mcsTableIdx,
                        sched_ctrl->dl_bler_stats.mcs,
-                       sched_ctrl->dl_cce_fail);
+                       sched_ctrl->dl_cce_fail,
+                       stats->dl.used_slots,
+                       dl_pslot);
     if (reset_rsrp) {
       stats->num_rsrp_meas = 0;
       stats->cumul_rsrp = 0;
@@ -223,7 +238,7 @@ size_t dump_mac_stats(gNB_MAC_INST *gNB, char *output, size_t strlen, bool reset
 
     output = st_append(output,
                        end,
-                       ", ulsch_errors %"PRIu64", ulsch_DTX %d, BLER %.5f MCS (%d) %d (Qm %d deltaMCS %d dB) NPRB %d  SNR %d.%d dB CCE fail %d\n",
+                       ", ulsch_errors %"PRIu64", ulsch_DTX %d, BLER %.5f MCS (%d) %d (Qm %d deltaMCS %d dB) NPRB %d  SNR %d.%d dB CCE fail %d UL slots %"PRIu64" PSlot %.3f%%\n",
                        stats->ul.errors,
                        stats->ulsch_DTX,
                        sched_ctrl->ul_bler_stats.bler,
@@ -234,7 +249,9 @@ size_t dump_mac_stats(gNB_MAC_INST *gNB, char *output, size_t strlen, bool reset
                        UE->mac_stats.NPRB,
                        sched_ctrl->pusch_snrx10 / 10,
                        sched_ctrl->pusch_snrx10 % 10,
-                       sched_ctrl->ul_cce_fail);
+                       sched_ctrl->ul_cce_fail,
+                       stats->ul.used_slots,
+                       ul_pslot);
    output = st_append(output,
                        end,
                        "UE %04x: MAC:    TX %14"PRIu64" RX %14"PRIu64" bytes\n",
