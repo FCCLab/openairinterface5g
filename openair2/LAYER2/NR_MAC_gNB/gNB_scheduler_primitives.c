@@ -4432,7 +4432,7 @@ bool prepare_initial_ul_rrc_message(gNB_MAC_INST *mac, NR_UE_info_t *UE)
   int priority = bearer->mac_LogicalChannelConfig->ul_SpecificParameters->priority;
   nr_lc_config_t c = {.lcid = bearer->logicalChannelIdentity, .priority = priority};
   
-  // Assign first LCID (SRB1) to slice 01 ffffff by default
+  // Keep SRB1 on the default control-plane slice.
   c.nssai.sst = 1;
   c.nssai.sd = 0xffffff;
   
@@ -4629,6 +4629,46 @@ nr_lc_config_t *nr_mac_get_lc_config(NR_UE_sched_ctrl_t* sched_ctrl, int lcid)
     return elm.it;
   else
     return NULL;
+}
+
+void nr_mac_get_default_srb_nssai(nssai_t *nssai)
+{
+  DevAssert(nssai != NULL);
+  nssai->sst = 1;
+  nssai->sd = 0xffffff;
+}
+
+bool nr_mac_get_ue_first_drb_nssai(const NR_UE_sched_ctrl_t *sched_ctrl, nssai_t *nssai)
+{
+  DevAssert(sched_ctrl != NULL);
+  for (int i = 0; i < seq_arr_size(&sched_ctrl->lc_config); ++i) {
+    const nr_lc_config_t *lc = seq_arr_at(&sched_ctrl->lc_config, i);
+    if (lc->lcid < 3)
+      continue;
+    if (nssai != NULL)
+      *nssai = lc->nssai;
+    return true;
+  }
+  return false;
+}
+
+void nr_mac_get_ue_effective_nssai(const NR_UE_sched_ctrl_t *sched_ctrl, nssai_t *nssai)
+{
+  DevAssert(nssai != NULL);
+  if (!nr_mac_get_ue_first_drb_nssai(sched_ctrl, nssai))
+    nr_mac_get_default_srb_nssai(nssai);
+}
+
+void nr_mac_remap_ue_srbs_to_nssai(NR_UE_sched_ctrl_t *sched_ctrl, const nssai_t *nssai)
+{
+  DevAssert(sched_ctrl != NULL);
+  DevAssert(nssai != NULL);
+  for (int i = 0; i < seq_arr_size(&sched_ctrl->lc_config); ++i) {
+    nr_lc_config_t *lc = seq_arr_at(&sched_ctrl->lc_config, i);
+    if (lc->lcid >= 3)
+      continue;
+    lc->nssai = *nssai;
+  }
 }
 
 bool nr_mac_add_lcid(NR_UE_sched_ctrl_t* sched_ctrl, const nr_lc_config_t *c)

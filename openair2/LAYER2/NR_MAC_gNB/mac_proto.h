@@ -488,6 +488,10 @@ void nr_mac_trigger_reconfiguration(const gNB_MAC_INST *nrmac, NR_UE_info_t *UE,
 bool nr_mac_add_lcid(NR_UE_sched_ctrl_t *sched_ctrl, const nr_lc_config_t *c);
 nr_lc_config_t *nr_mac_get_lc_config(NR_UE_sched_ctrl_t* sched_ctrl, int lcid);
 bool nr_mac_remove_lcid(NR_UE_sched_ctrl_t *sched_ctrl, long lcid);
+void nr_mac_get_default_srb_nssai(nssai_t *nssai);
+bool nr_mac_get_ue_first_drb_nssai(const NR_UE_sched_ctrl_t *sched_ctrl, nssai_t *nssai);
+void nr_mac_get_ue_effective_nssai(const NR_UE_sched_ctrl_t *sched_ctrl, nssai_t *nssai);
+void nr_mac_remap_ue_srbs_to_nssai(NR_UE_sched_ctrl_t *sched_ctrl, const nssai_t *nssai);
 
 bool nr_mac_get_new_rnti(NR_UEs_t *UEs, rnti_t *rnti);
 void nr_mac_update_pdcch_closed_loop_adjust(NR_UE_sched_ctrl_t *sched_ctrl, bool feedback_not_detected);

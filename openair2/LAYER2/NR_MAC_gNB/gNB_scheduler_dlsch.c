@@ -1134,34 +1134,25 @@ static void network_slicing_dl(gNB_MAC_INST *mac,
       UE_iterator(UEs_in_this_beam, UE) {
         // Iterate all logical channel configs (lcid) for this UE, including SRB/DRB
         NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
+        nssai_t ue_slice = {0};
+        nr_mac_get_ue_effective_nssai(sched_ctrl, &ue_slice);
+        if (ue_slice.sst != slice_nssai->sst || ue_slice.sd != slice_nssai->sd)
+          continue;
         for (int l = 0; l < seq_arr_size(&sched_ctrl->lc_config); ++l) {
           const nr_lc_config_t *lc = seq_arr_at(&sched_ctrl->lc_config, l);
-          if (lc->nssai.sst == slice_nssai->sst && lc->nssai.sd == slice_nssai->sd) {
-            // Skip suspended channels
-            if (lc->suspended) {
-              continue;
-            }
-            
-            // Get RLC buffer status for this LCID
-            const int lcid = lc->lcid;
-            const uint16_t rnti = UE->rnti;
-            sched_ctrl->rlc_status[lcid] = nr_mac_rlc_status_ind(rnti, frame, lcid);
-            
-            // Accumulate bytes for this slice to calculate required PRBs
-            if (sched_ctrl->rlc_status[lcid].bytes_in_buffer > 0) {
-              // Estimate bytes per PRB: conservative estimate based on MCS 0 (QPSK with code rate 120/1024)
-              // Calculation: 1 PRB = 12 subcarriers × 14 OFDM symbols = 168 resource elements
-              // Accounting for DMRS overhead (~12 REs): ~156 data REs per PRB
-              // MCS 0: Qm = 2 (QPSK), code rate R = 120/1024 ≈ 0.117
-              // Effective bits per RE = Qm × R = 2 × 0.117 = 0.234 bits
-              // For 156 data REs: 156 × 0.234 ≈ 36.5 bits ≈ 4.5 bytes per PRB
-              // Using conservative estimate of 4 bytes per PRB to account for additional overhead
-              const int bytes_per_prb_estimate = 4 - 2;
-              int prbs_needed = (sched_ctrl->rlc_status[lcid].bytes_in_buffer + bytes_per_prb_estimate - 1) / bytes_per_prb_estimate;
+          if (lc->suspended)
+            continue;
 
-              // Count all matching LCIDs (SRB + DRB) toward slice demand.
-              required_prbs += prbs_needed;
-            }
+          // Get RLC buffer status for this LCID
+          const int lcid = lc->lcid;
+          const uint16_t rnti = UE->rnti;
+          sched_ctrl->rlc_status[lcid] = nr_mac_rlc_status_ind(rnti, frame, lcid);
+
+          // Accumulate bytes for this UE's effective slice to calculate required PRBs.
+          if (sched_ctrl->rlc_status[lcid].bytes_in_buffer > 0) {
+            const int bytes_per_prb_estimate = 4 - 2;
+            int prbs_needed = (sched_ctrl->rlc_status[lcid].bytes_in_buffer + bytes_per_prb_estimate - 1) / bytes_per_prb_estimate;
+            required_prbs += prbs_needed;
           }
         }
       }
@@ -1218,16 +1209,15 @@ static void network_slicing_dl(gNB_MAC_INST *mac,
       NR_UE_info_t **UEs_in_this_slice = calloc(MAX_MOBILES_PER_GNB + 1, sizeof(NR_UE_info_t *));
       memset(UEs_in_this_slice, 0, sizeof(NR_UE_info_t *) * (MAX_MOBILES_PER_GNB + 1));
       UE_iterator(UEs_in_this_beam, UE) {
-        for (int l = 0; l < seq_arr_size(&UE->UE_sched_ctrl.lc_config); ++l) {
-          const nr_lc_config_t *lc = seq_arr_at(&UE->UE_sched_ctrl.lc_config, l);
-          if (lc->nssai.sst == allocation[s].slice_id.sst && lc->nssai.sd == allocation[s].slice_id.sd) {
-            UEs_in_this_slice[UEs_in_this_slice_count] = UE;
-            UEs_in_this_slice_count++;
-            break;
-          }
+        nssai_t ue_slice = {0};
+        nr_mac_get_ue_effective_nssai(&UE->UE_sched_ctrl, &ue_slice);
+        if (ue_slice.sst == allocation[s].slice_id.sst && ue_slice.sd == allocation[s].slice_id.sd) {
+          UEs_in_this_slice[UEs_in_this_slice_count] = UE;
+          UEs_in_this_slice_count++;
         }
       }
       if (UEs_in_this_slice_count == 0) {
+        free(UEs_in_this_slice);
         continue;
       }
 

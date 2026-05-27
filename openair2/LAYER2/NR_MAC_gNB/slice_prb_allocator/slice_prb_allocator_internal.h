@@ -118,7 +118,12 @@ int pass1_allocate_dedicated(const slice_alloc_input_t *input, slice_alloc_resul
 int pass2_allocate_prioritized(const slice_alloc_input_t *input, slice_alloc_result_t *result,
                                 int *allocated_prbs, int *remaining_prbs);
 
-/*! \brief Pass 3: Allocate shared resources (max - min) proportionally
+/*! \brief Pass 3: Allocate shared resources recursively by max_prb_ratio weights
+ *
+ *  Repeatedly splits the remaining pool across active slices proportional to each
+ *  slice's max PRB cap (max_s / sum(max_s)). A slice that hits require or max
+ *  leaves the active set; unused share from that round is returned to the pool.
+ *
  *  \param input Input parameters
  *  \param result Result structure (will be updated with shared allocations)
  *  \param allocated_prbs Input/Output: Current allocated PRBs, updated after this pass

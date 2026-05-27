@@ -262,184 +262,188 @@ int pass2_allocate_prioritized(const slice_alloc_input_t *input, slice_alloc_res
   return 0;
 }
 
+/*! \brief Slice participates in Pass 3 shared pool */
+static bool pass3_slice_eligible(const slice_config_t *slice)
+{
+  return slice->min_prb_ratio > 0.0f || slice->required_prbs > 0;
+}
+
+/*! \brief Slice can still absorb PRBs (below max and below require when set) */
+static bool pass3_slice_wants_more(const slice_config_t *slice, int num_prbs, int max_prbs)
+{
+  if (!pass3_slice_eligible(slice)) {
+    return false;
+  }
+  if (num_prbs >= max_prbs) {
+    return false;
+  }
+  if (slice->required_prbs > 0 && num_prbs >= slice->required_prbs) {
+    return false;
+  }
+  return true;
+}
+
+/*! \brief Maximum PRBs this slice will accept in the current round */
+static int pass3_slice_accept_limit(const slice_config_t *slice, int num_prbs, int max_prbs)
+{
+  const int can_add = max_prbs - num_prbs;
+  if (can_add <= 0) {
+    return 0;
+  }
+  if (slice->required_prbs > 0) {
+    const int deficit = slice->required_prbs - num_prbs;
+    if (deficit <= 0) {
+      return 0;
+    }
+    return min_int(deficit, can_add);
+  }
+  return can_add;
+}
+
+/*! \brief Distribute pool across active slices proportional to max_prbs weights (integer PRBs) */
+static void pass3_distribute_by_max_weights(int pool,
+                                            int num_slices,
+                                            const bool active[],
+                                            const int max_prbs[],
+                                            int shares[],
+                                            float *remainder)
+{
+  if (pool <= 0) {
+    return;
+  }
+
+  int sum_max = 0;
+  for (int s = 0; s < num_slices; ++s) {
+    if (active[s]) {
+      sum_max += max_prbs[s];
+    }
+  }
+  if (sum_max <= 0) {
+    return;
+  }
+
+  int assigned = 0;
+  for (int s = 0; s < num_slices; ++s) {
+    shares[s] = 0;
+    if (!active[s]) {
+      remainder[s] = 0.0f;
+      continue;
+    }
+    const float exact = (float)pool * (float)max_prbs[s] / (float)sum_max;
+    shares[s] = (int)exact;
+    remainder[s] = exact - (float)shares[s];
+    assigned += shares[s];
+  }
+
+  int leftover = pool - assigned;
+  while (leftover > 0) {
+    int best_s = -1;
+    float best_rem = -1.0f;
+    for (int s = 0; s < num_slices; ++s) {
+      if (!active[s]) {
+        continue;
+      }
+      if (remainder[s] > best_rem) {
+        best_rem = remainder[s];
+        best_s = s;
+      }
+    }
+    if (best_s < 0) {
+      break;
+    }
+    shares[best_s]++;
+    remainder[best_s] = 0.0f;
+    leftover--;
+  }
+}
+
 int pass3_allocate_shared(const slice_alloc_input_t *input, slice_alloc_result_t *result,
                           int *allocated_prbs, int *remaining_prbs) {
   if (input == NULL || result == NULL || allocated_prbs == NULL || remaining_prbs == NULL) {
     return -1;
   }
-  
-  if (*remaining_prbs <= 0) {
-    return 0; // Nothing to allocate
+
+  if (*remaining_prbs <= 0 || input->num_slices <= 0) {
+    return 0;
   }
-  
-  int total_prbs = input->total_prbs;
-  int total_capacity = 0;
-  int total_prb_deficit = 0;
-  
-  // Calculate how much each slice can still take (up to max)
-  for (int s = 0; s < input->num_slices; ++s) {
-    const slice_config_t *slice = &input->slices[s];
-    int max_prbs = (int)(total_prbs * slice->max_prb_ratio + 0.5);
-    int can_add = max_prbs - result->ranges[s].num_prbs;
-    if (can_add > 0) {
-      total_capacity += can_add;
-    }
-    
-    // Calculate PRB deficit (how many PRBs are still needed)
-    if (slice->required_prbs > 0) {
-      int prb_deficit = slice->required_prbs - result->ranges[s].num_prbs;
-      if (prb_deficit > 0) {
-        total_prb_deficit += prb_deficit;
-      }
-    }
+
+  const int num_slices = input->num_slices;
+  const int total_prbs = input->total_prbs;
+  int remain = *remaining_prbs;
+
+  bool *active = (bool *)calloc((size_t)num_slices, sizeof(bool));
+  int *max_prbs_cap = (int *)calloc((size_t)num_slices, sizeof(int));
+  int *shares = (int *)calloc((size_t)num_slices, sizeof(int));
+  float *remainder = (float *)calloc((size_t)num_slices, sizeof(float));
+  if (active == NULL || max_prbs_cap == NULL || shares == NULL || remainder == NULL) {
+    free(active);
+    free(max_prbs_cap);
+    free(shares);
+    free(remainder);
+    return -1;
   }
-  
-  // Distribute remaining PRBs
-  if (total_capacity > 0) {
-    int remaining_to_allocate = *remaining_prbs;
-    
-    // If PRB requirement-based allocation is enabled and there are PRB deficits
-    if (total_prb_deficit > 0) {
-      // Allocate based on PRB requirements (weighted by PRB deficit)
-      for (int s = 0; s < input->num_slices && remaining_to_allocate > 0; ++s) {
-        const slice_config_t *slice = &input->slices[s];
-        
-        int max_prbs = (int)(total_prbs * slice->max_prb_ratio + 0.5);
-        int can_add = max_prbs - result->ranges[s].num_prbs;
-        
-        if (can_add > 0 && remaining_to_allocate > 0 && slice->required_prbs > 0) {
-          // Calculate PRB deficit for this slice
-          int prb_deficit = slice->required_prbs - result->ranges[s].num_prbs;
-          
-          if (prb_deficit > 0) {
-            // Allocate proportionally based on PRB deficit, but respect capacity
-            int add = (int)((float)prb_deficit / total_prb_deficit * remaining_to_allocate + 0.5);
-            
-            // Don't exceed what's needed for PRB requirement
-            if (add > prb_deficit) {
-              add = prb_deficit;
-            }
-            
-            // Don't exceed slice capacity
-            if (add > can_add) {
-              add = can_add;
-            }
-            
-            // Don't exceed remaining PRBs
-            if (add > remaining_to_allocate) {
-              add = remaining_to_allocate;
-            }
-            
-            if (add > 0) {
-              result->ranges[s].num_prbs += add;
-              *allocated_prbs += add;
-              remaining_to_allocate -= add;
-              
-              // Update PRB deficit tracking
-              int new_deficit = slice->required_prbs - result->ranges[s].num_prbs;
-              if (new_deficit > 0) {
-                total_prb_deficit -= (prb_deficit - new_deficit);
-              } else {
-                total_prb_deficit -= prb_deficit;
-              }
-            }
-          }
-        }
+
+  for (int s = 0; s < num_slices; ++s) {
+    max_prbs_cap[s] = (int)(total_prbs * input->slices[s].max_prb_ratio + 0.5);
+    active[s] = pass3_slice_wants_more(&input->slices[s], result->ranges[s].num_prbs, max_prbs_cap[s]);
+  }
+
+  const int max_iterations = num_slices + 1;
+  for (int iter = 0; iter < max_iterations && remain > 0; ++iter) {
+    int num_active = 0;
+    int sum_max_active = 0;
+    for (int s = 0; s < num_slices; ++s) {
+      if (active[s]) {
+        num_active++;
+        sum_max_active += max_prbs_cap[s];
       }
-      
-      // If there are still remaining PRBs after requirement-based allocation,
-      // distribute them proportionally based on capacity
-      // Only allocate to slices that have min_prb_ratio > 0 or required_prbs > 0
-      if (remaining_to_allocate > 0) {
-        // Recalculate total capacity (only for slices with min > 0 or required > 0)
-        total_capacity = 0;
-        for (int s = 0; s < input->num_slices; ++s) {
-          const slice_config_t *slice = &input->slices[s];
-          // Only count slices that have minimum guarantee or requirements
-          if (slice->min_prb_ratio > 0.0f || slice->required_prbs > 0) {
-            int max_prbs = (int)(total_prbs * slice->max_prb_ratio + 0.5);
-            int can_add = max_prbs - result->ranges[s].num_prbs;
-            if (can_add > 0) {
-              total_capacity += can_add;
-            }
-          }
-        }
-        
-        // Distribute remaining PRBs proportionally
-        if (total_capacity > 0) {
-          for (int s = 0; s < input->num_slices && remaining_to_allocate > 0; ++s) {
-            const slice_config_t *slice = &input->slices[s];
-            // Only allocate to slices that have minimum guarantee or requirements
-            if (slice->min_prb_ratio > 0.0f || slice->required_prbs > 0) {
-              int max_prbs = (int)(total_prbs * slice->max_prb_ratio + 0.5);
-              int can_add = max_prbs - result->ranges[s].num_prbs;
-              
-              if (can_add > 0 && remaining_to_allocate > 0) {
-                int add = (int)((float)can_add / total_capacity * remaining_to_allocate + 0.5);
-                if (add > can_add) {
-                  add = can_add;
-                }
-                if (add > remaining_to_allocate) {
-                  add = remaining_to_allocate;
-                }
-                if (add > 0) {
-                  result->ranges[s].num_prbs += add;
-                  *allocated_prbs += add;
-                  remaining_to_allocate -= add;
-                  total_capacity -= can_add;
-                }
-              }
-            }
-          }
-        }
+    }
+    if (num_active == 0 || sum_max_active <= 0) {
+      break;
+    }
+
+    pass3_distribute_by_max_weights(remain, num_slices, active, max_prbs_cap, shares, remainder);
+
+    int round_unused = 0;
+    int round_allocated = 0;
+
+    for (int s = 0; s < num_slices; ++s) {
+      if (!active[s]) {
+        continue;
       }
-      *remaining_prbs = remaining_to_allocate;
-    } else {
-      // No PRB requirements or requirement-based allocation disabled
-      // Fall back to proportional distribution based on capacity
-      // Only allocate to slices that have min_prb_ratio > 0 or required_prbs > 0
-      // Recalculate total capacity (only for slices with min > 0 or required > 0)
-      total_capacity = 0;
-      for (int s = 0; s < input->num_slices; ++s) {
-        const slice_config_t *slice = &input->slices[s];
-        // Only count slices that have minimum guarantee or requirements
-        if (slice->min_prb_ratio > 0.0f || slice->required_prbs > 0) {
-          int max_prbs = (int)(total_prbs * slice->max_prb_ratio + 0.5);
-          int can_add = max_prbs - result->ranges[s].num_prbs;
-          if (can_add > 0) {
-            total_capacity += can_add;
-          }
-        }
+
+      const slice_config_t *slice = &input->slices[s];
+      const int accept_limit = pass3_slice_accept_limit(slice, result->ranges[s].num_prbs, max_prbs_cap[s]);
+      const int actual = min_int(shares[s], accept_limit);
+
+      if (actual > 0) {
+        result->ranges[s].num_prbs += actual;
+        *allocated_prbs += actual;
+        round_allocated += actual;
       }
-      
-      for (int s = 0; s < input->num_slices && remaining_to_allocate > 0; ++s) {
-        const slice_config_t *slice = &input->slices[s];
-        // Only allocate to slices that have minimum guarantee or requirements
-        if (slice->min_prb_ratio > 0.0f || slice->required_prbs > 0) {
-          int max_prbs = (int)(total_prbs * slice->max_prb_ratio + 0.5);
-          int can_add = max_prbs - result->ranges[s].num_prbs;
-          
-          if (can_add > 0 && remaining_to_allocate > 0) {
-            int add = (int)((float)can_add / total_capacity * remaining_to_allocate + 0.5);
-            if (add > can_add) {
-              add = can_add;
-            }
-            if (add > remaining_to_allocate) {
-              add = remaining_to_allocate;
-            }
-            if (add > 0) {
-              result->ranges[s].num_prbs += add;
-              *allocated_prbs += add;
-              remaining_to_allocate -= add;
-              total_capacity -= can_add;
-            }
-          }
-        }
+
+      const int unused = shares[s] - actual;
+      if (unused > 0) {
+        round_unused += unused;
       }
-      *remaining_prbs = remaining_to_allocate;
+
+      if (!pass3_slice_wants_more(slice, result->ranges[s].num_prbs, max_prbs_cap[s])) {
+        active[s] = false;
+      }
+    }
+
+    remain = round_unused;
+
+    if (round_allocated == 0 && round_unused == 0) {
+      break;
     }
   }
-  
+
+  *remaining_prbs = remain;
+  free(active);
+  free(max_prbs_cap);
+  free(shares);
+  free(remainder);
   return 0;
 }
 

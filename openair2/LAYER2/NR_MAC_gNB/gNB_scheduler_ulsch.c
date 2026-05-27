@@ -1947,26 +1947,34 @@ static int comparator(const void *p, const void *q)
   return 0;
 }
 
-static int ul_ns_ue_slice_required_prbs(NR_UE_info_t *UE, const slice_nssai_t *slice_nssai, int total_prbs)
+static int ul_ns_ue_slice_required_prbs(gNB_MAC_INST *nrmac,
+                                        NR_UE_info_t *UE,
+                                        const slice_nssai_t *slice_nssai,
+                                        int total_prbs,
+                                        frame_t frame,
+                                        slot_t slot)
 {
   NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
   int B = max(0, sched_ctrl->estimated_ul_buffer - sched_ctrl->sched_ul_bytes);
-  int n_drbs = 0;
-  int n_in_slice = 0;
-  for (int l = 0; l < seq_arr_size(&sched_ctrl->lc_config); ++l) {
-    const nr_lc_config_t *lc = seq_arr_at(&sched_ctrl->lc_config, l);
-    if (lc->suspended || lc->lcid < 3)
-      continue;
-    n_drbs++;
-    if (lc->nssai.sst == slice_nssai->sst && lc->nssai.sd == slice_nssai->sd)
-      n_in_slice++;
-  }
-  if (n_in_slice == 0 || n_drbs == 0 || B <= 0)
+  nssai_t ue_slice = {0};
+  nr_mac_get_ue_effective_nssai(sched_ctrl, &ue_slice);
+  const bool do_sched = nr_UE_is_to_be_scheduled(&nrmac->frame_structure,
+                                                 UE,
+                                                 frame,
+                                                 slot,
+                                                 nrmac->ulsch_max_frame_inactivity);
+  if (ue_slice.sst != slice_nssai->sst || ue_slice.sd != slice_nssai->sd)
     return 0;
-  int bytes_slice = (int)(((int64_t)B) * n_in_slice / n_drbs);
   const int bytes_per_prb_estimate = 2;
-  int prbs = (bytes_slice + bytes_per_prb_estimate - 1) / bytes_per_prb_estimate;
-  return min(prbs, total_prbs);
+  int required_prbs = B > 0 ? (B + bytes_per_prb_estimate - 1) / bytes_per_prb_estimate : 0;
+
+  // Treat all LCIDs equally at scheduling time: if the UE should be scheduled
+  // but aggregate UL bytes are not yet reflected in BSR, reserve a minimum
+  // grant on the UE's effective slice.
+  if (do_sched)
+    required_prbs = max(required_prbs, (int)nrmac->min_grant_prb);
+
+  return min(required_prbs, total_prbs);
 }
 
 static int pf_ul(gNB_MAC_INST *nrmac,
@@ -2059,37 +2067,20 @@ static int pf_ul(gNB_MAC_INST *nrmac,
     int ul_harq_pid = sched_ctrl->retrans_ul_harq.head;
     LOG_D(NR_MAC,"pf_ul: UE %04x harq_pid %d\n", UE->rnti, ul_harq_pid);
     if (ul_harq_pid >= 0) {
-      bool sch_ret = true;
-      if (use_slice) {
-        bwp_info_t bwp_info = get_pusch_bwp_start_size(UE);
-        const NR_sched_pusch_t *retInfo = &sched_ctrl->ul_harq_processes[ul_harq_pid].sched_pusch;
-        int retx_abs_start = retInfo->rbStart + bwp_info.bwpStart;
-        int retx_abs_end = retx_abs_start + retInfo->rbSize;
-        if (retx_abs_start < slice_start_prb || retx_abs_end > slice_end_prb) {
-          LOG_D(NR_MAC,
-                "[UE %04x][%4d.%2d] UL retransmission outside slice PRB range [%d, %d)\n",
-                UE->rnti,
-                frame,
-                slot,
-                slice_start_prb,
-                slice_end_prb);
-          reset_beam_status(&nrmac->beam_info, sched_frame, sched_slot, UE->UE_beam_index, slots_per_frame, beam.new_beam);
-          reset_beam_status(&nrmac->beam_info, frame, slot, UE->UE_beam_index, slots_per_frame, dci_beam.new_beam);
-          sch_ret = false;
-        }
-      }
-      if (sch_ret) {
-        sch_ret = allocate_ul_retransmission(nrmac,
-                                            pp_pusch,
-                                            rballoc_mask,
-                                            use_slice ? &slice_available_prbs : &n_rb_sched[beam.idx],
-                                            dci_beam.idx,
-                                            UE,
-                                            ul_harq_pid,
-                                            scc,
-                                            tda,
-                                            tda_info);
-      }
+      // Slice PRB ranges may shift from slot to slot. Requiring the previous
+      // retransmission grant to stay inside the current slice window can drop
+      // a valid HARQ retx even when this slice still has enough PRBs. Let the
+      // retransmission allocator remap the grant within the slice budget.
+      bool sch_ret = allocate_ul_retransmission(nrmac,
+                                                pp_pusch,
+                                                rballoc_mask,
+                                                use_slice ? &slice_available_prbs : &n_rb_sched[beam.idx],
+                                                dci_beam.idx,
+                                                UE,
+                                                ul_harq_pid,
+                                                scc,
+                                                tda,
+                                                tda_info);
       if (!sch_ret) {
         LOG_D(NR_MAC, "[UE %04x][%4d.%2d] UL retransmission could not be allocated\n", UE->rnti, frame, slot);
         reset_beam_status(&nrmac->beam_info, sched_frame, sched_slot, UE->UE_beam_index, slots_per_frame, beam.new_beam);
@@ -2497,6 +2488,12 @@ static int network_slicing_ul(gNB_MAC_INST *nrmac,
   if (nrmac->slice_scheduler_ul == NULL || slice_sch_get_num_slices(nrmac->slice_scheduler_ul) == 0)
     return pf_ul(nrmac, pp_pusch, tda, tda_info, UE_list, max_num_ue, num_beams, n_rb_sched, NULL, NULL);
 
+  const NR_ServingCellConfigCommon_t *scc = nrmac->common_channels[0].ServingCellConfigCommon;
+  const int slots_per_frame = nrmac->frame_structure.numb_slots_frame;
+  const int k2 = tda_info->k2 + get_NTN_Koffset(scc);
+  const frame_t sched_frame = (pp_pusch->frame + (pp_pusch->slot + k2) / slots_per_frame) % MAX_FRAME_NUMBER;
+  const slot_t sched_slot = (pp_pusch->slot + k2) % slots_per_frame;
+
   NR_UE_info_t **UEs_in_this_beam = calloc(MAX_MOBILES_PER_GNB + 1, sizeof(NR_UE_info_t *));
   if (UEs_in_this_beam == NULL) {
     LOG_W(NR_MAC, "network_slicing_ul: OOM, falling back to PF\n");
@@ -2534,7 +2531,9 @@ static int network_slicing_ul(gNB_MAC_INST *nrmac,
       const slice_nssai_t *slice_nssai = slice_sch_get_slice_nssai(slice_scheduler, s);
       if (slice_nssai == NULL)
         continue;
-      UE_iterator(UEs_in_this_beam, UE) { required_prbs += ul_ns_ue_slice_required_prbs(UE, slice_nssai, total_prbs); }
+      UE_iterator(UEs_in_this_beam, UE) {
+        required_prbs += ul_ns_ue_slice_required_prbs(nrmac, UE, slice_nssai, total_prbs, sched_frame, sched_slot);
+      }
       if (required_prbs > total_prbs)
         required_prbs = total_prbs;
       slice_sch_update_require(slice_scheduler, slice_nssai->sst, slice_nssai->sd, required_prbs);
@@ -2556,15 +2555,20 @@ static int network_slicing_ul(gNB_MAC_INST *nrmac,
       int n_ue_slice = 0;
       UE_iterator(UEs_in_this_beam, UE)
       {
-        for (int l = 0; l < seq_arr_size(&UE->UE_sched_ctrl.lc_config); ++l) {
-          const nr_lc_config_t *lc = seq_arr_at(&UE->UE_sched_ctrl.lc_config, l);
-          if (lc->lcid < 3 && seq_arr_size(&UE->UE_sched_ctrl.lc_config) >= 3)
-            continue;
-          if (lc->nssai.sst == allocation[s].slice_id.sst && lc->nssai.sd == allocation[s].slice_id.sd) {
-            UEs_in_this_slice[n_ue_slice] = UE;
-            n_ue_slice++;
-            break;
-          }
+        NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
+        const int B = max(0, sched_ctrl->estimated_ul_buffer - sched_ctrl->sched_ul_bytes);
+        nssai_t ue_slice = {0};
+        nr_mac_get_ue_effective_nssai(sched_ctrl, &ue_slice);
+        const bool do_sched = nr_UE_is_to_be_scheduled(&nrmac->frame_structure,
+                                                       UE,
+                                                       sched_frame,
+                                                       sched_slot,
+                                                       nrmac->ulsch_max_frame_inactivity);
+        if (ue_slice.sst == allocation[s].slice_id.sst
+            && ue_slice.sd == allocation[s].slice_id.sd
+            && (B > 0 || do_sched)) {
+          UEs_in_this_slice[n_ue_slice] = UE;
+          n_ue_slice++;
         }
       }
       if (n_ue_slice == 0) {

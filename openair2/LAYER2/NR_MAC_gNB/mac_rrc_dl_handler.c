@@ -238,33 +238,6 @@ static NR_RLC_BearerConfig_t *get_bearerconfig_from_srb(const f1ap_srb_to_setup_
  *  \param nssai_out Output parameter for the first NSSAI (if found)
  *  \return true if a slice is found and nssai_out is set, false otherwise
  */
-static bool get_first_nssai_from_config(gNB_MAC_INST *mac, nssai_t *nssai_out)
-{
-  if (mac == NULL || nssai_out == NULL) {
-    return false;
-  }
-
-  // Prefer DL slice config if present, otherwise fallback to UL slice config.
-  slice_scheduler_t *slice_scheduler = mac->slice_scheduler_dl != NULL ? mac->slice_scheduler_dl : mac->slice_scheduler_ul;
-  if (slice_scheduler == NULL) {
-    return false;
-  }
-
-  int num_slices = slice_sch_get_num_slices(slice_scheduler);
-  if (num_slices == 0) {
-    return false;
-  }
-  
-  const slice_nssai_t *slice_nssai = slice_sch_get_slice_nssai(slice_scheduler, 0);
-  if (slice_nssai == NULL) {
-    return false;
-  }
-  
-  nssai_out->sst = slice_nssai->sst;
-  nssai_out->sd = slice_nssai->sd;
-  return true;
-}
-
 static int handle_ue_context_srbs_setup(NR_UE_info_t *UE,
                                         int srbs_len,
                                         const f1ap_srb_to_setup_t *req_srbs,
@@ -283,21 +256,14 @@ static int handle_ue_context_srbs_setup(NR_UE_info_t *UE,
 
     int priority = rlc_BearerConfig->mac_LogicalChannelConfig->ul_SpecificParameters->priority;
     nr_lc_config_t c = {.lcid = rlc_BearerConfig->logicalChannelIdentity, .priority = priority};
+    nr_mac_get_ue_effective_nssai(&UE->UE_sched_ctrl, &c.nssai);
 
-    // Initialize SRB with first available NSSAI from slice scheduler configuration
-    // Get MAC instance from global RC (standard way in this codebase)
-    gNB_MAC_INST *mac = RC.nrmac[0];
-    nssai_t nssai;
-    LOG_I(NR_MAC, "UE ID %d SRB ID %d: Getting first NSSAI from slice scheduler configuration\n", UE->rnti, srb->id);
-    if (get_first_nssai_from_config(mac, &nssai)) {
-      c.nssai = nssai;
-      LOG_I(NR_MAC, "UE ID %d SRB ID %d: NSSAI SST 0x%02x SD 0x%06x\n", UE->rnti, srb->id, nssai.sst, nssai.sd);
-    } else {
-      LOG_E(NR_MAC, "No NSSAI found in slice scheduler configuration. initializing with default values SST=1, SD=0xffffff \n");
-      // If no slice configuration available, use default (sst=1, sd=0xffffff)
-      c.nssai.sst = 1;
-      c.nssai.sd = 0xffffff;
-    }
+    LOG_I(NR_MAC,
+          "UE ID %d SRB ID %d: assigning UE slice SST 0x%02x SD 0x%06x\n",
+          UE->rnti,
+          srb->id,
+          c.nssai.sst,
+          (unsigned)c.nssai.sd);
 
     nr_mac_add_lcid(&UE->UE_sched_ctrl, &c);
 
@@ -368,10 +334,19 @@ static int handle_ue_context_drbs_setup(NR_UE_info_t *UE,
    * ue_context_*_response() */
   *resp_drbs = calloc(drbs_len, sizeof(**resp_drbs));
   AssertFatal(*resp_drbs != NULL, "out of memory\n");
+  bool has_drb = nr_mac_get_ue_first_drb_nssai(&UE->UE_sched_ctrl, NULL);
+  int accepted_drbs = 0;
   for (int i = 0; i < drbs_len; i++) {
     const f1ap_drb_to_setup_t *drb = &req_drbs[i];
+    if (has_drb) {
+      LOG_W(NR_MAC,
+            "UE %04x: ignoring DRB %d setup because single-DRB-per-UE policy is active\n",
+            UE->rnti,
+            (int)drb->id);
+      continue;
+    }
     AssertFatal(drb->qos_choice == F1AP_QOS_CHOICE_NR, "only NR QoS supported\n");
-    f1ap_drb_setup_t *resp_drb = &(*resp_drbs)[i];
+    f1ap_drb_setup_t *resp_drb = &(*resp_drbs)[accepted_drbs];
     NR_RLC_BearerConfig_t *rlc_BearerConfig = get_bearerconfig_from_drb(drb, rlc_config);
     if (UE->capability && UE->capability->rlc_Parameters && UE->capability->rlc_Parameters->ext2
         && UE->capability->rlc_Parameters->ext2->am_WithLongSN_RedCap_r17 == NULL) {
@@ -389,6 +364,9 @@ static int handle_ue_context_drbs_setup(NR_UE_info_t *UE,
     }
     c.priority = prio;
     nr_mac_add_lcid(&UE->UE_sched_ctrl, &c);
+    nr_mac_remap_ue_srbs_to_nssai(&UE->UE_sched_ctrl, &c.nssai);
+    has_drb = true;
+    accepted_drbs++;
 
     resp_drb->id = drb->id;
     resp_drb->lcid = malloc_or_fail(sizeof(*resp_drb->lcid));
@@ -430,7 +408,11 @@ static int handle_ue_context_drbs_setup(NR_UE_info_t *UE,
     int ret = ASN_SEQUENCE_ADD(&cellGroupConfig->rlc_BearerToAddModList->list, rlc_BearerConfig);
     DevAssert(ret == 0);
   }
-  return drbs_len;
+  if (accepted_drbs == 0) {
+    free(*resp_drbs);
+    *resp_drbs = NULL;
+  }
+  return accepted_drbs;
 }
 
 static int handle_ue_context_drbs_release(NR_UE_info_t *UE,
@@ -467,6 +449,9 @@ static int handle_ue_context_drbs_release(NR_UE_info_t *UE,
       DevAssert(ret == 0);
     }
   }
+  nssai_t srb_nssai = {0};
+  nr_mac_get_ue_effective_nssai(&UE->UE_sched_ctrl, &srb_nssai);
+  nr_mac_remap_ue_srbs_to_nssai(&UE->UE_sched_ctrl, &srb_nssai);
   return drbs_len;
 }
 
@@ -837,8 +822,10 @@ void ue_context_modification_request(const f1ap_ue_context_mod_req_t *req)
         UE->await_reconfig = false;
       }
       UE->reconfigSpCellConfig = NULL;
-      for (int i = 1; i < seq_arr_size(&UE->UE_sched_ctrl.lc_config); ++i) {
+      for (int i = 0; i < seq_arr_size(&UE->UE_sched_ctrl.lc_config); ++i) {
         nr_lc_config_t *c = seq_arr_at(&UE->UE_sched_ctrl.lc_config, i);
+        if (c->lcid == 1 || !c->suspended)
+          continue;
         c->suspended = false;
         nr_rlc_reestablish_entity(req->gNB_DU_ue_id, c->lcid);
       }
@@ -1016,12 +1003,17 @@ void dl_rrc_message_transfer(const f1ap_dl_rrc_message_t *dl_rrc)
     uid_t temp_uid = UE->uid;
     UE->uid = oldUE->uid;
     oldUE->uid = temp_uid;
-    for (int i = 1; i < seq_arr_size(&oldUE->UE_sched_ctrl.lc_config); ++i) {
+    for (int i = 0; i < seq_arr_size(&oldUE->UE_sched_ctrl.lc_config); ++i) {
       const nr_lc_config_t *c = seq_arr_at(&oldUE->UE_sched_ctrl.lc_config, i);
+      if (c->lcid == 1)
+        continue;
       nr_lc_config_t new = *c;
       new.suspended = true;
       nr_mac_add_lcid(&UE->UE_sched_ctrl, &new);
     }
+    nssai_t ue_slice = {0};
+    nr_mac_get_ue_effective_nssai(&UE->UE_sched_ctrl, &ue_slice);
+    nr_mac_remap_ue_srbs_to_nssai(&UE->UE_sched_ctrl, &ue_slice);
     ASN_STRUCT_FREE(asn_DEF_NR_CellGroupConfig, UE->CellGroup);
     UE->CellGroup = oldUE->CellGroup;
     oldUE->CellGroup = NULL;

@@ -49,6 +49,7 @@
 #include "NR_MAC_gNB/mac_rrc_ul.h"
 #include "NR_MAC_gNB/nr_mac_gNB.h"
 #include "NR_MAC_gNB/gNB_scheduler_types.h"
+#include "NR_MAC_gNB/slice_prb_allocator/slice_prb_allocator.h"
 #include "NR_PHY_INTERFACE/NR_IF_Module.h"
 #include "NR_RLC-BearerConfig.h"
 #include "NR_RadioBearerConfig.h"
@@ -133,6 +134,67 @@ static char *st_append(char *start, const char *end, const char *format, ...)
     return (char *)end;
 }
 
+static char *dump_slice_scheduler_stats(char *output,
+                                        const char *end,
+                                        const char *direction,
+                                        const slice_scheduler_t *scheduler)
+{
+  if (scheduler == NULL)
+    return output;
+
+  const int num_slices = slice_sch_get_num_slices(scheduler);
+  if (num_slices <= 0)
+    return output;
+
+  const int total_prbs = slice_sch_get_total_prbs(scheduler);
+  int num_stats = 0;
+  const slice_statistics_t *stats = slice_sch_get_all_statistics(scheduler, &num_stats);
+  if (stats == NULL || num_stats <= 0)
+    return output;
+
+  output = st_append(output, end, "NS %s PRB allocation (total PRBs %d):\n", direction, total_prbs);
+
+  for (int s = 0; s < num_stats; s++) {
+    const slice_statistics_t *st = &stats[s];
+    int require = 0;
+    float dedicated = 0.0f;
+    float min_ratio = 0.0f;
+    float max_ratio = 0.0f;
+    slice_sch_get_require(scheduler, st->slice_id.sst, st->slice_id.sd, &require);
+    slice_sch_get_slice_config(scheduler,
+                               st->slice_id.sst,
+                               st->slice_id.sd,
+                               NULL,
+                               NULL,
+                               &dedicated,
+                               &min_ratio,
+                               &max_ratio);
+
+    const double latest_pct = total_prbs > 0 ? 100.0 * (double)st->latest_num_prbs / (double)total_prbs : 0.0;
+    const double avg_pct = total_prbs > 0 ? 100.0 * (double)st->avg_num_prbs / (double)total_prbs : 0.0;
+
+    output = st_append(output,
+                       end,
+                       "  slice SST 0x%02x SD 0x%06x: latest %d PRBs [%d,%d) (%.1f%%) avg %.1f PRBs (%.1f%%) "
+                       "require %d dedicated/min/max %.0f/%.0f/%.0f%% samples %d\n",
+                       st->slice_id.sst,
+                       (unsigned)st->slice_id.sd,
+                       st->latest_num_prbs,
+                       st->latest_start_prb,
+                       st->latest_end_prb,
+                       latest_pct,
+                       (double)st->avg_num_prbs,
+                       avg_pct,
+                       require,
+                       dedicated * 100.0,
+                       min_ratio * 100.0,
+                       max_ratio * 100.0,
+                       st->sample_count);
+  }
+
+  return output;
+}
+
 size_t dump_mac_stats(gNB_MAC_INST *gNB, char *output, size_t strlen, bool reset_rsrp)
 {
   const char *begin = output;
@@ -142,6 +204,9 @@ size_t dump_mac_stats(gNB_MAC_INST *gNB, char *output, size_t strlen, bool reset
    * scheduler to be locked*/
   NR_SCHED_ENSURE_LOCKED(&gNB->sched_lock);
   const uint64_t current_global_slot_counter = gNB->slot_counter;
+
+  output = dump_slice_scheduler_stats(output, end, "UL", gNB->slice_scheduler_ul);
+  output = dump_slice_scheduler_stats(output, end, "DL", gNB->slice_scheduler_dl);
 
   UE_iterator(gNB->UE_info.connected_ue_list, UE) {
     NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
