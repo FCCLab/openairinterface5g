@@ -24,6 +24,7 @@
 #include "openair2/E2AP/flexric/src/sm/slice_sm/ie/slice_data_ie.h"
 #include "NR_MAC_gNB/nr_mac_gNB.h"
 #include "NR_MAC_gNB/gNB_scheduler_types.h"
+#include "common/utils/LOG/log.h"
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -31,9 +32,9 @@
 
 static const int mod_id = 0;
 
-static bool is_tenant_slice(uint32_t sd)
+static bool is_default_slice(uint32_t sd)
 {
-  return sd != NS_SLICE_DEFAULT_SD;
+  return sd == NS_SLICE_DEFAULT_SD;
 }
 
 static void append_ns_policy_from_scheduler(ns_slice_policy_list_t *list,
@@ -49,7 +50,7 @@ static void append_ns_policy_from_scheduler(ns_slice_policy_list_t *list,
 
   for (int i = 0; i < n; ++i) {
     const slice_nssai_t *nssai = slice_sch_get_slice_nssai(sched, i);
-    if (nssai == NULL || !is_tenant_slice(nssai->sd))
+    if (nssai == NULL)
       continue;
 
     float ded = 0.f;
@@ -96,21 +97,41 @@ static void read_ns_policy_from_mac(ns_slice_policy_list_t *out, gNB_MAC_INST *m
 
 static bool validate_ns_entry(const ns_slice_policy_entry_t *e, char *err, size_t err_len)
 {
+  const char *dir = e->direction == NS_SLICE_DIR_UL ? "ul" : e->direction == NS_SLICE_DIR_DL ? "dl" : "?";
+
+  if (e->direction != NS_SLICE_DIR_DL && e->direction != NS_SLICE_DIR_UL) {
+    snprintf(err, err_len, "SST=%u SD=0x%06x: invalid direction", e->sst, e->sd);
+    return false;
+  }
+  if (is_default_slice(e->sd)) {
+    snprintf(err, err_len, "SST=%u SD=0x%06x %s: cannot control default slice (sd=0xffffff)", e->sst, e->sd, dir);
+    return false;
+  }
   if (e->dedicated_pct < 0.f || e->dedicated_pct > 100.f || e->min_pct < 0.f || e->min_pct > 100.f || e->max_pct < 0.f
       || e->max_pct > 100.f) {
-    snprintf(err, err_len, "ratios must be in [0, 100]%%");
+    snprintf(err, err_len, "SST=%u SD=0x%06x %s: ratios must be in [0, 100]%%", e->sst, e->sd, dir);
     return false;
   }
-  if (e->dedicated_pct > e->min_pct || e->min_pct > e->max_pct) {
-    snprintf(err, err_len, "need dedicated <= min <= max");
+  if (e->dedicated_pct > e->min_pct) {
+    snprintf(err,
+             err_len,
+             "SST=%u SD=0x%06x %s: dedicated %.1f%% > min %.1f%% (need dedicated <= min <= max)",
+             e->sst,
+             e->sd,
+             dir,
+             e->dedicated_pct,
+             e->min_pct);
     return false;
   }
-  if (e->direction != NS_SLICE_DIR_DL && e->direction != NS_SLICE_DIR_UL) {
-    snprintf(err, err_len, "invalid direction");
-    return false;
-  }
-  if (!is_tenant_slice(e->sd)) {
-    snprintf(err, err_len, "cannot control default slice (sd=0xffffff)");
+  if (e->min_pct > e->max_pct) {
+    snprintf(err,
+             err_len,
+             "SST=%u SD=0x%06x %s: min %.1f%% > max %.1f%% (need dedicated <= min <= max)",
+             e->sst,
+             e->sd,
+             dir,
+             e->min_pct,
+             e->max_pct);
     return false;
   }
   return true;
@@ -207,9 +228,23 @@ sm_ag_if_ans_t write_ctrl_slice_sm(void const *data)
       const float max = e->max_pct / 100.f;
       if (slice_sch_add_slice(sched, e->sst, e->sd, ded, min, max, 0) != 0) {
         NR_SCHED_UNLOCK(&mac->sched_lock);
-        return make_slice_ctrl_out(SLICE_CTRL_OUT_ERROR, "slice_sch_add_slice failed");
+        snprintf(err,
+                 sizeof(err),
+                 "SST=%u SD=0x%06x %s: slice_sch_add_slice failed",
+                 e->sst,
+                 e->sd,
+                 e->direction == NS_SLICE_DIR_UL ? "ul" : "dl");
+        return make_slice_ctrl_out(SLICE_CTRL_OUT_ERROR, err);
       }
       sched->result_valid = false;
+      LOG_I(NR_MAC,
+            "NS E2 SET applied: SST=%u SD=0x%06x %s dedicated=%.1f%% min=%.1f%% max=%.1f%%\n",
+            e->sst,
+            e->sd,
+            e->direction == NS_SLICE_DIR_UL ? "ul" : "dl",
+            e->dedicated_pct,
+            e->min_pct,
+            e->max_pct);
     }
 
     if (mac->slice_scheduler_dl != NULL && mac->scheduler_type_dl == SCHE_NS) {
