@@ -472,8 +472,9 @@ static void initialize_agent(ngran_node_t node_type, e2_agent_args_t oai_args)
   printf("After RCconfig_NR_E2agent %s %s \n",oai_args.sm_dir, oai_args.ip  );
 
   fr_args_t args = {0};
-  memcpy(args.ip, oai_args.ip, FR_IP_ADDRESS_LEN);
-  memcpy(args.libs_dir, oai_args.sm_dir, FR_CONF_FILE_LEN);
+  args.ip = oai_args.ip;
+  strncpy(args.libs_dir, oai_args.sm_dir, FR_CONF_FILE_LEN - 1);
+  args.libs_dir[FR_CONF_FILE_LEN - 1] = '\0';
 
   sleep(1);
   const gNB_RRC_INST* rrc = RC.nrrrc[0];
@@ -639,22 +640,6 @@ int main( int argc, char **argv ) {
 
   config_sync_var=0;
 
-
-#ifdef E2_AGENT
-
-//////////////////////////////////
-//////////////////////////////////
-//// Init the E2 Agent
-
-  // OAI Wrapper 
-  e2_agent_args_t oai_args = RCconfig_NR_E2agent();
-
-  if (oai_args.enabled) {
-    initialize_agent(node_type, oai_args);
-  }
-
-#endif // E2_AGENT
-
   // wait for F1 Setup Response before starting L1 for real
   if (NFAPI_MODE != NFAPI_MODE_PNF && (NODE_IS_DU(node_type) || NODE_IS_MONOLITHIC(node_type)))
     wait_f1_setup_response();
@@ -677,6 +662,16 @@ int main( int argc, char **argv ) {
   if (RC.nb_nr_L1_inst > 0) {
     wait_RUs();
     // once all RUs are ready initialize the rest of the gNBs ((dependence on final RU parameters after configuration)
+
+#ifdef E2_AGENT
+    // Start E2 after RU PHY buffers are allocated (init before start_NR_RU races with ru_thread).
+    {
+      e2_agent_args_t oai_args = RCconfig_NR_E2agent();
+      if (oai_args.enabled) {
+        initialize_agent(node_type, oai_args);
+      }
+    }
+#endif // E2_AGENT
 
     if (IS_SOFTMODEM_DOSCOPE || IS_SOFTMODEM_IMSCOPE_ENABLED || IS_SOFTMODEM_IMSCOPE_RECORD_ENABLED) {
       sleep(1);

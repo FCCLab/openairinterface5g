@@ -20,6 +20,7 @@
  */
 
 #include "ran_func_rc.h"
+#include "ran_func_rc_param_ids.h"
 #include "ran_func_rc_subs.h"
 #include "ran_func_rc_extern.h"
 #include "ran_e2sm_ue_id.h"
