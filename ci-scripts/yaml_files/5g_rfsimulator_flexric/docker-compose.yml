@@ -1,137 +1,238 @@
 # SPDX-License-Identifier: MIT
 
 services:
-    nearRT-RIC:
-        image: ${REGISTRY-oaisoftwarealliance/}oai-flexric:${FLEXRIC_TAG:-develop}
-        container_name: nearRT-RIC
-        networks:
-            public_net:
-                ipv4_address: 192.168.70.150
+    mysql:
+        container_name: "rfsim5g-mysql"
+        image: mysql:9.6
+        init: true
         volumes:
-            - ./conf/flexric.conf:/usr/local/etc/flexric/flexric.conf
+            - ./oai_db.sql:/docker-entrypoint-initdb.d/oai_db.sql
+            - ./mysql-healthcheck.sh:/tmp/mysql-healthcheck.sh
+        environment:
+            - TZ=Europe/Paris
+            - MYSQL_DATABASE=oai_db
+            - MYSQL_USER=test
+            - MYSQL_PASSWORD=test
+            - MYSQL_ROOT_PASSWORD=linux
         healthcheck:
-            test: /bin/bash -c "pgrep nearRT-RIC"
+            test: /bin/bash -c "/tmp/mysql-healthcheck.sh"
+            start_period: 10s
+            start_interval: 500ms
             interval: 10s
             timeout: 5s
-
-    xapp-rc-moni:
-        image: ${REGISTRY-oaisoftwarealliance/}oai-flexric:${FLEXRIC_TAG:-develop}
-        command: "stdbuf -o0 /usr/local/flexric/xApp/c/monitor/xapp_rc_moni"
-        container_name: xapp-rc-moni
+            retries: 30
+        networks:
+            public_net:
+                ipv4_address: 192.168.71.131
+    oai-amf:
+        container_name: "rfsim5g-oai-amf"
+        image: oaisoftwarealliance/oai-amf:v2.2.1
+        environment:
+            - TZ=Europe/paris
+        volumes:
+            - ./mini_nonrf_config.yaml:/openair-amf/etc/config.yaml
         depends_on:
-            - nearRT-RIC
-            - oai-gnb
+            - mysql
         networks:
             public_net:
-                ipv4_address: 192.168.70.154
+                ipv4_address: 192.168.71.132
+    oai-smf:
+        container_name: "rfsim5g-oai-smf"
+        image: oaisoftwarealliance/oai-smf:v2.2.1
+        environment:
+            - TZ=Europe/Paris
         volumes:
-            - ./conf/flexric.conf:/usr/local/etc/flexric/flexric.conf
-        healthcheck:
-            test: /bin/bash -c "pgrep xapp_rc_moni"
-            interval: 10s
-            timeout: 5s
-
-    xapp-kpm-moni:
-        image: ${REGISTRY-oaisoftwarealliance/}oai-flexric:${FLEXRIC_TAG:-develop}
-        command: "stdbuf -o0 /usr/local/flexric/xApp/c/monitor/xapp_kpm_moni"
-        container_name: xapp-kpm-moni
+            - ./mini_nonrf_config.yaml:/openair-smf/etc/config.yaml
         depends_on:
-            - nearRT-RIC
-            - oai-gnb
+            - oai-amf
         networks:
             public_net:
-                ipv4_address: 192.168.70.155
+                ipv4_address: 192.168.71.133
+    oai-upf:
+        container_name: "rfsim5g-oai-upf"
+        image: oaisoftwarealliance/oai-upf:v2.2.1
+        init: true
+        environment:
+            - TZ=Europe/Paris
         volumes:
-            - ./conf/flexric.conf:/usr/local/etc/flexric/flexric.conf
-        healthcheck:
-            test: /bin/bash -c "pgrep xapp_kpm_moni"
-            interval: 10s
-            timeout: 5s
-
-    xapp-kpm-rc:
-        image: ${REGISTRY-oaisoftwarealliance/}oai-flexric:${FLEXRIC_TAG:-develop}
-        command: "stdbuf -o0 /usr/local/flexric/xApp/c/kpm_rc/xapp_kpm_rc"
-        container_name: xapp-kpm-rc
+            - ./mini_nonrf_config.yaml:/openair-upf/etc/config.yaml
         depends_on:
-            - nearRT-RIC
-            - oai-gnb
+            - oai-smf
+        cap_add:
+            - NET_ADMIN
+            - SYS_ADMIN
+        cap_drop:
+            - ALL
+        privileged: true
         networks:
             public_net:
-                ipv4_address: 192.168.70.156
-        volumes:
-            - ./conf/flexric.conf:/usr/local/etc/flexric/flexric.conf
-        healthcheck:
-            test: /bin/bash -c "pgrep xapp_kpm_rc"
-            interval: 10s
-            timeout: 5s
-
-    xapp-gtp-mac-rlc-pdcp-moni:
-        image: ${REGISTRY-oaisoftwarealliance/}oai-flexric:${FLEXRIC_TAG:-develop}
-        command: "stdbuf -o0 /usr/local/flexric/xApp/c/monitor/xapp_gtp_mac_rlc_pdcp_moni"
-        container_name: xapp-gtp-mac-rlc-pdcp-moni
+                ipv4_address: 192.168.71.134
+                interface_name: eth0
+            traffic_net:
+                ipv4_address: 192.168.72.134
+                interface_name: eth1
+    oai-ext-dn:
+        privileged: true
+        container_name: rfsim5g-oai-ext-dn
+        image: oaisoftwarealliance/trf-gen-cn5g:latest
+        init: true
+        entrypoint: /bin/bash -c \
+              "iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE;"\
+              "ip route add 12.1.1.0/24 via 192.168.72.134 dev eth0; sleep infinity"
         depends_on:
-            - nearRT-RIC
-            - oai-gnb
+            - oai-upf
         networks:
-            public_net:
-                ipv4_address: 192.168.70.157
-        volumes:
-            - ./conf/flexric.conf:/usr/local/etc/flexric/flexric.conf
+            traffic_net:
+                ipv4_address: 192.168.72.135
         healthcheck:
-            test: /bin/bash -c "pgrep -f xapp_gtp_mac_rlc_pdcp_moni"
+            test: /bin/bash -c "ping -c 2 192.168.72.134"
+            start_period: 10s
+            start_interval: 500ms
             interval: 10s
             timeout: 5s
+            retries: 5
+    # nearRT-RIC:
+    #     image: ${REGISTRY-oaisoftwarealliance/}oai-flexric:${FLEXRIC_TAG:-develop}
+    #     container_name: nearRT-RIC
+    #     networks:
+    #         public_net:
+    #             ipv4_address: 192.168.70.150
+    #     volumes:
+    #         - ./conf/flexric.conf:/usr/local/etc/flexric/flexric.conf
+    #     healthcheck:
+    #         test: /bin/bash -c "pgrep nearRT-RIC"
+    #         interval: 10s
+    #         timeout: 5s
+
+    # xapp-rc-moni:
+    #     image: ${REGISTRY-oaisoftwarealliance/}oai-flexric:${FLEXRIC_TAG:-develop}
+    #     command: "stdbuf -o0 /usr/local/flexric/xApp/c/monitor/xapp_rc_moni"
+    #     container_name: xapp-rc-moni
+    #     depends_on:
+    #         # - nearRT-RIC
+    #         - oai-gnb
+    #     networks:
+    #         public_net:
+    #             ipv4_address: 192.168.70.154
+    #     volumes:
+    #         - ./conf/flexric.conf:/usr/local/etc/flexric/flexric.conf
+    #     healthcheck:
+    #         test: /bin/bash -c "pgrep xapp_rc_moni"
+    #         interval: 10s
+    #         timeout: 5s
+
+    # xapp-kpm-moni:
+    #     image: ${REGISTRY-oaisoftwarealliance/}oai-flexric:${FLEXRIC_TAG:-develop}
+    #     command: "stdbuf -o0 /usr/local/flexric/xApp/c/monitor/xapp_kpm_moni"
+    #     container_name: xapp-kpm-moni
+    #     depends_on:
+    #         # - nearRT-RIC
+    #         - oai-gnb
+    #     networks:
+    #         public_net:
+    #             ipv4_address: 192.168.70.155
+    #     volumes:
+    #         - ./conf/flexric.conf:/usr/local/etc/flexric/flexric.conf
+    #     healthcheck:
+    #         test: /bin/bash -c "pgrep xapp_kpm_moni"
+    #         interval: 10s
+    #         timeout: 5s
+
+    # xapp-kpm-rc:
+    #     image: ${REGISTRY-oaisoftwarealliance/}oai-flexric:${FLEXRIC_TAG:-develop}
+    #     command: "stdbuf -o0 /usr/local/flexric/xApp/c/kpm_rc/xapp_kpm_rc"
+    #     container_name: xapp-kpm-rc
+    #     depends_on:
+    #         # - nearRT-RIC
+    #         - oai-gnb
+    #     networks:
+    #         public_net:
+    #             ipv4_address: 192.168.70.156
+    #     volumes:
+    #         - ./conf/flexric.conf:/usr/local/etc/flexric/flexric.conf
+    #     healthcheck:
+    #         test: /bin/bash -c "pgrep xapp_kpm_rc"
+    #         interval: 10s
+    #         timeout: 5s
+
+    # xapp-gtp-mac-rlc-pdcp-moni:
+    #     image: ${REGISTRY-oaisoftwarealliance/}oai-flexric:${FLEXRIC_TAG:-develop}
+    #     command: "stdbuf -o0 /usr/local/flexric/xApp/c/monitor/xapp_gtp_mac_rlc_pdcp_moni"
+    #     container_name: xapp-gtp-mac-rlc-pdcp-moni
+    #     depends_on:
+    #         # - nearRT-RIC
+    #         - oai-gnb
+    #     networks:
+    #         public_net:
+    #             ipv4_address: 192.168.70.157
+    #     volumes:
+    #         - ./conf/flexric.conf:/usr/local/etc/flexric/flexric.conf
+    #     healthcheck:
+    #         test: /bin/bash -c "pgrep -f xapp_gtp_mac_rlc_pdcp_moni"
+    #         interval: 10s
+    #         timeout: 5s
 
     oai-gnb:
-        image: ${REGISTRY-oaisoftwarealliance/}${GNB_IMG:-oai-gnb}:${TAG:-develop}
-        privileged: true
+        image: 10.1.110.84:5000/oai-gnb-e2-kpmv301-e2apv2:0.0.1
         container_name: rfsim5g-oai-gnb
         environment:
             USE_ADDITIONAL_OPTIONS: -E --rfsim --log_config.global_log_options level,nocolor,time
-            ASAN_OPTIONS: detect_leaks=0
-        depends_on:
-            - nearRT-RIC
+            ASAN_OPTIONS: detect_leaks=0:handle_segv=0:allow_user_segv_handler=1
         networks:
             public_net:
-                ipv4_address: 192.168.70.151
+                ipv4_address: 192.168.71.151
         volumes:
             - ../../conf_files/gnb.sa.band78.106prb.rfsim.flexric.conf:/opt/oai-gnb/etc/gnb.conf
+        
+        # Keep the exact healthcheck! It only reports "healthy" AFTER you start GDB
         healthcheck:
             test: /bin/bash -c "pgrep nr-softmodem"
-            interval: 10s
+            interval: 5s
             timeout: 5s
-            retries: 5
+            retries: 20
+
+    # oai-gnb:
+    #     image: 10.1.110.84:5000/oai-gnb-e2-kpmv301-e2apv2:0.0.1
+    #     container_name: rfsim5g-oai-gnb
+    #     privileged: true
+        
+    #     # Drop into the loop for GDB
+    #     entrypoint: /bin/bash
+    #     command: -c "sleep infinity"
+    #     stdin_open: true
+    #     tty: true
+        
+    #     environment:
+    #         USE_ADDITIONAL_OPTIONS: -E --rfsim --log_config.global_log_options level,nocolor,time
+    #         ASAN_OPTIONS: detect_leaks=0:handle_segv=0:allow_user_segv_handler=1
+    #     networks:
+    #         public_net:
+    #             ipv4_address: 192.168.71.151
+    #     volumes:
+    #         - ../../conf_files/gnb.sa.band78.106prb.rfsim.flexric.conf:/opt/oai-gnb/etc/gnb.conf
+        
+    #     # Keep the exact healthcheck! It only reports "healthy" AFTER you start GDB
+    #     healthcheck:
+    #         test: /bin/bash -c "pgrep nr-softmodem"
+    #         interval: 5s
+    #         timeout: 5s
+    #         retries: 20
 
     oai-nr-ue:
-        image: ${REGISTRY-oaisoftwarealliance/}${NRUE_IMG:-oai-nr-ue}:${TAG:-develop}
+        image: 10.1.110.84:5000/oai-ue-e2-kpmv301-e2apv2:0.0.1
         privileged: true
         container_name: rfsim5g-oai-nr-ue
         environment:
-            USE_ADDITIONAL_OPTIONS: -E --rfsim -r 106 --numerology 1 -C 3619200000 --uicc0.imsi 001010000000003 --rfsimulator.[0].serveraddr 192.168.70.151 --log_config.global_log_options level,nocolor,time
+            USE_ADDITIONAL_OPTIONS: -E --rfsim -r 106 --numerology 1 -C 3619200000 --uicc0.imsi 208990100001100 --rfsimulator.[0].serveraddr 192.168.71.151 --log_config.global_log_options level,nocolor,time
+        
+        # Explicitly wait for the gNB healthcheck to pass
         depends_on:
-            - oai-gnb
+            oai-gnb:
+                condition: service_healthy
+                
         networks:
             public_net:
-                ipv4_address: 192.168.70.152
-        volumes:
-            - ../../conf_files/nrue.uicc.conf:/opt/oai-nr-ue/etc/nr-ue.conf
-        healthcheck:
-            test: /bin/bash -c "pgrep nr-uesoftmodem"
-            interval: 10s
-            timeout: 5s
-            retries: 5
-
-    oai-nr-ue2:
-        image: ${REGISTRY-oaisoftwarealliance/}${NRUE_IMG:-oai-nr-ue}:${TAG:-develop}
-        privileged: true
-        container_name: rfsim5g-oai-nr-ue2
-        environment:
-            USE_ADDITIONAL_OPTIONS: -E --rfsim -r 106 --numerology 1 -C 3619200000 --uicc0.imsi 001010000000004 --rfsimulator.[0].serveraddr 192.168.70.151 --log_config.global_log_options level,nocolor,time
-        depends_on:
-            - oai-gnb
-        networks:
-            public_net:
-                ipv4_address: 192.168.70.153
+                ipv4_address: 192.168.71.152
         volumes:
             - ../../conf_files/nrue.uicc.conf:/opt/oai-nr-ue/etc/nr-ue.conf
         healthcheck:
@@ -142,5 +243,18 @@ services:
 
 networks:
     public_net:
-        name: oai-cn5g-public-net
-        external: true
+        driver: bridge
+        name: rfsim5g-oai-public-net
+        ipam:
+            config:
+                - subnet: 192.168.71.128/26
+        driver_opts:
+            com.docker.network.bridge.name: "rfsim5g-public"
+    traffic_net:
+        driver: bridge
+        name: rfsim5g-oai-traffic-net
+        ipam:
+            config:
+                - subnet: 192.168.72.128/26
+        driver_opts:
+            com.docker.network.bridge.name: "rfsim5g-traffic"

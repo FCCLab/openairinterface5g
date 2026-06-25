@@ -232,7 +232,7 @@ log_config : {
 };
 
 e2_agent = {
-  near_ric_ip_addr = "10.1.100.108"; // host IP of e2term in OSC near-rt-ric
+  near_ric_ip_addr = "${HOST_IP_FOR_E2_TERM}"; // host IP of e2term in OSC near-rt-ric
   #sm_dir = "/path/where/the/SMs/are/located/"
   sm_dir = "/usr/local/lib/flexric/";
 };
