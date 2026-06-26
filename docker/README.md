@@ -108,8 +108,7 @@ possibilities:
 2. You should be able to define these variables manually.
    - x86: `docker build --build-arg TARGETARCH=amd64 --build-arg
      TARGETPLATFORM=linux/amd64 ...`
-   - arm: `docker build --build-arg TARGETARCH=arm64 --build-arg
-     TARGETPLATFORM=linux/arm64 ...`
+   - arm: `docker build --build-arg TARGETARCH=arm64 --build-arg TARGETPLATFORM=linux/arm64 ...`
 
 ## 3.2. Building the shared images ##
 

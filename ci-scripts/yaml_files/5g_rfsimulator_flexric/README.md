@@ -2,12 +2,12 @@
 building gNB images
 ```bash
 docker build --target ran-base --tag ran-base:latest --file docker/Dockerfile.base.ubuntu .
-docker build -t 10.1.110.84:5000/ran-build-e2-kpmv301-e2apv2:0.0.1 -f docker/Dockerfile.build.ubuntu .
-docker build -t 10.1.110.84:5000/oai-gnb-e2-kpmv301-e2apv2:0.0.1 --file docker/Dockerfile.gNB.ubuntu.rfsim .
+docker build -t ran-build-e2-kpmv301-e2apv2:0.0.1 -f docker/Dockerfile.build.ubuntu .
+docker build -t oai-gnb-e2-kpmv301-e2apv2:0.0.1 --file docker/Dockerfile.gNB.ubuntu.rfsim .
 ```
 building ue images
 ```bash
-docker build --tag 10.1.110.84:5000/oai-ue-e2-kpmv301-e2apv2:0.0.1 --file docker/Dockerfile.nrUE.ubuntu.rfsim .
+docker build --tag oai-ue-e2-kpmv301-e2apv2:0.0.1 --file docker/Dockerfile.nrUE.ubuntu.rfsim .
 ```
 # How to connect the E2 termination point of OSC near-rt-ric
 1. Find out what is the kubernetes Node IP of the kubernetes node you use for the near-rt-ric.
@@ -26,7 +26,7 @@ docker compose up -d mysql oai-amf oai-smf oai-upf oai-ext-dn
 ```
 5. Bring up the rfsim5g-oai-gnb container:
 ```bash
-docker-compose up -d oai-gnb
+docker compose up -d oai-gnb
 ```
 6. Bring up the rfsim5g-oai-nr-ue container:
 ```bash

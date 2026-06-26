@@ -10,7 +10,7 @@
 ARG UBUNTU_IMAGE=ubuntu:noble
 FROM ran-base:latest AS nr-ue-base
 
-FROM 10.1.110.84:5000/ran-build-e2-kpmv301-e2apv2:0.0.1 AS nr-ue-build
+FROM ran-build-e2-kpmv301-e2apv2:0.0.1 AS nr-ue-build
 
 
 #start from scratch for target executable
