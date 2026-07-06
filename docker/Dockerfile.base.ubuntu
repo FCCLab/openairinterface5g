@@ -49,6 +49,8 @@ RUN apt-get update && \
        bison \
        flex \
        m4 \
+       swig \
+       libcurl4-gnutls-dev \
        # python3-pip for conf template generation
        python3-pip \
        wget && \

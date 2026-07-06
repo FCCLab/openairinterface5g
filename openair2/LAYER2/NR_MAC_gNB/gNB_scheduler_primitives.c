@@ -546,6 +546,7 @@ NR_sched_pdcch_t set_pdcch_structure(gNB_MAC_INST *gNB_mac,
 /* Max USS candidates for which we compute REG overlap vs prior allocs on CCE failure (stack-sized). */
 #define NR_MAC_PDCCH_FAIL_CAND_TRACE_MAX 16
 
+#if 0
 /* Mark BWP vrb_map indices [0..mark_len) touched by CCE indices [first_cce .. first_cce+aggregation-1] (same geometry as fill_pdcch_vrb_map). */
 static void pdcch_cce_al_mark_vrb_indices(const NR_sched_pdcch_t *pdcch,
                                         const NR_ControlResourceSet_t *coreset,
@@ -809,6 +810,8 @@ static void nr_mac_log_pdcch_cce_failed_candidates_detail(gNB_MAC_INST *mac,
           NR_MAC_PDCCH_FAIL_CAND_TRACE_MAX);
   }
 }
+#endif
+
 
 /* true if any REG/RB mapped to CCEs [first_cce .. first_cce+aggregation-1] hits vrb_map (same rule as find_pdcch_candidate) */
 static bool pdcch_cce_al_region_busy(const gNB_MAC_INST *mac,
@@ -906,6 +909,7 @@ static void nr_mac_pdcch_slot_trace_record_alloc(gNB_MAC_INST *mac,
   }
 }
 
+#if 0
 static void nr_mac_pdcch_slot_trace_record_fail(gNB_MAC_INST *mac, int CC_id, rnti_t rnti, const char *purpose)
 {
   if (mac == NULL || CC_id < 0 || CC_id >= NFAPI_CC_MAX)
@@ -924,6 +928,7 @@ static void nr_mac_pdcch_slot_trace_record_fail(gNB_MAC_INST *mac, int CC_id, rn
     r->purpose[0] = '\0';
   }
 }
+#endif
 
 #define NR_MAC_CCE_TABLE_MAX 32
 /* two traced alloc records claimed the same logical CCE index */

@@ -816,7 +816,7 @@ int slice_sch_update_require(slice_scheduler_t *obj, uint8_t sst, uint32_t sd, i
   return 0;
 }
 
-int slice_sch_get_require(slice_scheduler_t *obj, uint8_t sst, uint32_t sd, int *require) {
+int slice_sch_get_require(const slice_scheduler_t *obj, uint8_t sst, uint32_t sd, int *require) {
   if (obj == NULL || obj->input == NULL || require == NULL) {
     return -1;
   }

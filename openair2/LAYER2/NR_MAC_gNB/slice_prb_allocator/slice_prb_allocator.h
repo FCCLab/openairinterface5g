@@ -150,7 +150,7 @@ int slice_sch_update_require(slice_scheduler_t *obj, uint8_t sst, uint32_t sd, i
  *  \param require Output: PRB requirement (0 = not used)
  *  \return 0 on success, -1 on error (slice not found)
  */
-int slice_sch_get_require(slice_scheduler_t *obj, uint8_t sst, uint32_t sd, int *require);
+int slice_sch_get_require(const slice_scheduler_t *obj, uint8_t sst, uint32_t sd, int *require);
 
 /*! \brief Update the total PRBs available for allocation
  *  \param obj Scheduler object
