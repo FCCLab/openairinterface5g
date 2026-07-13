@@ -279,12 +279,16 @@ static NR_ControlResourceSet_t *get_coreset_config(int bwp_id, int curr_bwp, uin
   AssertFatal(coreset != NULL, "out of memory\n");
   // frequency domain resources depending on BWP size
   coreset->frequencyDomainResources.buf = calloc(1,6);
-  coreset->frequencyDomainResources.buf[0] = (curr_bwp < 48) ? 0xf0 : 0xff;
-  coreset->frequencyDomainResources.buf[1] = (curr_bwp < 96) ? 0x00 : 0xff;
-  coreset->frequencyDomainResources.buf[2] = (curr_bwp < 144) ? 0x00 : 0xff;
-  coreset->frequencyDomainResources.buf[3] = (curr_bwp < 192) ? 0x00 : 0xff;
-  coreset->frequencyDomainResources.buf[4] = (curr_bwp < 240) ? 0x00 : 0xff;
-  coreset->frequencyDomainResources.buf[5] = 0x00;
+  int num_groups = curr_bwp / 6;
+  if (num_groups > 45) {
+    num_groups = 45;
+  }
+  for (int i = 0; i < 6; i++) {
+    coreset->frequencyDomainResources.buf[i] = 0x00;
+  }
+  for (int i = 0; i < num_groups; i++) {
+    coreset->frequencyDomainResources.buf[i / 8] |= (0x80 >> (i % 8));
+  }
   coreset->frequencyDomainResources.size = 6;
   coreset->frequencyDomainResources.bits_unused = 3;
   coreset->duration = (curr_bwp < 48) ? 2 : 1;
