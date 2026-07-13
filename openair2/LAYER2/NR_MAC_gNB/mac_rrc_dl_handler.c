@@ -1024,7 +1024,12 @@ void dl_rrc_message_transfer(const f1ap_dl_rrc_message_t *dl_rrc)
     /* 38.331 5.3.7.2 says that the UE releases the spCellConfig, so we drop it
      * from the current configuration. It will be reapplied when the
      * reconfiguration has succeeded (indicated by the CU) */
-    UE->reconfigSpCellConfig = UE->CellGroup->spCellConfig;
+    if (oldUE->reconfigSpCellConfig != NULL) {
+      UE->reconfigSpCellConfig = oldUE->reconfigSpCellConfig;
+      oldUE->reconfigSpCellConfig = NULL;
+    } else {
+      UE->reconfigSpCellConfig = UE->CellGroup->spCellConfig;
+    }
     UE->CellGroup->spCellConfig = NULL;
     UE->await_reconfig = true;
     mac_remove_nr_ue(mac, *dl_rrc->old_gNB_DU_ue_id);
