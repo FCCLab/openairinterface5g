@@ -433,7 +433,8 @@ static bool allocate_dl_retransmission(gNB_MAC_INST *nr_mac,
                                        int *n_rb_sched,
                                        NR_UE_info_t *UE,
                                        int beam_idx,
-                                       int current_harq_pid)
+                                       int current_harq_pid,
+                                       const slice_prb_range_t *slice_prb)
 {
   frame_t frame = pp_pdsch->frame;
   slot_t slot = pp_pdsch->slot;
@@ -482,6 +483,18 @@ static bool allocate_dl_retransmission(gNB_MAC_INST *nr_mac,
   int rbStart = bwp_info.bwpStart;
   int rbStop = bwp_info.bwpStart + bwp_info.bwpSize - 1;
   int rbSize = 0;
+
+  /* Constrain remapping search to the current slice PRB window when NS is on. */
+  if (slice_prb != NULL && slice_prb->num_prbs > 0) {
+    int slice_start = slice_prb->start_prb;
+    int slice_end = slice_prb->end_prb - 1; /* inclusive stop like rbStop */
+    if (slice_start > rbStart)
+      rbStart = slice_start;
+    if (slice_end < rbStop)
+      rbStop = slice_end;
+    if (rbStart > rbStop)
+      return false;
+  }
 
   if (reuse_old_tda && layers == new_sched.nrOfLayers) {
     /* Check that there are enough resources for retransmission */
@@ -643,20 +656,31 @@ static void pf_dl(gNB_MAC_INST *mac,
                   int max_num_ue,
                   int num_beams,
                   int n_rb_sched[num_beams],
-                  const slice_prb_range_t *slice_prb)
+                  const slice_prb_range_t *slice_prb,
+                  int *remainUEs_ext)
 {
   frame_t frame = pp_pdsch->frame;
   slot_t slot = pp_pdsch->slot;
 
-  const bool use_slice = (slice_prb != NULL && slice_prb->num_prbs > 0);
+  /* Match UL: when slicing, require a shared remainUEs budget across slices. */
+  if (slice_prb != NULL && (slice_prb->num_prbs <= 0 || remainUEs_ext == NULL))
+    return;
+
+  const bool use_slice = (slice_prb != NULL);
   int slice_available_prbs = use_slice ? slice_prb->num_prbs : 0;
 
   NR_ServingCellConfigCommon_t *scc=mac->common_channels[0].ServingCellConfigCommon;
   // UEs that could be scheduled
   UEsched_t UE_sched[MAX_MOBILES_PER_GNB + 1] = {0};
-  int remainUEs[num_beams];
-  for (int i = 0; i < num_beams; i++)
-    remainUEs[i] = max_num_ue;
+  int remainUEs_local[num_beams];
+  int *remainUEs;
+  if (slice_prb == NULL) {
+    remainUEs = remainUEs_local;
+    for (int i = 0; i < num_beams; i++)
+      remainUEs_local[i] = max_num_ue;
+  } else {
+    remainUEs = remainUEs_ext;
+  }
   int numUE = 0;
   int CC_id = 0;
   int slots_per_frame = mac->frame_structure.numb_slots_frame;
@@ -695,32 +719,18 @@ static void pf_dl(gNB_MAC_INST *mac,
     if (harq_pid >= 0) {
       NR_beam_alloc_t beam = beam_allocation_procedure(&mac->beam_info, frame, slot, UE->UE_beam_index, slots_per_frame);
       bool sch_ret = beam.idx >= 0;
-      if (sch_ret && use_slice) {
-        bwp_info_t bwp_info = get_pdsch_bwp_start_size(mac, UE);
-        int bwp_start = bwp_info.bwpStart;
-        NR_UE_harq_t *harq = &sched_ctrl->harq_processes[harq_pid];
-        int retx_abs_start = harq->sched_pdsch.rbStart + bwp_start;
-        int retx_abs_end = retx_abs_start + harq->sched_pdsch.rbSize;
-        if (retx_abs_start < slice_prb->start_prb || retx_abs_end > slice_prb->end_prb) {
-          LOG_D(NR_MAC,
-                "[UE %04x][%4d.%2d] DL retransmission outside slice PRB range [%d, %d)\n",
-                UE->rnti,
-                frame,
-                slot,
-                slice_prb->start_prb,
-                slice_prb->end_prb);
-          reset_beam_status(&mac->beam_info, frame, slot, UE->UE_beam_index, slots_per_frame, beam.new_beam);
-          sch_ret = false;
-        }
-      }
-      /* Allocate retransmission */
+      /* Slice PRB ranges may shift slot-to-slot. Requiring the previous grant
+       * to stay inside the current window can drop a valid HARQ retx even when
+       * this slice still has enough PRBs. Let allocate_dl_retransmission remap
+       * within the slice budget (same approach as UL). */
       if (sch_ret)
         sch_ret = allocate_dl_retransmission(mac,
                                              pp_pdsch,
                                              use_slice ? &slice_available_prbs : &n_rb_sched[beam.idx],
                                              UE,
                                              beam.idx,
-                                             harq_pid);
+                                             harq_pid,
+                                             use_slice ? slice_prb : NULL);
       if (!sch_ret) {
         LOG_D(NR_MAC, "[UE %04x][%4d.%2d] DL retransmission could not be allocated\n", UE->rnti, frame, slot);
         reset_beam_status(&mac->beam_info, frame, slot, UE->UE_beam_index, slots_per_frame, beam.new_beam);
@@ -1082,7 +1092,7 @@ static void network_slicing_dl(gNB_MAC_INST *mac,
   int n_rb_sched[num_beams])
 {
   if (mac->slice_scheduler_dl == NULL || slice_sch_get_num_slices(mac->slice_scheduler_dl) == 0) {
-    pf_dl(mac, pp_pdsch, UE_list, max_num_ue, num_beams, n_rb_sched, NULL);
+    pf_dl(mac, pp_pdsch, UE_list, max_num_ue, num_beams, n_rb_sched, NULL, NULL);
     return;
   }
 
@@ -1093,9 +1103,14 @@ static void network_slicing_dl(gNB_MAC_INST *mac,
   NR_UE_info_t **UEs_in_this_beam = calloc(MAX_MOBILES_PER_GNB + 1, sizeof(NR_UE_info_t *));
   if (UEs_in_this_beam == NULL) {
     LOG_W(NR_MAC, "network_slicing_dl: OOM, falling back to PF\n");
-    pf_dl(mac, pp_pdsch, UE_list, max_num_ue, num_beams, n_rb_sched, NULL);
+    pf_dl(mac, pp_pdsch, UE_list, max_num_ue, num_beams, n_rb_sched, NULL, NULL);
     return;
   }
+
+  /* Shared DCI/UE budget across all slices (same as network_slicing_ul). */
+  int remainUEs[num_beams];
+  for (int i = 0; i < num_beams; i++)
+    remainUEs[i] = max_num_ue;
 
   for (int beam_idx = 0; beam_idx < num_beams; beam_idx++) {
     // Reset UE count for each beam
@@ -1172,25 +1187,6 @@ static void network_slicing_dl(gNB_MAC_INST *mac,
       slice_sch_update_require(slice_scheduler, slice_nssai->sst, slice_nssai->sd, required_prbs);
     }
 
-    // // Log required PRBs for each slice at the end of requirement update phase
-    // {
-    //   int num_slices_log = slice_sch_get_num_slices(slice_scheduler);
-    //   for (int i = 0; i < num_slices_log; ++i) {
-    //     const slice_nssai_t *sid = slice_sch_get_slice_nssai(slice_scheduler, i);
-    //     if (sid == NULL) {
-    //       continue;
-    //     }
-    //     int req = 0;
-    //     if (slice_sch_get_require(slice_scheduler, sid->sst, sid->sd, &req) == 0) {
-    //       if (req != 0) {
-    //         LOG_I(NR_MAC,
-    //               "Frame %d slot %d: Slice SST 0x%02x SD 0x%06x: >>> Required PRBs (pre-schedule) = %d\n",
-    //               frame, slot, sid->sst, sid->sd, req);
-    //       }
-    //     }
-    //   }
-    // }
-
     // Run the scheduling algorithm
     slice_sch_schedule(slice_scheduler);
 
@@ -1207,6 +1203,8 @@ static void network_slicing_dl(gNB_MAC_INST *mac,
       }
       int UEs_in_this_slice_count = 0;
       NR_UE_info_t **UEs_in_this_slice = calloc(MAX_MOBILES_PER_GNB + 1, sizeof(NR_UE_info_t *));
+      if (UEs_in_this_slice == NULL)
+        continue;
       memset(UEs_in_this_slice, 0, sizeof(NR_UE_info_t *) * (MAX_MOBILES_PER_GNB + 1));
       UE_iterator(UEs_in_this_beam, UE) {
         nssai_t ue_slice = {0};
@@ -1221,9 +1219,7 @@ static void network_slicing_dl(gNB_MAC_INST *mac,
         continue;
       }
 
-      // LOG_I(NR_MAC, "[%4d.%2d] Scheduling %d UEs in slice [%d, %d)\n", frame, slot, UEs_in_this_slice_count, allocation[s].start_prb, allocation[s].end_prb);
-
-      pf_dl(mac, pp_pdsch, UEs_in_this_slice, max_num_ue, num_beams, n_rb_sched, &allocation[s]);
+      pf_dl(mac, pp_pdsch, UEs_in_this_slice, max_num_ue, num_beams, n_rb_sched, &allocation[s], remainUEs);
       
       free(UEs_in_this_slice);
       UEs_in_this_slice = NULL;
@@ -1260,7 +1256,7 @@ static void nr_dlsch_preprocessor(gNB_MAC_INST *mac, post_process_pdsch_t *pp_pd
     network_slicing_dl(mac, pp_pdsch, UE_info->connected_ue_list, max_sched_ues, num_beams, n_rb_sched);
   } else {
     // Default: Proportional Fair scheduler
-    pf_dl(mac, pp_pdsch, UE_info->connected_ue_list, max_sched_ues, num_beams, n_rb_sched, NULL);
+    pf_dl(mac, pp_pdsch, UE_info->connected_ue_list, max_sched_ues, num_beams, n_rb_sched, NULL, NULL);
   }
 }
 
