@@ -1156,35 +1156,26 @@ int get_cce_index(gNB_MAC_INST *nrmac,
 {
   const char *rsn = (pdcch_reason != NULL && pdcch_reason[0] != '\0') ? pdcch_reason : "unknown";
   const uint32_t Y = get_Y(ss, slot, rnti);
-  uint8_t nr_of_candidates;
+  uint8_t nr_of_candidates = 0;
 
   int agg_level_search_order[NUM_PDCCH_AGG_LEVELS];
   determine_aggregation_level_search_order(agg_level_search_order, pdcch_cl_adjust);
 
+  /* Try ALs in preference order until a free candidate is found.
+   * Previously we only picked the first AL that had candidates configured and
+   * never fell back — so a preferred high AL (e.g. after pdcch_cl_adjust rises
+   * from PUCCH DTX) failed even when lower ALs still had free CCEs in the
+   * CORESET. That matches "enough CCE capacity" but still returning -1. */
+  int CCEIndex = -1;
   for (int i = 0; i < NUM_PDCCH_AGG_LEVELS; i++) {
     find_aggregation_candidates(aggregation_level, &nr_of_candidates, ss, 1 << agg_level_search_order[i]);
-    if (nr_of_candidates > 0)
+    if (nr_of_candidates == 0)
+      continue;
+    CCEIndex = find_pdcch_candidate(nrmac, CC_id, *aggregation_level, nr_of_candidates, beam_idx, sched_pdcch, coreset, Y);
+    if (CCEIndex >= 0)
       break;
   }
-  const int N_regs_cand = sched_pdcch->n_rb * coreset->duration;
-  const int N_cces_cand = N_regs_cand / NR_NB_REG_PER_CCE;
-  const uint8_t L_sel = *aggregation_level;
-  const int N_ci = 0;
-  const bool have_cand_info = (nr_of_candidates > 0 && L_sel > 0 && (N_cces_cand / L_sel) > 0);
-  char cand_buf[160] = {0};
-  if (have_cand_info) {
-    int p = 0;
-    for (uint8_t m = 0; m < nr_of_candidates && p < (int)sizeof(cand_buf) - 20; m++) {
-      const int fc = L_sel * ((Y + ((m * N_cces_cand) / (L_sel * nr_of_candidates)) + N_ci) % (N_cces_cand / L_sel));
-      p += snprintf(cand_buf + p,
-                    sizeof(cand_buf) - (size_t)p,
-                    " m%u:CCE[%d..%d]",
-                    m,
-                    fc,
-                    fc + L_sel - 1);
-    }
-  }
-  int CCEIndex = find_pdcch_candidate(nrmac, CC_id, *aggregation_level, nr_of_candidates, beam_idx, sched_pdcch, coreset, Y);
+
   if (CCEIndex >= 0) {
     nr_mac_pdcch_slot_trace_record_alloc(nrmac,
                                          CC_id,
@@ -1196,57 +1187,8 @@ int get_cce_index(gNB_MAC_INST *nrmac,
                                          ss,
                                          rsn);
   }
-  else {
-    // LOG_I(NR_MAC,"---------------- Failed on CCE allocation on Frame.Slot %u.%02d CC%d -----------------\n", frame, slot, CC_id);
-    // if (have_cand_info) {
-    //   nr_mac_pdcch_slot_trace_record_fail(nrmac, CC_id, rnti, rsn);
-    //   nr_mac_log_pdcch_cce_fail_occupants(nrmac,
-    //                                       CC_id,
-    //                                       frame,
-    //                                       slot,
-    //                                       rnti,
-    //                                       rsn,
-    //                                       ss,
-    //                                       coreset,
-    //                                       sched_pdcch,
-    //                                       beam_idx,
-    //                                       Y,
-    //                                       L_sel,
-    //                                       nr_of_candidates,
-    //                                       N_cces_cand,
-    //                                       true);
-    //   nr_mac_log_pdcch_cce_failed_candidates_detail(nrmac,
-    //                                                   CC_id,
-    //                                                   frame,
-    //                                                   slot,
-    //                                                   beam_idx,
-    //                                                   sched_pdcch,
-    //                                                   coreset,
-    //                                                   Y,
-    //                                                   L_sel,
-    //                                                   nr_of_candidates,
-    //                                                   N_cces_cand);
-    // }
-    // else {
-    //   nr_mac_pdcch_slot_trace_record_fail(nrmac, CC_id, rnti, rsn);
-    //   nr_mac_log_pdcch_cce_fail_occupants(nrmac,
-    //                                       CC_id,
-    //                                       frame,
-    //                                       slot,
-    //                                       rnti,
-    //                                       rsn,
-    //                                       ss,
-    //                                       coreset,
-    //                                       sched_pdcch,
-    //                                       beam_idx,
-    //                                       Y,
-    //                                       L_sel,
-    //                                       nr_of_candidates,
-    //                                       N_cces_cand,
-    //                                       false);
-    // }
-    // LOG_I(NR_MAC, "------------------- End of Frame.Slot %u.%02d CC%d -------------------\n", frame, slot, CC_id);
-  }
+  (void)frame;
+  (void)slot;
   return CCEIndex;
 }
 
