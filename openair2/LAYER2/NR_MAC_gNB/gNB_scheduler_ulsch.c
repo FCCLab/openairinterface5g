@@ -1955,23 +1955,40 @@ static int ul_ns_ue_slice_required_prbs(gNB_MAC_INST *nrmac,
                                         slot_t slot)
 {
   NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
-  int B = max(0, sched_ctrl->estimated_ul_buffer - sched_ctrl->sched_ul_bytes);
   nssai_t ue_slice = {0};
   nr_mac_get_ue_effective_nssai(sched_ctrl, &ue_slice);
+  /* SRBs stay on the same slice as the UE DRB (effective NSSAI). */
+  if (ue_slice.sst != slice_nssai->sst || ue_slice.sd != slice_nssai->sd)
+    return 0;
+
+  int B = max(0, sched_ctrl->estimated_ul_buffer - sched_ctrl->sched_ul_bytes);
+
+  /* Also look at SRB1/SRB2 RLC. BSR alone can miss control-plane demand
+   * (e.g. after reestablishment), which previously left the slice at
+   * require=0 and starved SRB UL → RLC max RETX / RLF. */
+  int srb_bytes = 0;
+  for (int i = 0; i < seq_arr_size(&sched_ctrl->lc_config); ++i) {
+    const nr_lc_config_t *lc = seq_arr_at(&sched_ctrl->lc_config, i);
+    if (lc->suspended)
+      continue;
+    if (lc->lcid != UL_SCH_LCID_SRB1 && lc->lcid != UL_SCH_LCID_SRB2)
+      continue;
+    mac_rlc_status_resp_t st = nr_mac_rlc_status_ind(UE->rnti, frame, lc->lcid);
+    if (st.bytes_in_buffer > 0)
+      srb_bytes += st.bytes_in_buffer;
+  }
+
+  const int bytes_per_prb_estimate = 2;
+  const int bytes = B + srb_bytes;
+  int required_prbs = bytes > 0 ? (bytes + bytes_per_prb_estimate - 1) / bytes_per_prb_estimate : 0;
+
   const bool do_sched = nr_UE_is_to_be_scheduled(&nrmac->frame_structure,
                                                  UE,
                                                  frame,
                                                  slot,
                                                  nrmac->ulsch_max_frame_inactivity);
-  if (ue_slice.sst != slice_nssai->sst || ue_slice.sd != slice_nssai->sd)
-    return 0;
-  const int bytes_per_prb_estimate = 2;
-  int required_prbs = B > 0 ? (B + bytes_per_prb_estimate - 1) / bytes_per_prb_estimate : 0;
-
-  // Treat all LCIDs equally at scheduling time: if the UE should be scheduled
-  // but aggregate UL bytes are not yet reflected in BSR, reserve a minimum
-  // grant on the UE's effective slice.
-  if (do_sched)
+  /* Min grant when the UE should be scheduled or SRB RLC has pending bytes. */
+  if (do_sched || srb_bytes > 0)
     required_prbs = max(required_prbs, (int)nrmac->min_grant_prb);
 
   return min(required_prbs, total_prbs);
