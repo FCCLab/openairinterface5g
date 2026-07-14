@@ -480,44 +480,49 @@ static bool allocate_dl_retransmission(gNB_MAC_INST *nr_mac,
   uint16_t *rballoc_mask = nr_mac->common_channels[CC_id].vrb_map[beam_idx];
 
   bwp_info_t bwp_info = get_pdsch_bwp_start_size(nr_mac, UE);
+  /* Search range in absolute RBs [rbStart, rbStop). Constrain to slice when NS is on. */
   int rbStart = bwp_info.bwpStart;
-  int rbStop = bwp_info.bwpStart + bwp_info.bwpSize - 1;
+  int rbStop = bwp_info.bwpStart + bwp_info.bwpSize;
   int rbSize = 0;
 
-  /* Constrain remapping search to the current slice PRB window when NS is on. */
   if (slice_prb != NULL && slice_prb->num_prbs > 0) {
-    int slice_start = slice_prb->start_prb;
-    int slice_end = slice_prb->end_prb - 1; /* inclusive stop like rbStop */
-    if (slice_start > rbStart)
-      rbStart = slice_start;
-    if (slice_end < rbStop)
-      rbStop = slice_end;
-    if (rbStart > rbStop)
+    if (slice_prb->start_prb > rbStart)
+      rbStart = slice_prb->start_prb;
+    if (slice_prb->end_prb < rbStop)
+      rbStop = slice_prb->end_prb;
+    if (rbStart >= rbStop)
       return false;
   }
 
   if (reuse_old_tda && layers == new_sched.nrOfLayers) {
-    /* Check that there are enough resources for retransmission */
+    /* Find a contiguous hole of new_sched.rbSize inside the (slice) window */
+    const uint16_t slbitmap = SL_to_bitmap(new_sched.tda_info.startSymbolIndex, new_sched.tda_info.nrOfSymbols);
     while (rbSize < new_sched.rbSize) {
       rbStart += rbSize; /* last iteration rbSize was not enough, skip it */
       rbSize = 0;
 
-      const uint16_t slbitmap = SL_to_bitmap(new_sched.tda_info.startSymbolIndex, new_sched.tda_info.nrOfSymbols);
       while (rbStart < rbStop && (rballoc_mask[rbStart] & slbitmap))
         rbStart++;
 
       if (rbStart >= rbStop) {
-        LOG_D(NR_MAC, "[UE %04x][%4d.%2d] could not allocate DL retransmission: no resources\n", UE->rnti, frame, slot);
+        LOG_D(NR_MAC,
+              "[UE %04x][%4d.%2d] could not allocate DL retransmission: no resources in window [%d,%d) need %d\n",
+              UE->rnti,
+              frame,
+              slot,
+              slice_prb ? slice_prb->start_prb : bwp_info.bwpStart,
+              rbStop,
+              new_sched.rbSize);
         return false;
       }
 
-      while (rbStart + rbSize <= rbStop && !(rballoc_mask[rbStart + rbSize] & slbitmap) && rbSize < new_sched.rbSize)
+      while (rbStart + rbSize < rbStop && !(rballoc_mask[rbStart + rbSize] & slbitmap) && rbSize < new_sched.rbSize)
         rbSize++;
       DevAssert(rbSize > 0);
     }
   } else {
     /* the retransmission will use a different time domain allocation, check
-     * that we have enough resources */
+     * that we have enough resources inside the (slice) window */
     NR_pdsch_dmrs_t temp_dmrs = get_dl_dmrs_params(scc, dl_bwp, &temp_tda, layers);
 
     const uint16_t slbitmap = SL_to_bitmap(temp_tda.startSymbolIndex, temp_tda.nrOfSymbols);
@@ -529,7 +534,7 @@ static bool allocate_dl_retransmission(gNB_MAC_INST *nr_mac,
       return false;
     }
 
-    while (rbStart + rbSize <= rbStop && !(rballoc_mask[rbStart + rbSize] & slbitmap))
+    while (rbStart + rbSize < rbStop && !(rballoc_mask[rbStart + rbSize] & slbitmap))
       rbSize++;
     DevAssert(rbSize > 0);
 
@@ -612,8 +617,8 @@ static bool allocate_dl_retransmission(gNB_MAC_INST *nr_mac,
   /* retransmissions: directly allocate */
   *n_rb_sched -= new_sched.rbSize;
 
-  for (int rb = rbStart; rb < new_sched.rbSize; rb++)
-    rballoc_mask[rb] |= SL_to_bitmap(new_sched.tda_info.startSymbolIndex, new_sched.tda_info.nrOfSymbols);
+  for (int rb = 0; rb < new_sched.rbSize; rb++)
+    rballoc_mask[rbStart + rb] |= SL_to_bitmap(new_sched.tda_info.startSymbolIndex, new_sched.tda_info.nrOfSymbols);
 
   return true;
 }
@@ -719,10 +724,7 @@ static void pf_dl(gNB_MAC_INST *mac,
     if (harq_pid >= 0) {
       NR_beam_alloc_t beam = beam_allocation_procedure(&mac->beam_info, frame, slot, UE->UE_beam_index, slots_per_frame);
       bool sch_ret = beam.idx >= 0;
-      /* Slice PRB ranges may shift slot-to-slot. Requiring the previous grant
-       * to stay inside the current window can drop a valid HARQ retx even when
-       * this slice still has enough PRBs. Let allocate_dl_retransmission remap
-       * within the slice budget (same approach as UL). */
+      /* Remap retx inside the current slice PRB window (same approach as UL). */
       if (sch_ret)
         sch_ret = allocate_dl_retransmission(mac,
                                              pp_pdsch,
@@ -1180,6 +1182,12 @@ static void network_slicing_dl(gNB_MAC_INST *mac,
             int prbs_needed = (sched_ctrl->rlc_status[lcid].bytes_in_buffer + bytes_per_prb_estimate - 1) / bytes_per_prb_estimate;
             required_prbs += prbs_needed;
           }
+        }
+        /* Pending DL HARQ retx must keep the original rbSize; count it so the
+         * slice window does not shrink below what remapping needs. */
+        for (int harq_pid = sched_ctrl->retrans_dl_harq.head; harq_pid >= 0;
+             harq_pid = sched_ctrl->retrans_dl_harq.next[harq_pid]) {
+          required_prbs += sched_ctrl->harq_processes[harq_pid].sched_pdsch.rbSize;
         }
       }
       // Cap required PRBs at total PRBs available for this beam

@@ -1791,7 +1791,8 @@ static bool allocate_ul_retransmission(gNB_MAC_INST *nrmac,
                                        int harq_pid,
                                        const NR_ServingCellConfigCommon_t *scc,
                                        const int tda,
-                                       const NR_tda_info_t *tda_info)
+                                       const NR_tda_info_t *tda_info,
+                                       const slice_prb_range_t *slice_prb)
 {
   const int CC_id = 0;
   int frame = pp_pusch->frame;
@@ -1802,7 +1803,6 @@ static bool allocate_ul_retransmission(gNB_MAC_INST *nrmac,
   NR_sched_pusch_t new_sched = *retInfo; // potential new allocation
   NR_UE_UL_BWP_t *ul_bwp = &UE->current_UL_BWP;
 
-  int rbStart = 0; // wrt BWP start
   bwp_info_t bwp_info = get_pusch_bwp_start_size(UE);
   const uint32_t bwpSize = bwp_info.bwpSize;
   const uint32_t bwpStart = bwp_info.bwpStart;
@@ -1816,37 +1816,67 @@ static bool allocate_ul_retransmission(gNB_MAC_INST *nrmac,
   new_sched.bwp_info = bwp_info;
   DevAssert(new_sched.ul_harq_pid == harq_pid);
 
+  /* Search range in BWP-relative RBs [rbStart, rbStop). Constrain to slice when NS is on. */
+  int rbStart = 0;
+  int rbStop = (int)bwpSize;
+  if (slice_prb != NULL && slice_prb->num_prbs > 0) {
+    const int slice_start_rel = (int)slice_prb->start_prb - (int)bwpStart;
+    const int slice_end_rel = (int)slice_prb->end_prb - (int)bwpStart; /* exclusive */
+    if (slice_start_rel > rbStart)
+      rbStart = slice_start_rel;
+    if (slice_end_rel < rbStop)
+      rbStop = slice_end_rel;
+    if (rbStart < 0)
+      rbStart = 0;
+    if (rbStop > (int)bwpSize)
+      rbStop = (int)bwpSize;
+    if (rbStart >= rbStop)
+      return false;
+  }
+
   bool reuse_old_tda = retInfo->time_domain_allocation == tda;
   if (reuse_old_tda && nrOfLayers == retInfo->nrOfLayers) {
-    /* Check the resource is enough for retransmission */
+    /* Find a contiguous hole of retInfo->rbSize inside the (slice) search window */
     const uint16_t slbitmap = SL_to_bitmap(retInfo->tda_info.startSymbolIndex, retInfo->tda_info.nrOfSymbols);
-    while (rbStart < bwpSize && (rballoc_mask[rbStart + bwpStart] & slbitmap))
-      rbStart++;
-    if (rbStart + retInfo->rbSize > bwpSize) {
-      LOG_D(NR_MAC, "[UE %04x][%4d.%2d] could not allocate UL retransmission: no resources (rbStart %d, retInfo->rbSize %d, bwpSize %d) \n",
-            UE->rnti,
-            frame,
-            slot,
-            rbStart,
-            retInfo->rbSize,
-            bwpSize);
-      return false;
+    int rbSize = 0;
+    int search = rbStart;
+    while (rbSize < retInfo->rbSize) {
+      search += rbSize;
+      rbSize = 0;
+      while (search < rbStop && (rballoc_mask[search + bwpStart] & slbitmap))
+        search++;
+      if (search >= rbStop) {
+        LOG_D(NR_MAC,
+              "[UE %04x][%4d.%2d] could not allocate UL retransmission: no resources in window [%d,%d) need %d\n",
+              UE->rnti,
+              frame,
+              slot,
+              rbStart,
+              rbStop,
+              retInfo->rbSize);
+        return false;
+      }
+      while (search + rbSize < rbStop && !(rballoc_mask[search + bwpStart + rbSize] & slbitmap)
+             && rbSize < retInfo->rbSize)
+        rbSize++;
+      DevAssert(rbSize > 0);
     }
-    new_sched.rbStart = rbStart;
-    LOG_D(NR_MAC, "Retransmission keeping TDA %d and TBS %d\n", tda, retInfo->tb_size);
+    new_sched.rbStart = search;
+    LOG_D(NR_MAC, "Retransmission keeping TDA %d and TBS %d (rbStart %d)\n", tda, retInfo->tb_size, search);
   } else {
     NR_pusch_dmrs_t dmrs_info = get_ul_dmrs_params(scc, ul_bwp, tda_info, nrOfLayers);
     /* the retransmission will use a different time domain allocation, check
-     * that we have enough resources */
+     * that we have enough resources inside the (slice) window */
     const uint16_t slbitmap = SL_to_bitmap(tda_info->startSymbolIndex, tda_info->nrOfSymbols);
-    while (rbStart < bwpSize && (rballoc_mask[rbStart + bwpStart] & slbitmap))
-      rbStart++;
-    if (rbStart >= bwpSize) {
+    int search = rbStart;
+    while (search < rbStop && (rballoc_mask[search + bwpStart] & slbitmap))
+      search++;
+    if (search >= rbStop) {
       LOG_D(NR_MAC, "[UE %04x][%4d.%2d] could not allocate UL retransmission: no resources\n", UE->rnti, frame, slot);
       return false;
     }
     int rbSize = 0;
-    while (rbStart + rbSize < bwpSize && !(rballoc_mask[rbStart + bwpStart + rbSize] & slbitmap))
+    while (search + rbSize < rbStop && !(rballoc_mask[search + bwpStart + rbSize] & slbitmap))
       rbSize++;
     uint32_t new_tbs;
     uint16_t new_rbSize;
@@ -1874,7 +1904,7 @@ static bool allocate_ul_retransmission(gNB_MAC_INST *nrmac,
     /* we can allocate it. Overwrite the time_domain_allocation, the number
      * of RBs, and the new TB size. The rest is done below */
     new_sched.rbSize = new_rbSize;
-    new_sched.rbStart = rbStart;
+    new_sched.rbStart = search;
     new_sched.tb_size = new_tbs;
     new_sched.time_domain_allocation = tda;
     new_sched.tda_info = *tda_info;
@@ -1982,6 +2012,13 @@ static int ul_ns_ue_slice_required_prbs(gNB_MAC_INST *nrmac,
   const int bytes = B + srb_bytes;
   int required_prbs = bytes > 0 ? (bytes + bytes_per_prb_estimate - 1) / bytes_per_prb_estimate : 0;
 
+  /* Pending UL HARQ retx must keep the original rbSize; count it so the
+   * slice window does not shrink below what remapping needs. */
+  for (int harq_pid = sched_ctrl->retrans_ul_harq.head; harq_pid >= 0;
+       harq_pid = sched_ctrl->retrans_ul_harq.next[harq_pid]) {
+    required_prbs += sched_ctrl->ul_harq_processes[harq_pid].sched_pusch.rbSize;
+  }
+
   const bool do_sched = nr_UE_is_to_be_scheduled(&nrmac->frame_structure,
                                                  UE,
                                                  frame,
@@ -2084,10 +2121,8 @@ static int pf_ul(gNB_MAC_INST *nrmac,
     int ul_harq_pid = sched_ctrl->retrans_ul_harq.head;
     LOG_D(NR_MAC,"pf_ul: UE %04x harq_pid %d\n", UE->rnti, ul_harq_pid);
     if (ul_harq_pid >= 0) {
-      // Slice PRB ranges may shift from slot to slot. Requiring the previous
-      // retransmission grant to stay inside the current slice window can drop
-      // a valid HARQ retx even when this slice still has enough PRBs. Let the
-      // retransmission allocator remap the grant within the slice budget.
+      // Slice PRB ranges may shift from slot to slot. Remap the retx grant
+      // inside the current slice PRB window (same approach as DL).
       bool sch_ret = allocate_ul_retransmission(nrmac,
                                                 pp_pusch,
                                                 rballoc_mask,
@@ -2097,22 +2132,17 @@ static int pf_ul(gNB_MAC_INST *nrmac,
                                                 ul_harq_pid,
                                                 scc,
                                                 tda,
-                                                tda_info);
+                                                tda_info,
+                                                use_slice ? slice_prb : NULL);
       if (!sch_ret) {
-        LOG_D(NR_MAC, "[UE %04x][%4d.%2d] UL retransmission could not be allocated%s\n",
+        LOG_D(NR_MAC, "[UE %04x][%4d.%2d] UL retransmission could not be allocated\n",
               UE->rnti,
               frame,
-              slot,
-              use_slice ? " (slice: abort HARQ)" : "");
+              slot);
         reset_beam_status(&nrmac->beam_info, sched_frame, sched_slot, UE->UE_beam_index, slots_per_frame, beam.new_beam);
         reset_beam_status(&nrmac->beam_info, frame, slot, UE->UE_beam_index, slots_per_frame, dci_beam.new_beam);
-        /* Match DL: under slicing, a failed retx leaves the UE stuck on
-         * retrans_ul_harq with no fall-through to new TX. Abort so the
-         * process becomes available again. */
-        if (use_slice) {
-          remove_nr_list(&sched_ctrl->retrans_ul_harq, ul_harq_pid);
-          abort_nr_ul_harq(UE, ul_harq_pid);
-        }
+        /* Keep HARQ on retrans_ul_harq and retry next opportunity (same as
+         * non-slice). Aborting here dropped TBs and collapsed TCP cwnd. */
         continue;
       }
       LOG_D(NR_MAC, "%4d.%2d UL Retransmission UE RNTI %04x to be allocated, max_num_ue %d\n", frame, slot, UE->rnti, max_num_ue);
@@ -2592,9 +2622,10 @@ static int network_slicing_ul(gNB_MAC_INST *nrmac,
                                                        sched_frame,
                                                        sched_slot,
                                                        nrmac->ulsch_max_frame_inactivity);
+        const bool has_ul_retx = sched_ctrl->retrans_ul_harq.head >= 0;
         if (ue_slice.sst == allocation[s].slice_id.sst
             && ue_slice.sd == allocation[s].slice_id.sd
-            && (B > 0 || do_sched)) {
+            && (B > 0 || do_sched || has_ul_retx)) {
           UEs_in_this_slice[n_ue_slice] = UE;
           n_ue_slice++;
         }
