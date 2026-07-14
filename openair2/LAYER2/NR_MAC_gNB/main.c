@@ -117,7 +117,7 @@ void *nrmac_stats_thread(void *arg) {
 
 void clear_mac_stats(gNB_MAC_INST *gNB) {
   UE_iterator(gNB->UE_info.connected_ue_list, UE) {
-    memset(&UE->mac_stats,0,sizeof(UE->mac_stats));
+    memset(&UE->mac_stats, 0, sizeof(UE->mac_stats));
   }
 }
 
@@ -215,10 +215,14 @@ size_t dump_mac_stats(gNB_MAC_INST *gNB, char *output, size_t strlen, bool reset
         (stats->global_slot_counter_last != 0 && current_global_slot_counter > stats->global_slot_counter_last)
             ? current_global_slot_counter - stats->global_slot_counter_last
             : 0;
+    const uint64_t dl_slots_window =
+        (stats->dl.used_slots >= stats->dl_used_slots_last) ? (stats->dl.used_slots - stats->dl_used_slots_last) : 0;
+    const uint64_t ul_slots_window =
+        (stats->ul.used_slots >= stats->ul_used_slots_last) ? (stats->ul.used_slots - stats->ul_used_slots_last) : 0;
     const double dl_pslot =
-        elapsed_global_slots > 0 ? 100.0 * (double)(stats->dl.used_slots - stats->dl_used_slots_last) / elapsed_global_slots : 0.0;
+        elapsed_global_slots > 0 ? 100.0 * (double)dl_slots_window / (double)elapsed_global_slots : 0.0;
     const double ul_pslot =
-        elapsed_global_slots > 0 ? 100.0 * (double)(stats->ul.used_slots - stats->ul_used_slots_last) / elapsed_global_slots : 0.0;
+        elapsed_global_slots > 0 ? 100.0 * (double)ul_slots_window / (double)elapsed_global_slots : 0.0;
     const int avg_rsrp = stats->num_rsrp_meas > 0 ? stats->cumul_rsrp / stats->num_rsrp_meas : 0;
     const int avg_sinrx10 = stats->num_sinr_meas > 0 ? stats->cumul_sinrx10 / stats->num_sinr_meas : 0;
 
@@ -233,6 +237,10 @@ size_t dump_mac_stats(gNB_MAC_INST *gNB, char *output, size_t strlen, bool reset
     } else {
       output = st_append(output, end, "(none)");
     }
+
+    nssai_t ue_slice = {0};
+    nr_mac_get_ue_effective_nssai(sched_ctrl, &ue_slice);
+    output = st_append(output, end, " SST 0x%02x SD 0x%06x", ue_slice.sst, (unsigned)ue_slice.sd);
 
     bool in_sync = !sched_ctrl->ul_failure;
     output = st_append(output,
@@ -279,14 +287,16 @@ size_t dump_mac_stats(gNB_MAC_INST *gNB, char *output, size_t strlen, bool reset
 
     output = st_append(output,
                        end,
-                       ", dlsch_errors %"PRIu64", pucch0_DTX %d, BLER %.5f MCS (%d) %d CCE fail %d DL slots %"PRIu64" PSlot %.3f%%\n",
+                       ", dlsch_errors %"PRIu64", pucch0_DTX %d, BLER %.5f MCS (%d) %d CCE fail %d "
+                       "DL slots %"PRIu64"/%"PRIu64" (%.3f%%)\n",
                        stats->dl.errors,
                        stats->pucch0_DTX,
                        sched_ctrl->dl_bler_stats.bler,
                        UE->current_DL_BWP.mcsTableIdx,
                        sched_ctrl->dl_bler_stats.mcs,
                        sched_ctrl->dl_cce_fail,
-                       stats->dl.used_slots,
+                       dl_slots_window,
+                       elapsed_global_slots,
                        dl_pslot);
     if (reset_rsrp) {
       stats->num_rsrp_meas = 0;
@@ -303,7 +313,8 @@ size_t dump_mac_stats(gNB_MAC_INST *gNB, char *output, size_t strlen, bool reset
 
     output = st_append(output,
                        end,
-                       ", ulsch_errors %"PRIu64", ulsch_DTX %d, BLER %.5f MCS (%d) %d (Qm %d deltaMCS %d dB) NPRB %d  SNR %d.%d dB CCE fail %d UL slots %"PRIu64" PSlot %.3f%%\n",
+                       ", ulsch_errors %"PRIu64", ulsch_DTX %d, BLER %.5f MCS (%d) %d (Qm %d deltaMCS %d dB) NPRB %d  "
+                       "SNR %d.%d dB CCE fail %d UL slots %"PRIu64"/%"PRIu64" (%.3f%%)\n",
                        stats->ul.errors,
                        stats->ulsch_DTX,
                        sched_ctrl->ul_bler_stats.bler,
@@ -315,9 +326,11 @@ size_t dump_mac_stats(gNB_MAC_INST *gNB, char *output, size_t strlen, bool reset
                        sched_ctrl->pusch_snrx10 / 10,
                        sched_ctrl->pusch_snrx10 % 10,
                        sched_ctrl->ul_cce_fail,
-                       stats->ul.used_slots,
+                       ul_slots_window,
+                       elapsed_global_slots,
                        ul_pslot);
-   output = st_append(output,
+
+    output = st_append(output,
                        end,
                        "UE %04x: MAC:    TX %14"PRIu64" RX %14"PRIu64" bytes\n",
                        UE->rnti, stats->dl.total_bytes, stats->ul.total_bytes);
@@ -326,11 +339,13 @@ size_t dump_mac_stats(gNB_MAC_INST *gNB, char *output, size_t strlen, bool reset
       const nr_lc_config_t *c = seq_arr_at(&sched_ctrl->lc_config, i);
       output = st_append(output,
                          end,
-                         "UE %04x: LCID %d: TX %14"PRIu64" RX %14"PRIu64" bytes\n",
+                         "UE %04x: LCID %d: TX %14"PRIu64" RX %14"PRIu64" bytes SST 0x%02x SD 0x%06x\n",
                          UE->rnti,
                          c->lcid,
                          stats->dl.lc_bytes[c->lcid],
-                         stats->ul.lc_bytes[c->lcid]);
+                         stats->ul.lc_bytes[c->lcid],
+                         c->nssai.sst,
+                         (unsigned)c->nssai.sd);
     }
   }
   DevAssert(output <= end);
