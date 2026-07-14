@@ -2099,9 +2099,20 @@ static int pf_ul(gNB_MAC_INST *nrmac,
                                                 tda,
                                                 tda_info);
       if (!sch_ret) {
-        LOG_D(NR_MAC, "[UE %04x][%4d.%2d] UL retransmission could not be allocated\n", UE->rnti, frame, slot);
+        LOG_D(NR_MAC, "[UE %04x][%4d.%2d] UL retransmission could not be allocated%s\n",
+              UE->rnti,
+              frame,
+              slot,
+              use_slice ? " (slice: abort HARQ)" : "");
         reset_beam_status(&nrmac->beam_info, sched_frame, sched_slot, UE->UE_beam_index, slots_per_frame, beam.new_beam);
         reset_beam_status(&nrmac->beam_info, frame, slot, UE->UE_beam_index, slots_per_frame, dci_beam.new_beam);
+        /* Match DL: under slicing, a failed retx leaves the UE stuck on
+         * retrans_ul_harq with no fall-through to new TX. Abort so the
+         * process becomes available again. */
+        if (use_slice) {
+          remove_nr_list(&sched_ctrl->retrans_ul_harq, ul_harq_pid);
+          abort_nr_ul_harq(UE, ul_harq_pid);
+        }
         continue;
       }
       LOG_D(NR_MAC, "%4d.%2d UL Retransmission UE RNTI %04x to be allocated, max_num_ue %d\n", frame, slot, UE->rnti, max_num_ue);

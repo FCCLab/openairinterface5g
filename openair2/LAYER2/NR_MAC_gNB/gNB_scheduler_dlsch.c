@@ -732,8 +732,19 @@ static void pf_dl(gNB_MAC_INST *mac,
                                              harq_pid,
                                              use_slice ? slice_prb : NULL);
       if (!sch_ret) {
-        LOG_D(NR_MAC, "[UE %04x][%4d.%2d] DL retransmission could not be allocated\n", UE->rnti, frame, slot);
+        LOG_D(NR_MAC, "[UE %04x][%4d.%2d] DL retransmission could not be allocated%s\n",
+              UE->rnti,
+              frame,
+              slot,
+              (use_slice && beam.idx >= 0) ? " (slice: abort HARQ)" : "");
         reset_beam_status(&mac->beam_info, frame, slot, UE->UE_beam_index, slots_per_frame, beam.new_beam);
+        /* Under slicing, a failed retx leaves the UE stuck on retrans_dl_harq
+         * with no fall-through to new TX. Abort so the process becomes available
+         * again. Only after a real allocation attempt (valid beam). */
+        if (use_slice && beam.idx >= 0) {
+          remove_nr_list(&sched_ctrl->retrans_dl_harq, harq_pid);
+          abort_nr_dl_harq(UE, harq_pid);
+        }
         continue;
       }
       /* reduce max_num_ue once we are sure UE can be allocated, i.e., has CCE */
