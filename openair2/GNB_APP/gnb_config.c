@@ -746,7 +746,8 @@ static int get_ulsyncvalidityduration_enum_value(int val)
   return retval;
 }
 
-void fix_scc(NR_ServingCellConfigCommon_t *scc, uint64_t ssbmap)
+/* coreset_duration: gNB "coreset_duration" (default 1); used for PDSCH TDA start alignment. */
+void fix_scc(NR_ServingCellConfigCommon_t *scc, uint64_t ssbmap, int coreset_duration)
 {
   scc->ssb_PositionsInBurst->present = get_ssb_len(scc);
   uint8_t curr_bit;
@@ -828,7 +829,7 @@ void fix_scc(NR_ServingCellConfigCommon_t *scc, uint64_t ssbmap)
   nr_rrc_config_dl_tda(dlcc->initialDownlinkBWP->pdsch_ConfigCommon->choice.setup->pdsch_TimeDomainAllocationList,
                        frame_type,
                        scc->tdd_UL_DL_ConfigurationCommon,
-                       dlcc->frequencyInfoDL->scs_SpecificCarrierList.list.array[0]->carrierBandwidth);
+                       coreset_duration);
 
   if (frame_type == FDD) {
     ASN_STRUCT_FREE(asn_DEF_NR_TDD_UL_DL_ConfigCommon, scc->tdd_UL_DL_ConfigurationCommon);
@@ -1181,7 +1182,7 @@ bool is_pattern2_config(paramdef_t *param)
   return true;
 }
 
-static NR_ServingCellConfigCommon_t *get_scc_config(configmodule_interface_t *cfg, int minRXTXTIME, int do_SRS)
+static NR_ServingCellConfigCommon_t *get_scc_config(configmodule_interface_t *cfg, int minRXTXTIME, int do_SRS, int coreset_duration)
 {
   NR_ServingCellConfigCommon_t *scc = calloc_or_fail(1, sizeof(*scc));
   uint64_t ssb_bitmap=0xff;
@@ -1241,7 +1242,7 @@ static NR_ServingCellConfigCommon_t *get_scc_config(configmodule_interface_t *cf
     LOG_I(RRC, "absoluteFrequencySSB %ld corresponds to %lu Hz\n", *frequencyInfoDL->absoluteFrequencySSB, ssb_freq);
     if (IS_SA_MODE(get_softmodem_params()))
       check_ssb_raster(ssb_freq, *frequencyInfoDL->frequencyBandList.list.array[0], *scc->ssbSubcarrierSpacing);
-    fix_scc(scc, ssb_bitmap);
+    fix_scc(scc, ssb_bitmap, coreset_duration);
   }
   nr_rrc_config_ul_tda(scc, minRXTXTIME, do_SRS);
 
@@ -1761,7 +1762,15 @@ void RCconfig_nr_macrlc(configmodule_interface_t *cfg)
         config.num_agg_level_candidates[PDCCH_AGG_LEVEL8],
         config.num_agg_level_candidates[PDCCH_AGG_LEVEL16]);
 
-  NR_ServingCellConfigCommon_t *scc = get_scc_config(cfg, config.minRXTXTIME, config.do_SRS);
+  // coreset_duration: optional gNB config (default 1). Controls CORESET#1 duration in
+  // symbols and the matching PDSCH TDA start; previously hard-coded from BWP size.
+  config.coreset_duration = *GNBParamList.paramarray[0][GNB_CORESET_DURATION_IDX].iptr;
+  AssertFatal(config.coreset_duration >= 1 && config.coreset_duration <= 3,
+              "coreset_duration must be 1, 2 or 3, got %d\n",
+              config.coreset_duration);
+  LOG_I(NR_MAC, "CORESET duration: %d symbol(s)\n", config.coreset_duration);
+
+  NR_ServingCellConfigCommon_t *scc = get_scc_config(cfg, config.minRXTXTIME, config.do_SRS, config.coreset_duration);
   // BWP
   get_bwp_config(&config, scc);
   AssertFatal(config.num_additional_bwps <= 4, "Impossible to configure more than 4 additional BWPs\n");
@@ -2655,7 +2664,7 @@ int RCconfig_NR_X2(MessageDef *msg_p, uint32_t i) {
             if (SCCsParamList.numelt > 0) {
               snprintf(aprefix, sizeof(aprefix), "%s.[%i].%s.[%i]", GNB_CONFIG_STRING_GNB_LIST, 0, GNB_CONFIG_STRING_SERVINGCELLCONFIGCOMMON, 0);
               GET_PARAMS(SCCsParams, SCCPARAMS_DESC(scc), aprefix);
-              fix_scc(scc,ssb_bitmap);
+              fix_scc(scc, ssb_bitmap, *GNBParamList.paramarray[0][GNB_CORESET_DURATION_IDX].iptr);
             }
             X2AP_REGISTER_ENB_REQ (msg_p).num_cc = SCCsParamList.numelt;
             for (J = 0; J < SCCsParamList.numelt ; J++) {

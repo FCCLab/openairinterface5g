@@ -50,7 +50,7 @@ typedef struct measgap_config measgap_config_t;
 void nr_rrc_config_dl_tda(struct NR_PDSCH_TimeDomainResourceAllocationList *pdsch_TimeDomainAllocationList,
                           frame_type_t frame_type,
                           NR_TDD_UL_DL_ConfigCommon_t *tdd_UL_DL_ConfigurationCommon,
-                          int curr_bwp);
+                          int coreset_duration); // was curr_bwp; now explicit CORESET symbol count from config
 void nr_rrc_config_ul_tda(NR_ServingCellConfigCommon_t *scc, int min_fb_delay, int do_SRS);
 NR_SearchSpace_t *rrc_searchspace_config(bool is_common,
                                          int searchspaceid,

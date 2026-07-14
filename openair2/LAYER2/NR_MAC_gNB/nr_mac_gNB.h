@@ -214,6 +214,9 @@ typedef struct nr_mac_config_t {
   int nb_bfw[2];
   int32_t *bw_list;
   int num_agg_level_candidates[NUM_PDCCH_AGG_LEVELS];
+  /// CORESET duration in OFDM symbols (1..3), from gNB config "coreset_duration".
+  /// Replaces the old heuristic (2 symbols if BWP < 48 PRBs, else 1). Default 1.
+  int coreset_duration;
   nr_redcap_config_t *redcap;
   nr_ptrs_config_t *ptrs;
   nr_config_report_type_t report_type;
