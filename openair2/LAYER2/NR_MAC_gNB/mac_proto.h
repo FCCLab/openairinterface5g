@@ -49,6 +49,9 @@ int get_full_dl_slots_per_period(const frame_structure_t *fs);
 int get_ul_slot_offset(const frame_structure_t *fs, int idx, bool count_mixed);
 
 void delete_nr_ue_data(NR_UE_info_t *UE, NR_COMMON_channels_t *ccPtr, uid_allocator_t *uia);
+/*! \brief Drop pending UL_tti_req_ahead PUCCH/PUSCH/SRS PDUs for rnti.
+ *  Prevents "Unknown RNTI in PUCCH UCI" after mac_remove_nr_ue / RA release. */
+void nr_mac_scrub_ul_tti_ahead_rnti(gNB_MAC_INST *mac, rnti_t rnti);
 
 void mac_top_init_gNB(ngran_node_t node_type,
                       NR_ServingCellConfigCommon_t *scc,

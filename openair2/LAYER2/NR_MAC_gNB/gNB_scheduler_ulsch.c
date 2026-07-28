@@ -2603,7 +2603,12 @@ static int network_slicing_ul(gNB_MAC_INST *nrmac,
     if (allocation == NULL || num_ranges == 0)
       continue;
 
-    for (int s = 0; s < num_ranges; s++) {
+    /* Rotate which slice gets first crack at the shared DCI/remainUEs budget.
+     * PRB ranges stay as allocated; only UE-scheduling order rotates. */
+    const int start = (sched_frame * slots_per_frame + sched_slot) % num_ranges;
+
+    for (int i = 0; i < num_ranges; i++) {
+      const int s = (start + i) % num_ranges;
       if (allocation[s].num_prbs <= 0)
         continue;
 

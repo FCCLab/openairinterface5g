@@ -98,8 +98,9 @@
 #define MAX_NUM_BWP 5
 #define MAX_NUM_CORESET 12
 #define MAX_NUM_CCE 90
-/*!\brief Maximum number of random access process */
-#define NR_NB_RA_PROC_MAX 4
+/*!\brief Maximum number of concurrent random access processes.
+ * 5-UE rfsim / reest storms need headroom above the historical limit of 4. */
+#define NR_NB_RA_PROC_MAX 8
 #define MAX_NUM_OF_SSB 64
 #define MAX_NUM_NR_PRACH_PREAMBLES 64
 

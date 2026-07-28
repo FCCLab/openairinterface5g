@@ -2147,6 +2147,8 @@ static void nr_fill_rar(uint8_t Mod_idP, NR_UE_info_t *UE, uint8_t *dlsch_buffer
 void nr_release_ra_UE(gNB_MAC_INST *mac, rnti_t rnti)
 {
   NR_SCHED_ENSURE_LOCKED(&mac->sched_lock);
+  /* CR-timer / RA-fail release can leave Msg4 ACK PUCCH queued. */
+  nr_mac_scrub_ul_tti_ahead_rnti(mac, rnti);
   NR_UEs_t *UE_info = &mac->UE_info;
   NR_UE_info_t *UE = remove_UE_from_list(NR_NB_RA_PROC_MAX, UE_info->access_ue_list, rnti);
   if (UE) {

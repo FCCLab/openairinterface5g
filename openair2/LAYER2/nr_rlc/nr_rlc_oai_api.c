@@ -27,6 +27,7 @@
 #include "nr_rlc_asn1_utils.h"
 #include "nr_rlc_ue_manager.h"
 #include "nr_rlc_entity.h"
+#include "nr_rlc_entity_am.h"
 #include "nr_rlc_oai_api.h"
 #include "NR_RLC-BearerConfig.h"
 #include "NR_DRB-ToAddMod.h"
@@ -255,6 +256,23 @@ mac_rlc_status_resp_t nr_mac_rlc_status_ind(const uint16_t ue_id, const frame_t 
   ret.head_sdu_remaining_size_to_send = 0;
   ret.head_sdu_is_segmented = 0;
   return ret;
+}
+
+bool nr_rlc_am_status_triggered(const uint16_t ue_id, const logical_chan_id_t channel_idP)
+{
+  bool triggered = false;
+
+  nr_rlc_manager_lock(nr_rlc_ue_manager);
+  nr_rlc_ue_t *ue = nr_rlc_manager_get_ue(nr_rlc_ue_manager, ue_id);
+  nr_rlc_entity_t *rb = get_rlc_entity_from_lcid(ue, channel_idP);
+  /* SRB AM entities are nr_rlc_entity_am_t with common as first member. */
+  if (rb != NULL && rb->stats.mode == NR_RLC_AM) {
+    const nr_rlc_entity_am_t *am = (const nr_rlc_entity_am_t *)rb;
+    triggered = am->status_triggered != 0;
+  }
+  nr_rlc_manager_unlock(nr_rlc_ue_manager);
+
+  return triggered;
 }
 
 rlc_op_status_t nr_rlc_data_req(const protocol_ctxt_t *const ctxt_pP,

@@ -61,6 +61,11 @@ rlc_op_status_t nr_rlc_data_req(const protocol_ctxt_t *const ctxt_pP,
                                 uint8_t *sdu_pP);
 mac_rlc_status_resp_t nr_mac_rlc_status_ind(const uint16_t ue_id, const frame_t frame, const logical_chan_id_t channel_idP);
 
+/* True if AM entity has STATUS triggered (owed ACK/NACK), even while
+ * t-StatusProhibit blocks emission. Used by DL NS require so CP demand is
+ * not lost under min_prb_ratio=0. */
+bool nr_rlc_am_status_triggered(const uint16_t ue_id, const logical_chan_id_t channel_idP);
+
 void nr_rlc_add_srb(int ue_id, int srb_id, const NR_RLC_BearerConfig_t *rlc_BearerConfig);
 void nr_rlc_add_drb(int ue_id, int drb_id, const NR_RLC_BearerConfig_t *rlc_BearerConfig);
 

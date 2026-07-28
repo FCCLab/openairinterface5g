@@ -1166,6 +1166,11 @@ static void network_slicing_dl(gNB_MAC_INST *mac,
         nr_mac_get_ue_effective_nssai(sched_ctrl, &ue_slice);
         if (ue_slice.sst != slice_nssai->sst || ue_slice.sd != slice_nssai->sd)
           continue;
+
+        int ue_required_prbs = 0;
+        bool srb_needs_dl = false;
+        const int min_srb_prbs = max((int)mac->min_grant_prb, 5);
+
         for (int l = 0; l < seq_arr_size(&sched_ctrl->lc_config); ++l) {
           const nr_lc_config_t *lc = seq_arr_at(&sched_ctrl->lc_config, l);
           if (lc->suspended)
@@ -1176,19 +1181,30 @@ static void network_slicing_dl(gNB_MAC_INST *mac,
           const uint16_t rnti = UE->rnti;
           sched_ctrl->rlc_status[lcid] = nr_mac_rlc_status_ind(rnti, frame, lcid);
 
+          /* SRB STATUS / AM ACK is often tiny; under min=0 Pass3 caps the
+           * slice at require, and pf_dl needs >=5 RBs — floor CP demand. */
+          if (lcid == UL_SCH_LCID_SRB1 || lcid == UL_SCH_LCID_SRB2) {
+            if (sched_ctrl->rlc_status[lcid].bytes_in_buffer > 0
+                || nr_rlc_am_status_triggered(rnti, lcid))
+              srb_needs_dl = true;
+          }
+
           // Accumulate bytes for this UE's effective slice to calculate required PRBs.
           if (sched_ctrl->rlc_status[lcid].bytes_in_buffer > 0) {
             const int bytes_per_prb_estimate = 4 - 2;
             int prbs_needed = (sched_ctrl->rlc_status[lcid].bytes_in_buffer + bytes_per_prb_estimate - 1) / bytes_per_prb_estimate;
-            required_prbs += prbs_needed;
+            ue_required_prbs += prbs_needed;
           }
         }
         /* Pending DL HARQ retx must keep the original rbSize; count it so the
          * slice window does not shrink below what remapping needs. */
         for (int harq_pid = sched_ctrl->retrans_dl_harq.head; harq_pid >= 0;
              harq_pid = sched_ctrl->retrans_dl_harq.next[harq_pid]) {
-          required_prbs += sched_ctrl->harq_processes[harq_pid].sched_pdsch.rbSize;
+          ue_required_prbs += sched_ctrl->harq_processes[harq_pid].sched_pdsch.rbSize;
         }
+        if (srb_needs_dl)
+          ue_required_prbs = max(ue_required_prbs, min_srb_prbs);
+        required_prbs += ue_required_prbs;
       }
       // Cap required PRBs at total PRBs available for this beam
       if (required_prbs > total_prbs) {
@@ -1215,8 +1231,14 @@ static void network_slicing_dl(gNB_MAC_INST *mac,
     if (allocation == NULL || num_ranges == 0)
       continue;
 
+    /* Rotate which slice gets first crack at the shared DCI/remainUEs budget.
+     * PRB ranges stay as allocated; only UE-scheduling order rotates. */
+    const int slots_per_frame = mac->frame_structure.numb_slots_frame;
+    const int start = (frame * slots_per_frame + slot) % num_ranges;
+
     // Schedule UEs within the slice's allocated PRB range
-    for (int s = 0; s < num_ranges; s++) {
+    for (int i = 0; i < num_ranges; i++) {
+      const int s = (start + i) % num_ranges;
       if (allocation[s].num_prbs <= 0) {
         continue;
       }

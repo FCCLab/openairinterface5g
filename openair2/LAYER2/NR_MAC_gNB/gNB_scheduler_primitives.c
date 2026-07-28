@@ -3066,6 +3066,45 @@ NR_UE_info_t *find_ra_UE(NR_UEs_t *UEs, rnti_t rntiP)
   return NULL;
 }
 
+void nr_mac_scrub_ul_tti_ahead_rnti(gNB_MAC_INST *mac, rnti_t rnti)
+{
+  DevAssert(mac != NULL);
+  if (mac->UL_tti_req_ahead[0] == NULL || mac->UL_tti_req_ahead_size <= 0)
+    return;
+
+  int removed = 0;
+  for (int i = 0; i < mac->UL_tti_req_ahead_size; i++) {
+    nfapi_nr_ul_tti_request_t *req = &mac->UL_tti_req_ahead[0][i];
+    int dst = 0;
+    for (int s = 0; s < req->n_pdus; s++) {
+      bool drop = false;
+      switch (req->pdus_list[s].pdu_type) {
+        case NFAPI_NR_UL_CONFIG_PUCCH_PDU_TYPE:
+          drop = (req->pdus_list[s].pucch_pdu.rnti == rnti);
+          break;
+        case NFAPI_NR_UL_CONFIG_PUSCH_PDU_TYPE:
+          drop = (req->pdus_list[s].pusch_pdu.rnti == rnti);
+          break;
+        case NFAPI_NR_UL_CONFIG_SRS_PDU_TYPE:
+          drop = (req->pdus_list[s].srs_pdu.rnti == rnti);
+          break;
+        default:
+          break;
+      }
+      if (drop) {
+        removed++;
+        continue;
+      }
+      if (dst != s)
+        req->pdus_list[dst] = req->pdus_list[s];
+      dst++;
+    }
+    req->n_pdus = dst;
+  }
+  if (removed > 0)
+    LOG_D(NR_MAC, "Scrubbed %d pending UL_tti PDU(s) for RNTI %04x\n", removed, rnti);
+}
+
 void delete_nr_ue_data(NR_UE_info_t *UE, NR_COMMON_channels_t *ccPtr, uid_allocator_t *uia)
 {
   // Free reconfigSpCellConfig first if it exists and is not the same as CellGroup->spCellConfig
@@ -3690,6 +3729,9 @@ void mac_remove_nr_ue(gNB_MAC_INST *nr_mac, rnti_t rnti)
 {
   /* already mutex protected */
   NR_SCHED_ENSURE_LOCKED(&nr_mac->sched_lock);
+  /* Drop scheduled UL UCI/PUSCH for this RNTI before freeing the UE context
+   * (reest RNTI swap otherwise leaves stale PUCCH → Unknown RNTI in UCI). */
+  nr_mac_scrub_ul_tti_ahead_rnti(nr_mac, rnti);
   NR_UEs_t *UE_info = &nr_mac->UE_info;
   NR_UE_info_t *UE = remove_UE_from_list(MAX_MOBILES_PER_GNB + 1, UE_info->connected_ue_list, rnti);
   if (UE)
