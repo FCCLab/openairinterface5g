@@ -1151,6 +1151,9 @@ static void network_slicing_dl(gNB_MAC_INST *mac,
     // Find required PRBs for each slice
     slice_scheduler_t *slice_scheduler = mac->slice_scheduler_dl;
     int num_slices = slice_sch_get_num_slices(slice_scheduler);
+    /* pf_dl refuses windows smaller than min_rbSize (5). Tiny RLC STATUS/ACK
+     * must not produce require in (0, 5) or Pass3 caps the slice unusable. */
+    const int min_sched_prbs = max((int)mac->min_grant_prb, 5);
     for (int s = 0; s < num_slices; s++) {
       int required_prbs = 0;
 
@@ -1169,7 +1172,6 @@ static void network_slicing_dl(gNB_MAC_INST *mac,
 
         int ue_required_prbs = 0;
         bool srb_needs_dl = false;
-        const int min_srb_prbs = max((int)mac->min_grant_prb, 5);
 
         for (int l = 0; l < seq_arr_size(&sched_ctrl->lc_config); ++l) {
           const nr_lc_config_t *lc = seq_arr_at(&sched_ctrl->lc_config, l);
@@ -1181,8 +1183,7 @@ static void network_slicing_dl(gNB_MAC_INST *mac,
           const uint16_t rnti = UE->rnti;
           sched_ctrl->rlc_status[lcid] = nr_mac_rlc_status_ind(rnti, frame, lcid);
 
-          /* SRB STATUS / AM ACK is often tiny; under min=0 Pass3 caps the
-           * slice at require, and pf_dl needs >=5 RBs — floor CP demand. */
+          /* SRB may have status_triggered with bytes_in_buffer still 0. */
           if (lcid == UL_SCH_LCID_SRB1 || lcid == UL_SCH_LCID_SRB2) {
             if (sched_ctrl->rlc_status[lcid].bytes_in_buffer > 0
                 || nr_rlc_am_status_triggered(rnti, lcid))
@@ -1203,13 +1204,16 @@ static void network_slicing_dl(gNB_MAC_INST *mac,
           ue_required_prbs += sched_ctrl->harq_processes[harq_pid].sched_pdsch.rbSize;
         }
         if (srb_needs_dl)
-          ue_required_prbs = max(ue_required_prbs, min_srb_prbs);
+          ue_required_prbs = max(ue_required_prbs, min_sched_prbs);
         required_prbs += ue_required_prbs;
       }
+      /* Any positive demand (incl. tiny DRB AM STATUS) must be schedulable. */
+      if (required_prbs > 0)
+        required_prbs = max(required_prbs, min_sched_prbs);
       // Cap required PRBs at total PRBs available for this beam
       if (required_prbs > total_prbs) {
         required_prbs = total_prbs;
-      }      
+      }
 
       if (required_prbs > 0) {
         // Get slice configuration to log ratios
