@@ -3056,8 +3056,12 @@ static void nr_ulsch_preprocessor(gNB_MAC_INST *nr_mac, post_process_pusch_t *pp
 
     nr_mac->mac_stats.ul.total_prb_aggregate += bw;
     int len[num_beams];
+    /* SCHE_NS: use UL carrier/BWP size as slice total_prbs (same as DL), so
+     * ratios/stats are stable vs PUCCH/SRS holes. PF keeps rb_len as the
+     * free contiguous budget for this UL opportunity. Actual PUSCH placement
+     * still respects vrb_map_UL in both paths. */
     for (int i = 0; i < num_beams; i++)
-      len[i] = rb_len;
+      len[i] = (nr_mac->scheduler_type_ul == SCHE_NS) ? bw : rb_len;
     /* proportional fair or network slicing (SCHE_NS): same slice PRB allocator as DL */
     int sched;
     if (nr_mac->scheduler_type_ul == SCHE_NS)
