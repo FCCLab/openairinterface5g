@@ -641,17 +641,20 @@ long ue_supported_dl_layers(const NR_ServingCellConfigCommon_t *scc, const NR_UE
   const int scs = scs_carrier->subcarrierSpacing;
   const int bw_size = scs_carrier->carrierBandwidth;
   NR_FeatureSets_t *fs = uecap ? uecap->featureSets : NULL;
-  if (fs) {
+  if (fs && fs->featureSetsDownlinkPerCC) {
     const int bw_mhz = get_supported_bw_mhz(freq_range, get_supported_band_index(scs, freq_range, bw_size));
-    // go through UL feature sets and look for one with current SCS
+    long max_layers = -1;
     for (int i = 0; i < fs->featureSetsDownlinkPerCC->list.count; i++) {
       NR_FeatureSetDownlinkPerCC_t *dl_fs = fs->featureSetsDownlinkPerCC->list.array[i];
       if (scs == dl_fs->supportedSubcarrierSpacingDL &&
           supported_bw_comparison(bw_mhz, &dl_fs->supportedBandwidthDL, dl_fs->channelBW_90mhz) &&
           dl_fs->maxNumberMIMO_LayersPDSCH) {
-        return (2 << *dl_fs->maxNumberMIMO_LayersPDSCH);
+        long layers = 2 << *dl_fs->maxNumberMIMO_LayersPDSCH;
+        if (layers > max_layers)
+          max_layers = layers;
       }
     }
+    return max_layers;
   }
   return -1;
 }

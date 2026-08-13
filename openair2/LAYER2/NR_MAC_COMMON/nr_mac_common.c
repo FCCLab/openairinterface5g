@@ -5032,33 +5032,50 @@ uint16_t nr_get_csi_bitlen(nr_csi_report_t *csi_report)
 
 bool supported_bw_comparison(int bw_mhz, NR_SupportedBandwidth_t *supported_BW, long *support_90mhz)
 {
+  /* TS 38.306: 90 MHz is signalled via channelBW-90mhz, not supportedBandwidthDL. */
   if (bw_mhz == 90)
     return support_90mhz ? true : false;
+
+  /* TS 38.306: supportedBandwidthDL/UL is the *maximum* CBW of this feature set
+   * (same SCS). A serving cell with a smaller CBW still matches (e.g. 50 MHz
+   * cell vs mhz100). Rel-15/16 has no min; Rel-17 added supportedMinBandwidthDL. */
+  int advertised_mhz = -1;
   switch (supported_BW->present) {
     case NR_SupportedBandwidth_PR_fr1 :
       switch (supported_BW->choice.fr1) {
         case NR_SupportedBandwidth__fr1_mhz5 :
-          return bw_mhz == 5;
+          advertised_mhz = 5;
+          break;
         case NR_SupportedBandwidth__fr1_mhz10 :
-          return bw_mhz == 10;
+          advertised_mhz = 10;
+          break;
         case NR_SupportedBandwidth__fr1_mhz15 :
-          return bw_mhz == 15;
+          advertised_mhz = 15;
+          break;
         case NR_SupportedBandwidth__fr1_mhz20 :
-          return bw_mhz == 20;
+          advertised_mhz = 20;
+          break;
         case NR_SupportedBandwidth__fr1_mhz25 :
-          return bw_mhz == 25;
+          advertised_mhz = 25;
+          break;
         case NR_SupportedBandwidth__fr1_mhz30 :
-          return bw_mhz == 30;
+          advertised_mhz = 30;
+          break;
         case NR_SupportedBandwidth__fr1_mhz40 :
-          return bw_mhz == 40;
+          advertised_mhz = 40;
+          break;
         case NR_SupportedBandwidth__fr1_mhz50 :
-          return bw_mhz == 50;
+          advertised_mhz = 50;
+          break;
         case NR_SupportedBandwidth__fr1_mhz60 :
-          return bw_mhz == 60;
+          advertised_mhz = 60;
+          break;
         case NR_SupportedBandwidth__fr1_mhz80 :
-          return bw_mhz == 80;
+          advertised_mhz = 80;
+          break;
         case NR_SupportedBandwidth__fr1_mhz100 :
-          return bw_mhz == 100;
+          advertised_mhz = 100;
+          break;
         default :
           AssertFatal(false, "Invalid FR1 supported band\n");
       }
@@ -5066,13 +5083,17 @@ bool supported_bw_comparison(int bw_mhz, NR_SupportedBandwidth_t *supported_BW, 
     case NR_SupportedBandwidth_PR_fr2 :
       switch (supported_BW->choice.fr2) {
         case NR_SupportedBandwidth__fr2_mhz50 :
-          return bw_mhz == 50;
+          advertised_mhz = 50;
+          break;
         case NR_SupportedBandwidth__fr2_mhz100 :
-          return bw_mhz == 100;
+          advertised_mhz = 100;
+          break;
         case NR_SupportedBandwidth__fr2_mhz200 :
-          return bw_mhz == 200;
+          advertised_mhz = 200;
+          break;
         case NR_SupportedBandwidth__fr2_mhz400 :
-          return bw_mhz == 400;
+          advertised_mhz = 400;
+          break;
         default :
           AssertFatal(false, "Invalid FR2 supported band\n");
       }
@@ -5080,7 +5101,7 @@ bool supported_bw_comparison(int bw_mhz, NR_SupportedBandwidth_t *supported_BW, 
     default :
       AssertFatal(false, "Invalid BW type\n");
   }
-  return false;
+  return advertised_mhz > 0 && bw_mhz <= advertised_mhz;
 }
 
 uint32_t compute_PDU_length(uint32_t num_TLV, uint32_t total_length)
