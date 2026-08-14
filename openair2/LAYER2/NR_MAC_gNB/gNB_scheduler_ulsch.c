@@ -680,49 +680,37 @@ static void handle_nr_ul_harq(gNB_MAC_INST *nrmac, NR_UE_info_t *UE, rnti_t rnti
     return;
   }
 
-  NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
-  int8_t harq_pid = sched_ctrl->feedback_ul_harq.head;
-  LOG_D(NR_MAC, "Comparing crc harq_id vs feedback harq_pid = %d %d\n", crc_harq_id, harq_pid);
-  while (crc_harq_id != harq_pid || harq_pid < 0) {
-    LOG_W(NR_MAC, "Unexpected ULSCH HARQ PID %d (have %d) for RNTI 0x%04x\n", crc_harq_id, harq_pid, rnti);
-    if (harq_pid < 0)
-      return;
-
-    remove_front_nr_list(&sched_ctrl->feedback_ul_harq);
-    sched_ctrl->ul_harq_processes[harq_pid].is_waiting = false;
-
-    if(sched_ctrl->ul_harq_processes[harq_pid].round >= nrmac->ul_bler.harq_round_max - 1) {
-      abort_nr_ul_harq(UE, harq_pid);
-    } else {
-      sched_ctrl->ul_harq_processes[harq_pid].round++;
-      add_tail_nr_list(&sched_ctrl->retrans_ul_harq, harq_pid);
-    }
-    harq_pid = sched_ctrl->feedback_ul_harq.head;
+  if (crc_harq_id < 0 || crc_harq_id >= NR_MAX_HARQ_PROCESSES) {
+    LOG_W(NR_MAC, "Invalid ULSCH HARQ PID %d for RNTI 0x%04x\n", crc_harq_id, rnti);
+    return;
   }
-  remove_front_nr_list(&sched_ctrl->feedback_ul_harq);
-  NR_UE_ul_harq_t *harq = &sched_ctrl->ul_harq_processes[harq_pid];
-  DevAssert(harq->is_waiting);
+
+  NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
+  NR_UE_ul_harq_t *harq = &sched_ctrl->ul_harq_processes[crc_harq_id];
+  /* Aerial (pipelined UL) may deliver CRC.indication out of grant order.
+   * Match by harq_id; do not NACK-pop other processes still waiting. */
+  if (!harq->is_waiting) {
+    LOG_W(NR_MAC,
+          "Unexpected ULSCH HARQ PID %d (not waiting, head %d) for RNTI 0x%04x\n",
+          crc_harq_id,
+          sched_ctrl->feedback_ul_harq.head,
+          rnti);
+    return;
+  }
+
+  remove_nr_list(&sched_ctrl->feedback_ul_harq, crc_harq_id);
   harq->feedback_slot = -1;
   harq->is_waiting = false;
   if (!crc_status) {
-    finish_nr_ul_harq(sched_ctrl, harq_pid);
-    LOG_D(NR_MAC,
-          "Ulharq id %d crc passed for RNTI %04x\n",
-          harq_pid,
-          rnti);
-  } else if (harq->round >= nrmac->ul_bler.harq_round_max  - 1) {
-    abort_nr_ul_harq(UE, harq_pid);
-    LOG_D(NR_MAC,
-          "RNTI %04x: Ulharq id %d crc failed in all rounds\n",
-          rnti,
-          harq_pid);
+    finish_nr_ul_harq(sched_ctrl, crc_harq_id);
+    LOG_D(NR_MAC, "Ulharq id %d crc passed for RNTI %04x\n", crc_harq_id, rnti);
+  } else if (harq->round >= nrmac->ul_bler.harq_round_max - 1) {
+    abort_nr_ul_harq(UE, crc_harq_id);
+    LOG_D(NR_MAC, "RNTI %04x: Ulharq id %d crc failed in all rounds\n", rnti, crc_harq_id);
   } else {
     harq->round++;
-    LOG_D(NR_MAC,
-          "Ulharq id %d crc failed for RNTI %04x\n",
-          harq_pid,
-          rnti);
-    add_tail_nr_list(&sched_ctrl->retrans_ul_harq, harq_pid);
+    LOG_D(NR_MAC, "Ulharq id %d crc failed for RNTI %04x\n", crc_harq_id, rnti);
+    add_tail_nr_list(&sched_ctrl->retrans_ul_harq, crc_harq_id);
   }
 }
 
