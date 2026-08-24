@@ -20,6 +20,7 @@
  */
 
 #include "ran_func_rc.h"
+#include "ran_func_rc_helper.h"
 #include "ran_func_rc_param_ids.h"
 #include "ran_func_rc_subs.h"
 #include "ran_func_rc_extern.h"
@@ -29,14 +30,18 @@
 #include "../../flexric/src/agent/e2_agent_api.h"
 #include "openair2/E2AP/flexric/src/lib/sm/enc/enc_ue_id.h"
 #include "openair2/E2AP/flexric/src/sm/rc_sm/rc_sm_id.h"
+#include "NR_MAC_gNB/nr_mac_gNB.h"
+#include "NR_MAC_gNB/gNB_scheduler_types.h"
 
 #include <stdio.h>
 #include <unistd.h>
-#include "common/ran_context.h"
+#include <inttypes.h>
 
 static pthread_once_t once_rc_mutex = PTHREAD_ONCE_INIT;
 static rc_subs_data_t rc_subs_data = {0};
 static pthread_mutex_t rc_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+static const int mod_id = 0;
 
 static ngran_node_t get_e2_node_type(void)
 {
@@ -269,15 +274,9 @@ static void fill_rc_report(ran_func_def_report_t* report)
   report->seq_report_sty[1] = fill_report_style_4("UE Information");
 }
 
-static void fill_rc_control(ran_func_def_ctrl_t* ctrl)
+static void fill_rc_control_style_1(ran_func_def_ctrl_t* ctrl, size_t style_idx)
 {
-  // Sequence of CONTROL styles
-  // [1 - 63]
-  ctrl->sz_seq_ctrl_style = 1;
-  ctrl->seq_ctrl_style = calloc(ctrl->sz_seq_ctrl_style, sizeof(seq_ctrl_style_t));
-  assert(ctrl->seq_ctrl_style != NULL && "Memory exhausted");
-
-  seq_ctrl_style_t* ctrl_style = &ctrl->seq_ctrl_style[0];
+  seq_ctrl_style_t* ctrl_style = &ctrl->seq_ctrl_style[style_idx];
 
   // RIC Control Style Type
   // Mandatory
@@ -379,6 +378,172 @@ static void fill_rc_control(ran_func_def_ctrl_t* ctrl)
   // [0- 255]
   ctrl_style->sz_ran_param_ctrl_out = 0;
   ctrl_style->ran_param_ctrl_out = NULL;
+}
+
+
+static void fill_rc_control_style_2(ran_func_def_ctrl_t* ctrl, size_t style_idx)
+{
+
+  // 8.4.3.6 CONTROL Style 2: Radio Resource Allocation Control
+  seq_ctrl_style_t* radio_resource_alloc_ctrl_style = &ctrl->seq_ctrl_style[style_idx];
+  radio_resource_alloc_ctrl_style->style_type = 2;
+  const char radio_resource_alloc_control_name[] = "Radio Resource Allocation Control";
+  radio_resource_alloc_ctrl_style->name = cp_str_to_ba(radio_resource_alloc_control_name);
+  radio_resource_alloc_ctrl_style->hdr = FORMAT_1_E2SM_RC_CTRL_HDR;
+  radio_resource_alloc_ctrl_style->msg = FORMAT_1_E2SM_RC_CTRL_MSG;
+  radio_resource_alloc_ctrl_style->call_proc_id_type = NULL;
+  radio_resource_alloc_ctrl_style->out_frmt = FORMAT_1_E2SM_RC_CTRL_OUT;
+
+  radio_resource_alloc_ctrl_style->sz_seq_ctrl_act = 1;
+  radio_resource_alloc_ctrl_style->seq_ctrl_act = calloc(radio_resource_alloc_ctrl_style->sz_seq_ctrl_act, sizeof(seq_ctrl_act_2_t));
+  assert(radio_resource_alloc_ctrl_style->seq_ctrl_act != NULL && "Memory exhausted");
+  seq_ctrl_act_2_t* radio_resource_alloc_ctrl_act = &radio_resource_alloc_ctrl_style->seq_ctrl_act[0];
+  radio_resource_alloc_ctrl_act->id = 6;
+
+  const char radio_resource_alloc_control_act_name[] = "Slice-level PRB Quota";
+  radio_resource_alloc_ctrl_act->name = cp_str_to_ba(radio_resource_alloc_control_act_name);
+
+  // Sequence of Associated RAN Parameters
+  // [0-65535]
+  radio_resource_alloc_ctrl_act->sz_seq_assoc_ran_param = 1;
+  radio_resource_alloc_ctrl_act->assoc_ran_param = calloc(radio_resource_alloc_ctrl_act->sz_seq_assoc_ran_param, sizeof(seq_ran_param_3_t));
+  assert(radio_resource_alloc_ctrl_act->assoc_ran_param != NULL && "Memory exhausted");
+
+  seq_ran_param_3_t* radio_resource_alloc_assoc_ran_param = radio_resource_alloc_ctrl_act->assoc_ran_param;
+
+  radio_resource_alloc_assoc_ran_param[0].id = 1;
+  const char ran_param_list_rrm_policy_ratios[] = "RRM Policy Ratio List";
+  radio_resource_alloc_assoc_ran_param[0].name = cp_str_to_ba(ran_param_list_rrm_policy_ratios);
+  radio_resource_alloc_assoc_ran_param[0].def = calloc(1, sizeof(ran_param_def_t));
+  assert(radio_resource_alloc_assoc_ran_param[0].def != NULL && "Memory exhausted");
+
+  radio_resource_alloc_assoc_ran_param[0].def->type = LIST_RAN_PARAMETER_DEF_TYPE;
+  radio_resource_alloc_assoc_ran_param[0].def->lst = calloc(1, sizeof(ran_param_type_t));
+  assert(radio_resource_alloc_assoc_ran_param[0].def->lst != NULL && "Memory exhausted");
+
+  ran_param_type_t* rrm_policy_ratio_lst = radio_resource_alloc_assoc_ran_param[0].def->lst;
+  rrm_policy_ratio_lst->sz_ran_param = 1;
+  rrm_policy_ratio_lst->ran_param = calloc(rrm_policy_ratio_lst->sz_ran_param, sizeof(ran_param_lst_struct_t));
+  assert(rrm_policy_ratio_lst->ran_param != NULL && "Memory exhausted");
+
+  ran_param_lst_struct_t* rrm_policy_ratio_group = &rrm_policy_ratio_lst->ran_param[0];
+  rrm_policy_ratio_group->ran_param_id = 2;
+  const char ran_param_rrm_policy_ratio_group[] = "RRM Policy Ratio Group";
+  rrm_policy_ratio_group->ran_param_name = cp_str_to_ba(ran_param_rrm_policy_ratio_group);
+  rrm_policy_ratio_group->ran_param_def = calloc(1, sizeof(ran_param_def_t));
+  assert(rrm_policy_ratio_group->ran_param_def != NULL && "Memory exhausted");
+
+  rrm_policy_ratio_group->ran_param_def->type = STRUCTURE_RAN_PARAMETER_DEF_TYPE;
+  rrm_policy_ratio_group->ran_param_def->strct = calloc(1, sizeof(ran_param_type_t));
+  assert(rrm_policy_ratio_group->ran_param_def->strct != NULL && "Memory exhausted");
+
+  ran_param_type_t* rrm_policy_ratio_group_fields = rrm_policy_ratio_group->ran_param_def->strct;
+  rrm_policy_ratio_group_fields->sz_ran_param = 4;
+  rrm_policy_ratio_group_fields->ran_param = calloc(rrm_policy_ratio_group_fields->sz_ran_param, sizeof(ran_param_lst_struct_t));
+  assert(rrm_policy_ratio_group_fields->ran_param != NULL && "Memory exhausted");
+
+  rrm_policy_ratio_group_fields->ran_param[0].ran_param_id = 3;
+  const char ran_param_rrm_policy[] = "RRM Policy";
+  rrm_policy_ratio_group_fields->ran_param[0].ran_param_name = cp_str_to_ba(ran_param_rrm_policy);
+  rrm_policy_ratio_group_fields->ran_param[0].ran_param_def = calloc(1, sizeof(ran_param_def_t));
+  assert(rrm_policy_ratio_group_fields->ran_param[0].ran_param_def != NULL && "Memory exhausted");
+  rrm_policy_ratio_group_fields->ran_param[0].ran_param_def->type = STRUCTURE_RAN_PARAMETER_DEF_TYPE;
+  rrm_policy_ratio_group_fields->ran_param[0].ran_param_def->strct = calloc(1, sizeof(ran_param_type_t));
+  assert(rrm_policy_ratio_group_fields->ran_param[0].ran_param_def->strct != NULL && "Memory exhausted");
+
+  ran_param_type_t* rrm_policy_struct = rrm_policy_ratio_group_fields->ran_param[0].ran_param_def->strct;
+  rrm_policy_struct->sz_ran_param = 1;
+  rrm_policy_struct->ran_param = calloc(rrm_policy_struct->sz_ran_param, sizeof(ran_param_lst_struct_t));
+  assert(rrm_policy_struct->ran_param != NULL && "Memory exhausted");
+
+  rrm_policy_struct->ran_param[0].ran_param_id = 5;
+  const char ran_param_rrm_policy_member_list[] = "RRM Policy Member List";
+  rrm_policy_struct->ran_param[0].ran_param_name = cp_str_to_ba(ran_param_rrm_policy_member_list);
+  rrm_policy_struct->ran_param[0].ran_param_def = calloc(1, sizeof(ran_param_def_t));
+  assert(rrm_policy_struct->ran_param[0].ran_param_def != NULL && "Memory exhausted");
+  rrm_policy_struct->ran_param[0].ran_param_def->type = LIST_RAN_PARAMETER_DEF_TYPE;
+  rrm_policy_struct->ran_param[0].ran_param_def->lst = calloc(1, sizeof(ran_param_type_t));
+  assert(rrm_policy_struct->ran_param[0].ran_param_def->lst != NULL && "Memory exhausted");
+
+  ran_param_type_t* rrm_policy_member_list = rrm_policy_struct->ran_param[0].ran_param_def->lst;
+  rrm_policy_member_list->sz_ran_param = 1;
+  rrm_policy_member_list->ran_param = calloc(rrm_policy_member_list->sz_ran_param, sizeof(ran_param_lst_struct_t));
+  assert(rrm_policy_member_list->ran_param != NULL && "Memory exhausted");
+
+  rrm_policy_member_list->ran_param[0].ran_param_id = 6;
+  const char ran_param_rrm_policy_member[] = "RRM Policy Member";
+  rrm_policy_member_list->ran_param[0].ran_param_name = cp_str_to_ba(ran_param_rrm_policy_member);
+  rrm_policy_member_list->ran_param[0].ran_param_def = calloc(1, sizeof(ran_param_def_t));
+  assert(rrm_policy_member_list->ran_param[0].ran_param_def != NULL && "Memory exhausted");
+  rrm_policy_member_list->ran_param[0].ran_param_def->type = STRUCTURE_RAN_PARAMETER_DEF_TYPE;
+  rrm_policy_member_list->ran_param[0].ran_param_def->strct = calloc(1, sizeof(ran_param_type_t));
+  assert(rrm_policy_member_list->ran_param[0].ran_param_def->strct != NULL && "Memory exhausted");
+
+  ran_param_type_t* rrm_policy_member_struct = rrm_policy_member_list->ran_param[0].ran_param_def->strct;
+  rrm_policy_member_struct->sz_ran_param = 2;
+  rrm_policy_member_struct->ran_param = calloc(rrm_policy_member_struct->sz_ran_param, sizeof(ran_param_lst_struct_t));
+  assert(rrm_policy_member_struct->ran_param != NULL && "Memory exhausted");
+
+  rrm_policy_member_struct->ran_param[0].ran_param_id = 7;
+  const char ran_param_plmn_identity[] = "PLMN Identity";
+  rrm_policy_member_struct->ran_param[0].ran_param_name = cp_str_to_ba(ran_param_plmn_identity);
+  rrm_policy_member_struct->ran_param[0].ran_param_def = NULL;
+
+  rrm_policy_member_struct->ran_param[1].ran_param_id = 8;
+  const char ran_param_snssai[] = "S-NSSAI";
+  rrm_policy_member_struct->ran_param[1].ran_param_name = cp_str_to_ba(ran_param_snssai);
+  rrm_policy_member_struct->ran_param[1].ran_param_def = calloc(1, sizeof(ran_param_def_t));
+  assert(rrm_policy_member_struct->ran_param[1].ran_param_def != NULL && "Memory exhausted");
+  rrm_policy_member_struct->ran_param[1].ran_param_def->type = STRUCTURE_RAN_PARAMETER_DEF_TYPE;
+  rrm_policy_member_struct->ran_param[1].ran_param_def->strct = calloc(1, sizeof(ran_param_type_t));
+  assert(rrm_policy_member_struct->ran_param[1].ran_param_def->strct != NULL && "Memory exhausted");
+
+  ran_param_type_t* snssai_struct = rrm_policy_member_struct->ran_param[1].ran_param_def->strct;
+  snssai_struct->sz_ran_param = 2;
+  snssai_struct->ran_param = calloc(snssai_struct->sz_ran_param, sizeof(ran_param_lst_struct_t));
+  assert(snssai_struct->ran_param != NULL && "Memory exhausted");
+
+  snssai_struct->ran_param[0].ran_param_id = 9;
+  const char ran_param_sst[] = "SST";
+  snssai_struct->ran_param[0].ran_param_name = cp_str_to_ba(ran_param_sst);
+  snssai_struct->ran_param[0].ran_param_def = NULL;
+
+  snssai_struct->ran_param[1].ran_param_id = 10;
+  const char ran_param_sd[] = "SD";
+  snssai_struct->ran_param[1].ran_param_name = cp_str_to_ba(ran_param_sd);
+  snssai_struct->ran_param[1].ran_param_def = NULL;
+
+  rrm_policy_ratio_group_fields->ran_param[1].ran_param_id = 11;
+  const char ran_param_min_prb_policy_ratio[] = "Min PRB Policy Ratio";
+  rrm_policy_ratio_group_fields->ran_param[1].ran_param_name = cp_str_to_ba(ran_param_min_prb_policy_ratio);
+  rrm_policy_ratio_group_fields->ran_param[1].ran_param_def = NULL;
+
+  rrm_policy_ratio_group_fields->ran_param[2].ran_param_id = 12;
+  const char ran_param_max_prb_policy_ratio[] = "Max PRB Policy Ratio";
+  rrm_policy_ratio_group_fields->ran_param[2].ran_param_name = cp_str_to_ba(ran_param_max_prb_policy_ratio);
+  rrm_policy_ratio_group_fields->ran_param[2].ran_param_def = NULL;
+
+  rrm_policy_ratio_group_fields->ran_param[3].ran_param_id = 13;
+  const char ran_param_dedicated_prb_policy_ratio[] = "Dedicated PRB Policy Ratio";
+  rrm_policy_ratio_group_fields->ran_param[3].ran_param_name = cp_str_to_ba(ran_param_dedicated_prb_policy_ratio);
+  rrm_policy_ratio_group_fields->ran_param[3].ran_param_def = NULL;
+
+}
+
+static void fill_rc_control(ran_func_def_ctrl_t* ctrl)
+{
+  // Sequence of CONTROL styles
+  // [1 - 63]
+  ctrl->sz_seq_ctrl_style = 2;
+
+  ctrl->seq_ctrl_style = calloc(ctrl->sz_seq_ctrl_style, sizeof(seq_ctrl_style_t));
+  assert(ctrl->seq_ctrl_style != NULL && "Memory exhausted");
+
+  // 8.4.3.6 CONTROL Style 2: Radio Resource Allocation Control
+  fill_rc_control_style_2(ctrl, 1);
+
+  // 8.4.2.2 CONTROL Style 1: Radio Bearer Control
+  fill_rc_control_style_1(ctrl, 0);
 }
 
 static ran_function_name_t fill_rc_ran_func_name(void)
@@ -897,45 +1062,77 @@ sm_ag_if_ans_t write_ctrl_rc_sm(void const* data)
 
   rc_ctrl_req_data_t const* ctrl = (rc_ctrl_req_data_t const*)data;
 
-  assert(ctrl->hdr.format == FORMAT_1_E2SM_RC_CTRL_HDR && "Indication Header Format received not valid");
-  assert(ctrl->msg.format == FORMAT_1_E2SM_RC_CTRL_MSG && "Indication Message Format received not valid");
-  assert(ctrl->hdr.frmt_1.ctrl_act_id == 2 && "Currently only QoS flow mapping configuration supported");
+  printf("[RC] Received control message \n");
+  printf("[RC] ctrl->hdr.format: %d \n", ctrl->hdr.format);
+  printf("[RC] ctrl->hdr.frmt_1.ctrl_act_id: %d \n", ctrl->hdr.frmt_1.ctrl_act_id);
+  printf("[RC] ctrl->hdr.frmt_1.ric_style_type: %d \n", ctrl->hdr.frmt_1.ric_style_type);
+  fflush(stdout);
+  if(ctrl->hdr.format == FORMAT_1_E2SM_RC_CTRL_HDR){
+    // See E2SM RC 1.03 section 8.4.3.6
+    // CONTROL STYLE 2 (ric_style_type == 2): Slice-level PRB Quota (ctrl_act_id==6)
+    if(ctrl->hdr.frmt_1.ric_style_type == 2 && ctrl->hdr.frmt_1.ctrl_act_id == 6){
 
-  printf("QoS flow mapping configuration\n");
+      printf("[RC] CONTROL STYLE 2 (ric_style_type == 2): Slice-level PRB Quota (ctrl_act_id==6)\n");
+      fflush(stdout);
+      e2sm_rc_ctrl_msg_frmt_1_t const* frmt_1 = &ctrl->msg.frmt_1;
 
-  const seq_ran_param_t* ran_param = ctrl->msg.frmt_1.ran_param;
+      slice_config_t slice_conf = extract_slice_config_from_ctrl_req(frmt_1);
+      
+      gNB_MAC_INST *mac = RC.nrmac[mod_id]; // imported from common/ran_context.h
+      
+      char err[256] = {0};
+      NR_SCHED_LOCK(&mac->sched_lock);
+      if (slice_sch_add_slice( 
+        mac->slice_scheduler_dl, 
+        slice_conf.slice_id.sst, 
+        slice_conf.slice_id.sd, 
+        slice_conf.dedicated_prb_ratio, 
+        slice_conf.min_prb_ratio, 
+        slice_conf.max_prb_ratio, 
+        0
+      ) != 0) { // imported from NR_MAC_gNB/nr_mac_gNB.h->slice_prb_allocator.h
 
-  // DRB ID
-  assert(ran_param[0].ran_param_id == 1 && "First RAN Parameter ID has to be DRB ID");
-  assert(ran_param[0].ran_param_val.type == ELEMENT_KEY_FLAG_TRUE_RAN_PARAMETER_VAL_TYPE);
-  printf("DRB ID %ld \n", ran_param[0].ran_param_val.flag_true->int_ran);
+        NR_SCHED_UNLOCK(&mac->sched_lock);
+        snprintf(err,
+                 sizeof(err),
+                 "SST=%u SD=0x%06x : slice_sch_add_slice failed",
+                 slice_conf.slice_id.sst,
+                 slice_conf.slice_id.sd);
+      }
+      // if (slice_sch_add_slice(mac->slice_scheduler_ul, sst_val, sd_val, ded, min, max, 0) != 0) { 
+      if (slice_sch_add_slice( 
+        mac->slice_scheduler_dl, 
+        slice_conf.slice_id.sst, 
+        slice_conf.slice_id.sd, 
+        slice_conf.dedicated_prb_ratio, 
+        slice_conf.min_prb_ratio, 
+        slice_conf.max_prb_ratio, 
+        0
+      ) != 0) {
+        NR_SCHED_UNLOCK(&mac->sched_lock);
+        snprintf(err,
+                 sizeof(err),
+                 "SST=%u SD=0x%06x : slice_sch_add_slice failed",
+                 slice_conf.slice_id.sst,
+                 slice_conf.slice_id.sd);
+      }
 
+      // if (mac->slice_scheduler_dl != NULL) {
+      //   if (dedicated_sum_scheduler(mac->slice_scheduler_dl) > 1.0 + 1e-6) {
+      //     NR_SCHED_UNLOCK(&mac->sched_lock);
+      //   }
+      // }
+      // if (mac->slice_scheduler_ul != NULL) {
+      //   if (dedicated_sum_scheduler(mac->slice_scheduler_ul) > 1.0 + 1e-6) {
+      //     NR_SCHED_UNLOCK(&mac->sched_lock);
+      //   }
+      // }
 
-  // List of QoS Flows to be modified in DRB
-  assert(ran_param[1].ran_param_id == 2 && "Second RAN Parameter ID has to be List of QoS Flows");
-  assert(ran_param[1].ran_param_val.type == LIST_RAN_PARAMETER_VAL_TYPE);
-  printf("List of QoS Flows to be modified in DRB\n");
-  const lst_ran_param_t* lrp = ran_param[1].ran_param_val.lst->lst_ran_param;
+      NR_SCHED_UNLOCK(&mac->sched_lock);
+    }
+  }
 
-  // The following assertion should be true, but there is a bug in the std
-  // check src/sm/rc_sm/enc/rc_enc_asn.c:1085 and src/sm/rc_sm/enc/rc_enc_asn.c:984 
-  // assert(lrp->ran_param_struct.ran_param_struct[0].ran_param_id == 3);
-
-  // QoS Flow Identifier
-  assert(lrp->ran_param_struct.ran_param_struct[0].ran_param_id == 4);
-  assert(lrp->ran_param_struct.ran_param_struct[0].ran_param_val.type == ELEMENT_KEY_FLAG_TRUE_RAN_PARAMETER_VAL_TYPE);
-  int64_t qfi = lrp->ran_param_struct.ran_param_struct[0].ran_param_val.flag_true->int_ran;
-  assert(qfi > -1 && qfi < 65);
-
-  // QoS Flow Mapping Indication
-  assert(lrp->ran_param_struct.ran_param_struct[1].ran_param_id == 5);
-  assert(lrp->ran_param_struct.ran_param_struct[1].ran_param_val.type == ELEMENT_KEY_FLAG_FALSE_RAN_PARAMETER_VAL_TYPE);
-  int64_t dir = lrp->ran_param_struct.ran_param_struct[1].ran_param_val.flag_false->int_ran;
-  assert(dir == 0 || dir == 1);
-
-  printf("qfi = %ld, dir %ld \n", qfi, dir);
-
-
+  // TODO: find a way to trigger RIC_CONTROL_FAILURE if slice modification failed, see the if blocks above.
   sm_ag_if_ans_t ans = {.type = CTRL_OUTCOME_SM_AG_IF_ANS_V0};
   ans.ctrl_out.type = RAN_CTRL_V1_3_AGENT_IF_CTRL_ANS_V0;
   return ans;

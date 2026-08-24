@@ -44,6 +44,7 @@ add_library(e2_ran_func_cuup STATIC
             O-RAN/ran_e2sm_ue_id.c
             O-RAN/ran_func_kpm.c
             O-RAN/ran_func_kpm_subs.c
+            O-RAN/ran_func_rc_helper.c
             O-RAN/ran_func_rc.c
             O-RAN/ran_func_rc_subs.c
             ../flexric/src/sm/rc_sm/ie/rc_data_ie.c
@@ -51,9 +52,15 @@ add_library(e2_ran_func_cuup STATIC
             CUSTOMIZED/ran_func_pdcp.c
             CUSTOMIZED/ran_func_tc.c     # currently, not implemented; therefore, filling rnd data
             ../flexric/test/rnd/fill_rnd_data_tc.c
+            # ran_func_rc calls slice_sch_add_slice; nr-cuup does not link L2_NR/MAC
+            ${CMAKE_SOURCE_DIR}/openair2/LAYER2/NR_MAC_gNB/slice_prb_allocator/slice_prb_allocator.c
             )
 
 target_link_libraries(e2_ran_func_cuup PUBLIC asn1_nr_rrc nr_rrc asn1_nr_rrc_hdrs e2_time_obj kpm_ric_info_common_obj 3gpp_derived_ie_obj e2sm_rc_ir_obj sm_common_ie_obj ds alg sm_common_enc_asn_obj_rc 3gpp_derived_ie_enc_asn_obj_rc)
+target_include_directories(e2_ran_func_cuup PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/O-RAN
+  ${CMAKE_SOURCE_DIR}/openair2/LAYER2/NR_MAC_gNB
+  ${CMAKE_SOURCE_DIR}/openair2/LAYER2/NR_MAC_gNB/slice_prb_allocator)
 target_compile_definitions(e2_ran_func_cuup PUBLIC ${E2AP_VERSION}  ${KPM_VERSION}  NGRAN_GNB_CUUP)
 
 
@@ -64,6 +71,7 @@ add_library(e2_ran_func_du_cucp_cuup STATIC
             O-RAN/ran_e2sm_ue_id.c
             O-RAN/ran_func_kpm.c
             O-RAN/ran_func_kpm_subs.c
+            O-RAN/ran_func_rc_helper.c
             O-RAN/ran_func_rc.c
             O-RAN/ran_func_rc_subs.c
             ../flexric/src/sm/rc_sm/ie/rc_data_ie.c
@@ -79,10 +87,12 @@ add_library(e2_ran_func_du_cucp_cuup STATIC
 
 target_link_libraries(e2_ran_func_du_cucp_cuup PUBLIC asn1_nr_rrc nr_rrc asn1_nr_rrc_hdrs e2_time_obj kpm_ric_info_common_obj 3gpp_derived_ie_obj e2sm_rc_ir_obj sm_common_ie_obj ds sm_common_enc_asn_obj_rc 3gpp_derived_ie_enc_asn_obj_rc)
 target_include_directories(e2_ran_func_du_cucp_cuup PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/O-RAN
   ${CMAKE_SOURCE_DIR}/openair2/LAYER2/NR_MAC_gNB
   ${CMAKE_SOURCE_DIR}/openair2/LAYER2/NR_MAC_gNB/slice_prb_allocator)
 target_compile_definitions(e2_ran_func_du_cucp_cuup PUBLIC ${E2AP_VERSION}  ${KPM_VERSION} NGRAN_GNB_DU NGRAN_GNB_CUCP NGRAN_GNB_CUUP)
 
+add_subdirectory(O-RAN)
 # Current implementation:
 # - we only have one executable nr-softmodem for 4 node types: DU, CU, gNB-mono, CU-CP
 
