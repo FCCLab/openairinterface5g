@@ -23,7 +23,10 @@
 #define RAN_FUNC_SM_RAN_CTRL_READ_WRITE_AGENT_H
 
 #include "openair2/E2AP/flexric/src/agent/../sm/sm_io.h"
-
+#include "NR_MAC_gNB/gNB_scheduler_types.h"
+#include "common/ran_context.h"
+#include "openair2/LAYER2/NR_MAC_gNB/mac_proto.h"
+#include "openair2/LAYER2/NR_MAC_gNB/slice_prb_allocator/slice_prb_allocator_internal.h"
 void read_rc_setup_sm(void* data);
 
 sm_ag_if_ans_t write_subs_rc_sm(void const* src);
