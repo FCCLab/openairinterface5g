@@ -14,6 +14,22 @@
 
 #include "common/utils/time_stat.h"
 #include "common/utils/assertions.h"
+#include "nr_rlc_sdu.h"
+
+/* Instantaneous unique-SDU count. Adjacent segments of the same SDU share
+ * nr_rlc_sdu_t*; they stay together on these lists. */
+static uint32_t count_unique_sdus(const nr_rlc_sdu_segment_t *s)
+{
+  uint32_t n = 0;
+  const nr_rlc_sdu_t *last = NULL;
+  for (; s != NULL; s = s->next) {
+    if (s->sdu != last) {
+      n++;
+      last = s->sdu;
+    }
+  }
+  return n;
+}
 
 static void nr_rlc_entity_get_stats(
     nr_rlc_entity_t *entity,
@@ -25,6 +41,7 @@ static void nr_rlc_entity_get_stats(
 
   // Get the correct HOL RLC-SDU
   nr_rlc_sdu_segment_t* sdu;
+  uint32_t occ_pkts;
   if (entity->stats.mode == NR_RLC_AM) {
     nr_rlc_entity_am_t* am_entity = (nr_rlc_entity_am_t *) entity;
     if (am_entity->retransmit_list != NULL) {
@@ -32,13 +49,19 @@ static void nr_rlc_entity_get_stats(
     } else {
       sdu = am_entity->tx_list;
     }
+    /* Same occupancy as txbuf_occ_bytes (tx_size + retx_size): unsent + NACK. */
+    occ_pkts = count_unique_sdus(am_entity->tx_list)
+               + count_unique_sdus(am_entity->retransmit_list);
   } else if (entity->stats.mode == NR_RLC_UM) {
     nr_rlc_entity_um_t* um_entity = (nr_rlc_entity_um_t *) entity;
     sdu = um_entity->tx_list;
+    occ_pkts = count_unique_sdus(um_entity->tx_list);
   } else {
     nr_rlc_entity_tm_t* tm_entity = (nr_rlc_entity_tm_t *) entity;
     sdu = tm_entity->tx_list;
+    occ_pkts = count_unique_sdus(tm_entity->tx_list);
   }
+  out->txbuf_occ_pkts = occ_pkts;
 
   // Compute HOL waittime, make sure that segmented packets don't have 'zero' time-of-arrival
   if (sdu != NULL) {
