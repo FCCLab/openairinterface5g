@@ -128,7 +128,12 @@ size_t dump_mac_stats(gNB_MAC_INST *gNB, char *output, size_t strlen, bool reset
                        sched_ctrl->pcmax);
 
     if (stats->num_rsrp_meas)
-      output = st_append(output, end, ", average RSRP %d (%d meas)", avg_rsrp, stats->num_rsrp_meas);
+      output = st_append(output,
+                         end,
+                         ", average %s %d (%d meas)",
+                         gNB->radio_config.report_type == CRI_RSRP ? "CSI-RSRP" : "SS-RSRP",
+                         avg_rsrp,
+                         stats->num_rsrp_meas);
 
     if (stats->num_sinr_meas) {
       output = st_append(output,
