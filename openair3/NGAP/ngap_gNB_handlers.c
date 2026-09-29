@@ -49,7 +49,7 @@ void ngap_handle_ng_setup_message(ngap_gNB_amf_data_t *amf_desc_p, int sctp_shut
     /* A previously connected AMF has been shutdown */
 
     /* TODO check if it was used by some gNB and send a message to inform these gNB if there is no more associated AMF */
-    if (amf_desc_p->state == NGAP_GNB_STATE_CONNECTED) {
+    if (amf_desc_p->state == NGAP_GNB_STATE_CONNECTED || amf_desc_p->state == NGAP_GNB_OVERLOAD) {
       amf_desc_p->state = NGAP_GNB_STATE_DISCONNECTED;
 
       if (amf_desc_p->ngap_gNB_instance->ngap_amf_associated_nb > 0) {
@@ -72,11 +72,11 @@ void ngap_handle_ng_setup_message(ngap_gNB_amf_data_t *amf_desc_p, int sctp_shut
       amf_desc_p->t_reconnect = -1;
     }
 
-    /* Check that at least one setup message is pending */
-    DevCheck(amf_desc_p->ngap_gNB_instance->ngap_amf_pending_nb > 0,
-             amf_desc_p->ngap_gNB_instance->instance,
-             amf_desc_p->ngap_gNB_instance->ngap_amf_pending_nb,
-             0);
+    /* Setup already finished, or this result is not a pending setup. */
+    if (amf_desc_p->ngap_gNB_instance->ngap_amf_pending_nb == 0) {
+      NGAP_WARN("No pending NG Setup (AMF state %d), ignoring SCTP result\n", amf_desc_p->state);
+      return;
+    }
 
     if (amf_desc_p->ngap_gNB_instance->ngap_amf_pending_nb > 0) {
       /* Decrease pending messages number */

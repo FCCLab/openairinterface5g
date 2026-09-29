@@ -258,7 +258,12 @@ void ngap_gNB_handle_sctp_association_resp(instance_t instance, sctp_new_associa
               sctp_new_association_resp->sctp_state,
               instance,
               sctp_new_association_resp->ulp_cnx_id);
-    ngap_handle_ng_setup_message(ngap_amf_data_p, sctp_new_association_resp->sctp_state == SCTP_STATE_SHUTDOWN);
+    /* A loss after NG Setup is a dropped AMF. Only SHUTDOWN used to take that
+     * path, so UNREACHABLE fell into the pending-setup check and aborted. */
+    const int association_lost = sctp_new_association_resp->sctp_state == SCTP_STATE_SHUTDOWN
+                                 || ngap_amf_data_p->state == NGAP_GNB_STATE_CONNECTED
+                                 || ngap_amf_data_p->state == NGAP_GNB_OVERLOAD;
+    ngap_handle_ng_setup_message(ngap_amf_data_p, association_lost);
     return;
   }
 
