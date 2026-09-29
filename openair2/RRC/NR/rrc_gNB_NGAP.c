@@ -1538,7 +1538,7 @@ int rrc_gNB_process_Handover_Request(gNB_RRC_INST *rrc, ngap_handover_request_t 
 
   // Process all PDU Session Resource Setup items from handover request
   DevAssert(msg->nb_of_pdusessions <= NR_MAX_NB_PDU_SESSIONS);
-  pdusession_t to_setup[NR_MAX_NB_PDU_SESSIONS];
+  pdusession_t to_setup[NR_MAX_NB_PDU_SESSIONS] = {0};
   for (int i = 0; i < msg->nb_of_pdusessions; i++) {
     ho_request_pdusession_t *ho_pdu = &msg->pduSessionResourceSetupList[i];
     pdusession_t *pdu = &to_setup[i];
