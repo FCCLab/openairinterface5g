@@ -10,7 +10,7 @@
 #include "openair2/E2AP/flexric/src/lib/3gpp/ie/network_interface_type.h"
 #include "openair2/E2AP/flexric/src/sm/rc_sm/ie/ir/rrc_state.h"
 
-void signal_rrc_msg(const nr_rrc_class_e nr_channel, const uint32_t rrc_msg_id, const byte_array_t rrc_ba);
+void signal_rrc_msg(const nr_rrc_class_e nr_channel, const uint32_t rrc_msg_id, const byte_array_t rrc_ba, uint16_t rnti, uint32_t ran_ue_ngap_id);
 
 void signal_ue_id(const gNB_RRC_UE_t *rrc_ue_context, const uint16_t class, const uint32_t msg_id);
 

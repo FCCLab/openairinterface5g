@@ -732,7 +732,16 @@ void signal_rrc_state_changed_to(const gNB_RRC_UE_t *rrc_ue_context, const rrc_s
   pthread_mutex_unlock(&rc_mutex);
 }
 
-static rc_ind_data_t* fill_rrc_msg_copy(const byte_array_t rrc_ba, const uint16_t cond_id)
+static void fill_rc_int_param(seq_ran_param_t* param, const uint32_t id, const int64_t value)
+{
+  param->ran_param_id = id;
+  param->ran_param_val.type = ELEMENT_KEY_FLAG_FALSE_RAN_PARAMETER_VAL_TYPE;
+  param->ran_param_val.flag_false = malloc_or_fail(sizeof(ran_parameter_value_t));
+  param->ran_param_val.flag_false->type = INTEGER_RAN_PARAMETER_VALUE;
+  param->ran_param_val.flag_false->int_ran = value;
+}
+
+static rc_ind_data_t* fill_rrc_msg_copy(const byte_array_t rrc_ba, const uint16_t cond_id, const uint16_t rnti, const uint32_t ran_ue_ngap_id)
 {
   rc_ind_data_t* rc_ind = malloc_or_fail(sizeof(rc_ind_data_t));
 
@@ -744,10 +753,9 @@ static rc_ind_data_t* fill_rrc_msg_copy(const byte_array_t rrc_ba, const uint16_
   // Generate Indication Message
   rc_ind->msg.format = FORMAT_1_E2SM_RC_IND_MSG;
 
-  // Sequence of
-  // RAN Parameter
-  rc_ind->msg.frmt_1.sz_seq_ran_param = 1;
-  rc_ind->msg.frmt_1.seq_ran_param = calloc_or_fail(rc_ind->msg.frmt_1.sz_seq_ran_param, sizeof(seq_ran_param_t));
+  // RRC message, plus the C-RNTI and RAN UE NGAP ID of that UE.
+  rc_ind->msg.frmt_1.sz_seq_ran_param = 3;
+  rc_ind->msg.frmt_1.seq_ran_param = calloc_or_fail(3, sizeof(seq_ran_param_t));
 
   rc_ind->msg.frmt_1.seq_ran_param[0].ran_param_id = E2SM_RC_RS1_RRC_MESSAGE;
   rc_ind->msg.frmt_1.seq_ran_param[0].ran_param_val.type = ELEMENT_KEY_FLAG_FALSE_RAN_PARAMETER_VAL_TYPE;
@@ -755,6 +763,8 @@ static rc_ind_data_t* fill_rrc_msg_copy(const byte_array_t rrc_ba, const uint16_
   rc_ind->msg.frmt_1.seq_ran_param[0].ran_param_val.flag_false->type = OCTET_STRING_RAN_PARAMETER_VALUE;
   
   rc_ind->msg.frmt_1.seq_ran_param[0].ran_param_val.flag_false->octet_str_ran = copy_byte_array(rrc_ba);
+  fill_rc_int_param(&rc_ind->msg.frmt_1.seq_ran_param[1], E2SM_RC_RS1_C_RNTI, rnti);
+  fill_rc_int_param(&rc_ind->msg.frmt_1.seq_ran_param[2], E2SM_RC_RS1_RAN_UE_NGAP_ID, ran_ue_ngap_id);
 
   // Call Process ID
   rc_ind->proc_id = NULL;
@@ -762,7 +772,7 @@ static rc_ind_data_t* fill_rrc_msg_copy(const byte_array_t rrc_ba, const uint16_
   return rc_ind;
 }
 
-static void check_rrc_msg_copy(const nr_rrc_class_e nr_channel, const uint32_t rrc_msg_id, const byte_array_t rrc_ba, const uint32_t ric_req_id, const e2sm_rc_ev_trg_frmt_1_t *frmt_1)
+static void check_rrc_msg_copy(const nr_rrc_class_e nr_channel, const uint32_t rrc_msg_id, const byte_array_t rrc_ba, const uint16_t rnti, const uint32_t ran_ue_ngap_id, const uint32_t ric_req_id, const e2sm_rc_ev_trg_frmt_1_t *frmt_1)
 {
   for (size_t i = 0; i < frmt_1->sz_msg_ev_trg; i++) {
     if (frmt_1->msg_ev_trg[i].msg_type != RRC_MSG_MSG_TYPE_EV_TRG)
@@ -770,13 +780,13 @@ static void check_rrc_msg_copy(const nr_rrc_class_e nr_channel, const uint32_t r
     if (frmt_1->msg_ev_trg[i].rrc_msg.type != NR_RRC_MESSAGE_ID)
       continue;
     if (frmt_1->msg_ev_trg[i].rrc_msg.nr == nr_channel && frmt_1->msg_ev_trg[i].rrc_msg.rrc_msg_id == rrc_msg_id) {
-      rc_ind_data_t* rc_ind_data = fill_rrc_msg_copy(rrc_ba, frmt_1->msg_ev_trg[i].ev_trigger_cond_id);
+      rc_ind_data_t* rc_ind_data = fill_rrc_msg_copy(rrc_ba, frmt_1->msg_ev_trg[i].ev_trigger_cond_id, rnti, ran_ue_ngap_id);
       send_aper_ric_ind(ric_req_id, rc_ind_data);
     }
   }
 }
 
-void signal_rrc_msg(const nr_rrc_class_e nr_channel, const uint32_t rrc_msg_id, const byte_array_t rrc_ba)
+void signal_rrc_msg(const nr_rrc_class_e nr_channel, const uint32_t rrc_msg_id, const byte_array_t rrc_ba, const uint16_t rnti, const uint32_t ran_ue_ngap_id)
 {
   pthread_mutex_lock(&rc_mutex);
   if (rc_subs_data.rs1_param3.data == NULL) {
@@ -787,7 +797,7 @@ void signal_rrc_msg(const nr_rrc_class_e nr_channel, const uint32_t rrc_msg_id, 
   const size_t num_subs = seq_arr_size(&rc_subs_data.rs1_param3);
   for (size_t sub_idx = 0; sub_idx < num_subs; sub_idx++) {
     const ran_param_data_t data = *(const ran_param_data_t *)seq_arr_at(&rc_subs_data.rs1_param3, sub_idx);
-    check_rrc_msg_copy(nr_channel, rrc_msg_id, rrc_ba, data.ric_req_id, &data.ev_tr.frmt_1);
+    check_rrc_msg_copy(nr_channel, rrc_msg_id, rrc_ba, rnti, ran_ue_ngap_id, data.ric_req_id, &data.ev_tr.frmt_1);
   }
 
   pthread_mutex_unlock(&rc_mutex);
