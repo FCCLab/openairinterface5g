@@ -29,5 +29,11 @@ e2_agent_args_t RCconfig_NR_E2agent(void)
   if (e2agent_params[E2AGENT_CONFIG_IP_IDX].strptr != NULL)
     dst.ip = *e2agent_params[E2AGENT_CONFIG_IP_IDX].strptr;
 
+  if (config_isparamset(e2agent_params, E2AGENT_CONFIG_LOCAL_IP_IDX)
+      && e2agent_params[E2AGENT_CONFIG_LOCAL_IP_IDX].strptr != NULL
+      && *e2agent_params[E2AGENT_CONFIG_LOCAL_IP_IDX].strptr != NULL
+      && (*e2agent_params[E2AGENT_CONFIG_LOCAL_IP_IDX].strptr)[0] != '\0')
+    dst.local_ip = *e2agent_params[E2AGENT_CONFIG_LOCAL_IP_IDX].strptr;
+
   return dst;
 }
