@@ -32,6 +32,8 @@ bool read_mac_sm(void* data)
   }
 
   gNB_MAC_INST *mac_inst = RC.nrmac[0];
+  NR_ServingCellConfigCommon_t *scc = mac_inst->common_channels[0].ServingCellConfigCommon;
+  const uint16_t pci = (scc != NULL && scc->physCellId != NULL) ? (uint16_t)*scc->physCellId : 0;
   NR_SCHED_LOCK(&mac_inst->sched_lock);
   size_t i = 0; //TODO
   UE_iterator(UE_info->connected_ue_list, UE) {
@@ -55,6 +57,7 @@ bool read_mac_sm(void* data)
     }
 
     rd->rnti = UE->rnti;
+    rd->pci = pci;
     rd->dl_aggr_prb = UE->mac_stats.dl.total_rbs;
     rd->ul_aggr_prb = UE->mac_stats.ul.total_rbs;
     rd->dl_aggr_retx_prb = UE->mac_stats.dl.total_rbs_retx;
