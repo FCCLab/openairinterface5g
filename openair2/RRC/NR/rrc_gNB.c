@@ -87,12 +87,28 @@
 
 #ifdef E2_AGENT
 #include "openair2/E2AP/RAN_FUNCTION/O-RAN/ran_func_rc_extern.h"
-#define E2_AGENT_SIGNAL_DL_DCCH_RRC_MSG(BUF, LEN, ID, RNTI, NGAP) \
-  do {                                                            \
-    byte_array_t buffer_ba = {.len = LEN};                        \
-    buffer_ba.buf = (uint8_t *)BUF;                               \
-    signal_rrc_msg(DL_DCCH_NR_RRC_CLASS, ID, buffer_ba, (uint16_t)(RNTI), (uint32_t)(NGAP)); \
-  } while (0)
+
+static void e2_signal_ue_rrc(const gNB_RRC_INST *rrc,
+                             const gNB_RRC_UE_t *ue,
+                             const nr_rrc_class_e channel,
+                             const uint32_t message_id,
+                             const uint8_t *buf,
+                             const int len)
+{
+  byte_array_t buffer_ba = {.len = len};
+  buffer_ba.buf = (uint8_t *)buf;
+  uint64_t nci = 0;
+  int pci = -1;
+  nr_rrc_cell_container_t *cell = rrc_get_pcell_for_ue((gNB_RRC_INST *)rrc, ue);
+  if (cell != NULL) {
+    nci = cell->info.cell_id;
+    pci = cell->info.pci;
+  }
+  signal_rrc_msg(channel, message_id, buffer_ba, ue->rnti, ue->rrc_ue_id, rrc->node_id, nci, pci);
+}
+
+#define E2_AGENT_SIGNAL_DL_DCCH_RRC_MSG(RRC, UE, BUF, LEN, ID) \
+  e2_signal_ue_rrc((RRC), (UE), DL_DCCH_NR_RRC_CLASS, (ID), (const uint8_t *)(BUF), (LEN))
 #endif
 
 mui_t rrc_gNB_mui = 0;
@@ -325,7 +341,7 @@ static void nr_rrc_transfer_protected_rrc_message(const gNB_RRC_INST *rrc,
                        &data);
 
 #ifdef E2_AGENT
-  E2_AGENT_SIGNAL_DL_DCCH_RRC_MSG(buffer, size, message_id, ue_p->rnti, ue_p->rrc_ue_id);
+  E2_AGENT_SIGNAL_DL_DCCH_RRC_MSG(rrc, ue_p, buffer, size, message_id);
 #else
   UNUSED(message_id);
 #endif
@@ -1210,7 +1226,7 @@ static void rrc_gNB_generate_RRCReestablishment(rrc_gNB_ue_context_t *ue_context
   nr_pdcp_data_req_srb(ue_p->rrc_ue_id, DL_SCH_LCID_DCCH, rrc_gNB_mui++, size, (unsigned char *const)buffer, rrc_deliver_dl_rrc_message, &data);
 
 #ifdef E2_AGENT
-  E2_AGENT_SIGNAL_DL_DCCH_RRC_MSG(buffer, size, NR_DL_DCCH_MessageType__c1_PR_rrcReestablishment, ue_p->rnti, ue_p->rrc_ue_id);
+  E2_AGENT_SIGNAL_DL_DCCH_RRC_MSG(rrc, ue_p, buffer, size, NR_DL_DCCH_MessageType__c1_PR_rrcReestablishment);
 #endif
 
   /* RRCReestablishment has been generated, let's enable ciphering now. */
@@ -2249,9 +2265,7 @@ static int rrc_gNB_decode_dcch(gNB_RRC_INST *rrc, const f1ap_ul_rrc_message_t *m
 #ifdef E2_AGENT
     // 38.331 Sec 6.2.1: message index of UL-DCCH-Message
     const uint32_t rrc_msg_id = ul_dcch_msg->message.choice.c1->present;
-    byte_array_t buffer_ba = {.len = msg->rrc_container_length};
-    buffer_ba.buf = msg->rrc_container;
-    signal_rrc_msg(UL_DCCH_NR_RRC_CLASS, rrc_msg_id, buffer_ba, UE->rnti, UE->rrc_ue_id);
+    e2_signal_ue_rrc(rrc, UE, UL_DCCH_NR_RRC_CLASS, rrc_msg_id, msg->rrc_container, msg->rrc_container_length);
 #endif
     switch (ul_dcch_msg->message.choice.c1->present) {
       case NR_UL_DCCH_MessageType__c1_PR_NOTHING:
@@ -3873,7 +3887,7 @@ void rrc_gNB_generate_RRCRelease(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE)
   nr_pdcp_data_req_srb(UE->rrc_ue_id, DL_SCH_LCID_DCCH, rrc_gNB_mui++, size, buffer, rrc_deliver_ue_ctxt_release_cmd, &data);
 
 #ifdef E2_AGENT
-  E2_AGENT_SIGNAL_DL_DCCH_RRC_MSG(buffer, size, NR_DL_DCCH_MessageType__c1_PR_rrcRelease, UE->rnti, UE->rrc_ue_id);
+  E2_AGENT_SIGNAL_DL_DCCH_RRC_MSG(rrc, UE, buffer, size, NR_DL_DCCH_MessageType__c1_PR_rrcRelease);
 #endif
 }
 

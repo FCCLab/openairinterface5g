@@ -189,7 +189,14 @@ void rrc_gNB_trigger_reconfiguration_for_handover(gNB_RRC_INST *rrc, gNB_RRC_UE_
   uint32_t message_id = NR_DL_DCCH_MessageType__c1_PR_rrcReconfiguration;
   byte_array_t buffer_ba = {.len = rrc_reconf_len};
   buffer_ba.buf = rrc_reconf;
-  signal_rrc_msg(DL_DCCH_NR_RRC_CLASS, message_id, buffer_ba, ue->rnti, ue->rrc_ue_id);
+  uint64_t nci = 0;
+  int pci = -1;
+  nr_rrc_cell_container_t *cell = rrc_get_pcell_for_ue(rrc, ue);
+  if (cell != NULL) {
+    nci = cell->info.cell_id;
+    pci = cell->info.pci;
+  }
+  signal_rrc_msg(DL_DCCH_NR_RRC_CLASS, message_id, buffer_ba, ue->rnti, ue->rrc_ue_id, rrc->node_id, nci, pci);
 #endif
 }
 
