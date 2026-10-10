@@ -63,8 +63,9 @@ bool read_mac_sm(void* data)
     rd->dl_aggr_retx_prb = UE->mac_stats.dl.total_rbs_retx;
     rd->ul_aggr_retx_prb = UE->mac_stats.ul.total_rbs_retx;
 
-    rd->dl_aggr_bytes_sdus = UE->mac_stats.dl.lc_bytes[3];
-    rd->ul_aggr_bytes_sdus = UE->mac_stats.ul.lc_bytes[3];
+    /* DRBs are LCID >= 4. lc_bytes[3] is an SRB and stays at 0. */
+    rd->dl_aggr_bytes_sdus = UE->mac_stats.dl.total_sdu_bytes;
+    rd->ul_aggr_bytes_sdus = UE->mac_stats.ul.total_sdu_bytes;
 
     rd->dl_aggr_sdus = UE->mac_stats.dl.num_mac_sdu;
     rd->ul_aggr_sdus = UE->mac_stats.ul.num_mac_sdu;
